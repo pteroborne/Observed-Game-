@@ -4,6 +4,7 @@ pub mod falls;
 pub mod prison;
 pub mod requisition;
 pub mod sim;
+pub use sim::PowerPolicy;
 
 #[cfg(feature = "desktop")]
 mod desktop;

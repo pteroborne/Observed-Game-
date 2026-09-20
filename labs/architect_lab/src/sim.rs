@@ -20,6 +20,8 @@ pub use command::{ArchitectCommand, CommandRefusal, DoorState, ThresholdKey};
 mod mode;
 pub use mode::ArchitectMode;
 pub mod topology;
+mod objective;
+pub use objective::{DARKNESS_BEATS, RogueObjective, StateHold};
 mod util;
 use util::{
     Prng, command_key, face_between, face_toward, key_face_from, lateral_face, threshold_touches,
@@ -114,6 +116,49 @@ pub struct RogueKnowledge {
     pub known_observers: BTreeMap<ObserverId, HexCoord>,
 }
 
+/// Rules governing whether and how floor power can be restored once cut.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PowerPolicy {
+    /// Today's behaviour: floors go out and never come back.
+    OneWay,
+    /// An Observer at a generator can bring a floor back up.
+    #[default]
+    Restorable,
+    /// Nothing ever cuts power. For isolating other variables.
+    AlwaysOn,
+}
+
+impl PowerPolicy {
+    pub const ALL: [Self; 3] = [Self::Restorable, Self::OneWay, Self::AlwaysOn];
+
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::OneWay => "One-Way",
+            Self::Restorable => "Restorable",
+            Self::AlwaysOn => "Always-On",
+        }
+    }
+
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Restorable => Self::OneWay,
+            Self::OneWay => Self::AlwaysOn,
+            Self::AlwaysOn => Self::Restorable,
+        }
+    }
+
+    #[must_use]
+    pub fn previous(self) -> Self {
+        match self {
+            Self::Restorable => Self::AlwaysOn,
+            Self::OneWay => Self::Restorable,
+            Self::AlwaysOn => Self::OneWay,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ArchitectLab {
     pub mode: ArchitectMode,
@@ -145,6 +190,18 @@ pub struct ArchitectLab {
     pub guardians: BTreeMap<GuardianId, Guardian>,
     pub guardian_visits: BTreeMap<(GuardianId, HexCoord), u32>,
     pub rogue_directive: Option<HexCoord>,
+    /// What the Rogue wins by this match. `Purge` is the behaviour every match has had
+    /// until now, and an unselected objective changes nothing.
+    pub objective: RogueObjective,
+    /// Active Observers lighting the cell they face, as of the last observation refresh.
+    /// Maintained where each sightline is already decided; nothing re-derives it.
+    pub lit_sightlines: usize,
+    /// Active Observers, as of the last observation refresh.
+    pub active_observers: usize,
+    /// How long the facility has gone unwitnessed. Tracked in every match whether or not
+    /// Darkness is the selected objective, because a streak that is never measured cannot
+    /// tell us whether the objective is reachable.
+    pub darkness: StateHold,
     pub outcome: MatchOutcome,
     pub traces: BTreeMap<String, BehaviorTrace>,
     pub command_log: Vec<(u64, ArchitectCommand)>,
@@ -154,6 +211,7 @@ pub struct ArchitectLab {
     pub initial_occupiable: BTreeSet<HexCoord>,
     pub sever_threshold: usize,
     pub sever_tick: Option<u64>,
+    pub power_policy: PowerPolicy,
 }
 
 impl ArchitectLab {
@@ -234,6 +292,19 @@ impl ArchitectLab {
         loyal_team_size: usize,
     ) -> Result<Self, HexWfcError> {
         Self::generate_with_team_size(mode, mode.seed(), loyal_team_size)
+    }
+
+    pub fn for_mode_with_policy(
+        mode: ArchitectMode,
+        power_policy: PowerPolicy,
+    ) -> Result<Self, HexWfcError> {
+        Self::for_mode(mode).map(|lab| lab.with_power_policy(power_policy))
+    }
+
+    #[must_use]
+    pub fn with_power_policy(mut self, power_policy: PowerPolicy) -> Self {
+        self.power_policy = power_policy;
+        self
     }
 
     pub fn generate(mode: ArchitectMode, seed: u64) -> Result<Self, HexWfcError> {
@@ -322,7 +393,7 @@ impl ArchitectLab {
             },
         )]);
 
-        let economy = EconomyState::new(&world, &observers, seed);
+        let economy = EconomyState::new(&world, &observers, &prison_core, seed);
         prison.ensure_placements(&mut world);
         known.extend(&prison_core);
 
@@ -352,6 +423,10 @@ impl ArchitectLab {
             guardians,
             guardian_visits: BTreeMap::new(),
             rogue_directive: None,
+            objective: RogueObjective::default(),
+            lit_sightlines: 0,
+            active_observers: 0,
+            darkness: StateHold::new(DARKNESS_BEATS),
             outcome: MatchOutcome::Running,
             traces: BTreeMap::new(),
             command_log: Vec::new(),
@@ -361,6 +436,7 @@ impl ArchitectLab {
             initial_occupiable: BTreeSet::new(),
             sever_threshold: Self::DEFAULT_SEVER_THRESHOLD,
             sever_tick: None,
+            power_policy: PowerPolicy::default(),
         };
         lab.refresh_observation();
         // Damage a solved facility at separated lateral handoffs. These are
@@ -413,6 +489,7 @@ impl ArchitectLab {
                 "A missing tile interrupts the hunt. Reconnect the route with a card.",
             );
         }
+        lab.economy = EconomyState::new(&lab.world, &lab.observers, &lab.prison_core, seed);
         lab.refresh_observation();
         lab.sync_topology();
         let initial_occupiable: BTreeSet<HexCoord> = lab
@@ -684,6 +761,18 @@ impl ArchitectLab {
             return;
         }
 
+        // 1b. The facility goes unwitnessed. Evaluated once per beat, which is the only
+        // cadence at which observation changes. The streak accrues in every match so the
+        // instrument can report how close Darkness came; it can only *end* a match when
+        // the Rogue was given that objective. Ordered with the other Rogue condition and
+        // ahead of the summit, matching the capture-before-summit precedence above: the
+        // hold has been running for beats, the summit arrival happens on this one.
+        let darkness_completed = self.darkness.observe(self.facility_is_dark(), self.tick);
+        if darkness_completed && self.objective == RogueObjective::Darkness {
+            self.outcome = MatchOutcome::RogueVictory;
+            return;
+        }
+
         // 2. Corruption-adjusted summit quorum:
         // A team achieves LoyalVictory if all of its remaining loyal (uncorrupted) Observers
         // are active and present at the facility summit exit.
@@ -947,19 +1036,37 @@ impl ArchitectLab {
 
     pub fn refresh_observation(&mut self) {
         self.observed.clear();
+        let mut active = 0usize;
+        let mut lit = 0usize;
         for observer in self
             .observers
             .values()
             .filter(|observer| observer.state == ObserverState::Active)
         {
+            active += 1;
             self.observed.insert(observer.cell);
             if self.economy.is_powered(observer.cell.level)
                 && let Some(next) = self.step_through(observer.cell, observer.facing)
             {
+                lit += 1;
                 self.observed.insert(next);
             }
         }
+        self.active_observers = active;
+        self.lit_sightlines = lit;
         self.update_team_knowledge();
+    }
+
+    /// Nobody is looking outward: Observers remain, and none of them lights the cell they
+    /// face, because their floor has lost power or they are facing a wall.
+    ///
+    /// The "at least one Active Observer" clause is load-bearing. An empty `observed` set
+    /// means every Observer is jailed or corrupted, which is the Purge victory checked in
+    /// the same tick — so without this clause Darkness would be a second name for a match
+    /// that has already ended, and could never fire on its own.
+    #[must_use]
+    pub const fn facility_is_dark(&self) -> bool {
+        self.active_observers > 0 && self.lit_sightlines == 0
     }
 
     /// Updates team-scoped knowledge for all active teams.

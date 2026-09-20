@@ -178,30 +178,14 @@ Five vertically stacked floors on a single board present an acute legibility cha
 To satisfy the hard **Legibility Contract** (every state visually identifiable with zero
 invented colors):
 
-1. **Distinct Architectural Registers**: Each level is bound to a canonical register
-   from `observed_content::ArchitectureRegister` and styled using exact colors from
-   `observed_style::architecture_tactical`:
-   - **Floor 1**: `Institutional` (Slate cyan-grey) — *FOUNDATION*
-   - **Floor 2**: `LiminalGrid` (Olive/gold) — *CONCOURSE*
-   - **Floor 3**: `Wellshaft` (Industrial teal/amber) — *INTERIOR*
-   - **Floor 4**: `FacetMonument` (Jade/emerald) — *GALLERY*
-   - **Floor 5**: `Megastructure` (Deep rust/crimson) — *SUMMIT*
-2. **Floor Ascent Axis & Selected Highlight**: An unbroken axis line spans continuously
-   from Floor 1 to Floor 5. When a cell is targeted, its floor title plate dynamically
-   highlights in amber.
-3. **Actor Floor Badges & Traces**: Every Observer and Guardian carries an explicit
-   `F1`..`F5` badge above their glyph. The sidebar actor roster displays exact floor
-   locations for all actors (`OBS 00 [F02] ...`).
-4. **Debug Overlay (`KeyO` / `OVERLAY [O]`)**:
-   - **Retraction Countdown**: Displays remaining time and ticks (`RETRACT 02s (085t)`)
-     with a hazard halo on the next retraction target.
-   - **Fall Safety Prognosis**: Every cell on levels ≥ 1 evaluates
-     `find_lower_surviving_structure` to indicate safe lower landing (`v F#`) versus fatal
-     void drop (`X VOID`).
-   - **Per-Floor Power**: Floor headers and generator stations display live power status
-     (`[PWR:ON]` / `[PWR:OFF]` and `GEN:ON` / `GEN:OFF`).
-5. **Comprehensive In-Game Legend**: An expanded sidebar key documents every floor register,
-   actor glyph, tactical cell color, and debug overlay indicator.
+The desktop cutaway focuses one named floor at a time. Page Up / Down changes
+floors; **Details → Context** can show lower decks as dim silhouettes. The header
+names the active floor; the on-demand party roster names each sighting’s floor. District surface treatments come from
+`observed_style`, with distinct shape cues for selection, actors, and instability.
+
+Diagnostics is available under **Lab controls** (`L`), with `O` exposing full actor
+state, power, and the selected target's fall prognosis. The always-visible hazard
+readout retains the condemned-cell deadline even when diagnostics is hidden.
 
 The Pocket opening stays unresolved without a card. The deterministic bot repairs
 it and wins through the ordinary command path. Larger scenarios exercise multiple
@@ -213,11 +197,48 @@ repairs and floor transitions. A paused human can inspect the same choices.
 cargo dev-run -p architect_lab
 ```
 
-The original Bevy diagnostic interface remains available: card keys `1`–`5`,
-`Q`/`E` rotate, Space submits, `B` bot, `P` pause, `N` one behavior beat, `R` reset,
-`[`/`]` scenario, `F`/Home recenter, mouse wheel zoom, and right/middle drag pan.
-The browser is the primary touch interface; the desktop rail remains a debugging
-view rather than the phone layout.
+The desktop now uses the [approved visual direction](../../docs/concepts/rogue_architect/README.md):
+a full-width orthographic cutaway, a compact contextual play panel, and five cards
+with live 3D model previews. The default view has no permanent side rails. Details
+(`H`) opens the roster, map key, and camera controls; lab tools stay under `L`.
+Only one details/lab panel is shown at a time.
+See the [rendered evidence](../../docs/evidence/architect_lab/redesign/README.md).
+
+Start and reset in paused planning. Choose a card with `1`–`5` or click it, click a
+room, rotate with `Q` / `E`, then **Play card** / Space. The inspector explains
+refusals, and play is disabled for a target on another floor. `Esc` closes an open panel first, then cancels the selection. `P` resumes/pauses the hunt. No click or card selection submits a move.
+
+Page Up / Down (or the floor buttons) changes the active deck; `V` toggles context.
+The opening view focuses a known editable tile without selecting it.
+The default zoom is 60% of the fit-to-deck scale (about 1.7× closer). Selecting a
+tile snaps it to the center at this closer scale. Subsequent manual pan/zoom stays
+put until the selection changes; `F`/Home refocuses the selected tile, or the deck
+first known editable tile if nothing is selected. Wheel or `+`/`-` zoom; right/middle drag pans. Board
+input is confined to its viewport; it cannot select through the inspector, hand,
+or details/lab popup. Placement controls only appear for a selected tile on the
+active floor; opening a details/lab panel hides those controls and blocks Space
+from playing a card. `Tab` cycles targets on the active floor. A selected cell
+keeps its coordinate when the mutable-target list changes.
+
+`L` opens lab controls: `B` bot, `N` one behavior beat, `O` diagnostics, `R` reset,
+and `[`/`]` scenario. Observer positions in normal play use Rogue knowledge;
+diagnostics deliberately exposes all actors. There are no invented health bars.
+
+### Geometry boundary
+
+The lab simulation is a cell/port graph, without production authored-tile IDs.
+The renderer therefore chooses one compiled, one-level authored representative
+with the exact lateral port mask and district, using the same cached model for
+board, ghost and card. Ceiling removal and wall capping affect presentation only.
+Unsupported masks receive a low-wall shell with exact quantized hex boundaries and
+literal port gaps. Vertical links use a chevron; they do not imply a physical
+staircase or certify first-person traversal. This is not a migration of the lab to
+the production physical-world simulation.
+
+Meshes/materials are cached by district and mask. The five offscreen textures and
+cameras persist across reset; preview entities update only when cards or orientation
+change. The browser DOM/SVG presentation and WASM rules remain separate.
+
 
 ## Verification
 
@@ -245,8 +266,7 @@ renderer-free Bevy selection/reset lifecycle checks.
 
 ## Scope and human gate
 
-This remains a cell-level Rogue lab. First-person movement, authored 3D hull
-projection, loyal construction, continuous physical ragdoll falls, teammate rescue,
+This remains a cell-level Rogue lab. First-person movement, physical authored-world integration, loyal construction, continuous physical ragdoll falls, teammate rescue,
 and production LAN integration belong to subsequent proofs. The native diagnostic
 view can expose full actor state; the browser filters undetected prey.
 

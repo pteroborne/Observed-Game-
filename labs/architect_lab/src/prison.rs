@@ -788,7 +788,7 @@ mod tests {
         // 3. Web session reset (gated by web feature if present)
         #[cfg(feature = "web")]
         {
-            let mut web = crate::web::WebSession::new(2).expect("web boots");
+            let mut web = crate::web::RogueGame::new(2).expect("web boots");
             web.sim.jail(ObserverId(0));
             assert_eq!(
                 web.sim.observers[&ObserverId(0)].state,

@@ -196,6 +196,11 @@ A limitation is acceptable when it is consistent, readable, and capable of produ
 
 To optimize build and link times during active development (especially with multiple parallel worktrees):
 * **Disable dependency debug info**: Add `debug = false` to `[profile.dev.package."*"]` in `Cargo.toml`.
+* **A shared cache fills up, and it is never the logs.** Cargo does not garbage-collect:
+  stale hashed artifacts accumulate in `debug/deps` forever. When the cache filesystem
+  gets tight, prune by age rather than hunting for runaway logging — CLAUDE.md has the
+  commands, and the measurements behind them. Never `cargo clean` on a shared cache, and
+  delete a worktree's cache as soon as its branch merges.
 * **Share target directory**: Point worktrees to a central target directory using `CARGO_TARGET_DIR` or `.cargo/config.toml`:
   ```toml
   [build]
@@ -207,6 +212,13 @@ To optimize build and link times during active development (especially with mult
   linker = "rust-lld.exe"
   ```
 * **Dynamic Linking**: Use the `.cargo/config.toml` development aliases (`cargo dev-run`, `cargo dev-test`, and `cargo dev-clippy`) to enable Bevy's `dynamic_linking` feature without enabling it in release builds.
+* **The gate skips long instrumentation tests.** `cargo dev-test` excludes a few tests
+  marked `#[ignore = "..."]`, each carrying its cost and reason. They are evidence, not
+  regression cover: they print playtest measurements and assert nothing, and leaving them
+  in cost ~25 minutes a run, which meant the gate stopped being run. `cargo dev-test-all`
+  includes them — run it periodically, and whenever you change the simulation they
+  measure. **Anything that asserts stays in `dev-test`, however slow**; if you want to
+  `#[ignore]` a test with assertions in it, make the test faster instead.
 
 ## Core Architectural Rules
 

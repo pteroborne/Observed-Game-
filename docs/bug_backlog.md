@@ -609,10 +609,31 @@ it — and this session already found two classes of green-but-meaningless resul
 whose assertions never execute, and soaks that assert only determinism). A flake is the
 third.
 
-**For whoever picks this up:** run `cargo test -p composition_studio --lib` in a loop
-until it fails and capture the full output, unfiltered, including the `failures:` block
-that names the test. Then look for the usual suspects — iteration order over a `HashMap`,
-a time or thread dependence, or a seed drawn from something ambient.
+**Resolved 2026-09-20, and it was never nondeterministic.** The test is
+`authoring_tests::clearing_pins_restores_a_baseline_profile`
+(`tools/composition_studio/src/authoring_tests.rs`). It began
+`let mut state = StudioState::default()`, and that constructor calls
+`load::startup_profile()` — it reads `assets/tiles/composition_profile.ron` **from disk**.
+So the test asserted a property of whichever profile the working tree happened to hold.
+
+While that file is the shipped baseline, painting pins moves it off baseline and clearing
+them restores it, and the test passes. The moment anyone authors a real profile — during
+this fix the working tree held `architect_ascent_rare_circulation`, eight lines different
+from `baseline` — the profile starts non-baseline, the first assertion passes for the
+wrong reason, and clearing *pins* cannot undo authored *biases*, so the second fails.
+
+That is the whole "one run in four": not a `HashMap` or a clock, but **tile authoring
+being in flight or not**. The three clean re-runs recorded above happened while the tree
+was in baseline state. Measured under an authored profile it failed 12 times out of 12.
+
+Fixed by constructing the profile the test needs instead of loading one it does not own,
+plus an assertion that it starts from baseline so the later ones cannot go vacuous again.
+6 of 6 runs pass with an authored profile on disk.
+
+**The lesson is the one this project keeps relearning:** look at what a failing test
+actually loads before reasoning about what changed. Same root as the day a merge was
+wrongly blamed for breaking `main` when the real cause was an in-progress corpus in the
+working tree.
 
 
 ### 42. The survivable fall cannot happen in `architect_lab`, so corruption is the only fall
@@ -691,6 +712,142 @@ The third is the honest one if Pocket's real job was always pursuit.
 game, and only re-running the end-to-end playtest showed it. That is the third time in
 one session that behaviour proved unreachable or degenerate while its tests passed —
 after the shove softlock and the survivable fall (#42).
+
+### 44. Floor power is a one-way ratchet, and the facility ends every match in the dark
+
+**Found 2026-09-19** while measuring whether the Darkness objective can fire
+(`labs/architect_lab/src/sim/objective.rs`). It fires constantly, which turned out to be
+a fact about the power economy rather than about the objective.
+
+Production code only ever **cuts** power. Three call sites, all Rogue-side:
+`sim/stability.rs:170` and `:178` (retraction and collapse) and `sim.rs:553` (a card).
+The only restore is `toggle_power`, reachable solely by an Observer standing in a
+generator room — and the Step B instrumentation has been recording
+`toggle_generator_intents: 0` since it was added. So floors go out one at a time and
+never come back.
+
+Measured over full bot matches (`why_the_facility_is_dark`, in the playtest instrument),
+sampling every Active Observer every beat:
+
+| Mode | Unpowered | Facing a wall | Lighting a cell |
+|---|---|---|---|
+| Pocket | 100.0% | 0.0% | 0.0% |
+| Quick Climb | 44.3% | 44.6% | 11.1% |
+| Full Ascent | 79.5% | 14.8% | 5.7% |
+| Deep Stack | 67.1% | 23.3% | 9.5% |
+
+An Observer lights the cell they face in **under 12% of samples in every mode**, and in
+Pocket never at all. Observation is the Observer's core verb and the thing that protects
+tiles from retraction; for almost the whole match it reaches exactly one cell, the one
+they are standing on.
+
+Nothing about this is visible in the suite. Every power test sets `set_powered` by hand
+and asserts the gate it guards, which is correct and passes; none of them asks whether a
+match ever *arrives* in the powered state. Fourth instance in this project of a mechanic
+that is individually correct and collectively unreachable — after the shove softlock,
+the survivable fall (#42) and the Pocket walkover (#43).
+
+**Correction, same day, after measuring instead of inferring.** The first version of this
+entry said the reverse gear was missing. It is not — `sim/behavior.rs` has both halves,
+"restore floor power at generator" (~line 97) and "seek generator to restore power"
+(~line 118). They never run because **the generator cannot be reached**. A route to the
+floor's generator fails in 95–100% of samples on an unpowered floor: 121 of 127 in Quick
+Climb, 286 of 291 in Full Ascent, 1134 of 1134 in Deep Stack.
+
+At match start, **every mode's level-0 generator sits at `(0, 0, 0)` with zero exits** — a
+sealed cell connected to nothing, reachable from no Observer start in any mode. The floor
+everybody starts on can never be restored by anyone. In Deep Stack the level-1 and level-2
+generators are unreachable as well, and one of its five recharge stations.
+
+The cause is `EconomyState::new` (`economy.rs` ~line 92): it sorts each level's non-Void
+placements and takes `candidates[0]` as the generator, `candidates[len/2]` as the station,
+`candidates[len - 1]` as the pad. Placement by coordinate sort order, with reachability
+never consulted for any of the three fixtures — and `(0, 0, level)` sorts first whenever
+it exists.
+
+Probes on the branch: `why_nobody_restores_the_power` and
+`is_the_generator_reachable_at_all`, both in the playtest instrument.
+
+**Decided 2026-09-19 (Will):** if a generator is turned back on, the lights come back —
+and the policy is a configurable option so a one-way blackout can still be tested against
+it. Being able to run both and compare is the point; a one-way blackout may yet be the
+better game. Until the fixtures are reachable the Darkness objective cannot be tuned: its
+threshold has only two settings, fires or never.
+
+### 45. Economy fixture reachability rebalances all match modes
+
+**Found 2026-09-19 during `feat/power-restoration`. Unscheduled.**
+
+Fixing fixture reachability (`EconomyState::new`, sorting non-Void candidates by connected
+component size and prioritizing the component containing the local Observer rather than
+blindly picking `candidates[0]`, `candidates[len/2]`, and `candidates[len-1]`) solved the
+bug where generators, recharge stations, and charge pads spawned in unreachable or sealed
+cells like `(0, 0, level)`.
+
+However, placing fixtures in the main connected component fundamentally altered the bot
+dynamics, bot pacing, and match balance across all four modes. Measured against `main`:
+
+- **Deep Stack**: 855 beats `RogueVictory` -> 23 beats `LoyalVictory` (under all three
+  policies: `Restorable`, `OneWay`, `AlwaysOn`). A 23-beat Deep Stack has the exact same
+  shape as backlog #43 (the Pocket walkover) — with accessible floor fixtures and
+  unblocked transit paths, Loyal bots sprint straight up the 5-story stack to the summit
+  exit in 23 beats without resistance.
+- **Full Ascent**: 261 beats `RogueVictory` -> 308 beats `RogueVictory` under `Restorable`,
+  but runs to the 1000-beat cap (`Running` stalemate) under `OneWay`.
+- **Quick Climb**: 163 beats `RogueVictory` -> 205 beats `RogueVictory` under `Restorable`,
+  146 beats `RogueVictory` under `OneWay`.
+
+Two degenerate outcomes emerge from the new layout baseline:
+1. **Full Ascent under AlwaysOn**: Resolves in a Loyal victory in just **8 beats** — a
+   complete walkover.
+2. **Quick Climb under AlwaysOn**: Runs to the **1000-beat cap** with outcome `Running`
+   (indefinite stall).
+
+Furthermore, **`OneWay` no longer reproduces `main`**:
+Full Ascent under `OneWay` now hits the 1000-beat stalemate cap, whereas on `main` it
+resolved in 261 beats as a Rogue victory. Because `OneWay` uses the exact same one-way
+power ratchet rule as `main`, this divergence confirms that the fixture reachability
+shift itself altered the layout and navigation landscape, leaving the harness without
+its historical baseline.
+
+Do not attempt to tune or patch the balance within `feat/power-restoration`; this entry
+records the rebalance so future balancing passes are not surprised by the shifted
+baselines.
+
+### 46. The reauthored processional ascent is not walkable on its side lanes
+
+**Parked 2026-09-20 on branch `codex/tile-curation-wip` (commit `e9bc4fc`).**
+
+A tile curation pass — 96 of 428 authored sources retired, an ascent pass bringing the
+active budget to 331, and a composition profile biased toward rare circulation — is
+complete except for one thing, and was reverted from `main` rather than landed red.
+
+The pass ships its own acceptance test,
+`processional_ascent_is_walkable_both_ways_in_all_rotations`
+(`crates/observed_authoring/src/tests.rs`), written in the same commit. The reauthored
+`hall_ramp` does not pass it:
+
+```
+left the flight: turn 0, direction 1, lane -1.5, height 1.5777198
+```
+
+A walker on the outer `-1.5` lane leaves the ramp surface where `0.5 + (x + 7) * 8 / 14`
+says it should be. Note the sibling `hall_straight` test walks lanes `±1.0`; this one
+reaches `±1.5`, nearer the tile edge, which is exactly the "flight that leaves its high
+sill unsupported" the test's own doc comment says it exists to catch.
+
+Two corpus tripwires also fire, and **both are correct behaviour, not bugs**:
+
+- `the_committed_profile_is_still_the_baseline` — its doc comment says "if this starts
+  failing, someone authored a real profile, which is fine, but the shipped facility
+  changed and the layout evidence needs recapturing." It did, and the evidence was
+  recaptured (`docs/compositions/ascent_curation`, before and after).
+- `committed_arc_s_catalog_identity_is_pinned` — the catalog hash moved with the corpus.
+  The module count in that test was already updated to 331 and matches.
+
+**To finish:** fix the ramp's outer-lane support so its own test passes, then re-pin both
+tripwires against the final corpus, then land `codex/tile-curation-wip`. Re-pinning first
+would pin a facility we already know a walker falls off.
 
 
 ## Minor / hygiene
