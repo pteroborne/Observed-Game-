@@ -19,8 +19,8 @@ mod command;
 pub use command::{ArchitectCommand, CommandRefusal, DoorState, ThresholdKey};
 mod mode;
 pub use mode::ArchitectMode;
-pub mod topology;
 mod objective;
+pub mod topology;
 pub use objective::{DARKNESS_BEATS, RogueObjective, StateHold};
 mod util;
 use util::{
@@ -256,13 +256,12 @@ impl ArchitectLab {
     ///      * Full Ascent (108 cells): threshold is 12 components. Beat 1 is 6; fires at beat 28 (of 261).
     ///      * Deep Stack (157 cells): threshold is 18 components. Beat 1 is 9; fires at beat 37 (of 855).
     ///
-    /// 3. Note on Pocket (Unreachable by Construction):
-    ///    In Pocket (1 floor, 8 occupiable cells), the facility consists of a single 8-cell corridor.
-    ///    The facility never fragments, and meaningful component count remains at 1 throughout
-    ///    the entire 3-beat match. With threshold = max(2, ceil(8 * 0.11)) = 2, Sever is
-    ///    strictly UNREACHABLE BY CONSTRUCTION in Pocket. Observers always win via summit quorum.
+    /// 3. Note on Pocket:
+    ///    In Pocket (1 floor, 8 occupiable cells), the facility consists of an 8-cell corridor.
+    ///    However, on beat 1 the Architect bot contests the generator at (4, 0, 0) by playing
+    ///    an unmatched card, which fractures the corridor into 2 disjoint pieces (2 cells and 6 cells).
+    ///    Under a threshold of 2, Sever fires on beat 1.
     pub const DEFAULT_SEVER_PERCENT: usize = 11;
-    pub const DEFAULT_SEVER_THRESHOLD: usize = 10;
 
     #[must_use]
     pub fn default_sever_threshold(initial_occupiable_count: usize) -> usize {
@@ -434,7 +433,7 @@ impl ArchitectLab {
             requisition: crate::requisition::RequisitionState::new(seed),
             topology: crate::sim::topology::FacilityTopology::default(),
             initial_occupiable: BTreeSet::new(),
-            sever_threshold: Self::DEFAULT_SEVER_THRESHOLD,
+            sever_threshold: 0,
             sever_tick: None,
             power_policy: PowerPolicy::default(),
         };

@@ -590,6 +590,155 @@ mod sever_ceiling {
     use crate::sim::{ArchitectLab, ArchitectMode, MatchOutcome};
 
     #[test]
+    fn probe_power_vs_retraction() {
+        println!(
+            "\n============== EXPERIMENT 1: POWER CUTS ONLY (NO RETRACTIONS, NO CARDS) =============="
+        );
+        for mode in ArchitectMode::ALL {
+            let mut lab = ArchitectLab::for_mode(mode).expect("scenario boots");
+            let initial_comps = lab.meaningful_component_count();
+            let initial_raw = lab.component_count();
+            println!(
+                "\n{}: initial meaningful={}, raw={}",
+                mode.short_label(),
+                initial_comps,
+                initial_raw
+            );
+
+            // Cut power floor by floor and observe component count
+            for level in 0..lab.world.config.levels {
+                lab.cut_floor_power(level);
+                lab.sync_topology();
+                println!(
+                    "  after cutting power on floor {level}: meaningful={}, raw={}",
+                    lab.meaningful_component_count(),
+                    lab.component_count()
+                );
+            }
+        }
+
+        println!("\n============== EXPERIMENT 2: RETRACTIONS ONLY (POWER HELD ON) ==============");
+        for mode in ArchitectMode::ALL {
+            let mut lab =
+                ArchitectLab::for_mode_with_policy(mode, crate::sim::PowerPolicy::AlwaysOn)
+                    .expect("scenario boots");
+            lab.bot_architect = false; // No cards played! Only contradictions & retractions.
+            println!(
+                "\n{}: initial meaningful={}",
+                mode.short_label(),
+                lab.meaningful_component_count()
+            );
+
+            // Advance ticks to let initial scenario contradictions retract (if any)
+            let mut retractions = 0;
+            for _ in 0..2000 {
+                let pre_retracted = lab.retracted.len();
+                lab.tick();
+                if lab.retracted.len() > pre_retracted {
+                    retractions += 1;
+                    lab.sync_topology();
+                    println!(
+                        "  retraction #{retractions} at {:?}: meaningful={}, raw={}",
+                        lab.retracted.iter().last().unwrap(),
+                        lab.meaningful_component_count(),
+                        lab.component_count()
+                    );
+                }
+            }
+            if retractions == 0 {
+                println!("  (no natural contradictions to retract without cards)");
+            }
+        }
+
+        println!(
+            "\n============== EXPERIMENT 3: SYNTHETIC RETRACTION CASCADE (POWER HELD ON) =============="
+        );
+        // Synthetically retract 5, 10, 15, 20 occupiable cells along the facility route with power ON
+        for mode in [
+            ArchitectMode::QuickClimb,
+            ArchitectMode::FullAscent,
+            ArchitectMode::DeepStack,
+        ] {
+            let mut lab =
+                ArchitectLab::for_mode_with_policy(mode, crate::sim::PowerPolicy::AlwaysOn)
+                    .expect("scenario boots");
+            println!(
+                "\n{}: initial meaningful={}",
+                mode.short_label(),
+                lab.meaningful_component_count()
+            );
+
+            // Retract cells from the initial occupiable set one by one
+            let cells_to_retract: Vec<HexCoord> = lab.initial_occupiable.iter().copied().collect();
+            let mut count = 0;
+            for (i, cell) in cells_to_retract.iter().enumerate() {
+                if i % 3 == 0 && lab.world.placements.contains_key(cell) {
+                    lab.retracted.insert(*cell);
+                    if let Some(tile) = lab.world.placements.get_mut(cell) {
+                        tile.space = crate::sim::HexSpace::Void;
+                        tile.doors = 0;
+                        tile.up = observed_hex::PortClass::Sealed;
+                        tile.down = observed_hex::PortClass::Sealed;
+                    }
+                    count += 1;
+                    lab.topology.mark_dirty();
+                    lab.sync_topology();
+                    if count % 5 == 0 {
+                        println!(
+                            "  after {count} synthetic retractions (every 3rd cell): meaningful={}, raw={}",
+                            lab.meaningful_component_count(),
+                            lab.component_count()
+                        );
+                    }
+                }
+            }
+        }
+
+        println!(
+            "\n============== EXPERIMENT 4: PLAYTEST UNDER ALWAYS_ON WITHOUT SUMMIT EXIT =============="
+        );
+        // Run bot match under AlwaysOn, but prevent instant summit exit to see if long play fragments
+        for mode in ArchitectMode::ALL {
+            let mut lab =
+                ArchitectLab::for_mode_with_policy(mode, crate::sim::PowerPolicy::AlwaysOn)
+                    .expect("scenario boots");
+            lab.bot_architect = true;
+            lab.sever_threshold = 0;
+
+            let mut max_meaningful = 0usize;
+            let mut max_raw = 0usize;
+            let mut beat = 0u64;
+
+            while beat < 200 {
+                // Step beat, but if LoyalVictory happens via summit, reset outcome to Running to observe facility
+                lab.step_beat();
+                beat += 1;
+                let n = lab.meaningful_component_count();
+                max_meaningful = max_meaningful.max(n);
+                max_raw = max_raw.max(lab.component_count());
+                if lab.outcome == MatchOutcome::LoyalVictory {
+                    // Reset to running to let bots keep playing and mutating facility
+                    lab.outcome = MatchOutcome::Running;
+                }
+                if lab.outcome == MatchOutcome::RogueVictory {
+                    break;
+                }
+            }
+            println!(
+                "{:>12}: over {beat} beats (summit exit bypassed): max meaningful={}, max raw={}, final retractions={}, cards={}",
+                mode.short_label(),
+                max_meaningful,
+                max_raw,
+                lab.retracted.len(),
+                lab.command_log.len()
+            );
+        }
+        println!(
+            "========================================================================================\n"
+        );
+    }
+
+    #[test]
     fn sever_threshold_scales_proportionally_with_occupiable_cells() {
         let pocket = ArchitectLab::for_mode(ArchitectMode::Pocket).unwrap();
         assert_eq!(pocket.initial_occupiable.len(), 8);
