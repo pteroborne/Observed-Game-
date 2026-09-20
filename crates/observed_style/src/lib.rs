@@ -18,6 +18,8 @@
 pub mod iso;
 pub mod kinetic;
 
+pub mod architect;
+
 use bevy::color::{Color, LinearRgba};
 
 /// Minimum emissive luminance for a signal-tier treatment. Emissive is HDR (values

@@ -17,7 +17,7 @@ const DEFAULT_MODE: ArchitectMode = ArchitectMode::Pocket;
 #[derive(Resource)]
 pub struct LabSession {
     pub sim: ArchitectLab,
-    pub selected_target: usize,
+    pub selected_target: Option<observed_hex::HexCoord>,
     pub hovered_target: Option<observed_hex::HexCoord>,
     pub selected_card: usize,
     pub rotation: u8,
@@ -43,11 +43,11 @@ impl Default for LabSession {
         let debug_overlay = std::env::var("OBSERVED2_OVERLAY").is_ok();
         Self {
             sim: ArchitectLab::for_mode(mode).expect("the pinned architect lab mode solves"),
-            selected_target: 0,
+            selected_target: None,
             hovered_target: None,
             selected_card: 0,
             rotation: 0,
-            paused: false,
+            paused: true,
             debug_overlay,
             reset_count: 0,
             last_message: format!(
@@ -61,19 +61,16 @@ impl Default for LabSession {
 
 impl LabSession {
     pub(crate) fn target(&self) -> Option<observed_hex::HexCoord> {
-        let targets = self.sim.mutable_targets();
-        targets
-            .get(self.selected_target % targets.len().max(1))
-            .copied()
+        self.selected_target
     }
 
     pub(crate) fn select_target(&mut self, target: observed_hex::HexCoord) -> bool {
         let targets = self.sim.mutable_targets();
-        let Some(index) = targets.iter().position(|candidate| *candidate == target) else {
+        if !targets.contains(&target) {
             return false;
-        };
-        if self.selected_target != index {
-            self.selected_target = index;
+        }
+        if self.selected_target != Some(target) {
+            self.selected_target = Some(target);
             self.last_message = format!(
                 "Target locked: floor {}, cell {}, {}.",
                 target.level + 1,
@@ -87,11 +84,6 @@ impl LabSession {
 
     pub(crate) fn apply_action(&mut self, action: ArchitectAction) {
         match action {
-            ArchitectAction::NextTarget => {
-                let count = self.sim.mutable_targets().len().max(1);
-                self.selected_target = (self.selected_target + 1) % count;
-                self.last_message = "Advanced to the next mutable target.".to_string();
-            }
             ArchitectAction::SelectCard(index) => {
                 if index < self.sim.deck.hand.len() {
                     self.selected_card = index;
@@ -170,11 +162,11 @@ impl LabSession {
         self.sim = ArchitectLab::for_mode_with_team_size(mode, loyal_team_size)
             .expect("the pinned architect lab mode solves");
         self.sim.bot_architect = bot_architect;
-        self.selected_target = 0;
+        self.selected_target = None;
         self.hovered_target = None;
         self.selected_card = 0;
         self.rotation = 0;
-        self.paused = false;
+        self.paused = true;
         self.reset_count += 1;
         self.last_message = format!(
             "Reset: {} restored its seed, hand, actors, and facility.",
@@ -194,11 +186,11 @@ impl LabSession {
         self.sim = ArchitectLab::for_mode_with_team_size(mode, loyal_team_size)
             .expect("the pinned architect lab mode solves");
         self.sim.bot_architect = bot_architect;
-        self.selected_target = 0;
+        self.selected_target = None;
         self.hovered_target = None;
         self.selected_card = 0;
         self.rotation = 0;
-        self.paused = false;
+        self.paused = true;
         self.last_message = format!("{} loaded. {}", mode.label(), mode.description());
         self.dirty = true;
     }
@@ -206,7 +198,6 @@ impl LabSession {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ArchitectAction {
-    NextTarget,
     SelectCard(usize),
     Rotate(i8),
     Submit,
@@ -230,17 +221,17 @@ impl Plugin for ArchitectLabPlugin {
             .add_systems(
                 Update,
                 (
-                    view::sync_camera_viewport,
                     handle_input,
                     view::handle_ui_actions,
                     view::camera_controls,
                     view::map_pointer_input,
+                    view::focus_selected_tile,
+                    view::sync_camera_viewport,
                     view::sync_layout,
                     view::sync_dynamic_text,
                     view::sync_card_text,
                     view::sync_card_buttons,
-                    view::sync_card_accents,
-                    view::sync_card_art,
+                    view::sync_previews,
                     view::sync_charge_pips,
                     view::sync_action_buttons,
                     view::rebuild_board,
@@ -293,7 +284,45 @@ fn handle_input(
         camera.reset_for_mode(session.sim.mode);
     }
     if keys.just_pressed(KeyCode::Tab) {
-        session.apply_action(ArchitectAction::NextTarget);
+        let targets: Vec<_> = session
+            .sim
+            .mutable_targets()
+            .into_iter()
+            .filter(|c| c.level == camera.floor)
+            .collect();
+        let next = session
+            .target()
+            .and_then(|c| targets.iter().position(|t| *t == c))
+            .map_or(0, |i| (i + 1) % targets.len().max(1));
+        if let Some(&target) = targets.get(next) {
+            session.select_target(target);
+        }
+    }
+    if keys.just_pressed(KeyCode::Escape) {
+        if camera.lab_controls || camera.details {
+            camera.lab_controls = false;
+            camera.details = false;
+        } else {
+            session.selected_target = None;
+            session.dirty = true;
+        }
+    }
+    if keys.just_pressed(KeyCode::KeyL) {
+        camera.lab_controls = !camera.lab_controls;
+        camera.details = false;
+    }
+    if keys.just_pressed(KeyCode::KeyH) {
+        camera.details = !camera.details;
+        camera.lab_controls = false;
+    }
+    if keys.just_pressed(KeyCode::KeyV) {
+        camera.overview = !camera.overview;
+    }
+    if keys.just_pressed(KeyCode::PageUp) {
+        camera.change_floor(1, session.sim.world.config.levels);
+    }
+    if keys.just_pressed(KeyCode::PageDown) {
+        camera.change_floor(-1, session.sim.world.config.levels);
     }
     if keys.just_pressed(KeyCode::KeyQ) {
         session.apply_action(ArchitectAction::Rotate(-1));
@@ -312,11 +341,11 @@ fn handle_input(
             session.apply_action(ArchitectAction::SelectCard(index));
         }
     }
-    if keys.just_pressed(KeyCode::Space) {
+    if keys.just_pressed(KeyCode::Space) && view::ui::can_submit(&session, &camera) {
         session.apply_action(ArchitectAction::Submit);
     }
     if keys.just_pressed(KeyCode::KeyF) || keys.just_pressed(KeyCode::Home) {
-        camera.reset_for_mode(session.sim.mode);
+        camera.center();
     }
     if keys.just_pressed(KeyCode::Equal) {
         camera.zoom_centered(0.86);
@@ -327,27 +356,43 @@ fn handle_input(
 }
 
 pub fn run() {
+    let (width, height) = std::env::var("OBSERVED2_CAPTURE_SIZE")
+        .ok()
+        .and_then(|size| {
+            let (w, h) = size.split_once('x')?;
+            Some((
+                w.parse::<u32>().ok()?.max(1200),
+                h.parse::<u32>().ok()?.max(800),
+            ))
+        })
+        .unwrap_or((1600, 1000));
     let mut app = App::new();
-    app.insert_resource(ClearColor(observed_style::schematic_screen()))
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Observed 2 — Rogue Architect Lab".to_string(),
-                resolution: WindowResolution::new(1600, 1000),
-                present_mode: PresentMode::AutoVsync,
-                resizable: true,
-                resize_constraints: WindowResizeConstraints {
-                    min_width: 1200.0,
-                    min_height: 800.0,
-                    ..default()
-                },
+    app.insert_resource(ClearColor(observed_style::architect::color(
+        observed_style::architect::Role::Background,
+    )))
+    .add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "Observed 2 — Rogue Architect Lab".to_string(),
+            resolution: WindowResolution::new(width, height),
+            present_mode: PresentMode::AutoVsync,
+            resizable: true,
+            resize_constraints: WindowResizeConstraints {
+                min_width: 1200.0,
+                min_height: 800.0,
                 ..default()
-            }),
+            },
             ..default()
-        }))
-        .add_plugins(ArchitectLabPlugin);
+        }),
+        ..default()
+    }))
+    .add_plugins(ArchitectLabPlugin);
     if let Ok(path) = std::env::var("OBSERVED2_CAPTURE") {
-        app.insert_resource(CaptureRequest { path, phase: 0 })
-            .add_systems(Update, capture_progress.after(view::rebuild_board));
+        app.insert_resource(CaptureRequest {
+            path,
+            phase: 0,
+            frames: 0,
+        })
+        .add_systems(Update, capture_progress.after(view::rebuild_board));
     }
     app.run();
 }
@@ -356,16 +401,17 @@ pub fn run() {
 struct CaptureRequest {
     path: String,
     phase: u8,
+    frames: u32,
 }
 
 fn capture_progress(
-    time: Res<Time>,
     mut request: ResMut<CaptureRequest>,
     mut session: ResMut<LabSession>,
     mut camera: ResMut<view::MapCameraState>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
+    request.frames += 1;
     if request.phase == 0 {
         if let Ok(mode_str) = std::env::var("OBSERVED2_MODE") {
             let target_mode = match mode_str.to_lowercase().as_str() {
@@ -384,15 +430,11 @@ fn capture_progress(
             session.debug_overlay = true;
         }
 
-        // Let every autonomous role establish a readable trace, then return the
-        // console to the human with a legal card/target preview ready to commit.
-        session.sim.bot_architect = true;
-        session.sim.step_beat();
-        session.sim.bot_architect = false;
-        for _ in 0..5 {
-            session.sim.step_beat();
-        }
-        if let Some(command) = session.sim.legal_commands().into_iter().next() {
+        // Capture an actionable opening, before autonomous play can resolve it.
+        session.paused = true;
+        if std::env::var("OBSERVED2_CAPTURE_IDLE").is_err()
+            && let Some(command) = session.sim.legal_commands().into_iter().next()
+        {
             let sim::ArchitectCommand::Play {
                 card,
                 target,
@@ -411,19 +453,27 @@ fn capture_progress(
                 session.selected_card = index;
             }
             let _ = session.select_target(target);
+            camera.floor = target.level;
             session.rotation = rotation;
         }
+        if let Ok(floor) = std::env::var("OBSERVED2_FLOOR")
+            && let Ok(floor) = floor.parse::<u8>()
+        {
+            camera.floor = floor.min(session.sim.world.config.levels - 1);
+        }
+        camera.details = std::env::var("OBSERVED2_DETAILS").is_ok();
+        camera.overview = std::env::var("OBSERVED2_CONTEXT").is_ok();
+        camera.lab_controls = std::env::var("OBSERVED2_LAB_CONTROLS").is_ok();
         session.paused = true;
-        session.last_message =
-            "Target solution ready. Press EXECUTE to commit the highlighted topology.".to_string();
+        session.last_message = "Inspect the amber preview, then play the card.".to_string();
         session.dirty = true;
         request.phase = 1;
-    } else if request.phase == 1 && time.elapsed_secs() >= 0.75 {
+    } else if request.phase == 1 && request.frames >= 90 {
         commands
             .spawn(Screenshot::primary_window())
             .observe(save_to_disk(request.path.clone()));
         request.phase = 2;
-    } else if request.phase == 2 && time.elapsed_secs() >= 1.5 {
+    } else if request.phase == 2 && request.frames >= 120 {
         exit.write(AppExit::Success);
         request.phase = 3;
     }
@@ -439,6 +489,8 @@ mod tests {
         app.add_plugins((MinimalPlugins, AssetPlugin::default(), InputPlugin))
             .init_asset::<Mesh>()
             .init_asset::<ColorMaterial>()
+            .init_asset::<StandardMaterial>()
+            .init_asset::<Image>()
             .add_plugins(ArchitectLabPlugin);
         app.update();
         app
@@ -471,11 +523,15 @@ mod tests {
         let mut session = LabSession::default();
         session.sim.bot_architect = true;
         session.sim.step_beat();
-        session.selected_target = 9;
+        session.selected_target = Some(observed_hex::HexCoord {
+            q: 2,
+            r: 2,
+            level: 0,
+        });
         session.reset();
         assert_eq!(session.sim.tick, 0);
         assert!(session.sim.bot_architect);
-        assert_eq!(session.selected_target, 0);
+        assert_eq!(session.selected_target, None);
         assert_eq!(session.reset_count, 1);
         assert_eq!(
             session.sim.deck.hand,
@@ -487,41 +543,12 @@ mod tests {
     fn headless_bevy_boot_builds_the_complete_interface_without_a_window() {
         let mut app = headless_app();
         assert_eq!(count::<Window>(&mut app), 0);
-        assert_eq!(count::<Camera>(&mut app), 2);
+        assert_eq!(count::<Camera>(&mut app), 7);
         assert_eq!(count::<view::BoardCamera>(&mut app), 1);
         assert_eq!(count::<view::ui::InterfaceRoot>(&mut app), 1);
         assert_eq!(count::<view::ui::CardButton>(&mut app), sim::HAND_SIZE);
         assert_eq!(count::<view::ui::ChargePip>(&mut app), sim::HAND_SIZE);
-        assert_eq!(count::<view::ui::CardAccent>(&mut app), sim::HAND_SIZE * 2);
-        assert_eq!(
-            count::<view::ui::CardArtFrame>(&mut app),
-            sim::HAND_SIZE * 6
-        );
-        assert_eq!(
-            count::<view::ui::CardArtMotif>(&mut app),
-            sim::HAND_SIZE * 12
-        );
-        let hand = app.world().resource::<LabSession>().sim.deck.hand.clone();
-        let visible_motifs = {
-            let world = app.world_mut();
-            let mut query = world.query::<(&view::ui::CardArtMotif, &Visibility)>();
-            let mut counts = [0; sim::HAND_SIZE];
-            for (motif, visibility) in query.iter(world) {
-                if *visibility != Visibility::Hidden {
-                    counts[motif.index] += 1;
-                }
-            }
-            counts
-        };
-        for (index, card) in hand.into_iter().enumerate() {
-            let expected = match (card.kind, card.district) {
-                (sim::CardKind::Door, _) => 3,
-                (_, Some(sim::District::Institutional)) => 3,
-                (_, Some(sim::District::LiminalGrid)) => 6,
-                _ => 0,
-            };
-            assert_eq!(visible_motifs[index], expected);
-        }
+        assert_eq!(count::<ImageNode>(&mut app), sim::HAND_SIZE);
         let solid_cells = app
             .world()
             .resource::<LabSession>()
@@ -532,6 +559,109 @@ mod tests {
             .filter(|placement| placement.space != observed_facility::hex_wfc::HexSpace::Void)
             .count();
         assert!(count::<view::BoardVisual>(&mut app) > solid_cells);
+    }
+
+    #[test]
+    fn placement_controls_are_contextual_and_details_are_exclusive() {
+        let mut app = headless_app();
+        fn display<T: Component>(app: &mut App) -> Display {
+            let world = app.world_mut();
+            world
+                .query_filtered::<&Node, With<T>>()
+                .single(world)
+                .unwrap()
+                .display
+        }
+        assert_eq!(display::<view::ui::Inspector>(&mut app), Display::None);
+        assert_eq!(display::<view::ui::Sidebar>(&mut app), Display::None);
+        assert_eq!(display::<view::ui::LabControls>(&mut app), Display::None);
+        let target = app.world().resource::<LabSession>().sim.mutable_targets()[0];
+        app.world_mut()
+            .resource_mut::<LabSession>()
+            .select_target(target);
+        app.world_mut().resource_mut::<view::MapCameraState>().floor = target.level;
+        app.update();
+        assert_eq!(display::<view::ui::Inspector>(&mut app), Display::Flex);
+        let details = named_entity(&mut app, "Architect control DETAILS");
+        app.world_mut()
+            .entity_mut(details)
+            .insert(Interaction::Pressed);
+        app.update();
+        assert_eq!(display::<view::ui::Sidebar>(&mut app), Display::Flex);
+        assert_eq!(display::<view::ui::Inspector>(&mut app), Display::None);
+        let lab = named_entity(&mut app, "Architect control LAB");
+        app.world_mut()
+            .entity_mut(details)
+            .insert(Interaction::None);
+        app.world_mut().entity_mut(lab).insert(Interaction::Pressed);
+        app.update();
+        assert_eq!(display::<view::ui::LabControls>(&mut app), Display::Flex);
+        assert_eq!(display::<view::ui::Sidebar>(&mut app), Display::None);
+        assert_eq!(display::<view::ui::Inspector>(&mut app), Display::None);
+    }
+
+    #[test]
+    fn inspector_play_commits_once_and_refuses_cooldown_and_hidden_floor() {
+        let mut app = headless_app();
+        let command = app.world().resource::<LabSession>().sim.legal_commands()[0];
+        let sim::ArchitectCommand::Play {
+            card,
+            target,
+            rotation,
+        } = command
+        else {
+            panic!("play expected")
+        };
+        {
+            let mut session = app.world_mut().resource_mut::<LabSession>();
+            session.selected_card = session
+                .sim
+                .deck
+                .hand
+                .iter()
+                .position(|c| c.id == card)
+                .unwrap();
+            session.rotation = rotation;
+            session.select_target(target);
+        }
+        app.world_mut().resource_mut::<view::MapCameraState>().floor = target.level + 1;
+        let play = named_entity(&mut app, "Execute selected card");
+        app.world_mut()
+            .entity_mut(play)
+            .insert(Interaction::Pressed);
+        app.update();
+        assert!(
+            app.world()
+                .resource::<LabSession>()
+                .sim
+                .command_log
+                .is_empty()
+        );
+        app.world_mut().entity_mut(play).insert(Interaction::None);
+        app.update();
+        app.world_mut().resource_mut::<view::MapCameraState>().floor = target.level;
+        app.world_mut()
+            .entity_mut(play)
+            .insert(Interaction::Pressed);
+        app.update();
+        assert_eq!(
+            app.world().resource::<LabSession>().sim.command_log.len(),
+            1
+        );
+        app.world_mut().entity_mut(play).insert(Interaction::None);
+        app.update();
+        app.world_mut()
+            .entity_mut(play)
+            .insert(Interaction::Pressed);
+        app.update();
+        assert_eq!(
+            app.world().resource::<LabSession>().sim.command_log.len(),
+            1
+        );
+        assert_eq!(
+            app.world().resource::<LabSession>().sim.deck.hand.len(),
+            sim::HAND_SIZE
+        );
     }
 
     #[test]

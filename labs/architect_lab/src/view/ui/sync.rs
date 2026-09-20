@@ -1,40 +1,17 @@
-//! Live copy, card faces, selection lift, and responsive chrome layout.
-
-use bevy::prelude::*;
-use observed_style::{SchematicRole, TacticsRole};
-use observed_ui::theme::{ChromeRole, chrome};
-
+//! Simulation-owned legality and live labels; no invented combat statistics.
 use super::{
-    ArchitectButton, CARD_ART_SIZE, CardAccent, CardArtArm, CardArtCore, CardArtFrame,
-    CardArtMotif, CardArtMotifKind, CardButton, CardText, CardTextField, ChargePip, DynamicText,
-    HandDock, MapHeader, Sidebar, UiAction,
-};
-use crate::LabSession;
-use crate::sim::{
-    ARCHITECT_COOLDOWN_TICKS, Card, CardKind, District, MatchOutcome, ObserverState, TileShape,
+    ArchitectButton, CardButton, CardText, CardTextField, ChargePip, DynamicText, HandDock,
+    Inspector, LabControls, Sidebar, UiAction, can_submit,
 };
 use crate::view::{MapCameraState, WorkspaceLayout};
+use crate::{
+    LabSession,
+    sim::{ARCHITECT_COOLDOWN_TICKS, Card, CardKind, MatchOutcome, ObserverState, TileShape},
+};
+use bevy::prelude::*;
+use observed_style::architect::{Role, color};
 
-type SidebarFilter = (With<Sidebar>, Without<HandDock>, Without<MapHeader>);
-type HandFilter = (With<HandDock>, Without<Sidebar>, Without<MapHeader>);
-type HeaderFilter = (With<MapHeader>, Without<Sidebar>, Without<HandDock>);
-type SidebarQuery<'w, 's> = Query<'w, 's, &'static mut Node, SidebarFilter>;
-type HandQuery<'w, 's> = Query<'w, 's, &'static mut Node, HandFilter>;
-type HeaderQuery<'w, 's> = Query<'w, 's, &'static mut Node, HeaderFilter>;
-type CardButtonQuery<'w, 's> = Query<
-    'w,
-    's,
-    (
-        &'static CardButton,
-        &'static Interaction,
-        &'static mut Node,
-        &'static mut BackgroundColor,
-        &'static mut BorderColor,
-        &'static mut UiTransform,
-    ),
-    With<Button>,
->;
-type ActionButtonQuery<'w, 's> = Query<
+type ActionQuery<'w, 's> = Query<
     'w,
     's,
     (
@@ -42,454 +19,350 @@ type ActionButtonQuery<'w, 's> = Query<
         &'static Interaction,
         &'static mut BackgroundColor,
         &'static mut BorderColor,
-    ),
-    (With<Button>, Without<CardButton>),
->;
-type CardArmFilter = (
-    Without<CardArtCore>,
-    Without<CardArtFrame>,
-    Without<CardArtMotif>,
-);
-type CardFrameFilter = (
-    Without<CardArtArm>,
-    Without<CardArtCore>,
-    Without<CardArtMotif>,
-);
-type CardMotifFilter = (
-    Without<CardArtArm>,
-    Without<CardArtCore>,
-    Without<CardArtFrame>,
-);
-type CardCoreFilter = (
-    Without<CardArtArm>,
-    Without<CardArtFrame>,
-    Without<CardArtMotif>,
-);
-type CardArmQuery<'w, 's> = Query<
-    'w,
-    's,
-    (
-        &'static CardArtArm,
-        &'static mut Visibility,
-        &'static mut BackgroundColor,
-    ),
-    CardArmFilter,
->;
-type CardFrameQuery<'w, 's> =
-    Query<'w, 's, (&'static CardArtFrame, &'static mut BackgroundColor), CardFrameFilter>;
-type CardMotifQuery<'w, 's> = Query<
-    'w,
-    's,
-    (
-        &'static CardArtMotif,
-        &'static mut Visibility,
-        &'static mut BackgroundColor,
-    ),
-    CardMotifFilter,
->;
-type CardCoreQuery<'w, 's> = Query<
-    'w,
-    's,
-    (
-        &'static CardArtCore,
         &'static mut Node,
-        &'static mut BackgroundColor,
-        &'static mut BorderColor,
     ),
-    CardCoreFilter,
+    With<Button>,
 >;
-
-pub fn sync_action_buttons(session: Res<LabSession>, mut action_buttons: ActionButtonQuery) {
-    for (button, interaction, mut background, mut border) in &mut action_buttons {
-        let disabled = button.0 == UiAction::Submit
-            && (session.sim.bot_architect
-                || session.sim.cooldown > 0
-                || session.sim.outcome != MatchOutcome::Running);
-        let role = if disabled {
-            ChromeRole::ControlDisabled
-        } else if *interaction == Interaction::Pressed {
-            ChromeRole::ControlPressed
-        } else if *interaction == Interaction::Hovered {
-            ChromeRole::ControlHover
-        } else {
-            ChromeRole::Control
+pub fn sync_action_buttons(
+    session: Res<LabSession>,
+    state: Res<MapCameraState>,
+    mut buttons: ActionQuery,
+) {
+    for (button, interaction, mut background, mut border, mut node) in &mut buttons {
+        let relevant = match button.0 {
+            UiAction::FloorPrevious | UiAction::FloorNext => session.sim.world.config.levels > 1,
+            UiAction::Overview => state.floor > 0,
+            _ => true,
         };
-        background.0 = chrome(role);
-        border.set_all(if button.0 == UiAction::Submit && !disabled {
-            observed_style::schematic(SchematicRole::Selected).base_color
+        node.display = if relevant {
+            Display::Flex
         } else {
-            chrome(ChromeRole::Border)
+            Display::None
+        };
+        let ready = button.0 == UiAction::Submit && can_submit(&session, &state);
+        let active = match button.0 {
+            UiAction::ToggleBot => session.sim.bot_architect,
+            UiAction::TogglePause => session.paused,
+            UiAction::ToggleOverlay => session.debug_overlay,
+            UiAction::Overview => state.overview,
+            _ => false,
+        };
+        background.0 = color(if *interaction != Interaction::None {
+            Role::Hover
+        } else {
+            Role::Card
         });
+        border.set_all(color(if ready || active {
+            Role::Selected
+        } else {
+            Role::Border
+        }));
+        if ready {
+            background.0 = color(Role::Selected).with_alpha(0.3);
+        }
     }
 }
-
+type LayoutQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut Node,
+        Option<&'static Sidebar>,
+        Option<&'static Inspector>,
+        Option<&'static HandDock>,
+        Option<&'static LabControls>,
+    ),
+    Or<(
+        With<Sidebar>,
+        With<Inspector>,
+        With<HandDock>,
+        With<LabControls>,
+    )>,
+>;
 pub fn sync_layout(
     windows: Query<&Window>,
-    mut sidebars: SidebarQuery,
-    mut hands: HandQuery,
-    mut headers: HeaderQuery,
+    session: Res<LabSession>,
+    state: Res<MapCameraState>,
+    mut nodes: LayoutQuery,
 ) {
-    let (Ok(window), Ok(mut sidebar), Ok(mut hand), Ok(mut header)) = (
-        windows.single(),
-        sidebars.single_mut(),
-        hands.single_mut(),
-        headers.single_mut(),
-    ) else {
-        return;
-    };
-    let layout = WorkspaceLayout::for_window(Vec2::new(window.width(), window.height()));
-    sidebar.width = px(layout.sidebar_width);
-    hand.left = px(layout.sidebar_width);
-    hand.height = px(layout.hand_height);
-    header.left = px(layout.sidebar_width);
+    let size = windows.single().map_or(Vec2::new(1600.0, 1000.0), |w| {
+        Vec2::new(w.width(), w.height())
+    });
+    let layout = WorkspaceLayout::for_window(size);
+    for (mut node, rail, inspector, hand, lab) in &mut nodes {
+        if rail.is_some() {
+            node.display = if state.details {
+                Display::Flex
+            } else {
+                Display::None
+            };
+        }
+        if inspector.is_some() {
+            node.bottom = px(layout.hand_height + 16.0);
+            node.display = if state.placement_visible(&session) {
+                Display::Flex
+            } else {
+                Display::None
+            };
+        }
+        if hand.is_some() {
+            node.height = px(layout.hand_height);
+        }
+        if lab.is_some() {
+            node.display = if state.lab_controls {
+                Display::Flex
+            } else {
+                Display::None
+            };
+        }
+    }
 }
-
 pub fn sync_dynamic_text(
     session: Res<LabSession>,
-    camera: Res<MapCameraState>,
+    state: Res<MapCameraState>,
     mut dynamic: Query<(&DynamicText, &mut Text, &mut TextColor)>,
 ) {
-    let target = session.target();
+    let target = session.target().filter(|c| c.level == state.floor);
     let card = session.sim.deck.hand.get(session.selected_card).copied();
     let refusal = target
-        .and_then(|target| {
+        .and_then(|t| {
             session
                 .sim
-                .selected_command(session.selected_card, target, session.rotation)
+                .selected_command(session.selected_card, t, session.rotation)
         })
-        .and_then(|command| session.sim.refusal(command));
-    for (slot, mut text, mut color) in dynamic.iter_mut() {
-        let value = match slot {
+        .and_then(|c| session.sim.refusal(c));
+    for (slot, mut text, mut tint) in &mut dynamic {
+        **text = match slot {
             DynamicText::Mode => {
                 if session.sim.bot_architect {
-                    "BOT AUTOPILOT / SHARED COMMAND PATH".to_string()
+                    "Autopilot".to_string()
                 } else {
-                    "HUMAN CONTROL / CONSOLE ARMED".to_string()
+                    "Rogue Architect".to_string()
                 }
             }
-            DynamicText::Match => {
-                let active = session
-                    .sim
-                    .observers
-                    .values()
-                    .filter(|observer| observer.state == ObserverState::Active)
-                    .count();
-                let status = match session.sim.outcome {
-                    MatchOutcome::Running => "LIVE",
-                    MatchOutcome::RogueVictory => "ROGUE VICTORY",
-                    MatchOutcome::LoyalVictory => "LOYAL VICTORY",
-                };
-                let overlay_tag = if session.debug_overlay {
-                    " [OVERLAY]"
-                } else {
-                    ""
-                };
-                let seconds = session.sim.cooldown.div_ceil(60);
-                format!(
-                    "{status}{overlay_tag}  /  T+{:03}\nLOYAL {active}  /  CONTRADICTIONS {}\nCOOLDOWN {seconds}s",
-                    session.sim.tick / 60,
-                    session.sim.contradictions.len()
-                )
+            DynamicText::Match => match session.sim.outcome {
+                MatchOutcome::RogueVictory => "ROGUE VICTORY",
+                MatchOutcome::LoyalVictory => "LOYAL VICTORY",
+                MatchOutcome::Running => {
+                    if session.paused {
+                        "Planning"
+                    } else {
+                        "Live"
+                    }
+                }
             }
+            .to_string(),
+            DynamicText::Pause => if session.paused {
+                "RESUME [P]"
+            } else {
+                "PAUSE [P]"
+            }
+            .to_string(),
             DynamicText::Target => target.map_or_else(
-                || "NO TARGET".to_string(),
-                |cell| {
+                || "Choose a room on this floor".to_string(),
+                |c| {
                     format!(
-                        "FLOOR {:02} {} / CELL {}, {}",
-                        cell.level + 1,
-                        crate::sim::floor_register(cell.level).slug().to_uppercase(),
-                        cell.q,
-                        cell.r
+                        "Floor {:02} / cell {}, {}\nOrientation {} / 6",
+                        c.level + 1,
+                        c.q,
+                        c.r,
+                        session.rotation + 1
                     )
                 },
             ),
-            DynamicText::Legality => match refusal {
-                Some(reason) => format!("HELD / {}", reason.label().to_uppercase()),
-                None if target.is_some() && card.is_some() => "READY TO MUTATE".to_string(),
-                None => "NO COMMAND".to_string(),
-            },
-            DynamicText::Preview => card.map_or_else(
-                || "EMPTY SLOT".to_string(),
-                |card| format!("{}  /  FACE {}", card_title(card), session.rotation + 1),
-            ),
-            DynamicText::Message => session.last_message.to_uppercase(),
-            DynamicText::Traces => {
-                let mut lines = Vec::new();
-                for (id, obs) in &session.sim.observers {
-                    let role_key = format!("observer_{}", id.0);
-                    let action = session
-                        .sim
-                        .traces
-                        .get(&role_key)
-                        .and_then(|t| t.selected)
-                        .unwrap_or(match obs.state {
-                            ObserverState::Active => "awaiting signal",
-                            ObserverState::Jailed => "jailed in core",
-                            ObserverState::Corrupted => "corrupted",
-                        });
-                    lines.push(format!(
-                        "OBS {:02} [F{:02}] {}",
-                        id.0,
-                        obs.cell.level + 1,
-                        action.to_uppercase()
-                    ));
-                }
-                for (id, grd) in &session.sim.guardians {
-                    let role_key = format!("guardian_{}", id.0);
-                    let action = session
-                        .sim
-                        .traces
-                        .get(&role_key)
-                        .and_then(|t| t.selected)
-                        .unwrap_or("hunting");
-                    lines.push(format!(
-                        "GRD {:02} [F{:02}] {}",
-                        id.0,
-                        grd.cell.level + 1,
-                        action.to_uppercase()
-                    ));
-                }
-                if lines.is_empty() {
-                    "NO ACTORS".to_string()
+            DynamicText::Legality => {
+                if session.sim.bot_architect {
+                    "Autopilot owns the hand".to_string()
+                } else if let Some(reason) = refusal {
+                    reason.label().to_string()
+                } else if target.is_some() && card.is_some() {
+                    "Ready to play".to_string()
                 } else {
-                    lines.join("\n")
+                    "Select a target".to_string()
+                }
+            }
+            DynamicText::Preview => card.map_or_else(|| "Empty hand".to_string(), card_title),
+            DynamicText::Message => {
+                let mut message = session.last_message.clone();
+                if session.debug_overlay
+                    && let Some(cell) = target
+                {
+                    let landing = crate::falls::find_lower_surviving_structure(&session.sim, cell);
+                    message += &landing.map_or_else(
+                        || "\nFall: true void below".to_string(),
+                        |c| format!("\nFall: lands on floor {}", c.level + 1),
+                    );
+                }
+                message
+            }
+            DynamicText::Guidance => {
+                if state.lab_controls || state.details {
+                    "".to_string()
+                } else if session.sim.bot_architect {
+                    "Autopilot".to_string()
+                } else if target.is_some() {
+                    "Preview on tile".to_string()
+                } else {
+                    "Choose a tile".to_string()
                 }
             }
             DynamicText::HandStatus => {
-                format!("{} CARDS / DRAW AFTER PLAY", session.sim.deck.hand.len())
+                if session.sim.cooldown == 0 {
+                    "Charged".to_string()
+                } else {
+                    format!(
+                        "Recharge {}s{}",
+                        session.sim.cooldown.div_ceil(60),
+                        if session.paused { " / paused" } else { "" }
+                    )
+                }
             }
-            DynamicText::Zoom => format!("{:.0}%", 100.0 / camera.zoom),
             DynamicText::Scenario => format!(
                 "{}\n{}",
                 session.sim.mode.short_label(),
                 session.sim.mode.description()
             ),
-        };
-        **text = value;
-        color.0 = match slot {
-            DynamicText::Legality if refusal.is_some() => {
-                observed_style::tactics(TacticsRole::Blocked).base_color
+            DynamicText::Floor => format!(
+                "Floor {:02} / {:02}  /  {}",
+                state.floor + 1,
+                session.sim.world.config.levels,
+                crate::sim::floor_register(state.floor).slug()
+            ),
+            DynamicText::Hazard => {
+                let mut s = if session.sim.contradictions.is_empty() {
+                    String::new()
+                } else {
+                    format!("{} unstable cells", session.sim.contradictions.len())
+                };
+                if let Some((c, tick)) = session.sim.condemned {
+                    s += &format!(
+                        "\nMOVE! Floor {} ({},{})\nRetracts in {}s",
+                        c.level + 1,
+                        c.q,
+                        c.r,
+                        tick.saturating_sub(session.sim.tick).div_ceil(60)
+                    );
+                } else if let Some(t) = session.sim.next_retraction_tick {
+                    s += &format!(
+                        "\nRetraction in {}s",
+                        t.saturating_sub(session.sim.tick).div_ceil(60)
+                    );
+                }
+                if session.debug_overlay {
+                    s += &format!(
+                        "\nDiagnostics ON\nFloor power: {}",
+                        if session.sim.economy.is_powered(state.floor) {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    );
+                }
+                s
             }
-            DynamicText::Legality => observed_style::schematic(SchematicRole::Pinned).base_color,
-            DynamicText::Mode if session.sim.bot_architect => chrome(ChromeRole::TextDim),
-            DynamicText::Mode => observed_style::schematic(SchematicRole::Pinned).base_color,
-            _ => color.0,
+            DynamicText::Traces => {
+                let known = session.sim.rogue_knowledge();
+                let mut rows = Vec::new();
+                for (id, o) in &session.sim.observers {
+                    let location = if session.debug_overlay {
+                        Some(o.cell)
+                    } else {
+                        known.known_observers.get(id).copied()
+                    };
+                    let status = match o.state {
+                        ObserverState::Jailed => "Jailed".to_string(),
+                        ObserverState::Corrupted => "Corrupted".to_string(),
+                        ObserverState::Active => location.map_or_else(
+                            || "Undetected".to_string(),
+                            |c| format!("Last: floor {}", c.level + 1),
+                        ),
+                    };
+                    rows.push(format!("EYE {:02} / {status}", id.0));
+                }
+                for (id, g) in &session.sim.guardians {
+                    rows.push(format!("HUNTER {:02} / Floor {}", id.0, g.cell.level + 1));
+                }
+                if rows.len() > 4 {
+                    let extra = rows.len() - 4;
+                    rows.truncate(4);
+                    rows.push(format!("+ {extra} other hunters"));
+                }
+                rows.join("\n")
+            }
         };
-    }
-}
-
-pub fn sync_card_text(
-    session: Res<LabSession>,
-    mut card_text: Query<(&CardText, &mut Text, &mut TextColor)>,
-) {
-    for (label, mut text, mut color) in card_text.iter_mut() {
-        let Some(card) = session.sim.deck.hand.get(label.index).copied() else {
-            **text = "EMPTY".to_string();
-            continue;
-        };
-        **text = match label.field {
-            CardTextField::District => card_district(card),
-            CardTextField::Title => card_title(card),
-            CardTextField::Meta => card_meta(card),
-        };
-        color.0 = if matches!(label.field, CardTextField::District) {
-            card_accent(card)
-        } else if matches!(label.field, CardTextField::Title) {
-            chrome(ChromeRole::TextMain)
-        } else {
-            chrome(ChromeRole::TextDim)
-        };
-    }
-}
-
-pub fn sync_card_buttons(session: Res<LabSession>, mut card_buttons: CardButtonQuery) {
-    for (slot, interaction, mut node, mut background, mut border, mut transform) in
-        &mut card_buttons
-    {
-        let selected = slot.0 == session.selected_card;
-        let role = if *interaction == Interaction::Pressed {
-            ChromeRole::ControlPressed
-        } else if selected || *interaction == Interaction::Hovered {
-            ChromeRole::ControlHover
-        } else {
-            ChromeRole::Control
-        };
-        background.0 = chrome(role);
-        border.set_all(if selected {
-            observed_style::schematic(SchematicRole::Selected).base_color
-        } else {
-            chrome(ChromeRole::Border)
-        });
-        let fan = slot.0 as f32 - 2.0;
-        node.margin.top = px(if selected {
-            0.0
-        } else {
-            11.0 + fan.abs() * 3.0
-        });
-        *transform = UiTransform {
-            translation: Val2::px(0.0, if selected { -8.0 } else { 0.0 }),
-            scale: if selected {
-                Vec2::splat(1.045)
+        if matches!(slot, DynamicText::Legality) {
+            tint.0 = color(if can_submit(&session, &state) {
+                Role::Valid
             } else {
-                Vec2::ONE
-            },
-            rotation: if selected {
-                Rot2::IDENTITY
-            } else {
-                Rot2::radians(fan * 0.026)
-            },
-        };
-    }
-}
-
-pub fn sync_card_accents(
-    session: Res<LabSession>,
-    mut accents: Query<(&CardAccent, &mut BackgroundColor, Option<&mut BorderColor>)>,
-) {
-    for (accent, mut background, border) in &mut accents {
-        let Some(card) = session.sim.deck.hand.get(accent.0).copied() else {
-            continue;
-        };
-        let color = card_accent(card);
-        background.0 = color;
-        if let Some(mut border) = border {
-            border.set_all(color);
+                Role::Muted
+            });
         }
     }
 }
-
+pub fn sync_card_text(session: Res<LabSession>, mut labels: Query<(&CardText, &mut Text)>) {
+    for (label, mut text) in &mut labels {
+        **text = session.sim.deck.hand.get(label.index).copied().map_or_else(
+            || "EMPTY".to_string(),
+            |c| match label.field {
+                CardTextField::Title => card_title(c),
+                CardTextField::District => {
+                    c.district.map_or("Any district", |d| d.label()).to_string()
+                }
+            },
+        );
+    }
+}
+type CardQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static CardButton,
+        &'static Interaction,
+        &'static mut BackgroundColor,
+        &'static mut BorderColor,
+        &'static mut UiTransform,
+    ),
+    With<Button>,
+>;
+pub fn sync_card_buttons(session: Res<LabSession>, mut cards: CardQuery) {
+    for (card, interaction, mut bg, mut border, mut transform) in &mut cards {
+        let selected = card.0 == session.selected_card;
+        bg.0 = color(if *interaction != Interaction::None {
+            Role::Hover
+        } else {
+            Role::Card
+        });
+        border.set_all(color(if selected {
+            Role::Selected
+        } else {
+            Role::Border
+        }));
+        *transform =
+            UiTransform::from_translation(Val2::px(0.0, if selected { -4.0 } else { 0.0 }));
+    }
+}
 pub fn sync_charge_pips(
     session: Res<LabSession>,
     mut pips: Query<(&ChargePip, &mut BackgroundColor)>,
 ) {
     let elapsed = ARCHITECT_COOLDOWN_TICKS.saturating_sub(session.sim.cooldown);
-    let charged = if session.sim.cooldown == 0 {
-        5
-    } else {
-        (elapsed as usize * 5) / ARCHITECT_COOLDOWN_TICKS as usize
-    };
+    let charged = (elapsed as usize * 5) / ARCHITECT_COOLDOWN_TICKS as usize;
     for (pip, mut background) in &mut pips {
-        background.0 = if pip.0 < charged {
-            observed_style::schematic(SchematicRole::Pinned).base_color
+        background.0 = color(if pip.0 < charged {
+            Role::Valid
         } else {
-            observed_style::tactics(TacticsRole::DevGrid).base_color
-        };
+            Role::Border
+        });
     }
 }
-
-pub fn sync_card_art(
-    session: Res<LabSession>,
-    mut arms: CardArmQuery,
-    mut frames: CardFrameQuery,
-    mut motifs: CardMotifQuery,
-    mut cores: CardCoreQuery,
-) {
-    for (arm, mut visibility, mut background) in arms.iter_mut() {
-        let Some(card) = session.sim.deck.hand.get(arm.index).copied() else {
-            *visibility = Visibility::Hidden;
-            continue;
-        };
-        let rotation = if arm.index == session.selected_card {
-            session.rotation
-        } else {
-            0
-        };
-        let mask = match card.kind {
-            CardKind::Tile(shape) => shape.doors(rotation),
-            CardKind::Door => (1 << rotation) | (1 << ((rotation + 3) % 6)),
-        };
-        *visibility = if mask & (1 << arm.face) != 0 {
-            Visibility::Inherited
-        } else {
-            Visibility::Hidden
-        };
-        background.0 = card_accent(card);
-    }
-    for (frame, mut background) in &mut frames {
-        let Some(card) = session.sim.deck.hand.get(frame.0).copied() else {
-            continue;
-        };
-        background.0 = card_accent(card).with_alpha(0.58);
-    }
-    for (motif, mut visibility, mut background) in &mut motifs {
-        let Some(card) = session.sim.deck.hand.get(motif.index).copied() else {
-            *visibility = Visibility::Hidden;
-            continue;
-        };
-        let visible = match motif.kind {
-            CardArtMotifKind::Institutional => {
-                card.kind != CardKind::Door && card.district == Some(District::Institutional)
-            }
-            CardArtMotifKind::LiminalGrid => {
-                card.kind != CardKind::Door && card.district == Some(District::LiminalGrid)
-            }
-            CardArtMotifKind::Door => card.kind == CardKind::Door,
-        };
-        *visibility = if visible {
-            Visibility::Inherited
-        } else {
-            Visibility::Hidden
-        };
-        background.0 = card_accent(card).with_alpha(0.28);
-    }
-    for (core, mut node, mut background, mut border) in cores.iter_mut() {
-        let Some(card) = session.sim.deck.hand.get(core.0).copied() else {
-            continue;
-        };
-        let door = card.kind == CardKind::Door;
-        let size = if door {
-            Vec2::new(14.0, 22.0)
-        } else {
-            Vec2::splat(20.0)
-        };
-        node.left = px(CARD_ART_SIZE.x * 0.5 - size.x * 0.5);
-        node.top = px(CARD_ART_SIZE.y * 0.5 - size.y * 0.5);
-        node.width = px(size.x);
-        node.height = px(size.y);
-        node.border_radius = if door {
-            BorderRadius::all(px(3.0))
-        } else {
-            BorderRadius::MAX
-        };
-        background.0 = chrome(ChromeRole::Control);
-        border.set_all(card_accent(card));
-    }
-}
-
 fn card_title(card: Card) -> String {
     match card.kind {
-        CardKind::Tile(TileShape::DeadEnd) => "DEAD END".to_string(),
-        CardKind::Tile(TileShape::Corridor) => "CORRIDOR".to_string(),
-        CardKind::Tile(TileShape::Bend) => "BEND".to_string(),
-        CardKind::Tile(TileShape::Junction) => "JUNCTION".to_string(),
-        CardKind::Tile(TileShape::Hall) => "HALL".to_string(),
-        CardKind::Door => "DEPLOYABLE DOOR".to_string(),
+        CardKind::Tile(TileShape::DeadEnd) => "DEAD END",
+        CardKind::Tile(TileShape::Corridor) => "CORRIDOR",
+        CardKind::Tile(TileShape::Bend) => "BEND",
+        CardKind::Tile(TileShape::Junction) => "JUNCTION",
+        CardKind::Tile(TileShape::Hall) => "HALL",
+        CardKind::Door => "DOOR",
     }
-}
-
-fn card_district(card: Card) -> String {
-    card.district.map_or_else(
-        || "TACTICAL / ANY DISTRICT".to_string(),
-        |district| district.label().to_uppercase(),
-    )
-}
-
-fn card_meta(card: Card) -> String {
-    match card.kind {
-        CardKind::Tile(shape) => {
-            let branches = shape.base_doors().count_ones();
-            format!(
-                "{branches} BRANCH{} / TILE",
-                if branches == 1 { "" } else { "ES" }
-            )
-        }
-        CardKind::Door => "CLOSED ON DEPLOY / THRESHOLD".to_string(),
-    }
-}
-
-fn card_accent(card: Card) -> Color {
-    card.district.map_or_else(
-        || observed_style::schematic(SchematicRole::Pinned).base_color,
-        |district| observed_style::architecture_tactical(district.register()).base_color,
-    )
+    .to_string()
 }
