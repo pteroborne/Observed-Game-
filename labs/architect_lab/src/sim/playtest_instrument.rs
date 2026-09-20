@@ -492,6 +492,7 @@ pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
     stats
 }
 
+#[ignore = "multi-minute instrumentation harness; prints playtest data, asserts nothing. cargo dev-test-all"]
 #[test]
 fn playtest_instrument_runs_all_modes() {
     println!("\n=================== ARCHITECT LAB PLAYTEST ===================");
@@ -574,6 +575,7 @@ fn playtest_instrument_runs_all_modes() {
     println!("\n==============================================================\n");
 }
 
+#[ignore = "~20 minute 40-run soak; instrumentation, not an assertion. cargo dev-test-all"]
 #[test]
 fn test_fall_reachability_across_many_seeds() {
     println!("\n=================== MULTI-SEED FALL REACHABILITY ===================");
@@ -718,6 +720,7 @@ fn test_fall_reachability_across_many_seeds() {
 /// The Darkness measurement came back at 82-92% of beats dark in every mode, which is a
 /// claim about Observers, not about the objective. This separates the two causes so the
 /// finding can be stated as a fact rather than a guess.
+#[ignore = "~140s diagnostic probe for backlog #44; prints, asserts nothing. cargo dev-test-all"]
 #[test]
 fn why_the_facility_is_dark() {
     println!("\n=================== DARKNESS CAUSE PROBE ===================");

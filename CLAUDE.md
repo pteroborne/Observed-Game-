@@ -42,6 +42,20 @@ cargo fmt --all
 cargo dev-clippy
 cargo dev-test
 ```
+
+The gate deliberately skips a few long instrumentation tests. Each is marked
+`#[ignore = "..."]` with its cost and the reason, and they are **evidence rather than
+regression cover** — they print playtest measurements and assert nothing. Left in the
+gate they cost ~25 minutes a run, and a gate nobody runs protects nothing.
+
+Run everything periodically, and whenever you change the simulation they measure:
+
+```powershell
+cargo dev-test-all
+```
+
+Anything that *asserts* belongs in `dev-test`, however slow. If you find yourself
+wanting to `#[ignore]` a test with assertions in it, make the test faster instead.
 *Note: Make sure resetting the lab removes all of its Bevy entities/resources without leaking state.*
 
 ### The shared build cache, and why builds cannot overlap

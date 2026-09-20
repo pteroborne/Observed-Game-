@@ -207,6 +207,13 @@ To optimize build and link times during active development (especially with mult
   linker = "rust-lld.exe"
   ```
 * **Dynamic Linking**: Use the `.cargo/config.toml` development aliases (`cargo dev-run`, `cargo dev-test`, and `cargo dev-clippy`) to enable Bevy's `dynamic_linking` feature without enabling it in release builds.
+* **The gate skips long instrumentation tests.** `cargo dev-test` excludes a few tests
+  marked `#[ignore = "..."]`, each carrying its cost and reason. They are evidence, not
+  regression cover: they print playtest measurements and assert nothing, and leaving them
+  in cost ~25 minutes a run, which meant the gate stopped being run. `cargo dev-test-all`
+  includes them — run it periodically, and whenever you change the simulation they
+  measure. **Anything that asserts stays in `dev-test`, however slow**; if you want to
+  `#[ignore]` a test with assertions in it, make the test faster instead.
 
 ## Core Architectural Rules
 

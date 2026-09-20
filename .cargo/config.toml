@@ -27,4 +27,10 @@ rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 # aliases avoids accidentally shipping a binary that requires bevy_dylib.
 dev-run = "run --features bevy/dynamic_linking"
 dev-test = "test --workspace --features bevy/dynamic_linking"
+# The ordinary gate skips a handful of long instrumentation tests, each marked
+# `#[ignore]` with its reason and cost. They are evidence, not regression cover, and
+# leaving them in the gate cost ~25 minutes a run, which meant the gate stopped being
+# run. `dev-test-all` includes them; run it periodically for sanity, and whenever you
+# touch the simulation they measure.
+dev-test-all = "test --workspace --features bevy/dynamic_linking -- --include-ignored"
 dev-clippy = "clippy --workspace --all-targets --features bevy/dynamic_linking -- -D warnings"
