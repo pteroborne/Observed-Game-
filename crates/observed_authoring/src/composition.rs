@@ -797,7 +797,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 332, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 331, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.
@@ -815,6 +815,43 @@ mod tests {
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
         assert_eq!(simulation, SIMULATION_HASH);
+    }
+
+    #[test]
+    fn curated_ascent_profile_reduces_climbs_without_losing_required_routes() {
+        use observed_facility::hex_wfc::{HexArchetype, HexWfcConfig, HexWfcWorld};
+        let current = load_profile(&committed_tiles())
+            .expect("curated profile loads")
+            .profile;
+        let baseline = HexCompositionProfile::baseline();
+        let config = HexWfcConfig::arc_default();
+        let count = |profile: &HexCompositionProfile| {
+            let mut ramps = 0;
+            let mut towers = 0;
+            for seed in 0..4 {
+                let world = HexWfcWorld::generate_with_profile(seed, config, None, profile)
+                    .expect("rarity must not prevent generation");
+                assert!(
+                    world.route_between(config.spawn(), config.exit()).is_some(),
+                    "rarity lost the required route for seed {seed}"
+                );
+                for tile in world.placements.values() {
+                    ramps += usize::from(tile.archetype == HexArchetype::RampUp);
+                    towers += usize::from(tile.archetype == HexArchetype::Shaft);
+                }
+            }
+            (ramps, towers)
+        };
+        let before = count(&baseline);
+        let after = count(&current);
+        assert!(
+            after.0 > 0 && after.0 * 2 < before.0,
+            "ramp starts: {before:?} -> {after:?}"
+        );
+        assert!(
+            after.1 > 0 && after.1 * 2 < before.1,
+            "tower cells: {before:?} -> {after:?}"
+        );
     }
 
     #[test]

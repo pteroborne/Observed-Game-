@@ -1,0 +1,21 @@
+{
+  "tile_id": "hall_straight",
+  "variant": 0,
+  "register": 2,
+  "view_mode": "orbit",
+  "render_mode": "clay",
+  "facility_lighting": false,
+  "camera_target": [
+    0,
+    3,
+    0
+  ],
+  "section": "quarter_volume",
+  "hide_menu": true,
+  "volumetrics": false,
+  "output_image": "docs/evidence/tile_curation/straight_after.png",
+  "orbit_yaw": 0.7,
+  "orbit_pitch": 0.6,
+  "height": 0,
+  "radius": 22
+}

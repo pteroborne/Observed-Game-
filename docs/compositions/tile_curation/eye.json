@@ -1,0 +1,22 @@
+{
+  "tile_id": "hall_straight",
+  "variant": 0,
+  "register": 2,
+  "view_mode": "freelook",
+  "render_mode": "lit",
+  "facility_lighting": true,
+  "camera_pos": [
+    -6,
+    2.2,
+    0.5
+  ],
+  "camera_target": [
+    5,
+    3.4,
+    0
+  ],
+  "section": "none",
+  "hide_menu": true,
+  "volumetrics": false,
+  "output_image": "docs/evidence/tile_curation/straight_eye.png"
+}

@@ -1236,8 +1236,8 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles");
         let built = build_catalog(&root).expect("curated catalog builds");
         let ignored = ignored_paths(&root).expect("retirement list reads");
-        assert_eq!(ignored.len(), 96);
-        assert_eq!(built.catalog.modules.len(), 332);
+        assert_eq!(ignored.len(), 97);
+        assert_eq!(built.catalog.modules.len(), 331);
         let registers = crate::tile_source::REGISTERS;
         for path in ignored {
             let text = std::fs::read_to_string(root.join(&path)).expect("retired source exists");

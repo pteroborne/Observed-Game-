@@ -1,0 +1,22 @@
+{
+  "tile_id": "hall_ramp",
+  "variant": 0,
+  "register": 2,
+  "view_mode": "orbit",
+  "render_mode": "clay",
+  "facility_lighting": false,
+  "camera_target": [
+    0,
+    7,
+    0
+  ],
+  "section": "half_volume",
+  "hide_menu": true,
+  "volumetrics": false,
+  "orbit_yaw": 1.1,
+  "orbit_pitch": 0.5,
+  "height": 0,
+  "radius": 30,
+  "output_image": "docs/evidence/ascent_curation/ramp_before.png",
+  "section_axis": 90
+}
