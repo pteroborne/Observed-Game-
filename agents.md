@@ -196,6 +196,11 @@ A limitation is acceptable when it is consistent, readable, and capable of produ
 
 To optimize build and link times during active development (especially with multiple parallel worktrees):
 * **Disable dependency debug info**: Add `debug = false` to `[profile.dev.package."*"]` in `Cargo.toml`.
+* **A shared cache fills up, and it is never the logs.** Cargo does not garbage-collect:
+  stale hashed artifacts accumulate in `debug/deps` forever. When the cache filesystem
+  gets tight, prune by age rather than hunting for runaway logging — CLAUDE.md has the
+  commands, and the measurements behind them. Never `cargo clean` on a shared cache, and
+  delete a worktree's cache as soon as its branch merges.
 * **Share target directory**: Point worktrees to a central target directory using `CARGO_TARGET_DIR` or `.cargo/config.toml`:
   ```toml
   [build]
