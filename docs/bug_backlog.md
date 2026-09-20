@@ -753,6 +753,46 @@ it. Being able to run both and compare is the point; a one-way blackout may yet 
 better game. Until the fixtures are reachable the Darkness objective cannot be tuned: its
 threshold has only two settings, fires or never.
 
+### 45. Economy fixture reachability rebalances all match modes
+
+**Found 2026-09-19 during `feat/power-restoration`. Unscheduled.**
+
+Fixing fixture reachability (`EconomyState::new`, sorting non-Void candidates by connected
+component size and prioritizing the component containing the local Observer rather than
+blindly picking `candidates[0]`, `candidates[len/2]`, and `candidates[len-1]`) solved the
+bug where generators, recharge stations, and charge pads spawned in unreachable or sealed
+cells like `(0, 0, level)`.
+
+However, placing fixtures in the main connected component fundamentally altered the bot
+dynamics, bot pacing, and match balance across all four modes. Measured against `main`:
+
+- **Deep Stack**: 855 beats `RogueVictory` -> 23 beats `LoyalVictory` (under all three
+  policies: `Restorable`, `OneWay`, `AlwaysOn`). A 23-beat Deep Stack has the exact same
+  shape as backlog #43 (the Pocket walkover) — with accessible floor fixtures and
+  unblocked transit paths, Loyal bots sprint straight up the 5-story stack to the summit
+  exit in 23 beats without resistance.
+- **Full Ascent**: 261 beats `RogueVictory` -> 308 beats `RogueVictory` under `Restorable`,
+  but runs to the 1000-beat cap (`Running` stalemate) under `OneWay`.
+- **Quick Climb**: 163 beats `RogueVictory` -> 205 beats `RogueVictory` under `Restorable`,
+  146 beats `RogueVictory` under `OneWay`.
+
+Two degenerate outcomes emerge from the new layout baseline:
+1. **Full Ascent under AlwaysOn**: Resolves in a Loyal victory in just **8 beats** — a
+   complete walkover.
+2. **Quick Climb under AlwaysOn**: Runs to the **1000-beat cap** with outcome `Running`
+   (indefinite stall).
+
+Furthermore, **`OneWay` no longer reproduces `main`**:
+Full Ascent under `OneWay` now hits the 1000-beat stalemate cap, whereas on `main` it
+resolved in 261 beats as a Rogue victory. Because `OneWay` uses the exact same one-way
+power ratchet rule as `main`, this divergence confirms that the fixture reachability
+shift itself altered the layout and navigation landscape, leaving the harness without
+its historical baseline.
+
+Do not attempt to tune or patch the balance within `feat/power-restoration`; this entry
+records the rebalance so future balancing passes are not surprised by the shifted
+baselines.
+
 
 ## Minor / hygiene
 

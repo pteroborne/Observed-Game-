@@ -116,20 +116,49 @@ impl ArchitectLab {
             return (ObserverIntent::Step(next), trace);
         }
 
-        // Seek generator if floor is unpowered, not in immediate danger,
-        // and cannot currently reach the summit exit
         let summit = self.world.config.exit();
-        let can_reach_summit = self.route(observer.cell, summit).is_some();
+        let can_win_at_summit_now =
+            if observer.cell.level == summit.level && travel_distance(observer.cell, summit) <= 1 {
+                let others_not_at_summit = self.observers.values().any(|other| {
+                    other.id != id
+                        && other.team == observer.team
+                        && other.state == ObserverState::Active
+                        && other.cell != summit
+                });
+                !others_not_at_summit
+            } else {
+                false
+            };
+
+        // Seek generator if floor is unpowered, not in immediate danger,
+        // cannot win immediately at the summit, and generator path is unthreatened.
         let gen_step = if self.power_policy == PowerPolicy::Restorable
             && !self.economy.is_powered(observer.cell.level)
-            && !can_reach_summit
+            && !can_win_at_summit_now
         {
-            self.economy
-                .generators
-                .get(&observer.cell.level)
-                .copied()
-                .and_then(|generator_cell| self.route(observer.cell, generator_cell))
-                .and_then(|path| path.get(1).copied())
+            if let Some(generator_cell) = self.economy.generators.get(&observer.cell.level).copied()
+            {
+                if let Some(path) = self.route(observer.cell, generator_cell) {
+                    // Check if path or generator is threatened by Guardians or condemned cell
+                    let path_threatened = path.iter().any(|&c| {
+                        self.guardians
+                            .values()
+                            .any(|g| travel_distance(c, g.cell) <= 1)
+                            || self
+                                .condemned
+                                .is_some_and(|(condemned_cell, _)| condemned_cell == c)
+                    });
+                    if path_threatened {
+                        None
+                    } else {
+                        path.get(1).copied()
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         } else {
             None
         };
