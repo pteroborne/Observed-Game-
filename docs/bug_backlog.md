@@ -609,10 +609,31 @@ it — and this session already found two classes of green-but-meaningless resul
 whose assertions never execute, and soaks that assert only determinism). A flake is the
 third.
 
-**For whoever picks this up:** run `cargo test -p composition_studio --lib` in a loop
-until it fails and capture the full output, unfiltered, including the `failures:` block
-that names the test. Then look for the usual suspects — iteration order over a `HashMap`,
-a time or thread dependence, or a seed drawn from something ambient.
+**Resolved 2026-09-20, and it was never nondeterministic.** The test is
+`authoring_tests::clearing_pins_restores_a_baseline_profile`
+(`tools/composition_studio/src/authoring_tests.rs`). It began
+`let mut state = StudioState::default()`, and that constructor calls
+`load::startup_profile()` — it reads `assets/tiles/composition_profile.ron` **from disk**.
+So the test asserted a property of whichever profile the working tree happened to hold.
+
+While that file is the shipped baseline, painting pins moves it off baseline and clearing
+them restores it, and the test passes. The moment anyone authors a real profile — during
+this fix the working tree held `architect_ascent_rare_circulation`, eight lines different
+from `baseline` — the profile starts non-baseline, the first assertion passes for the
+wrong reason, and clearing *pins* cannot undo authored *biases*, so the second fails.
+
+That is the whole "one run in four": not a `HashMap` or a clock, but **tile authoring
+being in flight or not**. The three clean re-runs recorded above happened while the tree
+was in baseline state. Measured under an authored profile it failed 12 times out of 12.
+
+Fixed by constructing the profile the test needs instead of loading one it does not own,
+plus an assertion that it starts from baseline so the later ones cannot go vacuous again.
+6 of 6 runs pass with an authored profile on disk.
+
+**The lesson is the one this project keeps relearning:** look at what a failing test
+actually loads before reasoning about what changed. Same root as the day a merge was
+wrongly blamed for breaking `main` when the real cause was an in-progress corpus in the
+working tree.
 
 
 ### 42. The survivable fall cannot happen in `architect_lab`, so corruption is the only fall
