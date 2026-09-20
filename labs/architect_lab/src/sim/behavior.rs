@@ -116,9 +116,13 @@ impl ArchitectLab {
             return (ObserverIntent::Step(next), trace);
         }
 
-        // Seek generator if floor is unpowered and not in immediate danger
+        // Seek generator if floor is unpowered, not in immediate danger,
+        // and cannot currently reach the summit exit
+        let summit = self.world.config.exit();
+        let can_reach_summit = self.route(observer.cell, summit).is_some();
         let gen_step = if self.power_policy == PowerPolicy::Restorable
             && !self.economy.is_powered(observer.cell.level)
+            && !can_reach_summit
         {
             self.economy
                 .generators

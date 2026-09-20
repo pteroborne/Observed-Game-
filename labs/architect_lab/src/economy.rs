@@ -162,20 +162,33 @@ impl EconomyState {
                 components.push(comp);
             }
 
-            // Pick the component that connects to the facility spine (has observer or vertical transit)
-            // and has the largest walkable area.
+            // Pick the component that connects to the facility spine:
+            // 1. Prefer component containing a local Observer on this level
+            // 2. Prefer component containing vertical transit (ramps/elevators)
+            // 3. Prefer largest walkable area
+            let comp_has_local_observer = |comp: &[HexCoord]| -> bool {
+                comp.iter().any(|&c| {
+                    observers
+                        .values()
+                        .any(|o| o.cell.level == level && o.cell == c)
+                })
+            };
             let comp_has_transit = |comp: &[HexCoord]| -> bool {
                 comp.iter().any(|&c| {
-                    observers.values().any(|o| o.cell == c) || {
-                        let Some(p) = world.placements.get(&c) else {
-                            return false;
-                        };
-                        p.up != PortClass::Sealed || p.down != PortClass::Sealed
-                    }
+                    let Some(p) = world.placements.get(&c) else {
+                        return false;
+                    };
+                    p.up != PortClass::Sealed || p.down != PortClass::Sealed
                 })
             };
 
-            components.sort_by_key(|comp| (comp_has_transit(comp), comp.len()));
+            components.sort_by_key(|comp| {
+                (
+                    comp_has_local_observer(comp),
+                    comp_has_transit(comp),
+                    comp.len(),
+                )
+            });
             let mut best_comp = components.pop().unwrap_or_default();
             if best_comp.is_empty() {
                 best_comp = candidates.into_iter().collect();
