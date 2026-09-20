@@ -1,4 +1,4 @@
-# Curated WFC library: 331 active sources; 97 retired alternatives.
+# Curated WFC library: 332 active sources; 96 retired alternatives.
 # See docs/tile_curation.md. The forge keeps these editable for reference.
 # Exact source paths; tilec build excludes these from the shipped catalog.
 authored/hall_classroom_facet_monument.map
@@ -97,6 +97,3 @@ authored/liminal_grid_sanctuary_lateral_o1_l1.map
 authored/liminal_grid_sanctuary_lateral_o2_l1.map
 authored/liminal_grid_sanctuary_lateral_o3_l1.map
 authored/liminal_grid_sanctuary_up_o4_l1.map
-
-# Processional Ascent supersedes the generic gallery treatment.
-authored/hall_ramp_gallery.map

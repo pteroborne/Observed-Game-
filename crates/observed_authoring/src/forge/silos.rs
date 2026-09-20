@@ -16,8 +16,8 @@ use super::entities::{
     vertical_port, wall_fixture, worldspawn,
 };
 use super::geometry::{
-    DOOR_TOP, FLOOR_TOP, LEVEL, P2, corners, custom_plane, door_wall, door_wall_default, hex_slab,
-    prism, pylon, side_plane, sloped_prism, wall,
+    DOOR_TOP, FLOOR_TOP, LEVEL, P2, corners, door_wall, door_wall_default, hex_slab, prism, pylon,
+    sloped_prism, wall,
 };
 use super::{Builder, GENERATED_NOTE};
 
@@ -223,100 +223,29 @@ fn ramp_spine() -> String {
     out
 }
 
-/// A constant-thickness ribbon on the original climb plane. The seam heights
-/// and centreline remain identical to the solid wedge this replaces.
-fn ramp_ribbon(y0: f64, y1: f64, offset: f64, thickness: f64) -> String {
-    let plan = [
-        (RAMP_WEST, y0),
-        (RAMP_EAST, y0),
-        (RAMP_EAST, y1),
-        (RAMP_WEST, y1),
-    ];
-    let plane = |height: f64| {
-        [
-            (RAMP_WEST, y0, ramp_height(RAMP_WEST) + height),
-            (RAMP_WEST, y1, ramp_height(RAMP_WEST) + height),
-            (RAMP_EAST, y0, ramp_height(RAMP_EAST) + height),
-        ]
-    };
-    let mut brush = String::from("{\n");
-    for i in 0..4 {
-        brush.push_str(&side_plane(
-            plan[i],
-            plan[(i + 1) % 4],
-            0.0,
-            (0.0, (y0 + y1) * 0.5),
-        ));
-    }
-    let bottom = plane(offset - thickness);
-    let top = plane(offset);
-    brush.push_str(&custom_plane(bottom[0], bottom[1], bottom[2], false));
-    brush.push_str(&custom_plane(top[0], top[1], top[2], true));
-    brush.push_str("}\n");
-    brush
-}
-
-/// Processional Ascent: a supported blade between two light wells, passing
-/// through three rising portals. One deliberate ascent, not a room-sized wedge.
+/// A ground-supported two-level ramp: enter west, exit east one level up.
 #[must_use]
 pub fn hall_ramp() -> String {
     let top = 2.0 * LEVEL;
-    let mut brushes = String::from("// Processional Ascent: grounded light-well basin\n");
+    let mut brushes = String::from("// Ground slab below the supported full-level ramp\n");
     brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 2.0, 0.0));
-    // Five-metre walk, half-metre slab. Low cheeks prevent accidental drops;
-    // they stand outside both the 4.5 m seam aperture and the controller lane.
-    brushes.push_str("// Thin flight on four grounded piers\n");
-    brushes.push_str(&ramp_ribbon(-40.0, 40.0, 0.0, FLOOR_TOP));
-    // The first pier begins after the bottom sill; no support enters the cell below.
-    let plane = |offset: f64| {
+    brushes.push_str("// One solid ramp mass: west sill 0.5 m, east sill 8.5 m\n");
+    brushes.push_str(&sloped_prism(
+        &corners(),
+        0.0,
         [
-            (-64.0, -16.0, ramp_height(-64.0) + offset),
-            (-64.0, 16.0, ramp_height(-64.0) + offset),
-            (RAMP_EAST, -16.0, ramp_height(RAMP_EAST) + offset),
-        ]
-    };
-    for x in [-64.0, 0.0, 64.0, 104.0] {
-        let pier = [
-            (x - 6.0, -16.0),
-            (x + 6.0, -16.0),
-            (x + 6.0, 16.0),
-            (x - 6.0, 16.0),
-        ];
-        brushes.push_str(&sloped_prism(&pier, 0.0, plane(-FLOOR_TOP), None));
-    }
-    for (a, b) in [(-46.0, -40.0), (40.0, 46.0)] {
-        brushes.push_str(&ramp_ribbon(a, b, 18.0, FLOOR_TOP + 18.0));
-    }
-    let mut lights = String::new();
-    brushes.push_str("// Three grounded, chamfered portals rise with the route\n");
-    for x in [-64.0, 0.0, 64.0] {
-        let soffit = ramp_height(x) + 60.0;
-        for side in [-1.0, 1.0] {
-            let y = side * 59.0;
-            let pier = [
-                (x - 6.0, y - 5.0),
-                (x + 6.0, y - 5.0),
-                (x + 6.0, y + 5.0),
-                (x - 6.0, y + 5.0),
-            ];
-            brushes.push_str(&prism(&pier, FLOOR_TOP, soffit + 10.0, None, 3.0, 0.0));
-        }
-        let lintel = [
-            (x - 6.0, -64.0),
-            (x + 6.0, -64.0),
-            (x + 6.0, 64.0),
-            (x - 6.0, 64.0),
-        ];
-        brushes.push_str(&prism(&lintel, soffit, soffit + 12.0, None, 2.0, 4.0));
-        let (fixture, light) = ceiling_fixture(x, 0.0, soffit, 3.0, 28.0);
-        brushes.push_str(&fixture);
-        lights.push_str(&light);
-    }
+            (RAMP_WEST, -64.0, ramp_height(RAMP_WEST)),
+            (RAMP_WEST, 64.0, ramp_height(RAMP_WEST)),
+            (RAMP_EAST, -64.0, ramp_height(RAMP_EAST)),
+        ],
+        None,
+    ));
     brushes.push_str(&hex_slab(top - FLOOR_TOP, top, 0.0, 3.0));
     for face in 0..6 {
         if face == 3 {
             brushes.push_str(&door_wall_default(face, 0.0, top));
         } else if face == 0 {
+            // The east door sits a full level up, on the ramp's high sill.
             brushes.push_str(&door_wall(
                 face,
                 0.0,
@@ -330,14 +259,14 @@ pub fn hall_ramp() -> String {
             brushes.push_str(&wall(face, 0.0, top));
         }
     }
-    // Low practicals make the two basins readable below the raised flight.
-    for (face, along) in [(2, 0.72), (5, 0.28)] {
-        let (fixture, source) = wall_fixture(face, along, 32.0, 20.0);
+    let mut lights = String::new();
+    for (face, along, z) in [(2, 0.72, 88.0), (5, 0.28, 184.0)] {
+        let (fixture, source) = wall_fixture(face, along, z, 20.0);
         brushes.push_str(&fixture);
         lights.push_str(&source);
     }
     let mut out =
-        String::from("// Processional Ascent: a supported blade framed by rising light portals.\n");
+        String::from("// Ground-supported two-level ramp: enter west, exit east one level up.\n");
     out.push_str(GENERATED_NOTE);
     out.push_str(&worldspawn(&brushes));
     out.push_str(
