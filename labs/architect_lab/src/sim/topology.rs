@@ -583,3 +583,50 @@ mod component_shape {
         }
     }
 }
+
+#[cfg(test)]
+mod sever_ceiling {
+    use super::*;
+    use crate::sim::{ArchitectLab, ArchitectMode, MatchOutcome};
+
+    /// How far does the facility actually fragment, when Sever is not ending the match?
+    ///
+    /// A threshold cannot be chosen from a run that stops the moment the threshold is met:
+    /// every mode then reports exactly N and the ceiling stays invisible. This runs each
+    /// mode with Sever disabled and records the whole trajectory.
+    #[test]
+    fn meaningful_component_ceiling_with_sever_disabled() {
+        println!("\n============== SEVER CEILING (objective off) ==============");
+        for mode in ArchitectMode::ALL {
+            let mut lab = ArchitectLab::for_mode(mode).expect("scenario boots");
+            lab.bot_architect = true;
+            lab.sever_threshold = 0;
+
+            let mut max_meaningful = 0usize;
+            let mut first_reaching: BTreeMap<usize, u64> = BTreeMap::new();
+            let mut beat = 0u64;
+            while beat < 1000 && lab.outcome == MatchOutcome::Running {
+                lab.step_beat();
+                beat += 1;
+                let n = lab.meaningful_component_count();
+                if n > max_meaningful {
+                    for threshold in (max_meaningful + 1)..=n {
+                        first_reaching.entry(threshold).or_insert(beat);
+                    }
+                    max_meaningful = n;
+                }
+            }
+            println!(
+                "{:>12}: {beat} beats, outcome {:?}, max meaningful components {max_meaningful}",
+                mode.short_label(),
+                lab.outcome
+            );
+            let milestones: Vec<String> = [2usize, 4, 6, 8, 10, 12, 16, 20]
+                .into_iter()
+                .filter_map(|t| first_reaching.get(&t).map(|b| format!("N={t} at beat {b}")))
+                .collect();
+            println!("              first reached: {}", milestones.join(", "));
+        }
+        println!("===========================================================\n");
+    }
+}
