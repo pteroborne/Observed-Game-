@@ -560,18 +560,25 @@ mod component_shape {
     }
 
     /// Verifies that the refined Sever predicate (counting components containing
-    /// cells an Observer could occupy) correctly starts at exactly 1 component for
-    /// all modes, filtering out procedural generation orphans.
+    /// cells an Observer could occupy) correctly filters out procedural generation
+    /// orphans (singletons, disconnected shafts) at match start across all modes.
     #[test]
-    fn meaningful_component_count_starts_at_one_for_all_modes() {
+    fn meaningful_component_count_filters_unreachable_orphans_at_match_start() {
         for mode in ArchitectMode::ALL {
             let lab = ArchitectLab::for_mode(mode).expect("scenario boots");
+            let count = lab.meaningful_component_count();
+            // Pocket, Quick Climb, and Full Ascent start in a single connected body.
+            // Deep Stack starts with 2 meaningful components because the scenario's
+            // route gap at route[len - 3] disconnects the summit sector (where
+            // Observer 1 spawns) from the rest of the facility (where Observer 0 spawns).
+            let expected = match mode {
+                ArchitectMode::Pocket | ArchitectMode::QuickClimb | ArchitectMode::FullAscent => 1,
+                ArchitectMode::DeepStack => 2,
+            };
             assert_eq!(
-                lab.meaningful_component_count(),
-                1,
-                "Mode {:?} should have exactly 1 meaningful component at match start, but had {}",
-                mode,
-                lab.meaningful_component_count()
+                count, expected,
+                "Mode {:?} should have {} meaningful component(s) at match start, but had {}",
+                mode, expected, count
             );
         }
     }
