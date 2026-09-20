@@ -589,6 +589,25 @@ mod sever_ceiling {
     use super::*;
     use crate::sim::{ArchitectLab, ArchitectMode, MatchOutcome};
 
+    #[test]
+    fn sever_threshold_scales_proportionally_with_occupiable_cells() {
+        let pocket = ArchitectLab::for_mode(ArchitectMode::Pocket).unwrap();
+        assert_eq!(pocket.initial_occupiable.len(), 8);
+        assert_eq!(pocket.sever_threshold, 2);
+
+        let quick = ArchitectLab::for_mode(ArchitectMode::QuickClimb).unwrap();
+        assert_eq!(quick.initial_occupiable.len(), 60);
+        assert_eq!(quick.sever_threshold, 7);
+
+        let full = ArchitectLab::for_mode(ArchitectMode::FullAscent).unwrap();
+        assert_eq!(full.initial_occupiable.len(), 108);
+        assert_eq!(full.sever_threshold, 12);
+
+        let deep = ArchitectLab::for_mode(ArchitectMode::DeepStack).unwrap();
+        assert_eq!(deep.initial_occupiable.len(), 157);
+        assert_eq!(deep.sever_threshold, 18);
+    }
+
     /// How far does the facility actually fragment, when Sever is not ending the match?
     ///
     /// A threshold cannot be chosen from a run that stops the moment the threshold is met:

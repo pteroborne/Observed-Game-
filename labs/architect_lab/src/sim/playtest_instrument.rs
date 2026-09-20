@@ -179,7 +179,7 @@ pub fn raw_next_retraction(lab: &ArchitectLab) -> Option<HexCoord> {
 pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
     let mut sim = ArchitectLab::for_mode(mode).expect("scenario boots");
     sim.bot_architect = true;
-    sim.sever_threshold = ArchitectLab::DEFAULT_SEVER_THRESHOLD;
+    sim.sever_threshold = ArchitectLab::default_sever_threshold(sim.initial_occupiable.len());
 
     let mut stats = ModeRunStats {
         mode: mode.short_label(),

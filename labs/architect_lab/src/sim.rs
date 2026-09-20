@@ -167,6 +167,7 @@ impl ArchitectLab {
     ///
     /// Predicate & Threshold Selection Rationale:
     /// 1. Predicate Choice:
+    /// 1. Sever Predicate Choice:
     ///    - Candidate 1 (minimum component cell count `size >= M`) is deeply flawed:
     ///      in Deep Stack, procedural generation produces an unreachable 3-cell vertical
     ///      shaft and a 4-cell dead room at beat 0, so any M <= 4 starts with 3 components
@@ -175,21 +176,46 @@ impl ArchitectLab {
     ///    - Candidate 2 ("components containing at least one cell an Observer could occupy")
     ///      elegantly filters out unreachable generation orphans (the 8 singletons in Pocket,
     ///      5 in Quick Climb, 3 in Full Ascent, and 5 singletons + shaft + room in Deep Stack).
-    ///      All four modes start at EXACTLY 1 meaningful component at match start.
-    /// 2. Threshold N Choice:
-    ///    - In Pocket (1 floor, 8 route cells), Observers reach the summit by beat 3; the
-    ///      facility never splits (max meaningful components = 1). Sever never fires.
-    ///    - In multi-floor modes (Quick Climb, Full Ascent, Deep Stack), scenario route
-    ///      damage gaps (2, 3, 5 gaps) and early floor-0 generator power de-energization
-    ///      sever inter-floor vertical connections, immediately creating 5-6 components on beat 1.
-    ///      Any threshold N <= 6 produces an instant, degenerate Rogue victory on beat 1.
-    ///    - At N = 10, Quick Climb requires sustained architectural destruction (30+ retractions
-    ///      and door cuts) before triggering at beat 71, resolving prolonged stalemates before
-    ///      the beat-163 double-jail. Full Ascent reaches 10 at beat 6, and Deep Stack at beat 11.
+    ///      All four modes start with only active, traversable Observer sectors.
     ///
-    ///    Therefore, N = 10 measures genuine multi-sector facility collapse rather than early
-    ///    power-toggle artifacts.
+    /// 2. Relative Threshold Scaling (Candidate a vs Candidate b):
+    ///    - An absolute count N fails across modes: larger facilities fragment into more
+    ///      components simply by having more cells. In unsevered play (sever_threshold = 0),
+    ///      Quick Climb peaks at 10 components, Full Ascent at 13, and Deep Stack at 23.
+    ///      Any absolute N <= 6 triggers on beat 1 (degenerate), while N >= 11 never fires in
+    ///      Quick Climb; within the N=7..10 window, Full Ascent ends at beat 6 and Deep Stack
+    ///      at beat 11 (out of 261 and 855 unsevered beats).
+    ///    - Candidate b (largest surviving component as fraction of initial occupiable) fails
+    ///      because it conflates vertical floor count with fragmentation: in Deep Stack (5 floors,
+    ///      157 occupiable cells), losing Floor 0 power on beat 1 decouples Floor 0 and leaves
+    ///      the largest intact cluster (Floors 1+2, 67 cells) at 42.7% of the building. In Full
+    ///      Ascent (3 floors, 108 cells), Floor 1 alone has 47 cells (43.5%), and the largest
+    ///      component never drops below 43.5% across the entire 261 beats. Thus any threshold
+    ///      X >= 43% causes Deep Stack to fire on beat 1, while X <= 43% never fires in Full Ascent.
+    ///    - Candidate a (component count as a fraction of initial occupiable cell count) scales
+    ///      consistently across all modes. At 11% (`ceil(0.11 * initial_occupiable.len()).max(2)`):
+    ///      * Quick Climb (60 cells): threshold is 7 components. Beat 1 is 6 components; fires at beat 10.
+    ///      * Full Ascent (108 cells): threshold is 12 components. Beat 1 is 6; fires at beat 28 (of 261).
+    ///      * Deep Stack (157 cells): threshold is 18 components. Beat 1 is 9; fires at beat 37 (of 855).
+    ///
+    /// 3. Note on Pocket (Unreachable by Construction):
+    ///    In Pocket (1 floor, 8 occupiable cells), the facility consists of a single 8-cell corridor.
+    ///    The facility never fragments, and meaningful component count remains at 1 throughout
+    ///    the entire 3-beat match. With threshold = max(2, ceil(8 * 0.11)) = 2, Sever is
+    ///    strictly UNREACHABLE BY CONSTRUCTION in Pocket. Observers always win via summit quorum.
+    pub const DEFAULT_SEVER_PERCENT: usize = 11;
     pub const DEFAULT_SEVER_THRESHOLD: usize = 10;
+
+    #[must_use]
+    pub fn default_sever_threshold(initial_occupiable_count: usize) -> usize {
+        if initial_occupiable_count == 0 {
+            0
+        } else {
+            (initial_occupiable_count * Self::DEFAULT_SEVER_PERCENT)
+                .div_ceil(100)
+                .max(2)
+        }
+    }
 
     pub fn new(seed: u64) -> Result<Self, HexWfcError> {
         Self::generate_with_team_size(
@@ -395,6 +421,7 @@ impl ArchitectLab {
             .flat_map(|o| lab.reachable_from(o.cell))
             .collect();
         lab.initial_occupiable = initial_occupiable;
+        lab.sever_threshold = Self::default_sever_threshold(lab.initial_occupiable.len());
         Ok(lab)
     }
 
