@@ -1683,7 +1683,7 @@ mod tests {
             let mut camera = crate::view::MapCameraState::default();
             camera.zoom = 2.5;
             camera.reset_for_mode(ArchitectMode::Pocket);
-            assert!((camera.zoom - 0.62).abs() < f32::EPSILON);
+            assert!((camera.zoom - crate::view::DEFAULT_ZOOM).abs() < f32::EPSILON);
         }
 
         // Reset Path 3: web.rs (RogueGame::reset)
