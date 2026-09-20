@@ -94,9 +94,11 @@ pub struct ModeRunStats {
     pub observer_final_positions: BTreeMap<ObserverId, HexCoord>,
 
     // Topology & Sever
-    pub max_components: usize,
-    pub final_components: usize,
-    pub beats_components_above_one: u64,
+    pub max_meaningful_components: usize,
+    pub final_meaningful_components: usize,
+    pub beats_meaningful_above_one: u64,
+    pub max_raw_components: usize,
+    pub final_raw_components: usize,
     pub sever_completed: bool,
     pub sever_beat: Option<u64>,
     pub topology_rebuild_count: u64,
@@ -141,9 +143,11 @@ impl Default for ModeRunStats {
             architect_intents: BTreeMap::new(),
             observer_final_states: BTreeMap::new(),
             observer_final_positions: BTreeMap::new(),
-            max_components: 0,
-            final_components: 0,
-            beats_components_above_one: 0,
+            max_meaningful_components: 0,
+            final_meaningful_components: 0,
+            beats_meaningful_above_one: 0,
+            max_raw_components: 0,
+            final_raw_components: 0,
             sever_completed: false,
             sever_beat: None,
             topology_rebuild_count: 0,
@@ -175,6 +179,7 @@ pub fn raw_next_retraction(lab: &ArchitectLab) -> Option<HexCoord> {
 pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
     let mut sim = ArchitectLab::for_mode(mode).expect("scenario boots");
     sim.bot_architect = true;
+    sim.sever_threshold = ArchitectLab::DEFAULT_SEVER_THRESHOLD;
 
     let mut stats = ModeRunStats {
         mode: mode.short_label(),
@@ -334,13 +339,19 @@ pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
         stats.total_beats = beat + 1;
         stats.final_tick = sim.tick;
 
-        let comp_count = sim.component_count();
-        if comp_count > stats.max_components {
-            stats.max_components = comp_count;
+        let comp_count = sim.meaningful_component_count();
+        if comp_count > stats.max_meaningful_components {
+            stats.max_meaningful_components = comp_count;
         }
         if comp_count > 1 {
-            stats.beats_components_above_one += 1;
+            stats.beats_meaningful_above_one += 1;
         }
+
+        let raw_comp_count = sim.component_count();
+        if raw_comp_count > stats.max_raw_components {
+            stats.max_raw_components = raw_comp_count;
+        }
+
         if sim.sever_tick.is_some() && stats.sever_beat.is_none() {
             stats.sever_completed = true;
             stats.sever_beat = Some(beat + 1);
@@ -471,7 +482,8 @@ pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
         stats.observer_final_positions.insert(id, o.cell);
     }
 
-    stats.final_components = sim.component_count();
+    stats.final_meaningful_components = sim.meaningful_component_count();
+    stats.final_raw_components = sim.component_count();
     stats.topology_rebuild_count = sim.topology.rebuild_count;
     stats.topology_cells_touched = sim.topology.cells_touched;
 
@@ -545,8 +557,11 @@ fn playtest_instrument_runs_all_modes() {
         println!("  Observer intents: {:?}", stats.observer_intents);
         println!("  Architect intents: {:?}", stats.architect_intents);
         println!(
-            "  Topology: max components={}, final components={}, beats above 1={}",
-            stats.max_components, stats.final_components, stats.beats_components_above_one
+            "  Topology: max meaningful components={} (raw max={}), final meaningful={}, beats above 1={}",
+            stats.max_meaningful_components,
+            stats.max_raw_components,
+            stats.final_meaningful_components,
+            stats.beats_meaningful_above_one
         );
         println!(
             "  Sever: completed={}, beat={:?}",

@@ -151,12 +151,45 @@ pub struct ArchitectLab {
     pub economy: EconomyState,
     pub requisition: crate::requisition::RequisitionState,
     pub topology: crate::sim::topology::FacilityTopology,
+    pub initial_occupiable: BTreeSet<HexCoord>,
     pub sever_threshold: usize,
     pub sever_tick: Option<u64>,
 }
 
 impl ArchitectLab {
     pub const DEFAULT_LOYAL_TEAM_SIZE: usize = 2;
+
+    /// Default component threshold for Objective O8 (Sever).
+    ///
+    /// The Rogue wins if the facility is partitioned into N or more meaningful
+    /// disjoint components — i.e., components containing at least one cell an Observer
+    /// could occupy (originating from the initial traversable facility).
+    ///
+    /// Predicate & Threshold Selection Rationale:
+    /// 1. Predicate Choice:
+    ///    - Candidate 1 (minimum component cell count `size >= M`) is deeply flawed:
+    ///      in Deep Stack, procedural generation produces an unreachable 3-cell vertical
+    ///      shaft and a 4-cell dead room at beat 0, so any M <= 4 starts with 3 components
+    ///      before any action is taken; conversely, any M >= 5 fails on Pocket where the
+    ///      entire facility is only 8 cells.
+    ///    - Candidate 2 ("components containing at least one cell an Observer could occupy")
+    ///      elegantly filters out unreachable generation orphans (the 8 singletons in Pocket,
+    ///      5 in Quick Climb, 3 in Full Ascent, and 5 singletons + shaft + room in Deep Stack).
+    ///      All four modes start at EXACTLY 1 meaningful component at match start.
+    /// 2. Threshold N Choice:
+    ///    - In Pocket (1 floor, 8 route cells), Observers reach the summit by beat 3; the
+    ///      facility never splits (max meaningful components = 1). Sever never fires.
+    ///    - In multi-floor modes (Quick Climb, Full Ascent, Deep Stack), scenario route
+    ///      damage gaps (2, 3, 5 gaps) and early floor-0 generator power de-energization
+    ///      sever inter-floor vertical connections, immediately creating 5-6 components on beat 1.
+    ///      Any threshold N <= 6 produces an instant, degenerate Rogue victory on beat 1.
+    ///    - At N = 10, Quick Climb requires sustained architectural destruction (30+ retractions
+    ///      and door cuts) before triggering at beat 71, resolving prolonged stalemates before
+    ///      the beat-163 double-jail. Full Ascent reaches 10 at beat 6, and Deep Stack at beat 11.
+    ///
+    ///    Therefore, N = 10 measures genuine multi-sector facility collapse rather than early
+    ///    power-toggle artifacts.
+    pub const DEFAULT_SEVER_THRESHOLD: usize = 10;
 
     pub fn new(seed: u64) -> Result<Self, HexWfcError> {
         Self::generate_with_team_size(
@@ -299,7 +332,8 @@ impl ArchitectLab {
             economy,
             requisition: crate::requisition::RequisitionState::new(seed),
             topology: crate::sim::topology::FacilityTopology::default(),
-            sever_threshold: 0,
+            initial_occupiable: BTreeSet::new(),
+            sever_threshold: Self::DEFAULT_SEVER_THRESHOLD,
             sever_tick: None,
         };
         lab.refresh_observation();
@@ -355,6 +389,12 @@ impl ArchitectLab {
         }
         lab.refresh_observation();
         lab.sync_topology();
+        let initial_occupiable: BTreeSet<HexCoord> = lab
+            .observers
+            .values()
+            .flat_map(|o| lab.reachable_from(o.cell))
+            .collect();
+        lab.initial_occupiable = initial_occupiable;
         Ok(lab)
     }
 
@@ -648,8 +688,9 @@ impl ArchitectLab {
         }
 
         // 3. Sever victory (O8):
-        // Rogue wins if the facility has been partitioned into N or more disjoint components.
-        if self.sever_threshold > 0 && self.component_count() >= self.sever_threshold {
+        // Rogue wins if the facility has been partitioned into N or more meaningful
+        // disjoint components (components containing cells an Observer could occupy).
+        if self.sever_threshold > 0 && self.meaningful_component_count() >= self.sever_threshold {
             self.sever_tick = Some(self.tick);
             self.outcome = MatchOutcome::RogueVictory;
             self.record_event(
@@ -1063,6 +1104,21 @@ impl ArchitectLab {
     #[must_use]
     pub fn reachable_from(&self, cell: HexCoord) -> BTreeSet<HexCoord> {
         self.topology.reachable_from(cell)
+    }
+
+    /// Sizes (cell counts) of all disjoint components in the passable facility graph.
+    #[must_use]
+    pub fn component_sizes(&self) -> Vec<usize> {
+        self.topology.component_sizes()
+    }
+
+    /// Number of meaningful facility components containing at least one cell
+    /// an Observer could occupy (originating from the initial traversable facility).
+    /// Filters out unreachable procedural generation orphans.
+    #[must_use]
+    pub fn meaningful_component_count(&self) -> usize {
+        self.topology
+            .meaningful_component_count(&self.initial_occupiable)
     }
 }
 

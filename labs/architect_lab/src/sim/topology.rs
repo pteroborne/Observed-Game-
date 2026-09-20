@@ -231,6 +231,25 @@ impl FacilityTopology {
             .cloned()
             .unwrap_or_default()
     }
+
+    /// Returns the sizes (cell counts) of all disjoint components.
+    #[must_use]
+    pub fn component_sizes(&self) -> Vec<usize> {
+        self.component_cells.values().map(|c| c.len()).collect()
+    }
+
+    /// Number of disjoint components containing at least one cell from the
+    /// given set of occupiable cells.
+    ///
+    /// This filters out unreachable generation orphans (sealed elevator shafts,
+    /// dead rooms, disconnected singletons) which were never reachable by Observers.
+    #[must_use]
+    pub fn meaningful_component_count(&self, occupiable_cells: &BTreeSet<HexCoord>) -> usize {
+        self.component_cells
+            .values()
+            .filter(|cells| cells.iter().any(|c| occupiable_cells.contains(c)))
+            .count()
+    }
 }
 
 #[cfg(test)]
@@ -441,7 +460,8 @@ mod tests {
     #[test]
     fn sever_objective_triggers_when_threshold_reached() {
         let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).unwrap();
-        let initial_components = lab.component_count();
+        let initial_components = lab.meaningful_component_count();
+        assert_eq!(initial_components, 1);
 
         // Sever is disabled when sever_threshold == 0
         lab.sever_threshold = 0;
@@ -473,15 +493,15 @@ mod tests {
         // Closing the door splits the connected component
         assert!(lab.operate_door(key, DoorState::Closed));
         lab.sync_topology();
-        let split_count = lab.component_count();
-        assert!(split_count > initial_components);
+        let split_count = lab.meaningful_component_count();
+        assert_eq!(split_count, 2);
 
         // Reopen door
         assert!(lab.operate_door(key, DoorState::Open));
         lab.sync_topology();
-        assert_eq!(lab.component_count(), initial_components);
+        assert_eq!(lab.meaningful_component_count(), initial_components);
 
-        // Configure sever_threshold to split_count
+        // Configure sever_threshold to split_count (2)
         lab.sever_threshold = split_count;
 
         // Close the door: on next beat (beat 1), Sever triggers!
@@ -537,5 +557,22 @@ mod component_shape {
             println!("              sizes (cells -> how many components): {histogram:?}");
         }
         println!("=============================================\n");
+    }
+
+    /// Verifies that the refined Sever predicate (counting components containing
+    /// cells an Observer could occupy) correctly starts at exactly 1 component for
+    /// all modes, filtering out procedural generation orphans.
+    #[test]
+    fn meaningful_component_count_starts_at_one_for_all_modes() {
+        for mode in ArchitectMode::ALL {
+            let lab = ArchitectLab::for_mode(mode).expect("scenario boots");
+            assert_eq!(
+                lab.meaningful_component_count(),
+                1,
+                "Mode {:?} should have exactly 1 meaningful component at match start, but had {}",
+                mode,
+                lab.meaningful_component_count()
+            );
+        }
     }
 }
