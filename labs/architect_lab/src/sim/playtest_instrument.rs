@@ -774,3 +774,70 @@ fn why_the_facility_is_dark() {
     }
     println!("============================================================\n");
 }
+
+/// What is at the grid origin, and why can nobody reach it?
+///
+/// Every mode's level-0 generator lands on `(0, 0, 0)` with zero exits, because
+/// `EconomyState::new` takes the lowest-sorted non-Void placement and that coordinate
+/// sorts first whenever it exists. This looks at the cell itself, its in-bounds
+/// neighbours, and the ports between them, to find out whether the origin is sealed by
+/// something systematic or is merely the first of a class of sealed cells.
+#[test]
+fn what_is_at_the_grid_origin() {
+    use observed_facility::hex_wfc::HexSpace;
+    println!("\n============== ORIGIN AND ITS NEIGHBOURS ==============");
+    for mode in ArchitectMode::ALL {
+        let lab = ArchitectLab::for_mode(mode).expect("scenario boots");
+        let cfg = lab.world.config;
+        println!(
+            "\n{} ({}x{}, {} levels), exit at {:?}:",
+            mode.short_label(),
+            cfg.cols,
+            cfg.rows,
+            cfg.levels,
+            cfg.exit()
+        );
+
+        // Every orphan, not only the origin: a class is more informative than a case.
+        let mut orphans: Vec<HexCoord> = Vec::new();
+        for (&cell, placement) in &lab.world.placements {
+            if placement.space != HexSpace::Void && lab.exits(cell).is_empty() {
+                orphans.push(cell);
+            }
+        }
+        println!("  cells with zero exits: {orphans:?}");
+
+        let origin = HexCoord {
+            q: 0,
+            r: 0,
+            level: 0,
+        };
+        match lab.world.placements.get(&origin) {
+            None => println!("  origin has no placement at all"),
+            Some(p) => {
+                println!(
+                    "  origin: space {:?}, doors {:#08b}, up {:?}, down {:?}",
+                    p.space,
+                    p.doors,
+                    p.ports().port(HexFace::Up),
+                    p.ports().port(HexFace::Down)
+                );
+                for face in HexFace::LATERAL {
+                    let mine = p.is_open(face);
+                    let Some(neighbour) = lab.world.config.grid().neighbor(origin, face) else {
+                        println!("    {face:?}: mine open={mine}, off-grid");
+                        continue;
+                    };
+                    let theirs = lab.world.placements.get(&neighbour).map(|n| {
+                        format!("{:?} open={}", n.space, n.is_open(face.opposite()))
+                    });
+                    println!(
+                        "    {face:?}: mine open={mine}, neighbour {neighbour:?} -> {}",
+                        theirs.unwrap_or_else(|| "no placement".to_string())
+                    );
+                }
+            }
+        }
+    }
+    println!("=======================================================\n");
+}
