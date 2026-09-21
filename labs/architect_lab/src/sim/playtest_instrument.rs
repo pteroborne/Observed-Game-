@@ -1179,6 +1179,18 @@ fn cooldown_against_waves() {
             sim.bot_architect = true;
             sim.rogue_economy = economy;
 
+            // Model what a player does: hold the match, lay the free opening, then begin.
+            // Without this the Rogue is silent until the first wave commits at beat 30,
+            // and three of four modes are over before then -- the measurement said waves
+            // lose every short match when what it was really measuring was an opening
+            // nobody had played.
+            sim.planning = true;
+            for _ in 0..HAND_SIZE {
+                sim.step_beat();
+            }
+            sim.planning = false;
+            let opening = sim.command_log.len();
+
             let mut beats = 0u64;
             let mut peak_queue = 0usize;
             while beats < 1000 && sim.outcome == MatchOutcome::Running {
@@ -1188,7 +1200,7 @@ fn cooldown_against_waves() {
             }
 
             println!(
-                "{:>12} | {:<8}: {beats} beats, {:?}, {} cards played, {} waves, peak queue {peak_queue}, {} dropped overall",
+                "{:>12} | {:<8}: {beats} beats, {:?}, {} cards played ({opening} in the opening), {} waves, peak queue {peak_queue}, {} dropped overall",
                 mode.short_label(),
                 economy.label(),
                 sim.outcome,

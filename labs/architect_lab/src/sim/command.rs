@@ -31,6 +31,7 @@ pub enum CommandRefusal {
     MatchFinished,
     Cooldown,
     CardNotInHand,
+    AlreadyQueued,
     UnknownTarget,
     VoidTarget,
     CollapsedFloor,
@@ -52,6 +53,7 @@ impl CommandRefusal {
             Self::MatchFinished => "the match has ended",
             Self::Cooldown => "Architect cooldown is active",
             Self::CardNotInHand => "that card is not in hand",
+            Self::AlreadyQueued => "that card is already committed to the coming wave",
             Self::UnknownTarget => "the Rogue AI has not mapped that cell",
             Self::CollapsedFloor => "this floor has permanently collapsed",
             Self::NoChange => {

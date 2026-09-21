@@ -498,6 +498,20 @@ impl ArchitectLab {
                 target,
                 rotation,
             } => {
+                // A queued card is spent as far as the plan is concerned. Without this the
+                // board does not move during the window, so anything choosing a move
+                // re-picks the same best one every beat and the commit throws all but the
+                // first away -- measured at 153 of 158 drops. It also makes the hand mean
+                // what it should: a wave is at most a hand.
+                if self.rogue_economy == RogueEconomy::Waves
+                    && self
+                        .wave
+                        .pending
+                        .iter()
+                        .any(|queued| matches!(queued, ArchitectCommand::Play { card: c, .. } if *c == card))
+                {
+                    return Some(CommandRefusal::AlreadyQueued);
+                }
                 // A held match never ticks, so the cooldown never drains. The setup
                 // allowance is what makes planning a phase rather than a single move.
                 //
@@ -511,7 +525,21 @@ impl ArchitectLab {
                 }
                 (card, target, rotation)
             }
-            ArchitectCommand::Requisition => return None,
+            ArchitectCommand::Requisition => {
+                // A wave holds each command once. Requisition carries no card, so without
+                // this it is the one thing that can be queued every beat of the window --
+                // measured at 25 of a 29-command wave, which is not a plan, it is a stutter.
+                if self.rogue_economy == RogueEconomy::Waves
+                    && self
+                        .wave
+                        .pending
+                        .iter()
+                        .any(|queued| matches!(queued, ArchitectCommand::Requisition))
+                {
+                    return Some(CommandRefusal::AlreadyQueued);
+                }
+                return None;
+            }
         };
         let Some(card) = self.deck.hand.iter().find(|held| held.id == card).copied() else {
             return Some(CommandRefusal::CardNotInHand);
@@ -616,10 +644,14 @@ impl ArchitectLab {
         if let Some(refusal) = self.refusal(command) {
             return Err(refusal);
         }
-        if self.rogue_economy == RogueEconomy::Waves {
+        if self.rogue_economy == RogueEconomy::Waves && !self.has_setup_allowance() {
             self.wave.pending.push(command);
             return Ok(());
         }
+        // The free opening lands as it is laid. Setting the trap before the hunt starts is
+        // the Rogue's first wave, and making it wait thirty seconds for its own setup
+        // handed the opening window to the Observers -- measured, three of four modes
+        // ended before the first wave ever committed.
         self.apply_command(command)
     }
 
