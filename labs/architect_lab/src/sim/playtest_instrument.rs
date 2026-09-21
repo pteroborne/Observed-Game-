@@ -1162,3 +1162,47 @@ fn how_much_of_the_hand_is_playable() {
     }
     println!("===========================================================\n");
 }
+
+/// Cooldown against Waves, same seeds, same scenarios.
+///
+/// The Rogue inherited the loyal Architect's five-second-per-card economy for no better
+/// reason than that it was there. Under `Waves` it composes over a thirty-second window
+/// and the whole plan lands at once. This runs both so the difference is a number rather
+/// than a hope.
+#[ignore = "~1 minute economy comparison over eight matches. cargo dev-test-all"]
+#[test]
+fn cooldown_against_waves() {
+    println!("\n============== ROGUE ECONOMY: COOLDOWN vs WAVES ==============");
+    for mode in ArchitectMode::ALL {
+        for economy in RogueEconomy::ALL {
+            let mut sim = ArchitectLab::for_mode(mode).expect("scenario boots");
+            sim.bot_architect = true;
+            sim.rogue_economy = economy;
+
+            let mut beats = 0u64;
+            let mut peak_queue = 0usize;
+            while beats < 1000 && sim.outcome == MatchOutcome::Running {
+                sim.step_beat();
+                beats += 1;
+                peak_queue = peak_queue.max(sim.wave.pending.len());
+            }
+
+            println!(
+                "{:>12} | {:<8}: {beats} beats, {:?}, {} cards played, {} waves, peak queue {peak_queue}, {} dropped overall",
+                mode.short_label(),
+                economy.label(),
+                sim.outcome,
+                sim.command_log.len(),
+                sim.wave.waves,
+                sim.wave.total_dropped,
+            );
+            if !sim.wave.drop_reasons.is_empty() {
+                println!(
+                    "                           dropped: {:?}",
+                    sim.wave.drop_reasons
+                );
+            }
+        }
+    }
+    println!("==============================================================\n");
+}

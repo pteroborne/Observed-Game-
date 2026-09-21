@@ -44,6 +44,39 @@ impl RogueGame {
         Ok(())
     }
 
+    pub fn set_rogue_economy(&mut self, economy: &str) -> Result<(), String> {
+        self.sim.rogue_economy = match economy.to_lowercase().as_str() {
+            "cooldown" => crate::sim::RogueEconomy::Cooldown,
+            "waves" => crate::sim::RogueEconomy::Waves,
+            _ => return Err(format!("unknown rogue economy: {economy}")),
+        };
+        Ok(())
+    }
+
+    pub fn rogue_economy(&self) -> String {
+        self.sim.rogue_economy.label().to_string()
+    }
+
+    /// Placements queued for the next wave, and ticks until it lands. Zero interval or a
+    /// cooldown economy reports no wave.
+    pub fn pending_wave(&self) -> String {
+        let interval = u64::from(self.sim.wave_interval_ticks);
+        let until = if self.sim.rogue_economy == crate::sim::RogueEconomy::Waves && interval > 0 {
+            interval - (self.sim.tick % interval)
+        } else {
+            0
+        };
+        json!({
+            "queued": self.sim.wave.pending.len(),
+            "ticks_until": until,
+            "waves": self.sim.wave.waves,
+            "last_committed": self.sim.wave.last_committed,
+            "last_dropped": self.sim.wave.last_drops.len(),
+            "telegraph": self.sim.wave_telegraph.label(),
+        })
+        .to_string()
+    }
+
     pub fn set_paused(&mut self, paused: bool) {
         self.paused = paused;
         // The simulation needs the pause to know whether a placement is free setup.
@@ -180,7 +213,8 @@ impl RogueGame {
             .observers
             .values()
             .filter(|observer| {
-                observer.state == ObserverState::Jailed
+                sim.rogue_sees_all_observers
+                    || observer.state == ObserverState::Jailed
                     || observer.state == ObserverState::Corrupted
                     || detected.contains(&observer.id)
             })

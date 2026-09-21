@@ -21,6 +21,8 @@ mod mode;
 pub use mode::ArchitectMode;
 mod objective;
 pub use objective::{DARKNESS_BEATS, RogueObjective, StateHold};
+mod wave;
+pub use wave::{RogueEconomy, WAVE_INTERVAL_TICKS, WaveState, WaveTelegraph, WaveWarning};
 mod util;
 use util::{
     Prng, command_key, face_between, face_toward, key_face_from, lateral_face, threshold_touches,
@@ -219,6 +221,21 @@ pub struct ArchitectLab {
     /// of a clock that is not running. One hand's worth, once per match: enough to build
     /// an opening, not enough to author the facility for free.
     pub setup_placements_left: u32,
+    /// What the Rogue's turn costs: a per-card cooldown, or a composed wave.
+    pub rogue_economy: RogueEconomy,
+    /// How much warning the facility gives before a wave lands.
+    pub wave_telegraph: WaveTelegraph,
+    /// Ticks between wave commits.
+    pub wave_interval_ticks: u32,
+    /// The queued plan, and what became of the last one.
+    pub wave: WaveState,
+    /// The Rogue sees every Observer, detected or not.
+    ///
+    /// Default. The RAI is the building; the idea that it must *find* people inside
+    /// itself was the loyal side's constraint borrowed for no reason. Kept as a flag
+    /// rather than deleted so concealment can come back as a deliberate handicap once we
+    /// know what the game plays like without it.
+    pub rogue_sees_all_observers: bool,
 }
 
 impl ArchitectLab {
@@ -384,6 +401,11 @@ impl ArchitectLab {
             power_policy: PowerPolicy::default(),
             planning: false,
             setup_placements_left: HAND_SIZE as u32,
+            rogue_economy: RogueEconomy::default(),
+            wave_telegraph: WaveTelegraph::default(),
+            wave_interval_ticks: WAVE_INTERVAL_TICKS,
+            wave: WaveState::default(),
+            rogue_sees_all_observers: true,
         };
         lab.refresh_observation();
         // Damage a solved facility at separated lateral handoffs. These are
@@ -478,7 +500,13 @@ impl ArchitectLab {
             } => {
                 // A held match never ticks, so the cooldown never drains. The setup
                 // allowance is what makes planning a phase rather than a single move.
-                if self.cooldown > 0 && !self.has_setup_allowance() {
+                //
+                // Under `Waves` the cooldown is not the economy at all: the window is.
+                // Queue as much as the plan wants; the boundary decides what lands.
+                if self.cooldown > 0
+                    && !self.has_setup_allowance()
+                    && self.rogue_economy != RogueEconomy::Waves
+                {
                     return Some(CommandRefusal::Cooldown);
                 }
                 (card, target, rotation)
@@ -578,7 +606,65 @@ impl ArchitectLab {
         }
     }
 
+    /// Accept a command: applied now under `Cooldown`, queued for the boundary under
+    /// `Waves`.
+    ///
+    /// Legality is checked here so the Rogue gets immediate feedback on an impossible
+    /// plan, and **again** at commit, because the facility moves in between and a plan
+    /// composed against one board lands on another.
     pub fn submit(&mut self, command: ArchitectCommand) -> Result<(), CommandRefusal> {
+        if let Some(refusal) = self.refusal(command) {
+            return Err(refusal);
+        }
+        if self.rogue_economy == RogueEconomy::Waves {
+            self.wave.pending.push(command);
+            return Ok(());
+        }
+        self.apply_command(command)
+    }
+
+    /// Commit the queued plan, in submission order.
+    ///
+    /// Order is the resolution rule for plans that contradict themselves: each command is
+    /// re-checked against the board as it stands after the ones before it, and a command
+    /// that no longer fits is dropped with its reason rather than forced through.
+    fn commit_wave(&mut self) {
+        let pending = std::mem::take(&mut self.wave.pending);
+        self.wave.last_drops.clear();
+        self.wave.last_committed = 0;
+        if pending.is_empty() {
+            return;
+        }
+        for command in pending {
+            match self.apply_command(command) {
+                Ok(()) => {
+                    self.wave.last_committed += 1;
+                    self.wave.total_committed += 1;
+                }
+                Err(refusal) => {
+                    self.wave.last_drops.push((command, refusal));
+                    self.wave.total_dropped += 1;
+                    *self.wave.drop_reasons.entry(refusal.label()).or_default() += 1;
+                }
+            }
+        }
+        self.wave.waves += 1;
+        let landed = self.wave.last_committed;
+        let dropped = self.wave.last_drops.len();
+        self.record_event(
+            LabEventKind::Warning,
+            None,
+            &if dropped == 0 {
+                format!("The facility reconfigures: {landed} changes land together.")
+            } else {
+                format!(
+                    "The facility reconfigures: {landed} changes land, {dropped} no longer fit."
+                )
+            },
+        );
+    }
+
+    fn apply_command(&mut self, command: ArchitectCommand) -> Result<(), CommandRefusal> {
         if let Some(refusal) = self.refusal(command) {
             return Err(refusal);
         }
@@ -620,7 +706,9 @@ impl ArchitectLab {
                     }
                 }
                 assert!(self.deck.spend(card), "legality proved the card is held");
-                if self.has_setup_allowance() {
+                if self.rogue_economy == RogueEconomy::Waves {
+                    // The window is the cost; there is no per-card clock to charge.
+                } else if self.has_setup_allowance() {
                     self.setup_placements_left -= 1;
                 } else {
                     self.cooldown = ARCHITECT_COOLDOWN_TICKS;
@@ -666,6 +754,14 @@ impl ArchitectLab {
         }
         self.tick += 1;
         self.cooldown = self.cooldown.saturating_sub(1);
+        if self.rogue_economy == RogueEconomy::Waves
+            && self.wave_interval_ticks > 0
+            && self
+                .tick
+                .is_multiple_of(u64::from(self.wave_interval_ticks))
+        {
+            self.commit_wave();
+        }
         self.advance_retraction();
         self.resolve_falls();
         if self.outcome != MatchOutcome::Running {
