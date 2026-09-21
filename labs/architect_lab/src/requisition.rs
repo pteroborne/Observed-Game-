@@ -420,7 +420,7 @@ mod tests {
         let mut camera_state = MapCameraState::default();
         camera_state.zoom = 2.5;
         camera_state.reset_for_mode(ArchitectMode::Pocket);
-        assert!((camera_state.zoom - 0.62).abs() < f32::EPSILON);
+        assert!((camera_state.zoom - crate::view::DEFAULT_ZOOM).abs() < f32::EPSILON);
     }
 
     #[cfg(feature = "web")]

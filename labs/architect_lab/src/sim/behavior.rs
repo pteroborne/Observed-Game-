@@ -7,7 +7,7 @@ use crate::economy::{MAX_CHARGE, SHOVE_COST};
 
 use super::{
     ArchitectCommand, ArchitectLab, BehaviorTrace, DoorState, GuardianId, GuardianKind, ObserverId,
-    ObserverState, ThresholdKey, command_key, face_between, threshold_touches,
+    ObserverState, PowerPolicy, ThresholdKey, command_key, face_between, threshold_touches,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,7 +97,8 @@ impl ArchitectLab {
         // Restore floor power if standing at an unpowered generator
         if trace.test(
             "restore floor power at generator",
-            !self.economy.is_powered(observer.cell.level)
+            self.power_policy == PowerPolicy::Restorable
+                && !self.economy.is_powered(observer.cell.level)
                 && self.economy.is_at_generator(observer.cell),
         ) {
             return (ObserverIntent::ToggleGenerator, trace);
@@ -115,14 +116,49 @@ impl ArchitectLab {
             return (ObserverIntent::Step(next), trace);
         }
 
-        // Seek generator if floor is unpowered and not in immediate danger
-        let gen_step = if !self.economy.is_powered(observer.cell.level) {
-            self.economy
-                .generators
-                .get(&observer.cell.level)
-                .copied()
-                .and_then(|generator_cell| self.route(observer.cell, generator_cell))
-                .and_then(|path| path.get(1).copied())
+        let summit = self.world.config.exit();
+        let can_win_at_summit_now =
+            if observer.cell.level == summit.level && travel_distance(observer.cell, summit) <= 1 {
+                let others_not_at_summit = self.observers.values().any(|other| {
+                    other.id != id
+                        && other.team == observer.team
+                        && other.state == ObserverState::Active
+                        && other.cell != summit
+                });
+                !others_not_at_summit
+            } else {
+                false
+            };
+
+        // Seek generator if floor is unpowered, not in immediate danger,
+        // cannot win immediately at the summit, and generator path is unthreatened.
+        let gen_step = if self.power_policy == PowerPolicy::Restorable
+            && !self.economy.is_powered(observer.cell.level)
+            && !can_win_at_summit_now
+        {
+            if let Some(generator_cell) = self.economy.generators.get(&observer.cell.level).copied()
+            {
+                if let Some(path) = self.route(observer.cell, generator_cell) {
+                    // Check if path or generator is threatened by Guardians or condemned cell
+                    let path_threatened = path.iter().any(|&c| {
+                        self.guardians
+                            .values()
+                            .any(|g| travel_distance(c, g.cell) <= 1)
+                            || self
+                                .condemned
+                                .is_some_and(|(condemned_cell, _)| condemned_cell == c)
+                    });
+                    if path_threatened {
+                        None
+                    } else {
+                        path.get(1).copied()
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         } else {
             None
         };

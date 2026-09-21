@@ -4,7 +4,7 @@
 //! budget the rest of the WFC path lives under.
 
 use bevy::prelude::*;
-use observed_facility::hex_wfc::{HexArchetype, HexWfcConfig, HexWfcWorld};
+use observed_facility::hex_wfc::{HexArchetype, HexCompositionProfile, HexWfcConfig, HexWfcWorld};
 
 use crate::{PRESET_SEEDS, StudioState};
 // ------------------------------------------------------------------------ pins
@@ -177,10 +177,22 @@ fn an_impossible_pin_is_diagnosed_rather_than_silently_dropped() {
 
 /// Clearing every pin must return the profile to byte-identical baseline, or a
 /// stray empty pin set would move the content hash for nothing.
+///
+/// The profile under test is constructed, not loaded. `StudioState::default()` reads
+/// `assets/tiles/composition_profile.ron` from disk, so this test used to assert a
+/// property of whatever profile the working tree happened to hold: it passed while that
+/// file was the baseline and failed the moment anyone authored a real one, since clearing
+/// *pins* cannot undo authored *biases*. That is backlog #41 -- diagnosed there as a
+/// one-in-four flake, actually a dependency on an on-disk fixture the test does not own.
 #[test]
 fn clearing_pins_restores_a_baseline_profile() {
     let mut state = StudioState::default();
     let config = state.config;
+    state.profile = HexCompositionProfile::baseline();
+    assert!(
+        state.profile.is_baseline(),
+        "the assertions below are vacuous unless we start from baseline"
+    );
     for q in 3..6 {
         crate::brush::paint(
             &mut state.profile,
@@ -189,9 +201,12 @@ fn clearing_pins_restores_a_baseline_profile() {
             crate::brush::Brush::Junction,
         );
     }
-    assert!(!state.profile.is_baseline());
+    assert!(!state.profile.is_baseline(), "painting pins must move it");
     crate::brush::clear(&mut state.profile);
-    assert!(state.profile.is_baseline());
+    assert!(
+        state.profile.is_baseline(),
+        "clearing every pin must leave no stray empty pin set behind"
+    );
 }
 
 // ---------------------------------------------------------------------- detail

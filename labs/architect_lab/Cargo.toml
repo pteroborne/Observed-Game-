@@ -14,12 +14,13 @@ required-features = ["desktop"]
 
 [features]
 default = ["desktop"]
-desktop = ["dep:bevy", "dep:observed_ui"]
+desktop = ["dep:bevy", "dep:observed_ui", "dep:observed_authoring", "dep:observed_cutaway", "dep:observed_traversal"]
 web = ["dep:wasm-bindgen", "dep:serde_json"]
 
 [dependencies]
 bevy = { version = "0.19", optional = true, default-features = false, features = [
     "2d",
+    "3d",
     "ui",
     "bevy_ui_widgets",
     "default_font",
@@ -32,3 +33,7 @@ observed_style = { path = "../../crates/observed_style" }
 observed_ui = { path = "../../crates/observed_ui", optional = true }
 wasm-bindgen = { version = "0.2.125", optional = true }
 serde_json = { version = "1", optional = true }
+
+observed_authoring = { path = "../../crates/observed_authoring", optional = true }
+observed_cutaway = { path = "../../crates/observed_cutaway", optional = true }
+observed_traversal = { path = "../../crates/observed_traversal", optional = true }
