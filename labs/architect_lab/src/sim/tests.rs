@@ -646,3 +646,84 @@ fn every_scenario_still_interrupts_its_route() {
         );
     }
 }
+
+/// Planning is a phase, not a single move. Backlog #47.
+///
+/// A held match never calls `tick`, and the Architect's cooldown only drains inside it, so
+/// before this the first placement left a five-second timer that could never expire: the
+/// Rogue placed one tile and then had to start the hunt to do anything at all. Will found
+/// it in two minutes of play, and no automated run had ever paused.
+///
+/// The opening allowance is one hand's worth, once per match. The second half of this test
+/// is the important half: live play must still cost five seconds a card.
+#[test]
+fn planning_allows_an_opening_then_the_cooldown_returns() {
+    fn first_play(lab: &ArchitectLab) -> Option<ArchitectCommand> {
+        lab.legal_commands()
+            .into_iter()
+            .find(|command| matches!(command, ArchitectCommand::Play { .. }))
+    }
+
+    let mut lab = ArchitectLab::for_mode(ArchitectMode::FullAscent).expect("scenario boots");
+    lab.planning = true;
+
+    let mut played = 0u32;
+    while played < HAND_SIZE as u32 {
+        let Some(command) = first_play(&lab) else {
+            break;
+        };
+        lab.submit(command)
+            .unwrap_or_else(|refusal| panic!("setup placement {played} refused: {refusal:?}"));
+        played += 1;
+    }
+    assert_eq!(
+        played, HAND_SIZE as u32,
+        "planning must allow a full hand of opening placements without ticking"
+    );
+    assert_eq!(lab.setup_placements_left, 0);
+    assert_eq!(
+        lab.cooldown, 0,
+        "setup placements must not charge a clock that is not running"
+    );
+
+    // Allowance spent: a held match is now gated exactly like a live one.
+    let command = first_play(&lab).expect("the allowance ran out, not the legality");
+    lab.submit(command)
+        .expect("still legal, just no longer free");
+    assert_eq!(lab.cooldown, ARCHITECT_COOLDOWN_TICKS);
+    assert!(
+        first_play(&lab).is_none(),
+        "once the opening is spent, no further placement is offered until the clock runs"
+    );
+}
+
+/// The half that protects the game: a live hunt still costs five seconds a card.
+#[test]
+fn a_live_hunt_still_charges_the_cooldown() {
+    fn first_play(lab: &ArchitectLab) -> Option<ArchitectCommand> {
+        lab.legal_commands()
+            .into_iter()
+            .find(|command| matches!(command, ArchitectCommand::Play { .. }))
+    }
+
+    let mut lab = ArchitectLab::for_mode(ArchitectMode::FullAscent).expect("scenario boots");
+    assert!(
+        !lab.planning,
+        "a match not held in planning has no allowance"
+    );
+
+    let command = first_play(&lab).expect("an opening move exists");
+    lab.submit(command).expect("first play is legal");
+    assert_eq!(
+        lab.cooldown, ARCHITECT_COOLDOWN_TICKS,
+        "live play charges the cooldown exactly as before"
+    );
+    assert_eq!(
+        lab.setup_placements_left, HAND_SIZE as u32,
+        "a live play must not consume the opening allowance"
+    );
+    assert!(
+        first_play(&lab).is_none(),
+        "a second placement must wait out the five seconds"
+    );
+}

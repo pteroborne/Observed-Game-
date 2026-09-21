@@ -207,6 +207,18 @@ pub struct ArchitectLab {
     pub economy: EconomyState,
     pub requisition: crate::requisition::RequisitionState,
     pub power_policy: PowerPolicy,
+    /// The match is held in planning: the shell is showing the board with time stopped.
+    ///
+    /// The shells own the pause; the simulation needs to know about it because the
+    /// Architect's cooldown only drains inside `tick`, so a held match can never recharge.
+    /// See backlog #47.
+    pub planning: bool,
+    /// Placements still allowed while `planning` without charging the cooldown.
+    ///
+    /// Setting the trap is the Rogue's opening move, and it should not cost five seconds
+    /// of a clock that is not running. One hand's worth, once per match: enough to build
+    /// an opening, not enough to author the facility for free.
+    pub setup_placements_left: u32,
 }
 
 impl ArchitectLab {
@@ -370,6 +382,8 @@ impl ArchitectLab {
             economy,
             requisition: crate::requisition::RequisitionState::new(seed),
             power_policy: PowerPolicy::default(),
+            planning: false,
+            setup_placements_left: HAND_SIZE as u32,
         };
         lab.refresh_observation();
         // Damage a solved facility at separated lateral handoffs. These are
@@ -444,6 +458,13 @@ impl ArchitectLab {
             })
     }
 
+    /// A free placement is available: the match is held in planning and the opening
+    /// allowance has not been spent.
+    #[must_use]
+    pub const fn has_setup_allowance(&self) -> bool {
+        self.planning && self.setup_placements_left > 0
+    }
+
     #[must_use]
     pub fn refusal(&self, command: ArchitectCommand) -> Option<CommandRefusal> {
         if self.outcome != MatchOutcome::Running {
@@ -455,7 +476,9 @@ impl ArchitectLab {
                 target,
                 rotation,
             } => {
-                if self.cooldown > 0 {
+                // A held match never ticks, so the cooldown never drains. The setup
+                // allowance is what makes planning a phase rather than a single move.
+                if self.cooldown > 0 && !self.has_setup_allowance() {
                     return Some(CommandRefusal::Cooldown);
                 }
                 (card, target, rotation)
@@ -597,7 +620,11 @@ impl ArchitectLab {
                     }
                 }
                 assert!(self.deck.spend(card), "legality proved the card is held");
-                self.cooldown = ARCHITECT_COOLDOWN_TICKS;
+                if self.has_setup_allowance() {
+                    self.setup_placements_left -= 1;
+                } else {
+                    self.cooldown = ARCHITECT_COOLDOWN_TICKS;
+                }
                 self.rogue_directive = Some(target);
                 self.command_log.push((self.tick, command));
                 self.instability_origin.get_or_insert(target);

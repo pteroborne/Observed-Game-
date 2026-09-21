@@ -260,6 +260,11 @@ impl Plugin for ArchitectLabPlugin {
 }
 
 fn fixed_tick(mut session: ResMut<LabSession>) {
+    // One place to keep the simulation's view of the pause honest, rather than chasing
+    // every assignment to `paused`. A held match never ticks, so its cooldown never
+    // drains; the simulation needs to know that to allow the opening placements at all.
+    // See backlog #47.
+    session.sim.planning = session.paused;
     if session.paused || session.sim.outcome != MatchOutcome::Running {
         return;
     }
@@ -673,6 +678,14 @@ mod tests {
         );
         app.world_mut().entity_mut(play).insert(Interaction::None);
         app.update();
+        // This case is about the inspector refusing on cooldown, and a headless session
+        // starts held in planning, where the opening placements are deliberately free
+        // (backlog #47). Spend the allowance so the play below charges the clock and the
+        // press after it is refused, which is what this test exists to prove.
+        app.world_mut()
+            .resource_mut::<LabSession>()
+            .sim
+            .setup_placements_left = 0;
         app.world_mut().resource_mut::<view::MapCameraState>().floor = target.level;
         app.world_mut()
             .entity_mut(play)

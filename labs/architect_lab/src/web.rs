@@ -18,6 +18,8 @@ impl RogueGame {
     #[wasm_bindgen(constructor)]
     pub fn new(mode: u8) -> Result<RogueGame, String> {
         let sim = ArchitectLab::for_mode(mode_for(mode)).map_err(|error| format!("{error:?}"))?;
+        let mut sim = sim;
+        sim.planning = true;
         Ok(Self { sim, paused: true })
     }
 
@@ -44,6 +46,8 @@ impl RogueGame {
 
     pub fn set_paused(&mut self, paused: bool) {
         self.paused = paused;
+        // The simulation needs the pause to know whether a placement is free setup.
+        self.sim.planning = paused;
     }
     pub fn set_demo(&mut self, enabled: bool) {
         self.sim.bot_architect = enabled;
