@@ -551,3 +551,58 @@ pub(super) fn threshold_attachments(world: &HexWfcWorld) -> Vec<HexThresholdAtta
     });
     attachments
 }
+
+/// Every connected group of passable cells, largest first, then by lowest coordinate.
+///
+/// A solved facility should be exactly one group. Measured on the four `architect_lab`
+/// scenario shapes across twelve seeds each, the solver delivers that; it is the lab's
+/// own scenario damage that breaks it afterwards. See `docs/facility_orphans.md`.
+///
+/// Ordering is deterministic, so a caller may treat the first group as "the facility"
+/// and the rest as stranded without the answer depending on iteration order.
+#[must_use]
+pub fn components(
+    config: HexWfcConfig,
+    placements: &BTreeMap<HexCoord, HexPlacement>,
+) -> Vec<BTreeSet<HexCoord>> {
+    let mut remaining: BTreeSet<HexCoord> = placements
+        .iter()
+        .filter(|(_, placement)| placement.space != HexSpace::Void)
+        .map(|(&coord, _)| coord)
+        .collect();
+    let mut groups = Vec::new();
+    while let Some(&start) = remaining.iter().next() {
+        let group = active_component(config, placements, start);
+        // `active_component` always contains its own start, so this terminates.
+        for cell in &group {
+            remaining.remove(cell);
+        }
+        remaining.remove(&start);
+        groups.push(group);
+    }
+    groups.sort_by(|a, b| {
+        b.len()
+            .cmp(&a.len())
+            .then_with(|| a.iter().next().cmp(&b.iter().next()))
+    });
+    groups
+}
+
+/// Passable cells stranded outside the facility's largest connected group.
+///
+/// Flood fill from an arbitrary cell cannot answer this: in a damaged facility the
+/// lowest-sorted cell may itself be stranded, which inverts the result and reports the
+/// whole facility as disconnected from one orphan. Size decides which group is the
+/// facility.
+#[must_use]
+pub fn disconnected_cells(
+    config: HexWfcConfig,
+    placements: &BTreeMap<HexCoord, HexPlacement>,
+) -> BTreeSet<HexCoord> {
+    let mut groups = components(config, placements);
+    if groups.len() <= 1 {
+        return BTreeSet::new();
+    }
+    groups.remove(0);
+    groups.into_iter().flatten().collect()
+}

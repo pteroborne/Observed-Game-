@@ -841,3 +841,50 @@ fn what_is_at_the_grid_origin() {
     }
     println!("=======================================================\n");
 }
+
+/// Does the generator orphan cells, or does the lab do it to itself?
+///
+/// `docs/facility_orphans.md` blamed the WFC. An assertion added to
+/// `observed_facility` -- every passable cell in one component, four scenario shapes,
+/// twelve seeds each -- passes, which says the solver ships a connected facility. The
+/// lab then punches one to five route cells to `Void` as scenario damage. This measures
+/// connectivity on both sides of that step.
+#[test]
+fn who_actually_orphans_the_cells() {
+    use observed_facility::hex_wfc::disconnected_cells;
+    println!("\n============== ORPHANS: BEFORE AND AFTER ==============");
+    for mode in ArchitectMode::ALL {
+        let lab = ArchitectLab::for_mode(mode).expect("scenario boots");
+        let config = lab.world.config;
+
+        // The same seed and config the lab used, without the lab's damage step.
+        let pristine = observed_facility::hex_wfc::HexWfcWorld::generate(mode.seed(), config)
+            .expect("the pinned mode solves");
+        let before = disconnected_cells(config, &pristine.placements);
+        let after = disconnected_cells(config, &lab.world.placements);
+
+        let voids_added = lab
+            .world
+            .placements
+            .iter()
+            .filter(|(coord, placement)| {
+                placement.space == observed_facility::hex_wfc::HexSpace::Void
+                    && pristine
+                        .placements
+                        .get(coord)
+                        .is_some_and(|p| p.space != observed_facility::hex_wfc::HexSpace::Void)
+            })
+            .count();
+
+        println!(
+            "{:>12}: as solved {} orphans; after {voids_added} scenario gaps, {} orphans",
+            mode.short_label(),
+            before.len(),
+            after.len()
+        );
+        if !after.is_empty() {
+            println!("              orphaned: {after:?}");
+        }
+    }
+    println!("=======================================================\n");
+}
