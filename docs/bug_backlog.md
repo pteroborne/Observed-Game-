@@ -849,6 +849,71 @@ Two corpus tripwires also fire, and **both are correct behaviour, not bugs**:
 tripwires against the final corpus, then land `codex/tile-curation-wip`. Re-pinning first
 would pin a facility we already know a walker falls off.
 
+### 47. Planning holds time, the cooldown needs time, so you get exactly one card
+
+**Found 2026-09-21 by Will, in the browser build, within two minutes of play.** Reported
+as: *"it allows one tile to be placed, then the hunt must begin, and I don't seem to be
+allowed to place any more tiles. Three modes available and all the same."* Confirmed in
+the source; it is not mode-specific.
+
+The match opens **paused** — the status line reads "Planning · time is held". Playing a
+card sets `cooldown = ARCHITECT_COOLDOWN_TICKS` (300 ticks, five seconds), and the only
+place the cooldown decrements is inside `ArchitectLab::tick`:
+
+```rust
+// sim.rs:641, inside tick()
+self.cooldown = self.cooldown.saturating_sub(1);
+```
+
+while the web shim gates ticking on the pause flag:
+
+```rust
+// web.rs
+pub fn advance(&mut self, ticks: u32) {
+    if !self.paused {
+        for _ in 0..ticks.min(60) { self.sim.tick(); }
+    }
+}
+```
+
+So during planning the cooldown can never expire. The button reads "Recharging · 5.0s"
+indefinitely, `legal_commands` refuses every play with `CommandRefusal::Cooldown`, and
+nothing in the interface says the recharge needs the hunt running. The only way forward is
+**Begin hunt**, which the player has no reason to connect to a stuck timer.
+
+**Then the second half of the report.** Once the hunt is live the cooldown does drain, but
+the selected card frequently has no legal targets: *"No targets for this card right now.
+Choose another card, or let the hunt move to release watched tiles."* Observation protects
+tiles, so a live hunt can leave the Architect with a full hand and nowhere to put it.
+Between the two, the Rogue plays one card and then spectates.
+
+**This is a design collision, not a coding slip.** The five-second shared cooldown is a
+deliberate rule (`ROADMAP.md`, Architect Ascent step 1). Holding time during planning is a
+deliberate affordance. Together they make planning a one-shot, and nobody noticed because
+no automated run ever pauses — the bot plays unpaused from tick zero, which is exactly the
+class of defect this project keeps shipping.
+
+**Options, and the constraint that rules one out.** Draining the cooldown in real time
+while paused is the obvious fix and it is **not available**: `cooldown` gates
+`legal_commands`, so legality would depend on wall-clock and the §10 determinism contract
+would break. That leaves:
+
+1. **Planning placements do not charge the cooldown.** Deterministic, keeps the five
+   seconds for live play, and makes planning a real planning phase. Needs a bound or
+   planning becomes unlimited free setup — the hand size is the natural one.
+2. **Planning does not hold time.** Removes the collision by removing the affordance.
+   Simplest, and loses a breather that a phone player probably wants.
+3. **Say it.** Leave the rules alone and have the interface state that recharge needs the
+   hunt running. Cheapest, and still leaves the Rogue with one card per planning phase.
+
+Option 1 is the recommendation. Whatever is chosen, the regression test is a paused match
+that plays two cards in succession — no current test pauses at all.
+
+**Note the measurement trap.** The first attempt to reproduce this in a headless browser
+showed a frozen match clock, which looked like a hang. It was the preview pane throttling
+`requestAnimationFrame` to roughly 1 fps. The game was fine. Confirm liveness before
+reporting a freeze from an automated browser.
+
 
 ## Minor / hygiene
 
