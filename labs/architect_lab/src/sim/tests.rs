@@ -599,3 +599,49 @@ fn test_full_ascent_and_deep_stack_resolutions() {
         assert!(resolved, "{:?} failed to resolve before 1000 beats", mode);
     }
 }
+
+/// Interrupting the route is the scenario. Taking half the building with it is not.
+///
+/// `generate_with_team_size` voids one to five route midpoints as deliberate damage --
+/// "reconnect the route with a card". The chooser tests three things (not
+/// retraction-protected, laterally flanked on the route, three cells from another gap)
+/// and none of them asks what the cell was holding up, so a midpoint that is also a cut
+/// vertex strands a limb of the facility.
+///
+/// The prison core is the one thing legitimately cut off: a sealed maze reachable only by
+/// being captured. So the invariant is not "nothing is stranded", it is "the damage
+/// stranded nothing the solve had not already set aside". See `docs/facility_orphans.md`.
+#[ignore = "documents a live design question, not a settled invariant: see docs/facility_orphans.md"]
+#[test]
+fn scenario_damage_never_strands_the_facility() {
+    let mut failures = Vec::new();
+    for mode in ArchitectMode::ALL {
+        let lab = ArchitectLab::for_mode(mode).expect("scenario boots");
+        let stranded =
+            observed_facility::hex_wfc::disconnected_cells(lab.world.config, &lab.world.placements);
+        let outside_prison: Vec<_> = stranded
+            .iter()
+            .filter(|cell| !lab.prison_core.contains(cell))
+            .copied()
+            .collect();
+        if !outside_prison.is_empty() {
+            let passable = lab
+                .world
+                .placements
+                .values()
+                .filter(|p| p.space != HexSpace::Void)
+                .count();
+            failures.push(format!(
+                "{}: {} of {passable} passable cells stranded outside the prison, first {:?}",
+                mode.short_label(),
+                outside_prison.len(),
+                outside_prison.first()
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "scenario damage stranded parts of the facility:\n  {}",
+        failures.join("\n  ")
+    );
+}

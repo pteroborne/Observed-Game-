@@ -888,3 +888,54 @@ fn who_actually_orphans_the_cells() {
     }
     println!("=======================================================\n");
 }
+
+/// How much of the facility has an alternative route around it?
+///
+/// Relaxing the gap spacing from 3 to 2 to 1 found no extra non-stranding candidates,
+/// which says spacing was never the constraint. This counts, over every passable cell,
+/// how many can be removed without cutting anything off — the facility's redundancy.
+#[test]
+fn how_many_cells_have_a_way_around_them() {
+    use observed_facility::hex_wfc::{HexSpace, disconnected_cells};
+    println!("\n============== FACILITY REDUNDANCY ==============");
+    for mode in ArchitectMode::ALL {
+        let lab = ArchitectLab::for_mode(mode).expect("scenario boots");
+        let config = lab.world.config;
+        let baseline = disconnected_cells(config, &lab.world.placements);
+        let passable: Vec<HexCoord> = lab
+            .world
+            .placements
+            .iter()
+            .filter(|(_, p)| p.space != HexSpace::Void)
+            .map(|(&c, _)| c)
+            .collect();
+
+        let mut removable = 0usize;
+        let mut cut_vertices = 0usize;
+        for &cell in &passable {
+            let mut probe = lab.world.placements.clone();
+            let tile = probe.get_mut(&cell).expect("passable");
+            tile.space = HexSpace::Void;
+            tile.doors = 0;
+            tile.up = observed_hex::PortClass::Sealed;
+            tile.down = observed_hex::PortClass::Sealed;
+            if disconnected_cells(config, &probe)
+                .difference(&baseline)
+                .next()
+                .is_some()
+            {
+                cut_vertices += 1;
+            } else {
+                removable += 1;
+            }
+        }
+        let total = passable.len();
+        println!(
+            "{:>12}: {total} passable cells, {cut_vertices} are cut vertices ({:.0}%), \
+             {removable} have a way around",
+            mode.short_label(),
+            100.0 * cut_vertices as f64 / total as f64
+        );
+    }
+    println!("================================================\n");
+}
