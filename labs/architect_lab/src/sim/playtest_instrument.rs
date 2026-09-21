@@ -1080,3 +1080,85 @@ fn is_the_generator_reachable_at_all() {
     }
     println!("====================================================\n");
 }
+
+/// How much of the hand is playable, as the interface computes it?
+///
+/// Reported from play: "the card in hand often has no legal target". `legal_commands` is
+/// simulation-level, so whatever this finds applies to the desktop cutaway and the browser
+/// build alike -- they are two presentations of one rule set.
+///
+/// Sampled the way the interface does. `RogueGame::preview` zeroes the cooldown before
+/// listing targets, deliberately: the glowing dots show what a card could reach, not what
+/// the clock currently permits. So this ignores the cooldown too, and asks per beat how
+/// many of the five cards have a legal target anywhere, and how many have one on the floor
+/// the player is most likely watching -- the floor an Observer is standing on.
+#[ignore = "~22s hand-availability sweep over four live matches. cargo dev-test-all"]
+#[test]
+fn how_much_of_the_hand_is_playable() {
+    println!("\n============== PLAYABLE HAND OVER A LIVE HUNT ==============");
+    for mode in ArchitectMode::ALL {
+        let mut sim = ArchitectLab::for_mode(mode).expect("scenario boots");
+        sim.bot_architect = true;
+
+        let mut beats = 0u64;
+        let mut cards_playable_anywhere: BTreeMap<usize, u64> = BTreeMap::new();
+        let mut cards_playable_on_an_observer_floor: BTreeMap<usize, u64> = BTreeMap::new();
+
+        while beats < 400 && sim.outcome == MatchOutcome::Running {
+            sim.step_beat();
+            beats += 1;
+
+            let mut probe = sim.clone();
+            probe.cooldown = 0;
+            let targets = probe.mutable_targets();
+            let observer_floors: BTreeSet<u8> = probe
+                .observers
+                .values()
+                .filter(|o| o.state == ObserverState::Active)
+                .map(|o| o.cell.level)
+                .collect();
+
+            // `selected_command` addresses the hand by position, which is also how the
+            // interface numbers the cards 1-5.
+            let hand_len = probe.deck.hand.len();
+            let mut anywhere = 0usize;
+            let mut on_floor = 0usize;
+            for card in 0..hand_len {
+                let mut reachable = false;
+                let mut near = false;
+                for &cell in &targets {
+                    if (0..6).any(|rot| {
+                        probe
+                            .selected_command(card, cell, rot)
+                            .is_some_and(|command| probe.refusal(command).is_none())
+                    }) {
+                        reachable = true;
+                        if observer_floors.contains(&cell.level) {
+                            near = true;
+                            break;
+                        }
+                    }
+                }
+                if reachable {
+                    anywhere += 1;
+                }
+                if near {
+                    on_floor += 1;
+                }
+            }
+            *cards_playable_anywhere.entry(anywhere).or_default() += 1;
+            *cards_playable_on_an_observer_floor
+                .entry(on_floor)
+                .or_default() += 1;
+        }
+
+        println!("\n{:>12}: {beats} beats sampled", mode.short_label());
+        println!(
+            "              cards playable anywhere (count -> beats):        {cards_playable_anywhere:?}"
+        );
+        println!(
+            "              cards playable on an Observer floor (count -> beats): {cards_playable_on_an_observer_floor:?}"
+        );
+    }
+    println!("===========================================================\n");
+}

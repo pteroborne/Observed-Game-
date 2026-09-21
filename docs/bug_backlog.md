@@ -914,6 +914,60 @@ showed a frozen match clock, which looked like a hang. It was the preview pane t
 `requestAnimationFrame` to roughly 1 fps. The game was fine. Confirm liveness before
 reporting a freeze from an automated browser.
 
+### 48. The hand is always playable somewhere, and often not where the hunt is
+
+**Found 2026-09-21, playtest follow-up to #47.** Reported as *"once the hunt is live the
+card in hand often has no legal target"*. Measured, and the simulation is not the cause.
+
+Sampled per beat the way the interface computes it — `RogueGame::preview` zeroes the
+cooldown before listing targets, so the glowing dots show what a card could reach rather
+than what the clock permits:
+
+| Mode | Beats | All five cards playable *somewhere* | Three or fewer playable on a floor an Observer is on |
+|---|---|---|---|
+| Quick Climb | 205 | 204 | 55 (27%) |
+| Full Ascent | 308 | 307 | 103 (33%) |
+| Deep Stack | 23 | 22 | 22 |
+
+**Every card is playable essentially every beat.** The single exception in each mode is
+beat one. So the Architect is never starved of moves.
+
+What varies is **relevance**. For a third of Full Ascent, three or fewer of the five cards
+can act on a floor where an Observer actually is. The hand stays full; its bearing on the
+hunt does not.
+
+Now combine that with two presentation facts and the reported experience follows exactly:
+
+- **The board shows one floor at a time**, and the desktop build additionally refuses a
+  target on an inactive floor (`README`). A card whose targets are all on another floor
+  shows an empty board with no glowing dots.
+- **Refusals are only explained after you pick a target.** `CommandRefusal` has twelve
+  variants — `Observed`, `Occupied`, `Anchored`, `PrisonCore`, `WrongDistrict`,
+  `CollapsedFloor`, `VoidTarget`, `NoChange` among them — and `app.js` surfaces
+  `forecast.reason` only once a target is selected. Before that a locked tile is simply a
+  tile that does not glow. **The simulation knows precisely why every cell is unavailable
+  and the interface never says.**
+
+**This is not browser-specific.** `mutable_targets` and `refusal` are simulation-level;
+the cutaway and the browser build are two presentations of one rule set. Anything found
+here applies to both.
+
+**Also reported, and by design:** *"or where the observers are"*. Observers are hidden
+until a Guardian sees them — the onboarding says so — and that is the fog-of-war working.
+But nothing marks where one was **last** seen, or signals that concealment is the rule
+rather than missing information, so it reads as an interface gap instead of tension.
+
+**What would change it**, cheapest first, none of them simulation changes:
+
+1. **Say why a tile is locked.** The refusal variant already exists for every cell; show it
+   on hover or tap of a non-target. This is the single biggest legibility gain available.
+2. **Point at the floors that matter.** When the selected card has targets only on other
+   floors, say which. The floor selector could carry a count of legal targets per floor.
+3. **Leave a last-seen mark** where an Observer was detected, decaying over time. Keeps the
+   hidden-information design and gives the Rogue something to reason from.
+
+UI work, so it routes to Codex rather than being fixed here.
+
 
 ## Minor / hygiene
 
