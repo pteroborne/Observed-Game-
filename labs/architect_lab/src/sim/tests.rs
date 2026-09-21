@@ -600,48 +600,49 @@ fn test_full_ascent_and_deep_stack_resolutions() {
     }
 }
 
-/// Interrupting the route is the scenario. Taking half the building with it is not.
+/// The interruption is the mechanic, so count it rather than prevent it.
 ///
-/// `generate_with_team_size` voids one to five route midpoints as deliberate damage --
-/// "reconnect the route with a card". The chooser tests three things (not
-/// retraction-protected, laterally flanked on the route, three cells from another gap)
-/// and none of them asks what the cell was holding up, so a midpoint that is also a cut
-/// vertex strands a limb of the facility.
+/// `generate_with_team_size` voids route midpoints as deliberate damage — "a missing tile
+/// interrupts the hunt, reconnect the route with a card". Cutting off whatever sits
+/// behind the gap until the Architect repairs it is the pressure loop, **not** a defect,
+/// and this was decided deliberately on 2026-09-20 after an attempt to guard against it
+/// removed four of Deep Stack's five interruptions and collapsed an 855-beat match to 6.
+/// See `docs/facility_orphans.md`.
 ///
-/// The prison core is the one thing legitimately cut off: a sealed maze reachable only by
-/// being captured. So the invariant is not "nothing is stranded", it is "the damage
-/// stranded nothing the solve had not already set aside". See `docs/facility_orphans.md`.
-#[ignore = "documents a live design question, not a settled invariant: see docs/facility_orphans.md"]
+/// So the risk worth testing is the opposite one: a future connectivity guard quietly
+/// reducing the damage and nobody noticing the scenario got easier. These counts are a
+/// regression pin. If you change them, change them on purpose.
 #[test]
-fn scenario_damage_never_strands_the_facility() {
-    let mut failures = Vec::new();
-    for mode in ArchitectMode::ALL {
+fn every_scenario_still_interrupts_its_route() {
+    let expected = [
+        (ArchitectMode::Pocket, 1usize),
+        (ArchitectMode::QuickClimb, 2),
+        (ArchitectMode::FullAscent, 3),
+        // Wants five; the route offers four that satisfy the flanking and spacing rules.
+        (ArchitectMode::DeepStack, 4),
+    ];
+    for (mode, gaps) in expected {
         let lab = ArchitectLab::for_mode(mode).expect("scenario boots");
-        let stranded =
-            observed_facility::hex_wfc::disconnected_cells(lab.world.config, &lab.world.placements);
-        let outside_prison: Vec<_> = stranded
+        let pristine =
+            observed_facility::hex_wfc::HexWfcWorld::generate(mode.seed(), lab.world.config)
+                .expect("the pinned mode solves");
+        let voided = lab
+            .world
+            .placements
             .iter()
-            .filter(|cell| !lab.prison_core.contains(cell))
-            .copied()
-            .collect();
-        if !outside_prison.is_empty() {
-            let passable = lab
-                .world
-                .placements
-                .values()
-                .filter(|p| p.space != HexSpace::Void)
-                .count();
-            failures.push(format!(
-                "{}: {} of {passable} passable cells stranded outside the prison, first {:?}",
-                mode.short_label(),
-                outside_prison.len(),
-                outside_prison.first()
-            ));
-        }
+            .filter(|(coord, placement)| {
+                placement.space == HexSpace::Void
+                    && pristine
+                        .placements
+                        .get(*coord)
+                        .is_some_and(|p| p.space != HexSpace::Void)
+            })
+            .count();
+        assert_eq!(
+            voided,
+            gaps,
+            "{} placed {voided} interruptions, expected {gaps}",
+            mode.short_label()
+        );
     }
-    assert!(
-        failures.is_empty(),
-        "scenario damage stranded parts of the facility:\n  {}",
-        failures.join("\n  ")
-    );
 }

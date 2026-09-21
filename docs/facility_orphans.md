@@ -72,22 +72,63 @@ Every symptom traced to this is downstream code assuming connectivity nothing gu
 - **Topology metrics were noise.** Raw component count never dropped below four, so any
   Sever threshold fired on beat one.
 
-## What to do
+## Decided: the interruption is the mechanic
 
-The solver needs no change, and the assertion that proves it belongs in the gate anyway —
-it is cheap, and it is what makes "the solver is fine" a fact rather than a memory.
+**2026-09-20, Will's call.** Cutting off whatever sits behind a gap until the Architect
+repairs it is **intended**. It is the pressure loop the damage exists to create — *"a
+missing tile interrupts the hunt, reconnect the route with a card"* — and not a defect to
+be guarded against.
 
-The lab's damage step is where the work is. Options, in the order I would try them:
+The attempt to guard against it is what settled the question. Rejecting any gap that
+stranded a cell held the connectivity invariant and cost the scenario: Deep Stack lost
+four of its five interruptions and an 855-beat match collapsed to six. A guard that
+removes the feature it protects is answering the wrong question.
 
-1. **Choose gaps that interrupt without stranding.** Before committing a gap, check what
-   the removal disconnects; reject a candidate that strands cells beyond the route itself.
-   Keeps the scenario's intent exactly and costs a flood fill per candidate at setup.
-2. **Bound it.** Allow stranding up to some fraction of the facility and fail the scenario
-   above that. Cheaper, weaker, and leaves the Pocket case needing a separate answer.
-3. **Accept it as a property** and make every downstream consumer ask for the reachable
-   set rather than the placement map. This is what the power fix already did locally, and
-   doing it everywhere is a larger change than fixing the cause.
+So there is nothing to fix in the generator, and nothing to fix in the damage step.
+`observed_facility` ships 48 of 48 facilities fully connected; everything downstream of
+that is the scenario doing its job.
 
-Pocket deserves its own decision regardless. Eight of sixteen passable cells stranded by a
-single mandated gap, in a scenario that also resolves in three to six beats, is a facility
-too small to carry the rules it is being asked to demonstrate.
+### What the real defects were, and where they went
+
+Every symptom traced back to **downstream code assuming a connectivity nothing promised**,
+rather than to the damage itself:
+
+- `EconomyState::new` placed fixtures on stranded cells — **fixed**, fixtures are now
+  placed by reachability (backlog #44).
+- Topology counted stranded cells as components — **fixed**, `meaningful_component_count`
+  measures against the set reachable at match start.
+
+Both are closed. The rule for anything new that reads the facility: **ask for the
+reachable set, never the placement map.** A cell existing is not a cell anyone can stand in.
+
+### What is guarded now
+
+- `every_passable_cell_belongs_to_one_facility` (`observed_facility`) — the solver ships
+  connected facilities, 4 shapes × 12 seeds. Cheap, and it keeps "the solver is fine" a
+  fact rather than a memory.
+- `every_scenario_still_interrupts_its_route` (`architect_lab`) — the interruption counts
+  are pinned, so a future connectivity guard cannot quietly make the scenarios easier.
+  That is the failure this investigation actually produced, and it is worth a test.
+
+### Still open
+
+**Pocket.** One mandated gap strands 8 of its 16 passable cells, and it resolves in three
+to six beats. Three independent lines of evidence now say it is too small to carry the
+rules it demonstrates. That is a scenario-design decision, tracked with the pacing work,
+not a connectivity one.
+
+## Method notes worth keeping
+
+This diagnosis was wrong twice before it was right, and both corrections came from a
+measurement rather than a re-reading.
+
+1. **Blamed the solver.** The `Void` beside the orphan was punched by the lab a few lines
+   after the solve. *Look at what the failing thing actually loads* — including what the
+   caller does to it afterwards.
+2. **Measured it wrong.** `disconnected_cells` flood-filled from the lowest-sorted cell,
+   which in a damaged facility can itself be stranded; Full Ascent came back as 110 of 111
+   cells disconnected from one orphan. An absurd number is a gift.
+3. **Assumed a tree.** When a non-stranding gap could not be found, the natural conclusion
+   was that the facility has no alternative routes. It has plenty — 53% to 85% of cells
+   can be removed harmlessly. The binding constraint was that gaps must be route
+   midpoints, and the route is the spine.
