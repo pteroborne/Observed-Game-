@@ -921,6 +921,8 @@ fn how_many_cells_have_a_way_around_them() {
         );
     }
     println!("================================================\n");
+}
+
 /// Why the reverse gear never engages.
 ///
 /// The Observer bot already has both halves of power restoration -- "restore floor power
