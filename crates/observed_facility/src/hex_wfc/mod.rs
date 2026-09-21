@@ -56,7 +56,7 @@ pub use relayout::{
     HexRelayoutWork, HexThresholdKey, district_sites,
 };
 pub use score::{LayoutScore, score_layout, score_layout_with};
-pub use topology::{HexRoute, MAX_CONNECTION_COST};
+pub use topology::{HexRoute, MAX_CONNECTION_COST, components, disconnected_cells};
 pub use trace::{
     CellTrace, SolveStep, TraceSummary, cells_from_world, fold_trace, summarise_trace,
 };
