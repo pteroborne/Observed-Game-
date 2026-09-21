@@ -2,7 +2,6 @@
 
 use super::playtest_instrument::run_mode_playtest;
 use super::*;
-use crate::economy::PowerPolicy;
 
 /// Pacing window (floor, ceiling) in beats for each architect mode.
 ///
