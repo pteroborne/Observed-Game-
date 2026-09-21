@@ -599,3 +599,50 @@ fn test_full_ascent_and_deep_stack_resolutions() {
         assert!(resolved, "{:?} failed to resolve before 1000 beats", mode);
     }
 }
+
+/// The interruption is the mechanic, so count it rather than prevent it.
+///
+/// `generate_with_team_size` voids route midpoints as deliberate damage — "a missing tile
+/// interrupts the hunt, reconnect the route with a card". Cutting off whatever sits
+/// behind the gap until the Architect repairs it is the pressure loop, **not** a defect,
+/// and this was decided deliberately on 2026-09-20 after an attempt to guard against it
+/// removed four of Deep Stack's five interruptions and collapsed an 855-beat match to 6.
+/// See `docs/facility_orphans.md`.
+///
+/// So the risk worth testing is the opposite one: a future connectivity guard quietly
+/// reducing the damage and nobody noticing the scenario got easier. These counts are a
+/// regression pin. If you change them, change them on purpose.
+#[test]
+fn every_scenario_still_interrupts_its_route() {
+    let expected = [
+        (ArchitectMode::Pocket, 1usize),
+        (ArchitectMode::QuickClimb, 2),
+        (ArchitectMode::FullAscent, 3),
+        // Wants five; the route offers four that satisfy the flanking and spacing rules.
+        (ArchitectMode::DeepStack, 4),
+    ];
+    for (mode, gaps) in expected {
+        let lab = ArchitectLab::for_mode(mode).expect("scenario boots");
+        let pristine =
+            observed_facility::hex_wfc::HexWfcWorld::generate(mode.seed(), lab.world.config)
+                .expect("the pinned mode solves");
+        let voided = lab
+            .world
+            .placements
+            .iter()
+            .filter(|(coord, placement)| {
+                placement.space == HexSpace::Void
+                    && pristine
+                        .placements
+                        .get(*coord)
+                        .is_some_and(|p| p.space != HexSpace::Void)
+            })
+            .count();
+        assert_eq!(
+            voided,
+            gaps,
+            "{} placed {voided} interruptions, expected {gaps}",
+            mode.short_label()
+        );
+    }
+}

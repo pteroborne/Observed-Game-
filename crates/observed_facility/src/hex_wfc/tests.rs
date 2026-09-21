@@ -2928,3 +2928,86 @@ fn scratch_neighborhood_contradiction() {
         }
     }
 }
+
+/// The four `architect_lab` scenario shapes, which is where the orphans were measured.
+fn lab_scenario_configs() -> [(&'static str, HexWfcConfig); 4] {
+    [
+        (
+            "Pocket",
+            HexWfcConfig {
+                cols: 6,
+                rows: 5,
+                levels: 1,
+                ..HexWfcConfig::default()
+            },
+        ),
+        (
+            "Quick Climb",
+            HexWfcConfig {
+                cols: 8,
+                rows: 6,
+                levels: 2,
+                ..HexWfcConfig::default()
+            },
+        ),
+        (
+            "Full Ascent",
+            HexWfcConfig {
+                cols: 10,
+                rows: 8,
+                levels: 2,
+                ..HexWfcConfig::default()
+            },
+        ),
+        (
+            "Deep Stack",
+            HexWfcConfig {
+                cols: 8,
+                rows: 6,
+                levels: 5,
+                ..HexWfcConfig::default()
+            },
+        ),
+    ]
+}
+
+/// A facility is one place, or it is not a facility.
+///
+/// This is the assertion whose absence let three separate systems ship broken: economy
+/// fixtures placed on cells nobody could reach, a recharge station unreachable from every
+/// Observer start, and a component count that could never drop below four. Each was
+/// worked around where it surfaced; none of them fixed this. See
+/// `docs/facility_orphans.md`.
+#[test]
+fn every_passable_cell_belongs_to_one_facility() {
+    let mut failures = Vec::new();
+    for (name, config) in lab_scenario_configs() {
+        for seed in 0..12u64 {
+            let world = match HexWfcWorld::generate(seed, config) {
+                Ok(world) => world,
+                Err(error) => {
+                    failures.push(format!("{name} seed {seed}: did not solve: {error:?}"));
+                    continue;
+                }
+            };
+            let orphans = super::topology::disconnected_cells(config, &world.placements);
+            if !orphans.is_empty() {
+                let passable = world
+                    .placements
+                    .values()
+                    .filter(|p| p.space != HexSpace::Void)
+                    .count();
+                failures.push(format!(
+                    "{name} seed {seed}: {} of {passable} passable cells orphaned, first {:?}",
+                    orphans.len(),
+                    orphans.iter().next()
+                ));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "facilities shipped with unreachable cells:\n  {}",
+        failures.join("\n  ")
+    );
+}
