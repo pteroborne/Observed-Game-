@@ -8624,6 +8624,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "suspension_lab"
+version = "0.1.0"
+dependencies = [
+ "observed_facility",
+ "observed_hex",
+]
+
+[[package]]
 name = "svg_fmt"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
