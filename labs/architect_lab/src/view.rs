@@ -1,6 +1,7 @@
 //! The Architect's isometric deck and screen-space interaction boundary.
 mod models;
 mod scene;
+mod sky;
 pub(crate) mod ui;
 
 use crate::{LabSession, sim::ArchitectMode};
@@ -15,17 +16,49 @@ pub(crate) use scene::BoardVisual;
 pub use scene::{rebuild_board, sync_previews};
 pub use ui::{
     handle_ui_actions, sync_action_buttons, sync_card_buttons, sync_card_text, sync_charge_pips,
-    sync_dynamic_text, sync_layout,
+    sync_dynamic_text, sync_hover_note, sync_layout,
 };
 
 const MAP_RENDER_LAYER: usize = 0;
 const HUD_RENDER_LAYER: usize = 1;
 pub(crate) const DEFAULT_ZOOM: f32 = 0.6;
+/// The closest a fitted composition comes: a small deck stays a board, not a close-up.
+const FIT_MIN_ZOOM: f32 = 0.42;
 const MIN_ZOOM: f32 = 0.25;
 const MAX_ZOOM: f32 = 2.5;
 
 #[derive(Component)]
 pub(crate) struct BoardCamera;
+
+/// Where the selected card can go and why it cannot go elsewhere, recomputed only when
+/// the answer can have changed: a new card, a play, or an actor beat.
+#[derive(Resource, Default)]
+pub(crate) struct PlacementSurvey {
+    key: Option<(usize, u64, usize, crate::sim::MatchOutcome, usize)>,
+    pub verdicts: Vec<crate::placement::CellVerdict>,
+    pub by_level: Vec<usize>,
+}
+impl PlacementSurvey {
+    pub fn verdict(&self, cell: HexCoord) -> Option<&crate::placement::CellVerdict> {
+        self.verdicts.iter().find(|verdict| verdict.cell == cell)
+    }
+}
+pub fn sync_survey(session: Res<LabSession>, mut survey: ResMut<PlacementSurvey>) {
+    let sim = &session.sim;
+    let key = (
+        session.selected_card,
+        sim.tick / u64::from(crate::sim::ACTOR_BEAT_TICKS),
+        sim.command_log.len(),
+        sim.outcome,
+        sim.known.len(),
+    );
+    if survey.key == Some(key) {
+        return;
+    }
+    survey.key = Some(key);
+    survey.verdicts = crate::placement::survey(sim, session.selected_card);
+    survey.by_level = crate::placement::legal_by_level(&survey.verdicts, sim.world.config.levels);
+}
 type UiControlFilter = Or<(With<ui::ArchitectButton>, With<ui::CardButton>)>;
 
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
@@ -78,30 +111,68 @@ impl MapCameraState {
         self.focused_target = None;
         self.framed = false;
     }
-    /// Snap only on a new selection, leaving subsequent manual pan/zoom untouched.
+    /// Bring a new selection into comfortable view, leaving manual pan/zoom alone
+    /// otherwise. A tile already well inside the view does not move the board: the
+    /// resting composition is the fitted deck, and snapping every click to the centre
+    /// is what used to push it off to one side.
     fn sync_selection(&mut self, session: &LabSession) {
         let target = session.target().filter(|c| c.level == self.floor);
-        if target != self.focused_target || !self.framed {
-            // Begin near an actionable, already-known tile without arming a command.
-            let focus = target.or_else(|| {
-                if self.framed {
-                    None
-                } else {
-                    session
-                        .sim
-                        .mutable_targets()
-                        .into_iter()
-                        .find(|c| c.level == self.floor)
-                }
-            });
-            if let Some(cell) = focus {
-                let point = board_position(session.sim.world.config, cell) + Vec3::Y * 0.5;
-                self.pan = (camera_rotation().inverse() * point).truncate();
-                self.zoom = DEFAULT_ZOOM;
-            }
-            self.focused_target = target;
-            self.framed = true;
+        if target == self.focused_target || !self.framed {
+            return;
         }
+        if let Some(cell) = target {
+            let point = board_position(session.sim.world.config, cell) + Vec3::Y * 0.5;
+            let plane = (camera_rotation().inverse() * point).truncate();
+            if !self.comfortably_visible(plane) {
+                self.pan = plane;
+            }
+        }
+        self.focused_target = target;
+    }
+    /// Inside the middle of the viewport and clear of the placement inspector.
+    fn comfortably_visible(&self, plane: Vec2) -> bool {
+        let offset = (plane - self.pan) / self.units_per_pixel.max(f32::EPSILON);
+        let screen =
+            self.viewport_offset + self.viewport_size * 0.5 + Vec2::new(offset.x, -offset.y);
+        let end = self.viewport_offset + self.viewport_size;
+        let inspector = Rect::from_corners(end - Vec2::new(300.0, 260.0), end);
+        let inner = Rect::from_corners(
+            self.viewport_offset + self.viewport_size * 0.14,
+            end - self.viewport_size * 0.14,
+        );
+        inner.contains(screen) && !inspector.contains(screen)
+    }
+    /// The resting composition: the active deck's structure, centred and fitted with a
+    /// margin, rather than whichever editable tile happened to be first.
+    fn fit_active_deck(&mut self, session: &LabSession, units_per_pixel_at_one: f32) {
+        let config = session.sim.world.config;
+        let targets = session.sim.mutable_targets();
+        let inverse = camera_rotation().inverse();
+        let mut bounds: Option<Rect> = None;
+        for (&cell, placement) in &session.sim.world.placements {
+            if cell.level != self.floor || !(placement.space.built() || targets.contains(&cell)) {
+                continue;
+            }
+            let center = board_position(config, cell);
+            // Hex corners at the floor and at wall height, projected to the camera plane.
+            for corner in observed_hex::prism_hull(3.0, 1.0) {
+                let plane = (inverse * (center + Vec3::from_array(corner))).truncate();
+                bounds = Some(
+                    bounds.map_or(Rect::from_center_size(plane, Vec2::ZERO), |b| {
+                        b.union_point(plane)
+                    }),
+                );
+            }
+        }
+        let Some(bounds) = bounds else {
+            self.pan = Vec2::ZERO;
+            self.zoom = DEFAULT_ZOOM;
+            return;
+        };
+        let usable = (self.viewport_size - Vec2::new(120.0, 140.0)).max(Vec2::splat(100.0));
+        let needed = (bounds.size() / usable).max_element();
+        self.pan = bounds.center();
+        self.zoom = (needed / units_per_pixel_at_one.max(f32::EPSILON)).clamp(FIT_MIN_ZOOM, 1.0);
     }
     pub(crate) fn placement_visible(&self, session: &LabSession) -> bool {
         !self.lab_controls
@@ -176,21 +247,30 @@ pub fn setup(
 ) {
     let models = models::Models::new(&mut meshes, &mut materials);
     commands.insert_resource(models);
-    commands.spawn((
-        BoardCamera,
-        Camera3d::default(),
-        Camera {
-            clear_color: color(Role::Background).into(),
-            ..default()
-        },
-        Projection::Orthographic(OrthographicProjection {
-            scale: 0.15,
-            ..OrthographicProjection::default_3d()
-        }),
-        Transform::from_xyz(100.0, 100.0, 100.0).looking_at(Vec3::ZERO, Vec3::Y),
-        RenderLayers::layer(MAP_RENDER_LAYER),
-        Name::new("Rogue Architect facility camera"),
-    ));
+    let board_camera = commands
+        .spawn((
+            BoardCamera,
+            Camera3d::default(),
+            Camera {
+                clear_color: color(Role::SkyDeep).into(),
+                ..default()
+            },
+            Projection::Orthographic(OrthographicProjection {
+                scale: 0.15,
+                ..OrthographicProjection::default_3d()
+            }),
+            Transform::from_xyz(100.0, 100.0, 100.0).looking_at(Vec3::ZERO, Vec3::Y),
+            RenderLayers::layer(MAP_RENDER_LAYER),
+            Name::new("Rogue Architect facility camera"),
+        ))
+        .id();
+    sky::spawn(
+        &mut commands,
+        board_camera,
+        &mut meshes,
+        &mut materials,
+        &mut images,
+    );
     let hud = commands
         .spawn((
             Camera2d,
@@ -232,6 +312,7 @@ pub fn sync_camera_viewport(
     windows: Query<&Window>,
     session: Res<LabSession>,
     mut cameras: Query<(&mut Camera, &mut Transform, &mut Projection), With<BoardCamera>>,
+    mut backdrop: Query<&mut Transform, (With<sky::SkyBackdrop>, Without<BoardCamera>)>,
     mut state: ResMut<MapCameraState>,
 ) {
     let (Ok(window), Ok((mut camera, mut transform, mut projection))) =
@@ -284,6 +365,11 @@ pub fn sync_camera_viewport(
         layout.map_size.x,
         layout.map_size.y,
     );
+    if !state.framed {
+        state.fit_active_deck(&session, framing.units_per_pixel);
+        state.framed = true;
+        state.focused_target = session.target().filter(|c| c.level == state.floor);
+    }
     state.units_per_pixel = framing.units_per_pixel * state.zoom;
     let center = Vec3::new(0.0, 0.0, 0.0) + camera_rotation() * state.pan.extend(0.0);
     *transform = Transform::from_translation(center + camera_rotation() * Vec3::Z * 300.0)
@@ -293,6 +379,10 @@ pub fn sync_camera_viewport(
         far: 1000.0,
         ..OrthographicProjection::default_3d()
     });
+    // The sky fills exactly the board's view, whatever the zoom.
+    for mut sky in &mut backdrop {
+        sky.scale = (layout.map_size * state.units_per_pixel * 1.02).extend(1.0);
+    }
 }
 
 pub fn camera_controls(
@@ -341,7 +431,7 @@ pub fn map_pointer_input(
         .and_then(|p| {
             let ray = camera.viewport_to_world(transform, p).ok()?;
             let distance = ray.intersect_plane(Vec3::Y * 0.5, InfinitePlane3d::new(Vec3::Y))?;
-            pick_target(&session, ray.get_point(distance), state.floor)
+            pick_cell(&session, ray.get_point(distance), state.floor)
         });
     if picked != session.hovered_target {
         session.hovered_target = picked;
@@ -349,11 +439,38 @@ pub fn map_pointer_input(
     }
     if mouse.just_pressed(MouseButton::Left)
         && let Some(cell) = picked
+        && !session.select_target(cell)
     {
-        session.select_target(cell);
+        // The hover note already says why; a click on a locked tile only confirms it.
+        session.last_message = format!("Tile {}, {} is locked for this card.", cell.q, cell.r);
     }
 }
 
+/// Any structure on the active deck, so a locked tile can say why it is locked.
+fn pick_cell(session: &LabSession, point: Vec3, floor: u8) -> Option<HexCoord> {
+    pick_target(session, point, floor).or_else(|| {
+        session
+            .sim
+            .world
+            .placements
+            .iter()
+            .filter(|(cell, placement)| {
+                cell.level == floor
+                    && session.sim.known.contains(cell)
+                    && (placement.space.built() || session.sim.retracted.contains(cell))
+            })
+            .map(|(&cell, _)| cell)
+            .find(|&cell| hex_contains(session.sim.world.config, cell, point))
+    })
+}
+fn hex_contains(
+    config: observed_facility::hex_wfc::HexWfcConfig,
+    cell: HexCoord,
+    point: Vec3,
+) -> bool {
+    let local = point - board_position(config, cell);
+    local.x.abs() <= 7.0 && local.z.abs() <= 8.0 - local.x.abs() * 4.0 / 7.0
+}
 fn pick_target(session: &LabSession, point: Vec3, floor: u8) -> Option<HexCoord> {
     // Only the active deck owns pointer hits. Context floors never steal a click.
     session
@@ -361,10 +478,7 @@ fn pick_target(session: &LabSession, point: Vec3, floor: u8) -> Option<HexCoord>
         .mutable_targets()
         .into_iter()
         .filter(|c| c.level == floor)
-        .find(|&cell| {
-            let local = point - board_position(session.sim.world.config, cell);
-            local.x.abs() <= 7.0 && local.z.abs() <= 8.0 - local.x.abs() * 4.0 / 7.0
-        })
+        .find(|&cell| hex_contains(session.sim.world.config, cell, point))
 }
 fn board_position(config: observed_facility::hex_wfc::HexWfcConfig, cell: HexCoord) -> Vec3 {
     let mut at = Vec3::from_array(observed_hex::hex_origin(cell));

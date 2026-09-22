@@ -232,6 +232,7 @@ impl Plugin for ArchitectLabPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LabSession>()
             .init_resource::<view::MapCameraState>()
+            .init_resource::<view::PlacementSurvey>()
             .insert_resource(Time::<Fixed>::from_hz(f64::from(sim::FIXED_HZ)))
             .add_systems(Startup, view::setup)
             .add_systems(FixedUpdate, fixed_tick)
@@ -240,12 +241,14 @@ impl Plugin for ArchitectLabPlugin {
                 (
                     handle_input,
                     view::handle_ui_actions,
+                    view::sync_survey,
                     view::camera_controls,
                     view::map_pointer_input,
                     view::focus_selected_tile,
                     view::sync_camera_viewport,
                     view::sync_layout,
                     view::sync_dynamic_text,
+                    view::sync_hover_note,
                     view::sync_card_text,
                     view::sync_card_buttons,
                     view::sync_previews,

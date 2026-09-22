@@ -29,7 +29,11 @@ let knownSignals = new Map(),
 const board = $("board"),
   content = $("map-content");
 const actorPositions = new Map();
+// Why each drawn tile refuses the selected card, straight from the simulation.
+let refusals = new Map(),
+  tip = null;
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const canHover = matchMedia("(hover: hover)");
 const cellKey = (c) => c.join(",");
 const same = (a, b) => a && b && cellKey(a) === cellKey(b);
 const pos = (cell) => layout.position(cell);
@@ -54,6 +58,7 @@ function refresh(force = false) {
       game.preview(selected, ...(target ?? [0, 0, floor]), rotation),
     );
     forecastKey = key;
+    refusals = new Map((forecast.refused ?? []).map((r) => [cellKey(r.cell), r]));
   }
   drawCards();
   const nextMapKey = `${key}/${floor}/${state.paused}/${state.caught}`;
@@ -161,6 +166,52 @@ function transform() {
     "transform",
     `translate(${camera.x},${camera.y}) scale(${camera.scale})`,
   );
+  placeTip();
+}
+const capitalise = (text) => text[0].toUpperCase() + text.slice(1);
+// A board-anchored note that says what the selected card can do at one tile.
+// Hover shows it for a mouse; a tap on a locked tile pins it until the next tap.
+function showTip(cell, pinned = false) {
+  const el = $("tile-tip");
+  const key = cellKey(cell);
+  const refusal = refusals.get(key);
+  const legal = forecast?.legal?.find((p) => same(p.cell, cell));
+  const card = state.cards[selected];
+  if (!card || (!refusal && !legal) || (pinned && legal)) return hideTip(true);
+  tip = { cell, pinned };
+  el.dataset.kind = legal ? "legal" : "locked";
+  el.dataset.code = refusal?.code ?? "";
+  $("tip-title").textContent = legal
+    ? `${capitalise(card.name)} fits here`
+    : `${capitalise(card.name)} is locked out`;
+  $("tip-reason").textContent = legal
+    ? `${legal.rotations.length} of 6 rotation${legal.rotations.length === 1 ? "" : "s"} fit. Tap to preview.`
+    : `${capitalise(refusal.reason)}.`;
+  el.hidden = false;
+  placeTip();
+}
+function hideTip(force = false) {
+  if (!force && tip?.pinned) return;
+  tip = null;
+  $("tile-tip").hidden = true;
+}
+function placeTip() {
+  if (!tip || !layout) return;
+  const [x, y] = pos(tip.cell);
+  const el = $("tile-tip");
+  const px = x * camera.scale + camera.x,
+    py = y * camera.scale + camera.y - 30 * camera.scale;
+  const rect = board.getBoundingClientRect();
+  const width = el.offsetWidth;
+  // Keep the note inside the board; flip below the tile when it would clip the top.
+  const left = Math.max(8, Math.min(rect.width - width - 8, px - width / 2));
+  const below = py - el.offsetHeight - 10 < 56;
+  el.style.left = `${left}px`;
+  el.style.top = below
+    ? `${py + 60 * camera.scale + 10}px`
+    : `${py - el.offsetHeight - 10}px`;
+  el.style.setProperty("--arrow", `${Math.max(12, Math.min(width - 12, px - left))}px`);
+  el.dataset.side = below ? "below" : "above";
 }
 function drawMap() {
   const active = document.activeElement?.getAttribute("data-cell");
@@ -168,6 +219,7 @@ function drawMap() {
   const legal = new Map(
     (forecast?.legal ?? []).map((p) => [cellKey(p.cell), p.rotations]),
   );
+  drawDepth();
   for (const cell of state.cells.filter((c) => c.cell[2] === floor)) {
     if (!cell.solid && !cell.retracted && !legal.has(cellKey(cell.cell)))
       continue;
@@ -179,7 +231,9 @@ function drawMap() {
     if (cell.condemned) classes.push("condemned");
     if (cell.prison) classes.push("prison");
     if (same(cell.cell, target)) classes.push("selected");
-    const label = `Tile ${cell.cell[0]}, ${cell.cell[1]}${cell.condemned ? ", condemned" : cell.prison ? ", prison core" : cell.observed ? ", watched" : !cell.solid ? ", empty space" : ""}${legal.has(cellKey(cell.cell)) ? ", legal target" : ""}`;
+    const refusal = refusals.get(cellKey(cell.cell));
+    if (refusal) classes.push("locked");
+    const label = `Tile ${cell.cell[0]}, ${cell.cell[1]}${cell.condemned ? ", condemned" : cell.prison ? ", prison core" : cell.observed ? ", watched" : !cell.solid ? ", empty space" : ""}${legal.has(cellKey(cell.cell)) ? ", legal target" : refusal ? `, locked: ${refusal.reason}` : ""}`;
     const g = svg("g", {
       class: classes.join(" "),
       transform: `translate(${x},${y})`,
@@ -224,6 +278,8 @@ function drawMap() {
       svg("polygon", { points: points(35), class: "next-ring" }, g);
     if (cell.vertical.length)
       svg("text", { x: 0, y: 17, class: "tile-label" }, g).textContent = "↕";
+    g.addEventListener("focus", () => showTip(cell.cell));
+    g.addEventListener("blur", () => hideTip());
     g.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
@@ -366,10 +422,44 @@ function drawMap() {
         guardian.held ? "HELD" : "HUNTER";
     }
   transform();
+  if (tip) showTip(tip.cell, tip.pinned);
   if (active)
     content
       .querySelector(`[data-cell="${active}"]`)
       ?.focus({ preventScroll: true });
+}
+// The floor is a plate hung over open air. Beneath the tiles, in paint order: the
+// decks below as hazed silhouettes, a veil of haze per storey, the plate's cast
+// shadow, and its sawn edge. Unknown and open-air cells are simply sky; known rock
+// is drawn opaque, because it is the one unbuilt thing you cannot fall through.
+function drawDepth() {
+  const depth = svg("g", { class: "depth", "aria-hidden": "true" });
+  const drawn = (c) => c.solid || c.space === "rock";
+  for (let below = Math.min(2, floor); below >= 1; below--) {
+    const deck = svg("g", { class: `context-deck depth-${below}` }, depth);
+    const [ox, oy] = [10 * below, 30 * below];
+    for (const c of state.cells.filter(
+      (c) => c.cell[2] === floor - below && drawn(c),
+    )) {
+      const [x, y] = pos(c.cell);
+      svg("polygon", { points: points(33), transform: `translate(${x + ox},${y + oy})` }, deck);
+    }
+    svg("rect", { class: "haze", x: -4000, y: -4000, width: 8000, height: 8000 }, depth);
+  }
+  const plate = state.cells.filter((c) => c.cell[2] === floor && drawn(c));
+  const shadow = svg("g", { class: "plate-shadow" }, depth);
+  const edge = svg("g", { class: "plate-edge" }, depth);
+  for (const c of plate) {
+    const [x, y] = pos(c.cell);
+    svg("polygon", { points: points(33), transform: `translate(${x + 7},${y + 22})` }, shadow);
+    svg("polygon", { points: points(32), transform: `translate(${x},${y + 6})` }, edge);
+  }
+  for (const c of state.cells.filter((c) => c.cell[2] === floor && c.space === "rock")) {
+    const [x, y] = pos(c.cell);
+    const g = svg("g", { class: "rock", transform: `translate(${x},${y})` }, depth);
+    svg("polygon", { points: points(32) }, g);
+    svg("path", { d: "M-14-8 4-16M-20 6 14-10M-8 18 20 2", class: "rock-grain" }, g);
+  }
 }
 function animateActor(group, key, x, y) {
   const previous = actorPositions.get(key);
@@ -397,6 +487,25 @@ function choose(cell) {
   if (legal && !legal.rotations.includes(rotation))
     rotation = legal.rotations[0];
   refresh(true);
+  if (legal) hideTip(true);
+  else showTip(cell, true);
+}
+// One line on why the board is as dark as it is: what holds the other tiles.
+function lockedSummary(here) {
+  const tally = new Map();
+  for (const r of refusals.values())
+    if (r.cell[2] === floor) tally.set(r.tally, (tally.get(r.tally) ?? 0) + 1);
+  const reasons = [...tally]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([what, n]) => `${n} ${what}`)
+    .join(" · ");
+  const lead = here
+    ? `${here} target${here === 1 ? "" : "s"} glow on this floor.`
+    : "Nothing glows on this floor.";
+  return reasons
+    ? `${lead} Locked: ${reasons}. ${canHover.matches ? "Hover" : "Tap"} a tile to see why.`
+    : `${lead} Tap one to preview.`;
 }
 function drawStatus() {
   $("caught").textContent = `${state.caught} / ${state.total}`;
@@ -429,13 +538,22 @@ function drawStatus() {
   $("target-label").textContent = target
     ? `FLOOR ${target[2] + 1} · TILE ${target[0]}, ${target[1]} · ROTATION ${rotation + 1}`
     : "1. PICK A CARD · 2. TAP A TILE";
+  const counts = forecast?.floor_counts ?? [];
+  const here = counts[floor] ?? 0;
+  const elsewhere = counts
+    .map((n, i) => [n, i])
+    .filter(([n, i]) => n && i !== floor);
   $("effect").textContent = target
-    ? (forecast?.reason ?? "Choose a card.")
-    : forecast?.legal.length
+    ? target && !forecast?.ok
+      ? `Locked: ${forecast?.reason ?? "choose a card"}.`
+      : (forecast?.reason ?? "Choose a card.")
+    : here
       ? state.plays
         ? "Where will you change the hunt?"
         : "Reconnect the missing tile."
-      : "No targets for this card right now.";
+      : elsewhere.length
+        ? `No targets on this floor. Try ${elsewhere.map(([n, i]) => `floor ${String(i + 1).padStart(2, "0")} (${n})`).join(" or ")}.`
+        : "No targets for this card right now.";
   $("effect").style.color =
     target && !forecast?.ok ? "var(--muted)" : "var(--ink)";
   $("consequence").textContent =
@@ -445,9 +563,7 @@ function drawStatus() {
         : forecast.repaired
           ? "Repairs the boundary and stops pending collapse."
           : "Connections fit. No new collapse warning."
-      : forecast?.legal.length
-        ? "Glowing dots mark legal targets. Tap one to preview."
-        : "Choose another card, or let the hunt move to release watched tiles.";
+      : lockedSummary(here);
   $("play").disabled =
     !target ||
     !forecast?.ok ||
@@ -483,18 +599,39 @@ function drawStatus() {
       }),
     );
   }
-  const nextFloorKey = `${floor}/${state.levels}`;
+  const nextFloorKey = `${floor}/${state.levels}/${counts.join(",")}/${!!state.cards[selected]}`;
   if (nextFloorKey !== floorKey) {
     floorKey = nextFloorKey;
     $("floors").replaceChildren(
       ...Array.from({ length: state.levels }, (_, i) => {
         const b = document.createElement("button");
-        b.className = "small quiet";
-        b.textContent = `${i === 0 ? "01 / Institutional" : "02 / Liminal"}`;
+        b.className = "small quiet floor";
+        const district = (state.floor_districts?.[i] ?? "").split(" ")[0];
+        const number = document.createElement("span");
+        number.textContent = String(i + 1).padStart(2, "0");
+        const name = document.createElement("span");
+        name.className = "floor-district";
+        name.textContent = ` / ${district}`;
+        number.append(name);
+        b.append(number);
+        // How many places the selected card can go on this floor.
+        if (state.cards[selected]) {
+          const count = document.createElement("span");
+          count.className = "count";
+          count.dataset.zero = String(!counts[i]);
+          count.textContent = counts[i] ?? 0;
+          count.setAttribute("aria-hidden", "true");
+          b.append(count);
+        }
+        b.setAttribute(
+          "aria-label",
+          `Floor ${i + 1}, ${state.floor_districts?.[i] ?? ""}${state.cards[selected] ? `, ${counts[i] ?? 0} legal target${counts[i] === 1 ? "" : "s"} for the selected card` : ""}`,
+        );
         b.setAttribute("aria-pressed", String(i === floor));
         b.onclick = () => {
           floor = i;
           target = null;
+          hideTip(true);
           refresh(true);
           fit();
         };
@@ -543,6 +680,7 @@ function reset(nextMode = mode) {
   seenResult = false;
   knownSignals.clear();
   actorPositions.clear();
+  hideTip(true);
   forecastKey = "";
   cardKey = "";
   refresh(true);
@@ -615,6 +753,13 @@ board.addEventListener("pointermove", (e) => {
     }
   }
 });
+board.addEventListener("pointermove", (e) => {
+  if (e.pointerType !== "mouse" || e.buttons || gesture) return;
+  const tile = e.target.closest?.("[data-cell]");
+  if (tile) showTip(tile.dataset.cell.split(",").map(Number));
+  else hideTip();
+});
+board.addEventListener("pointerleave", () => hideTip());
 function nearestCell(clientX, clientY) {
   const rect = board.getBoundingClientRect();
   return state.cells

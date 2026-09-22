@@ -25,6 +25,14 @@ pub(crate) struct Models {
     signals: BTreeMap<Role, Handle<StandardMaterial>>,
     rooms: BTreeMap<(ArchitectureRegister, u8), Vec<Part>>,
     pub ghost: Handle<StandardMaterial>,
+    /// The sawn underside of a built cell: lit, so its facets catch the key light.
+    pub underside: Handle<StandardMaterial>,
+    /// One layer of the deck's soft cast shadow on the cloud below.
+    pub shadow: Handle<StandardMaterial>,
+    /// Sealed rock, opaque and lit.
+    pub rock: Handle<StandardMaterial>,
+    /// Context decks one and two storeys down, hazed by distance.
+    pub context: [Handle<StandardMaterial>; 2],
 }
 fn catalog() -> &'static [TilePrototype] {
     static TILES: OnceLock<Vec<TilePrototype>> = OnceLock::new();
@@ -77,6 +85,29 @@ impl Models {
             unlit: true,
             ..default()
         });
+        let underside = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.13, 0.13, 0.125),
+            perceptual_roughness: 0.95,
+            ..default()
+        });
+        let shadow = materials.add(StandardMaterial {
+            base_color: Color::srgba(0.0, 0.004, 0.01, 0.2),
+            alpha_mode: AlphaMode::Blend,
+            unlit: true,
+            ..default()
+        });
+        let rock = materials.add(StandardMaterial {
+            base_color: color(Role::Rock),
+            perceptual_roughness: 1.0,
+            ..default()
+        });
+        let context = [0.3, 0.55].map(|haze| {
+            materials.add(StandardMaterial {
+                base_color: observed_style::architect::hazed(Role::Context, haze),
+                unlit: true,
+                ..default()
+            })
+        });
         Self {
             cube,
             sphere,
@@ -85,6 +116,10 @@ impl Models {
             signals: BTreeMap::new(),
             rooms: BTreeMap::new(),
             ghost,
+            underside,
+            shadow,
+            rock,
+            context,
         }
     }
     pub fn signal(

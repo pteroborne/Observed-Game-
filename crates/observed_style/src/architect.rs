@@ -1,6 +1,10 @@
 //! Quiet tactical chrome for the Architect cutaway. Signals use both colour and
 //! a shape/text cue: amber ring = selection, cyan eye = Observer, red pyramid =
 //! Guardian, red cross = instability, violet cage = protected prison.
+//!
+//! Unbuilt space is two things and reads as two things. Open air is sky: a cool
+//! well, deepest straight down, hazing outward, under the deck's cast shadow.
+//! Sealed rock is an opaque block. Anything between them would say "hole".
 use bevy::color::Color;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -19,6 +23,12 @@ pub enum Role {
     Prison,
     Context,
     Fixture,
+    /// Open air straight down: the darkest thing on the board.
+    SkyDeep,
+    /// Open air towards the edge of view, where haze gathers.
+    SkyHaze,
+    /// Sealed rock: unbuilt mass that is not air, and cannot be fallen through.
+    Rock,
 }
 
 #[must_use]
@@ -38,7 +48,24 @@ pub fn color(role: Role) -> Color {
         Role::Prison => Color::srgb(0.68, 0.57, 0.90),
         Role::Context => Color::srgb(0.09, 0.13, 0.15),
         Role::Fixture => Color::srgb(1.0, 0.85, 0.52),
+        Role::SkyDeep => Color::srgb(0.012, 0.024, 0.038),
+        Role::SkyHaze => Color::srgb(0.090, 0.157, 0.207),
+        Role::Rock => Color::srgb(0.16, 0.17, 0.165),
     }
+}
+
+/// `role` seen through `amount` (0..=1) of haze: how a deck further down the
+/// drop reads, so depth comes from atmosphere rather than from dimming alone.
+#[must_use]
+pub fn hazed(role: Role, amount: f32) -> Color {
+    let near = color(role).to_linear();
+    let haze = color(Role::SkyHaze).to_linear();
+    let t = amount.clamp(0.0, 1.0);
+    Color::linear_rgb(
+        near.red + (haze.red - near.red) * t,
+        near.green + (haze.green - near.green) * t,
+        near.blue + (haze.blue - near.blue) * t,
+    )
 }
 
 /// Model-scale concrete: brighter than the first-person shell because the

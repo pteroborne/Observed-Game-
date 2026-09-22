@@ -1,12 +1,16 @@
 //! Simulation-owned legality and live labels; no invented combat statistics.
 use super::{
     ArchitectButton, CardButton, CardText, CardTextField, ChargePip, DynamicText, HandDock,
-    Inspector, LabControls, Sidebar, UiAction, can_submit,
+    HoverNote, HoverNoteText, Inspector, LabControls, Sidebar, UiAction, can_submit,
 };
-use crate::view::{MapCameraState, WorkspaceLayout};
+use crate::view::{MapCameraState, PlacementSurvey, WorkspaceLayout};
 use crate::{
     LabSession,
-    sim::{ARCHITECT_COOLDOWN_TICKS, Card, CardKind, MatchOutcome, ObserverState, TileShape},
+    placement::{refusal_tally, refusals_on_level},
+    sim::{
+        ARCHITECT_COOLDOWN_TICKS, Card, CardKind, CommandRefusal, MatchOutcome, ObserverState,
+        TileShape,
+    },
 };
 use bevy::prelude::*;
 use observed_style::architect::{Role, color};
@@ -120,6 +124,7 @@ pub fn sync_layout(
 pub fn sync_dynamic_text(
     session: Res<LabSession>,
     state: Res<MapCameraState>,
+    survey: Res<PlacementSurvey>,
     mut dynamic: Query<(&DynamicText, &mut Text, &mut TextColor)>,
 ) {
     let target = session.target().filter(|c| c.level == state.floor);
@@ -202,6 +207,8 @@ pub fn sync_dynamic_text(
                     "Autopilot".to_string()
                 } else if target.is_some() {
                     "Preview on tile".to_string()
+                } else if card.is_some() {
+                    floor_guidance(&survey, state.floor)
                 } else {
                     "Choose a tile".to_string()
                 }
@@ -228,6 +235,13 @@ pub fn sync_dynamic_text(
                 session.sim.world.config.levels,
                 crate::sim::floor_register(state.floor).slug()
             ),
+            DynamicText::FloorTargets => {
+                if card.is_none() || session.sim.bot_architect {
+                    String::new()
+                } else {
+                    floor_targets(&survey, state.floor)
+                }
+            }
             DynamicText::Hazard => {
                 let mut s = if session.sim.contradictions.is_empty() {
                     String::new()
@@ -297,6 +311,141 @@ pub fn sync_dynamic_text(
                 Role::Muted
             });
         }
+    }
+}
+/// "12 targets" here, plus any other floor the card can reach, so an empty deck is
+/// never a mystery: "0 here  /  02: 7".
+fn floor_targets(survey: &PlacementSurvey, floor: u8) -> String {
+    let here = survey
+        .by_level
+        .get(usize::from(floor))
+        .copied()
+        .unwrap_or(0);
+    let mut text = format!("{here} target{}", if here == 1 { "" } else { "s" });
+    let elsewhere: Vec<_> = survey
+        .by_level
+        .iter()
+        .enumerate()
+        .filter(|&(level, &count)| level != usize::from(floor) && count > 0)
+        .map(|(level, count)| format!("{:02}: {count}", level + 1))
+        .collect();
+    if !elsewhere.is_empty() {
+        text += &format!("   /   {}", elsewhere.join("  "));
+    }
+    text
+}
+/// The hand header before a tile is chosen: why the board is as dark as it is.
+fn floor_guidance(survey: &PlacementSurvey, floor: u8) -> String {
+    let here = survey
+        .by_level
+        .get(usize::from(floor))
+        .copied()
+        .unwrap_or(0);
+    let lead = if here == 0 {
+        "Nothing fits on this floor".to_string()
+    } else {
+        "Choose a tile".to_string()
+    };
+    let reasons: Vec<_> = refusals_on_level(&survey.verdicts, floor)
+        .into_iter()
+        .take(3)
+        .map(|(refusal, count)| format!("{count} {}", refusal_tally(refusal)))
+        .collect();
+    if reasons.is_empty() {
+        lead
+    } else {
+        format!("{lead}   /   locked: {}", reasons.join(", "))
+    }
+}
+type HoverNoteQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut Node,
+        &'static mut BorderColor,
+        &'static ComputedNode,
+    ),
+    With<HoverNote>,
+>;
+pub fn sync_hover_note(
+    windows: Query<&Window>,
+    session: Res<LabSession>,
+    state: Res<MapCameraState>,
+    survey: Res<PlacementSurvey>,
+    mut notes: HoverNoteQuery,
+    mut texts: Query<(&HoverNoteText, &mut Text, &mut TextColor)>,
+) {
+    let Ok((mut node, mut border, computed)) = notes.single_mut() else {
+        return;
+    };
+    let window = windows.single().ok();
+    let card = session.sim.deck.hand.get(session.selected_card).copied();
+    let shown = window
+        .and_then(Window::cursor_position)
+        .zip(card)
+        .and_then(|(cursor, card)| {
+            let cell = session.hovered_target.filter(|c| c.level == state.floor)?;
+            let verdict = survey.verdict(cell)?;
+            (!state.details && !state.lab_controls && !session.sim.bot_architect)
+                .then_some((cursor, card, verdict))
+        });
+    let Some((cursor, card, verdict)) = shown else {
+        node.display = Display::None;
+        return;
+    };
+    let (title, reason, role) = match verdict.refusal {
+        None => (
+            format!("{} FITS HERE", card_title(card)),
+            format!(
+                "{} of 6 rotations connect. Click to preview.",
+                verdict.rotations.len()
+            ),
+            Role::Selected,
+        ),
+        Some(refusal) => (
+            format!("{} IS LOCKED OUT", card_title(card)),
+            capitalised(refusal.label()),
+            refusal_role(refusal),
+        ),
+    };
+    for (kind, mut text, mut tint) in &mut texts {
+        match kind {
+            HoverNoteText::Title => {
+                **text = title.clone();
+                tint.0 = color(role);
+            }
+            HoverNoteText::Reason => **text = reason.clone(),
+        }
+    }
+    border.left = color(role);
+    // Beside the pointer, flipped left or up near the window edge. The measured size
+    // lags a frame behind new text, which is invisible at pointer speed.
+    let size = computed.size() * computed.inverse_scale_factor();
+    let bounds = window.map_or(Vec2::splat(f32::MAX), |w| Vec2::new(w.width(), w.height()));
+    let mut at = cursor + Vec2::new(18.0, 16.0);
+    if at.x + size.x > bounds.x - 8.0 {
+        at.x = cursor.x - size.x - 14.0;
+    }
+    if at.y + size.y > bounds.y - 8.0 {
+        at.y = cursor.y - size.y - 12.0;
+    }
+    node.left = px(at.x.max(8.0));
+    node.top = px(at.y.max(8.0));
+    node.display = Display::Flex;
+}
+fn capitalised(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect::<String>() + "."
+    })
+}
+/// The hue of whatever is holding the tile: cyan for sight, violet for the prison.
+fn refusal_role(refusal: CommandRefusal) -> Role {
+    match refusal {
+        CommandRefusal::Observed => Role::Observer,
+        CommandRefusal::PrisonCore | CommandRefusal::Anchored => Role::Prison,
+        CommandRefusal::Occupied => Role::Guardian,
+        _ => Role::Muted,
     }
 }
 pub fn sync_card_text(session: Res<LabSession>, mut labels: Query<(&CardText, &mut Text)>) {
