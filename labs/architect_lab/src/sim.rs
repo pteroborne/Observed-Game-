@@ -22,7 +22,9 @@ pub use mode::ArchitectMode;
 mod objective;
 pub use objective::{DARKNESS_BEATS, RogueObjective, StateHold};
 mod wave;
-pub use wave::{RogueEconomy, WAVE_INTERVAL_TICKS, WaveState, WaveTelegraph, WaveWarning};
+pub use wave::{
+    RogueEconomy, WAVE_DRAW_TICKS, WAVE_INTERVAL_TICKS, WaveState, WaveTelegraph, WaveWarning,
+};
 mod util;
 use util::{
     Prng, command_key, face_between, face_toward, key_face_from, lateral_face, threshold_touches,
@@ -227,6 +229,8 @@ pub struct ArchitectLab {
     pub wave_telegraph: WaveTelegraph,
     /// Ticks between wave commits.
     pub wave_interval_ticks: u32,
+    /// Ticks the Rogue waits before it may commit another card to the coming wave.
+    pub wave_draw_ticks: u32,
     /// The queued plan, and what became of the last one.
     pub wave: WaveState,
     /// The Rogue sees every Observer, detected or not.
@@ -404,6 +408,7 @@ impl ArchitectLab {
             rogue_economy: RogueEconomy::default(),
             wave_telegraph: WaveTelegraph::default(),
             wave_interval_ticks: WAVE_INTERVAL_TICKS,
+            wave_draw_ticks: WAVE_DRAW_TICKS,
             wave: WaveState::default(),
             rogue_sees_all_observers: true,
         };
@@ -503,14 +508,8 @@ impl ArchitectLab {
                 // re-picks the same best one every beat and the commit throws all but the
                 // first away -- measured at 153 of 158 drops. It also makes the hand mean
                 // what it should: a wave is at most a hand.
-                if self.rogue_economy == RogueEconomy::Waves
-                    && self
-                        .wave
-                        .pending
-                        .iter()
-                        .any(|queued| matches!(queued, ArchitectCommand::Play { card: c, .. } if *c == card))
-                {
-                    return Some(CommandRefusal::AlreadyQueued);
+                if self.rogue_economy == RogueEconomy::Waves && self.wave.draw_cooldown > 0 {
+                    return Some(CommandRefusal::Cooldown);
                 }
                 // A held match never ticks, so the cooldown never drains. The setup
                 // allowance is what makes planning a phase rather than a single move.
@@ -534,7 +533,7 @@ impl ArchitectLab {
                         .wave
                         .pending
                         .iter()
-                        .any(|queued| matches!(queued, ArchitectCommand::Requisition))
+                        .any(|(queued, _)| matches!(queued, ArchitectCommand::Requisition))
                 {
                     return Some(CommandRefusal::AlreadyQueued);
                 }
@@ -645,7 +644,22 @@ impl ArchitectLab {
             return Err(refusal);
         }
         if self.rogue_economy == RogueEconomy::Waves && !self.has_setup_allowance() {
-            self.wave.pending.push(command);
+            // Committing to a placement costs the card immediately, even though the
+            // structure does not move until the boundary. The hand refills as usual, so
+            // the Rogue always holds five; the draw clock is what limits how fast the
+            // plan can grow, and therefore how big a wave gets.
+            let paid = match command {
+                ArchitectCommand::Play { card, .. } => {
+                    let held = self.deck.hand.iter().find(|held| held.id == card).copied();
+                    if held.is_some() {
+                        assert!(self.deck.spend(card), "legality proved the card is held");
+                    }
+                    held
+                }
+                ArchitectCommand::Requisition => None,
+            };
+            self.wave.pending.push((command, paid));
+            self.wave.draw_cooldown = self.wave_draw_ticks;
             return Ok(());
         }
         // The free opening lands as it is laid. Setting the trap before the hunt starts is
@@ -662,12 +676,23 @@ impl ArchitectLab {
     /// that no longer fits is dropped with its reason rather than forced through.
     fn commit_wave(&mut self) {
         let pending = std::mem::take(&mut self.wave.pending);
+        // The draw clock gates adding to a plan, not landing one. Leaving it running
+        // through the commit made the boundary refuse the Rogue's own queued cards --
+        // measured at fifteen of a sixteen-card wave in Deep Stack.
+        self.wave.draw_cooldown = 0;
         self.wave.last_drops.clear();
         self.wave.last_committed = 0;
         if pending.is_empty() {
             return;
         }
-        for command in pending {
+        for (command, paid) in pending {
+            // The card was paid for when the plan took it. Hand it back for the commit so
+            // the ordinary apply path can check legality and spend it exactly as it does
+            // for a live play -- one code path for landing a card, rather than two that
+            // have to be kept agreeing.
+            if let Some(card) = paid {
+                self.deck.hand.push(card);
+            }
             match self.apply_command(command) {
                 Ok(()) => {
                     self.wave.last_committed += 1;
@@ -786,6 +811,7 @@ impl ArchitectLab {
         }
         self.tick += 1;
         self.cooldown = self.cooldown.saturating_sub(1);
+        self.wave.draw_cooldown = self.wave.draw_cooldown.saturating_sub(1);
         if self.rogue_economy == RogueEconomy::Waves
             && self.wave_interval_ticks > 0
             && self

@@ -7,7 +7,8 @@ use crate::economy::{MAX_CHARGE, SHOVE_COST};
 
 use super::{
     ArchitectCommand, ArchitectLab, BehaviorTrace, DoorState, GuardianId, GuardianKind, ObserverId,
-    ObserverState, PowerPolicy, ThresholdKey, command_key, face_between, threshold_touches,
+    ObserverState, PowerPolicy, RogueEconomy, ThresholdKey, command_key, face_between,
+    threshold_touches,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -490,6 +491,12 @@ impl ArchitectLab {
             .map(|command| {
                 let mut preview = self.clone();
                 preview.bot_architect = false;
+                // Score what the card would *do*, not what queueing it does. Under
+                // `Waves` a submit only joins the plan, so a preview that queues leaves
+                // the board untouched and every candidate scores exactly the baseline --
+                // which silently switched off this whole heuristic and left the Rogue
+                // placing one or two cards a wave.
+                preview.rogue_economy = RogueEconomy::Cooldown;
                 preview
                     .submit(command)
                     .expect("enumerated command is legal");
@@ -516,6 +523,7 @@ impl ArchitectLab {
             .filter(|&command| {
                 let mut preview = self.clone();
                 preview.bot_architect = true;
+                preview.rogue_economy = RogueEconomy::Cooldown;
                 let ArchitectCommand::Play { target, .. } = command else {
                     return false;
                 };

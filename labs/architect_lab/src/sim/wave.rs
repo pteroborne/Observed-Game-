@@ -10,7 +10,7 @@
 //! register this game has been aiming at, and it turns the Rogue's play from reaction into
 //! planning: you cannot lay a trap one tile at a time on a five-second leash.
 
-use super::{ArchitectCommand, CommandRefusal};
+use super::{ArchitectCommand, Card, CommandRefusal};
 
 /// Ticks between wave commits — thirty seconds at `FIXED_HZ`.
 ///
@@ -18,6 +18,15 @@ use super::{ArchitectCommand, CommandRefusal};
 /// beats, so a thirty-second window gives roughly ten waves. Few enough that each one is
 /// a deliberate act, many enough to answer what the Observers did about the last.
 pub const WAVE_INTERVAL_TICKS: u32 = 1800;
+
+/// Ticks before the Rogue draws again after committing a card to the plan.
+///
+/// Two seconds. The window is what a wave is *worth*; this is what a wave *costs*, and
+/// together they set its size: thirty seconds at one card per two is about fifteen
+/// placements, against roughly six under the five-second cooldown. That is the Rogue
+/// being more powerful than the loyal Architect rather than differently paced, which is
+/// the point of giving it a different economy at all.
+pub const WAVE_DRAW_TICKS: u32 = 120;
 
 /// What the Rogue's turn costs.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -75,13 +84,20 @@ impl WaveTelegraph {
 /// A queued plan and the record of what became of the last one.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct WaveState {
+    /// Ticks until the Rogue may commit another card to this plan.
+    pub draw_cooldown: u32,
     /// Commands awaiting the next boundary, in submission order.
     ///
     /// Order is the whole resolution rule. Two placements can each be legal alone and
     /// contradictory together, so legality is re-checked at commit and the later one loses.
     /// That is deterministic, replayable, and reads as the City's plan partly failing —
     /// which is better drama than silently dropping it.
-    pub pending: Vec<ArchitectCommand>,
+    ///
+    /// Each carries the card it was paid for. The card leaves the hand when the command
+    /// joins the plan -- committing to a placement costs it immediately, even though the
+    /// structure does not move until the boundary -- so the commit has to carry what it
+    /// needs rather than look it up in a hand that has already moved on.
+    pub pending: Vec<(ArchitectCommand, Option<Card>)>,
     /// What the last commit refused, and why. Worth showing: a plan that half-lands is
     /// information the Rogue should get back.
     pub last_drops: Vec<(ArchitectCommand, CommandRefusal)>,
@@ -108,7 +124,9 @@ impl WaveState {
         match policy {
             WaveTelegraph::Hidden => WaveWarning::Silent,
             WaveTelegraph::Scaled => WaveWarning::Weight(self.pending.len()),
-            WaveTelegraph::Public => WaveWarning::Plan(self.pending.clone()),
+            WaveTelegraph::Public => {
+                WaveWarning::Plan(self.pending.iter().map(|(command, _)| *command).collect())
+            }
         }
     }
 }
