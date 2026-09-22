@@ -3,7 +3,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use observed_facility::hex_wfc::{HexSpace, HexWfcWorld};
+#[cfg(test)]
+use observed_facility::hex_wfc::HexSpace;
+use observed_facility::hex_wfc::HexWfcWorld;
 use observed_hex::{HexCoord, HexFace, PortClass, ports_compatible, travel_distance};
 
 use super::sim::{
@@ -73,7 +75,7 @@ fn lateral_passable_neighbors(
     let Some(placement) = world.placements.get(&from) else {
         return Vec::new();
     };
-    if placement.space == HexSpace::Void || prison_core.contains(&from) {
+    if placement.space.unbuilt() || prison_core.contains(&from) {
         return Vec::new();
     }
     HexFace::LATERAL
@@ -84,7 +86,7 @@ fn lateral_passable_neighbors(
                 return None;
             }
             let other = world.placements.get(&next)?;
-            if other.space == HexSpace::Void {
+            if other.space.unbuilt() {
                 return None;
             }
             if !placement.is_open(face) || !other.is_open(face.opposite()) {
@@ -129,9 +131,7 @@ impl EconomyState {
                 .placements
                 .iter()
                 .filter(|(coord, placement)| {
-                    coord.level == level
-                        && placement.space != HexSpace::Void
-                        && !prison_core.contains(coord)
+                    coord.level == level && placement.space.built() && !prison_core.contains(coord)
                 })
                 .map(|(coord, _)| *coord)
                 .collect();
@@ -500,7 +500,7 @@ impl ArchitectLab {
         let Some(p_to) = self.world.placements.get(&to) else {
             return false;
         };
-        if p_from.space == HexSpace::Void || p_to.space == HexSpace::Void {
+        if p_from.space.unbuilt() || p_to.space.unbuilt() {
             return false;
         }
         if face.is_lateral() {
@@ -605,7 +605,7 @@ impl ArchitectLab {
 
         let guardian_tile = self.world.placements.get(&guardian_cell);
         let blocked = match guardian_tile {
-            Some(tile) if tile.space != HexSpace::Void => {
+            Some(tile) if tile.space.built() => {
                 !tile.is_open(face)
                     || self
                         .threshold_key(guardian_cell, face)
@@ -626,7 +626,7 @@ impl ArchitectLab {
             None => true,
             Some(c) => match self.world.placements.get(&c) {
                 None => true,
-                Some(tile) => tile.space == HexSpace::Void,
+                Some(tile) => tile.space.unbuilt(),
             },
         };
 
@@ -743,7 +743,7 @@ impl ArchitectLab {
                 .iter()
                 .filter(|(coord, placement)| {
                     coord.level == level
-                        && placement.space != HexSpace::Void
+                        && placement.space.built()
                         && !self.prison_core.contains(coord)
                         && !self.guardians.values().any(|g| g.cell == **coord)
                 })
@@ -758,7 +758,7 @@ impl ArchitectLab {
                     .iter()
                     .filter(|(coord, placement)| {
                         coord.level == level
-                            && placement.space != HexSpace::Void
+                            && placement.space.built()
                             && !self.prison_core.contains(coord)
                     })
                     .map(|(coord, _)| *coord)
@@ -1062,9 +1062,7 @@ mod tests {
                 .placements
                 .keys()
                 .copied()
-                .find(|c| {
-                    !lab.prison_core.contains(c) && lab.world.placements[c].space != HexSpace::Void
-                })
+                .find(|c| !lab.prison_core.contains(c) && lab.world.placements[c].space.built())
                 .expect("cell outside prison");
             assert_eq!(
                 lab.route_minor(outside, prison_cell),
@@ -1159,7 +1157,7 @@ mod tests {
                 && lab.can_detect_adjacent(obs_cell, neighbor)
                 && let Some(dest) = lab.world.config.grid().neighbor(neighbor, face)
                 && let Some(tile) = lab.world.placements.get(&dest)
-                && tile.space != HexSpace::Void
+                && tile.space.built()
             {
                 found = Some((neighbor, dest));
                 break;
@@ -1215,7 +1213,7 @@ mod tests {
                 && lab.can_detect_adjacent(obs_cell, neighbor)
                 && let Some(dest) = lab.world.config.grid().neighbor(neighbor, face)
                 && let Some(tile) = lab.world.placements.get(&dest)
-                && tile.space != HexSpace::Void
+                && tile.space.built()
             {
                 found = Some((neighbor, dest));
                 break;
@@ -1606,7 +1604,7 @@ mod tests {
             .placements
             .keys()
             .copied()
-            .find(|&c| c != gen_cell && lab.world.placements[&c].space != HexSpace::Void)
+            .find(|&c| c != gen_cell && lab.world.placements[&c].space.built())
             .expect("non-generator cell");
         lab.observers.get_mut(&obs_id).unwrap().cell = non_gen;
         assert!(

@@ -231,6 +231,9 @@ impl SpaceMix {
     pub const fn get(&self, space: HexSpace) -> f64 {
         match space {
             HexSpace::Void => self.void,
+            // Air is not composed, it is discovered: `mark_open_air` derives it from a
+            // solved facility's shape. A share would be a dial that does nothing.
+            HexSpace::Air => 0.0,
             HexSpace::Room => self.room,
             HexSpace::Hall => self.hall,
         }
@@ -241,6 +244,9 @@ impl SpaceMix {
     pub const fn with(mut self, space: HexSpace, share: f64) -> Self {
         match space {
             HexSpace::Void => self.void = share,
+            // Ignored deliberately, and quietly: see `get`. Refusing loudly would make
+            // every caller that iterates the spaces handle a case that cannot arise.
+            HexSpace::Air => {}
             HexSpace::Room => self.room = share,
             HexSpace::Hall => self.hall = share,
         }

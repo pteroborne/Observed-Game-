@@ -1,0 +1,14 @@
+[package]
+name = "suspension_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Deliberately dependency-free. This lab asks whether two rules are worth having
+# before either exists in the real facility, so it models them rather than
+# borrowing them. See README.md for exactly what that costs.
+[dependencies]
+observed_hex = { path = "../../crates/observed_hex" }
+# The second half of the lab asks whether the model's numbers survive contact with a
+# real generated facility, so it needs the real solver.
+observed_facility = { path = "../../crates/observed_facility" }

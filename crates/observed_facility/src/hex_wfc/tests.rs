@@ -591,7 +591,7 @@ fn bounded_routing_agrees_with_unbounded_inside_the_bound() {
         let live: Vec<HexCoord> = world
             .placements
             .iter()
-            .filter(|(_, placement)| placement.space != HexSpace::Void)
+            .filter(|(_, placement)| placement.space.built())
             .map(|(coord, _)| *coord)
             .collect();
         let Some(&from) = live.first() else { continue };
@@ -950,7 +950,7 @@ fn survey_whether_void_bias_separates_hall_networks() {
             let dark = world
                 .placements
                 .values()
-                .filter(|placement| placement.space == HexSpace::Void)
+                .filter(|placement| placement.space.unbuilt())
                 .count();
             #[allow(clippy::cast_precision_loss)]
             {
@@ -1971,7 +1971,7 @@ fn survey_what_the_collapse_lottery_offers() {
         .sum();
     let void: u32 = catalogue
         .iter()
-        .filter(|variant| variant.space == HexSpace::Void)
+        .filter(|variant| variant.space.unbuilt())
         .map(|variant| variant.weight)
         .sum();
     let share = |weight: f64| weight * 100.0 / (f64::from(hall) + weight);
@@ -2039,7 +2039,7 @@ fn survey_what_the_space_mix_buys() {
             for placement in world.placements.values() {
                 total += 1;
                 match placement.space {
-                    HexSpace::Void => void += 1,
+                    HexSpace::Void | HexSpace::Air => void += 1,
                     HexSpace::Room => room += 1,
                     HexSpace::Hall => hall += 1,
                 }
@@ -2301,7 +2301,7 @@ fn survey_whether_bias_can_shape_the_halls() {
             solved += 1;
             for (&coord, placement) in &world.placements {
                 cells += 1;
-                if placement.space == HexSpace::Void {
+                if placement.space.unbuilt() {
                     voids += 1;
                 }
                 if placement.archetype == HexArchetype::Shaft {
@@ -2612,7 +2612,7 @@ fn survey_what_routing_the_corridors_buys() {
             for (&coord, placement) in &world.placements {
                 cells += 1;
                 match placement.space {
-                    HexSpace::Void => voids += 1,
+                    HexSpace::Void | HexSpace::Air => voids += 1,
                     HexSpace::Hall => {
                         let open = HexFace::LATERAL
                             .into_iter()
@@ -2802,7 +2802,7 @@ fn survey_what_the_carve_produces_and_what_still_blocks_it() {
         let (mut halls, mut voids) = (0usize, 0usize);
         for (&coord, placement) in &world.placements {
             match placement.space {
-                HexSpace::Void => voids += 1,
+                HexSpace::Void | HexSpace::Air => voids += 1,
                 HexSpace::Hall => {
                     degrees[HexFace::LATERAL
                         .into_iter()
@@ -2995,7 +2995,7 @@ fn every_passable_cell_belongs_to_one_facility() {
                 let passable = world
                     .placements
                     .values()
-                    .filter(|p| p.space != HexSpace::Void)
+                    .filter(|p| p.space.built())
                     .count();
                 failures.push(format!(
                     "{name} seed {seed}: {} of {passable} passable cells orphaned, first {:?}",

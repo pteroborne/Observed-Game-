@@ -311,7 +311,7 @@ impl HexWfcGeometrySnapshot {
 
         let mut ramp_heads = 0;
         for placement in world.placements.values() {
-            if placement.space == HexSpace::Void || consumed_rooms.contains(&placement.coord) {
+            if placement.space.unbuilt() || consumed_rooms.contains(&placement.coord) {
                 continue;
             }
             if placement.archetype == HexArchetype::RampHead {
@@ -649,7 +649,7 @@ fn project_cell(
         .placements
         .get(&coord)
         .ok_or(HexGeometryError::BlueprintCellMissing(coord))?;
-    if placement.space == HexSpace::Void || placement.archetype == HexArchetype::RampHead {
+    if placement.space.unbuilt() || placement.archetype == HexArchetype::RampHead {
         return Ok(());
     }
     if placement.space == HexSpace::Room {
@@ -1318,7 +1318,7 @@ fn project_blueprint(
         stamped.cells.iter().any(|cell| world
             .placements
             .get(cell)
-            .is_some_and(|placement| placement.space != HexSpace::Void)),
+            .is_some_and(|placement| placement.space.built())),
         "projecting a blueprint whose every cell is Void"
     );
     let blueprint = blueprint_for_role(stamped.role);

@@ -138,7 +138,7 @@ fn empty_floor_closes_permanently_but_prison_survives() {
     assert!(
         sim.prison_core
             .iter()
-            .all(|cell| sim.world.placements[cell].space != HexSpace::Void)
+            .all(|cell| sim.world.placements[cell].space.built())
     );
     sim.cooldown = 0;
     let command = sim.selected_command(0, target, 0).unwrap();

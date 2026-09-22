@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use observed_facility::hex_wfc::{HexCoord, HexSpace, HexWfcWorld};
+use observed_facility::hex_wfc::{HexCoord, HexWfcWorld};
 
 use crate::sim::{
     ArchitectCommand, ArchitectLab, Guardian, GuardianId, GuardianKind, LabEventKind, Observer,
@@ -86,7 +86,7 @@ pub fn choose_spawn_cell(
         .iter()
         .filter(|(cell, placement)| {
             cell.level == floor
-                && placement.space != HexSpace::Void
+                && placement.space.built()
                 && !retracted.contains(cell)
                 && !prison_core.contains(cell)
                 && !occupied.contains(cell)
@@ -105,9 +105,7 @@ pub fn choose_spawn_cell(
             .placements
             .iter()
             .filter(|(cell, placement)| {
-                cell.level == floor
-                    && placement.space != HexSpace::Void
-                    && !prison_core.contains(cell)
+                cell.level == floor && placement.space.built() && !prison_core.contains(cell)
             })
             .map(|(&cell, _)| cell)
             .collect();

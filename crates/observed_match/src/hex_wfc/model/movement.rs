@@ -4,7 +4,7 @@
 
 use glam::{Vec2, Vec3};
 use observed_core::PlayerId;
-use observed_facility::hex_wfc::{HexCoord, HexFace, HexSpace, HexWfcConfig};
+use observed_facility::hex_wfc::{HexCoord, HexFace, HexWfcConfig};
 use observed_hex::{TILE_LEVEL_HEIGHT, hex_origin};
 use observed_traversal::rapier_controller::step_character_with_settings;
 use player_input::PlayerIntent;
@@ -87,14 +87,14 @@ impl HexWfcMatch {
                 self.facility
                     .placements
                     .get(cell)
-                    .is_some_and(|placement| placement.space != HexSpace::Void)
+                    .is_some_and(|placement| placement.space.built())
             });
         let current = self.players[&id].cell;
         let current_valid = self
             .facility
             .placements
             .get(&current)
-            .is_some_and(|placement| placement.space != HexSpace::Void);
+            .is_some_and(|placement| placement.space.built());
         let player = self.players.get_mut(&id).expect("player");
         if let Some(cell) = candidate {
             let switch = !current_valid
