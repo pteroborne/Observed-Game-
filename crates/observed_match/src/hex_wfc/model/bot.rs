@@ -5,7 +5,7 @@ use std::f32::consts::PI;
 
 use glam::{Vec2, Vec3};
 use observed_core::PlayerId;
-use observed_facility::hex_wfc::{HexArchetype, HexCoord, HexFace, HexRoute, HexSpace};
+use observed_facility::hex_wfc::{HexArchetype, HexCoord, HexFace, HexRoute};
 use observed_hex::hex_origin;
 use observed_traversal::{DeckHandoff, FollowTarget, FollowerPose, follow_stateless};
 use player_input::PlayerIntent;
@@ -125,7 +125,7 @@ impl HexWfcMatch {
                 self.facility
                     .placements
                     .get(cell)
-                    .is_some_and(|neighbour| neighbour.space != HexSpace::Void)
+                    .is_some_and(|neighbour| neighbour.space.built())
             })
             .min_by(|a, b| {
                 let plan = |cell: &HexCoord| {

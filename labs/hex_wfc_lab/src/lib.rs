@@ -231,7 +231,7 @@ fn rebuild_visuals(
         };
         let fill = if view
             .resolved
-            .is_some_and(|placement| placement.space != HexSpace::Void)
+            .is_some_and(|placement| placement.space.built())
             && state.world.architecture[&coord] == ArchitectureRegister::LiminalGrid
         {
             observed_style::architecture_surface(
@@ -260,7 +260,7 @@ fn rebuild_visuals(
 
         // Draw lateral doors
         if let Some(placement) = view.resolved
-            && placement.space != HexSpace::Void
+            && placement.space.built()
         {
             let (space, doors, up, down) = (
                 placement.space,
@@ -412,7 +412,7 @@ fn update_status(state: Res<LabState>, mut status: Query<&mut Text, With<LabStat
                 .world
                 .placements
                 .values()
-                .filter(|placement| placement.space != HexSpace::Void)
+                .filter(|placement| placement.space.built())
                 .count()
         )
     } else {

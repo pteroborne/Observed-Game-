@@ -10,7 +10,7 @@
 //! a core enum across nineteen crates. If the number justifies the rule, the type split
 //! comes after, with a reason.
 
-use observed_facility::hex_wfc::{HexSpace, HexWfcConfig, HexWfcWorld};
+use observed_facility::hex_wfc::{HexWfcConfig, HexWfcWorld};
 use observed_hex::{HexCoord, HexFace};
 
 /// One watcher's cells under each rule, along a single face.
@@ -32,7 +32,7 @@ pub fn sight_along(world: &HexWfcWorld, from: HexCoord, face: HexFace, range: us
         .and_then(|next| {
             let other = world.placements.get(&next)?;
             let mine = here?;
-            (mine.is_open(face) && other.is_open(face.opposite()) && other.space != HexSpace::Void)
+            (mine.is_open(face) && other.is_open(face.opposite()) && other.space.built())
                 .then_some(1)
         })
         .unwrap_or(0);
@@ -49,7 +49,7 @@ pub fn sight_along(world: &HexWfcWorld, from: HexCoord, face: HexFace, range: us
         let blocked = world
             .placements
             .get(&at)
-            .is_none_or(|placement| placement.space != HexSpace::Void);
+            .is_none_or(|placement| placement.space.built());
         if blocked {
             // You see the wall, and nothing past it.
             break;
@@ -68,7 +68,7 @@ pub fn facility_sight(world: &HexWfcWorld, range: usize) -> (usize, usize, usize
     let mut across = 0usize;
     let mut watchers = 0usize;
     for (&cell, placement) in &world.placements {
-        if placement.space == HexSpace::Void {
+        if placement.space.unbuilt() {
             continue;
         }
         watchers += 1;

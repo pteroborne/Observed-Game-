@@ -631,11 +631,11 @@ fn every_scenario_still_interrupts_its_route() {
             .placements
             .iter()
             .filter(|(coord, placement)| {
-                placement.space == HexSpace::Void
+                placement.space.unbuilt()
                     && pristine
                         .placements
                         .get(*coord)
-                        .is_some_and(|p| p.space != HexSpace::Void)
+                        .is_some_and(|p| p.space.built())
             })
             .count();
         assert_eq!(

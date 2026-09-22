@@ -889,7 +889,7 @@ fn how_many_cells_have_a_way_around_them() {
             .world
             .placements
             .iter()
-            .filter(|(_, p)| p.space != HexSpace::Void)
+            .filter(|(_, p)| p.space.built())
             .map(|(&c, _)| c)
             .collect();
 
@@ -1161,4 +1161,57 @@ fn how_much_of_the_hand_is_playable() {
         );
     }
     println!("===========================================================\n");
+}
+
+/// Does an Observer now see further than it wards, in an actual match?
+///
+/// Seeing and warding were separated deliberately: sight crosses open air up to
+/// `OBSERVER_SIGHT_RANGE`, protection stays the cell underfoot and one step onward. The
+/// point of the split is that protection should not triple, so this measures both and
+/// says whether the ward held still.
+#[ignore = "~1 minute sight-versus-ward sweep over four matches. cargo dev-test-all"]
+#[test]
+fn does_sight_reach_further_than_the_ward() {
+    println!("\n============== SEEN vs WARDED OVER A MATCH ==============");
+    for mode in ArchitectMode::ALL {
+        let mut sim = ArchitectLab::for_mode(mode).expect("scenario boots");
+        sim.bot_architect = true;
+
+        let mut beats = 0u64;
+        let mut warded_total = 0usize;
+        let mut seen_total = 0usize;
+        let mut beats_sight_exceeded_ward = 0u64;
+        let mut air_cells = 0usize;
+        for placement in sim.world.placements.values() {
+            if placement.space == observed_facility::hex_wfc::HexSpace::Air {
+                air_cells += 1;
+            }
+        }
+
+        while beats < 400 && sim.outcome == MatchOutcome::Running {
+            sim.step_beat();
+            beats += 1;
+            warded_total += sim.observed.len();
+            seen_total += sim.seen.len();
+            if sim.seen.len() > sim.observed.len() {
+                beats_sight_exceeded_ward += 1;
+            }
+            assert!(
+                sim.observed.is_subset(&sim.seen),
+                "an Observer must see everything it wards"
+            );
+        }
+
+        let ratio = if warded_total == 0 {
+            0.0
+        } else {
+            seen_total as f64 / warded_total as f64
+        };
+        println!(
+            "{:>12}: {beats} beats, {air_cells} air cells, warded {warded_total}, \
+             seen {seen_total} ({ratio:.2}x), sight beat the ward on {beats_sight_exceeded_ward} beats",
+            mode.short_label()
+        );
+    }
+    println!("========================================================\n");
 }

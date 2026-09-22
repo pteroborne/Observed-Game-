@@ -165,7 +165,7 @@ impl RogueGame {
         let next = sim.next_retraction();
         let cells: Vec<_> = sim.known.iter().filter_map(|&cell| {
             let tile = sim.world.placements.get(&cell)?;
-            Some(json!({"cell": coord(cell), "solid": tile.space != HexSpace::Void,
+            Some(json!({"cell": coord(cell), "solid": tile.space.built(),
                 "doors": tile.doors, "observed": sim.observed.contains(&cell),
                 "prison": sim.prison_core.contains(&cell),
                 "unstable": sim.contradictions.contains(&cell),

@@ -11,7 +11,6 @@ use bevy::camera::{RenderTarget, visibility::RenderLayers};
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use observed_content::ArchitectureRegister;
-use observed_facility::hex_wfc::HexSpace;
 use observed_hex::{HexFace, PortClass};
 use observed_style::architect::{Role, color};
 
@@ -164,7 +163,7 @@ pub fn rebuild_board(
         if !active {
             at += Vec3::new(-4.0, -12.0, -4.0) * f32::from(depth);
         }
-        if p.space == HexSpace::Void {
+        if p.space.unbuilt() {
             if active && targets.contains(&cell) {
                 ring(
                     &mut commands,

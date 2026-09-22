@@ -96,7 +96,7 @@ pub(super) fn open_volume_failure(
 
     let active_levels = placements
         .values()
-        .filter(|placement| placement.space != HexSpace::Void)
+        .filter(|placement| placement.space.built())
         .map(|placement| placement.coord.level)
         .collect::<BTreeSet<_>>();
     if active_levels
@@ -144,9 +144,7 @@ pub(super) fn open_volume_failure(
     }
     placements
         .values()
-        .any(|placement| {
-            placement.space != HexSpace::Void && !distance.contains_key(&placement.coord)
-        })
+        .any(|placement| placement.space.built() && !distance.contains_key(&placement.coord))
         .then_some("walkable cell farther than 24 edges from a decision beat")
 }
 
@@ -216,7 +214,7 @@ pub(super) fn layout_failure(
     if keep.len()
         != placements
             .values()
-            .filter(|placement| placement.space != HexSpace::Void)
+            .filter(|placement| placement.space.built())
             .count()
     {
         return Some("disconnected component survived");

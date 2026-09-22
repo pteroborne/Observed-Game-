@@ -31,6 +31,15 @@ pub use crate::economy::{EconomyState, GuardianKind};
 pub const FIXED_HZ: u32 = 60;
 pub const ACTOR_BEAT_TICKS: u32 = FIXED_HZ;
 pub const ARCHITECT_COOLDOWN_TICKS: u32 = 300;
+
+/// How far an Observer can see along a facing, in cells.
+///
+/// Four, because that is where the measurement stops paying: across the four scenario
+/// shapes and eight seeds each, raising the limit from four to eight or sixteen adds a
+/// handful of cells out of thousands. Real facilities are dense enough that sight rarely
+/// travels far, so a short range is nearly as powerful as an unlimited one and much
+/// easier to read on a board. See `labs/suspension_lab`.
+pub const OBSERVER_SIGHT_RANGE: u32 = 4;
 pub const HAND_SIZE: usize = 5;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -167,7 +176,17 @@ pub struct ArchitectLab {
     pub cooldown: u32,
     pub bot_architect: bool,
     pub known: BTreeSet<HexCoord>,
+    /// Cells an Observer **wards**: protected from retraction and rewriting.
+    ///
+    /// Deliberately still the short set — the cell underfoot and one step onward. Sight
+    /// now reaches further than this, and letting protection follow it would multiply the
+    /// warded area by roughly three and take the Rogue's ability to touch anything in
+    /// view of a window. Seeing and warding are different powers; see `seen`.
     pub observed: BTreeSet<HexCoord>,
+    /// Cells an Observer can **see**, including across open air.
+    ///
+    /// Feeds knowledge and discovery rather than protection. A superset of `observed`.
+    pub seen: BTreeSet<HexCoord>,
     pub anchored: BTreeSet<HexCoord>,
     pub prison_core: BTreeSet<HexCoord>,
     pub prison: crate::prison::PrisonState,
@@ -355,6 +374,7 @@ impl ArchitectLab {
             bot_architect: false,
             known,
             observed: BTreeSet::new(),
+            seen: BTreeSet::new(),
             anchored: BTreeSet::new(),
             prison_core,
             prison,
@@ -437,6 +457,10 @@ impl ArchitectLab {
             );
         }
         lab.economy = EconomyState::new(&lab.world, &lab.observers, &lab.prison_core, seed);
+        // Classify the unbuilt cells before anyone looks: sight crosses air and stops at
+        // rock, and until this runs every unbuilt cell is rock. Deterministic and
+        // idempotent, so it changes nothing about the replay contract.
+        let _ = lab.world.mark_open_air();
         lab.refresh_observation();
         Ok(lab)
     }
@@ -521,7 +545,7 @@ impl ArchitectLab {
                     return Some(CommandRefusal::WrongDistrict);
                 }
                 let doors = shape.doors(rotation);
-                if placement.space != HexSpace::Void && placement.doors == doors {
+                if placement.space.built() && placement.doors == doors {
                     return Some(CommandRefusal::NoChange);
                 }
                 let fits = HexFace::LATERAL.into_iter().any(|face| {
@@ -532,9 +556,7 @@ impl ArchitectLab {
                             .grid()
                             .neighbor(target, face)
                             .and_then(|next| self.world.placements.get(&next))
-                            .is_some_and(|next| {
-                                next.space != HexSpace::Void && next.is_open(face.opposite())
-                            })
+                            .is_some_and(|next| next.space.built() && next.is_open(face.opposite()))
                 });
                 (!fits).then_some(CommandRefusal::NoLocalAttachment)
             }
@@ -772,7 +794,7 @@ impl ArchitectLab {
             .copied()
             .filter(|cell| {
                 self.world.placements.get(cell).is_some_and(|placement| {
-                    placement.space != HexSpace::Void
+                    placement.space.built()
                         || HexFace::LATERAL.into_iter().any(|face| {
                             self.world
                                 .config
@@ -780,7 +802,7 @@ impl ArchitectLab {
                                 .neighbor(*cell, face)
                                 .and_then(|next| self.world.placements.get(&next))
                                 .is_some_and(|tile| {
-                                    tile.space != HexSpace::Void && tile.is_open(face.opposite())
+                                    tile.space.built() && tile.is_open(face.opposite())
                                 })
                         })
                 }) && !self.collapsed_floors.contains(&cell.level)
@@ -863,7 +885,7 @@ impl ArchitectLab {
         let Some(placement) = self.world.placements.get(&from) else {
             return Vec::new();
         };
-        if placement.space == HexSpace::Void {
+        if placement.space.unbuilt() {
             return Vec::new();
         }
         HexFace::ALL
@@ -871,7 +893,7 @@ impl ArchitectLab {
             .filter_map(|face| {
                 let next = self.world.config.grid().neighbor(from, face)?;
                 let other = self.world.placements.get(&next)?;
-                if other.space == HexSpace::Void {
+                if other.space.unbuilt() {
                     return None;
                 }
                 if face.is_lateral() {
@@ -973,20 +995,29 @@ impl ArchitectLab {
 
     pub fn refresh_observation(&mut self) {
         self.observed.clear();
+        self.seen.clear();
         let mut active = 0usize;
         let mut lit = 0usize;
-        for observer in self
+        let watchers: Vec<(HexCoord, HexFace)> = self
             .observers
             .values()
             .filter(|observer| observer.state == ObserverState::Active)
-        {
+            .map(|observer| (observer.cell, observer.facing))
+            .collect();
+        for (cell, facing) in watchers {
             active += 1;
-            self.observed.insert(observer.cell);
-            if self.economy.is_powered(observer.cell.level)
-                && let Some(next) = self.step_through(observer.cell, observer.facing)
-            {
-                lit += 1;
-                self.observed.insert(next);
+            self.observed.insert(cell);
+            self.seen.insert(cell);
+            if self.economy.is_powered(cell.level) {
+                // Warding: the short set, unchanged. This is what stops a retraction.
+                if let Some(next) = self.step_through(cell, facing) {
+                    lit += 1;
+                    self.observed.insert(next);
+                }
+                // Seeing: further, and across open air. Feeds knowledge, not protection.
+                for at in self.sight_along(cell, facing) {
+                    self.seen.insert(at);
+                }
             }
         }
         self.active_observers = active;
@@ -1106,6 +1137,45 @@ impl ArchitectLab {
         }
     }
 
+    /// Cells an Observer at `from` can see looking along `face`.
+    ///
+    /// Sight is **not** movement. `step_through` answers "where could I walk", and using
+    /// it for vision is why an Observer could never see out of a window or across an
+    /// atrium — the role defined by observing had the shortest sightline in the game, two
+    /// cells, while a Guardian sees six along each of six faces.
+    ///
+    /// This walks the facing instead, passing through [`HexSpace::Air`] and stopping at
+    /// the first thing that blocks: built structure (which is seen, then ends the line),
+    /// unbuilt rock, or the edge of the lattice. Range is capped because the measurement
+    /// said it saturates — see [`OBSERVER_SIGHT_RANGE`].
+    #[must_use]
+    pub fn sight_along(&self, from: HexCoord, face: HexFace) -> Vec<HexCoord> {
+        let grid = self.world.config.grid();
+        let mut seen = Vec::new();
+        let mut at = from;
+        for _ in 0..OBSERVER_SIGHT_RANGE {
+            let Some(next) = grid.neighbor(at, face) else {
+                break;
+            };
+            at = next;
+            let Some(placement) = self.world.placements.get(&at) else {
+                break;
+            };
+            match placement.space {
+                // Rock is opaque and is not itself a sight.
+                HexSpace::Void => break,
+                // Air is seen through and not worth noting as a cell you observed.
+                HexSpace::Air => {}
+                // Structure: you see it, and nothing behind it.
+                HexSpace::Room | HexSpace::Hall => {
+                    seen.push(at);
+                    break;
+                }
+            }
+        }
+        seen
+    }
+
     fn step_through(&self, from: HexCoord, face: HexFace) -> Option<HexCoord> {
         self.exits(from)
             .into_iter()
@@ -1115,7 +1185,7 @@ impl ArchitectLab {
     fn refresh_contradictions(&mut self) {
         self.contradictions.clear();
         for (&cell, placement) in &self.world.placements {
-            if placement.space == HexSpace::Void || self.collapsed_floors.contains(&cell.level) {
+            if placement.space.unbuilt() || self.collapsed_floors.contains(&cell.level) {
                 continue;
             }
             for face in HexFace::ALL {
@@ -1125,7 +1195,7 @@ impl ArchitectLab {
                 let Some(other) = self.world.placements.get(&next) else {
                     continue;
                 };
-                if (other.space != HexSpace::Void
+                if (other.space.built()
                     && !ports_compatible(
                         placement.ports().port(face),
                         other.ports().port(face.opposite()),
@@ -1134,7 +1204,7 @@ impl ArchitectLab {
                         && placement.ports().port(face) != observed_hex::PortClass::Sealed)
                 {
                     self.contradictions.insert(cell);
-                    if other.space != HexSpace::Void {
+                    if other.space.built() {
                         self.contradictions.insert(next);
                     }
                 }

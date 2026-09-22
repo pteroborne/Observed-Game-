@@ -315,7 +315,7 @@ pub(super) fn collapse_pocket_attempt(
                     // same guard one line up wearing different clothes: both
                     // exist because a pocket has no profile to hand and would
                     // otherwise refill from the lottery.
-                    if carved.contains(&coord) && variant.space != HexSpace::Void {
+                    if carved.contains(&coord) && variant.space.built() {
                         return false;
                     }
                     if !topology_core.contains(&coord) {
@@ -1031,7 +1031,7 @@ pub(super) fn initial_domain_for(
         .iter()
         .enumerate()
         .filter(|(_, variant)| {
-            if carved && variant.space != HexSpace::Void {
+            if carved && variant.space.built() {
                 return false;
             }
             // Authored intent narrows the domain like any other constraint
@@ -1375,7 +1375,7 @@ fn prune_disconnected(
 ) {
     let keep = super::topology::active_component(config, placements, config.spawn());
     for (coord, placement) in placements.iter_mut() {
-        if placement.space != HexSpace::Void && !keep.contains(coord) {
+        if placement.space.built() && !keep.contains(coord) {
             placement.space = HexSpace::Void;
             placement.archetype = HexArchetype::Void;
             placement.doors = 0;

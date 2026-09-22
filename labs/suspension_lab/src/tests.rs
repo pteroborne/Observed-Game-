@@ -170,13 +170,13 @@ fn open_air_reaches_the_outside_and_stops_at_sealed_pockets() {
 
     let (_, config) = scenario_configs()[2];
     let mut world = solve(config, 3).expect("Full Ascent solves");
-    let voids_before = world
+    let unbuilt_before = world
         .placements
         .values()
-        .filter(|p| p.space == HexSpace::Void)
+        .filter(|p| p.space.unbuilt())
         .count();
     assert!(
-        voids_before > 0,
+        unbuilt_before > 0,
         "the scenario has unbuilt cells to classify"
     );
 
@@ -196,7 +196,11 @@ fn open_air_reaches_the_outside_and_stops_at_sealed_pockets() {
         .values()
         .filter(|p| p.space == HexSpace::Void)
         .count();
-    assert_eq!(air + rock, voids_before, "nothing built was reclassified");
+    assert_eq!(
+        air + rock,
+        unbuilt_before,
+        "the pass moves cells between the two unbuilt states and touches nothing else"
+    );
 
     // Idempotent: the second pass has nothing left to find.
     assert_eq!(world.mark_open_air(), 0);

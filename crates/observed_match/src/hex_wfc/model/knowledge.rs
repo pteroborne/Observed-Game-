@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use observed_core::TeamId;
-use observed_facility::hex_wfc::{HexSpace, HexWfcWorld, PortSignature};
+use observed_facility::hex_wfc::{HexWfcWorld, PortSignature};
 use observed_facility::map_spec::RoomRole;
 use observed_hex::{HexCoord, HexFace};
 
@@ -60,7 +60,7 @@ impl HexPlayerMapKnowledge {
             for face in HexFace::ALL {
                 if placement.ports().port(face) != observed_hex::PortClass::Sealed
                     && let Some(cell) = world.config.grid().neighbor(player.cell, face)
-                    && world.placements[&cell].space != HexSpace::Void
+                    && world.placements[&cell].space.built()
                 {
                     self.record(world, cell, HexMapDiscovery::Glimpsed, false, false);
                 }
@@ -78,7 +78,7 @@ impl HexPlayerMapKnowledge {
     /// Reveal a bounded, team-local two-hop schematic around a monitor.
     pub fn survey_local(&mut self, world: &HexWfcWorld, origin: HexCoord, hops: usize) {
         for (&cell, placement) in &world.placements {
-            if placement.space == HexSpace::Void {
+            if placement.space.unbuilt() {
                 continue;
             }
             let within = world

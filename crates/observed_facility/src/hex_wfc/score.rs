@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use observed_hex::{HexCoord, travel_distance};
 
 use super::profile::ScoreWeights;
-use super::{HexArchetype, HexSpace, HexWfcWorld};
+use super::{HexArchetype, HexWfcWorld};
 
 /// Fixed component weights folded into [`LayoutScore::total`]. Tuned by feel
 /// rather than derived; kept as named constants so retuning is a one-line
@@ -129,7 +129,7 @@ fn elevation_score(world: &HexWfcWorld) -> f64 {
     let levels = world
         .placements
         .values()
-        .filter(|placement| placement.space != HexSpace::Void)
+        .filter(|placement| placement.space.built())
         .map(|placement| placement.coord.level)
         .collect::<std::collections::BTreeSet<_>>()
         .len();

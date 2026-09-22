@@ -172,7 +172,7 @@ impl ArchitectLab {
             let floor_empty = self.world.placements.iter().all(|(&other, tile)| {
                 other.level != cell.level
                     || self.prison_core.contains(&other)
-                    || tile.space == HexSpace::Void
+                    || tile.space.unbuilt()
             });
             if floor_empty && self.collapsed_floors.insert(cell.level) {
                 self.cut_floor_power(cell.level);

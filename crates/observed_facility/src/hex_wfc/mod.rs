@@ -89,6 +89,32 @@ pub enum HexSpace {
     Hall,
 }
 
+impl HexSpace {
+    /// Structure: somewhere an actor can be.
+    ///
+    /// Use this rather than comparing against `Void`. Before [`HexSpace::Air`] existed
+    /// `space != Void` meant exactly "built", and fifty-two call sites across two crates
+    /// were written that way — adding a second unbuilt state made every one of them
+    /// silently treat open air as floor, which is how a falling Observer came to land in
+    /// mid-air. A predicate keeps the intent where the reader can see it.
+    #[must_use]
+    pub const fn built(self) -> bool {
+        matches!(self, Self::Room | Self::Hall)
+    }
+
+    /// Not structure: unbuilt mass, or open air.
+    #[must_use]
+    pub const fn unbuilt(self) -> bool {
+        matches!(self, Self::Void | Self::Air)
+    }
+
+    /// Stops a line of sight. The one place air and rock differ.
+    #[must_use]
+    pub const fn opaque(self) -> bool {
+        !matches!(self, Self::Air)
+    }
+}
+
 /// Traversal grammar of a collapsed cell (Phase 88 lateral subset).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -704,6 +730,9 @@ impl HexWfcWorld {
 
         let mut changed = 0;
         for at in open {
+            // Rock specifically, not "unbuilt": a cell already classified as air must not
+            // count as a change, or the pass stops being idempotent and reports its own
+            // previous work every time it runs.
             if let Some(placement) = self.placements.get_mut(&at)
                 && placement.space == HexSpace::Void
             {
