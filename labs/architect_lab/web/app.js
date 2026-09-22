@@ -20,6 +20,7 @@ let camera = { x: 0, y: 0, scale: 1 },
   baseScale = 1,
   mode = 0,
   seenResult = false;
+let economy = "cooldown";
 let knownSignals = new Map(),
   forecastKey = "",
   cardKey = "",
@@ -536,6 +537,7 @@ $("help").onclick = () => {
 function reset(nextMode = mode) {
   mode = nextMode;
   game.reset(mode);
+  game.set_rogue_economy(economy);
   selected = 0;
   target = null;
   rotation = 0;
@@ -556,6 +558,12 @@ $("again").onclick = () => {
 };
 $("inspect").onclick = () => $("result").close();
 $("scenario").onchange = (e) => reset(Number(e.target.value));
+// The Rogue's economy is a lab dial, not a preference: switching it restarts, because a
+// half-queued plan means nothing under a per-card cooldown.
+$("economy").onchange = (e) => {
+  economy = e.target.value;
+  reset();
+};
 $("demo").onclick = () => {
   const demo = !state.demo;
   game.set_demo(demo);
