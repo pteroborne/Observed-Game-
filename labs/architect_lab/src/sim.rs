@@ -237,30 +237,21 @@ impl ArchitectLab {
     ///      All four modes start with only active, traversable Observer sectors.
     ///
     /// 2. Relative Threshold Scaling (Candidate a vs Candidate b):
-    ///    - An absolute count N fails across modes: larger facilities fragment into more
-    ///      components simply by having more cells. In unsevered play (sever_threshold = 0),
-    ///      Quick Climb peaks at 10 components, Full Ascent at 13, and Deep Stack at 23.
-    ///      Any absolute N <= 6 triggers on beat 1 (degenerate), while N >= 11 never fires in
-    ///      Quick Climb; within the N=7..10 window, Full Ascent ends at beat 6 and Deep Stack
-    ///      at beat 11 (out of 261 and 855 unsevered beats).
-    ///    - Candidate b (largest surviving component as fraction of initial occupiable) fails
-    ///      because it conflates vertical floor count with fragmentation: in Deep Stack (5 floors,
-    ///      157 occupiable cells), losing Floor 0 power on beat 1 decouples Floor 0 and leaves
-    ///      the largest intact cluster (Floors 1+2, 67 cells) at 42.7% of the building. In Full
-    ///      Ascent (3 floors, 108 cells), Floor 1 alone has 47 cells (43.5%), and the largest
-    ///      component never drops below 43.5% across the entire 261 beats. Thus any threshold
-    ///      X >= 43% causes Deep Stack to fire on beat 1, while X <= 43% never fires in Full Ascent.
-    ///    - Candidate a (component count as a fraction of initial occupiable cell count) scales
-    ///      consistently across all modes. At 11% (`ceil(0.11 * initial_occupiable.len()).max(2)`):
-    ///      * Quick Climb (60 cells): threshold is 7 components. Beat 1 is 6 components; fires at beat 10.
-    ///      * Full Ascent (108 cells): threshold is 12 components. Beat 1 is 6; fires at beat 28 (of 261).
-    ///      * Deep Stack (157 cells): threshold is 18 components. Beat 1 is 9; fires at beat 37 (of 855).
-    ///
-    /// 3. Note on Pocket:
-    ///    In Pocket (1 floor, 8 occupiable cells), the facility consists of an 8-cell corridor.
-    ///    However, on beat 1 the Architect bot contests the generator at (4, 0, 0) by playing
-    ///    an unmatched card, which fractures the corridor into 2 disjoint pieces (2 cells and 6 cells).
-    ///    Under a threshold of 2, Sever fires on beat 1.
+    ///    - Structural Severing vs Floor Power:
+    ///      Components are computed over the physical layout via `structural_step_through`,
+    ///      respecting lateral door states and vertical port compatibility, but deliberately
+    ///      omitting `is_powered`. Blackouts and elevator power cuts govern agent transit and
+    ///      Darkness (O11), while Sever (O8) tracks genuine physical fragmentation.
+    ///    - Empirical Component Ceilings (Sever disabled):
+    ///      * Pocket (8 cells): Peaks at 2 components on beat 1 during the generator contest.
+    ///      * Quick Climb (60 cells): Peaks at 8 components in natural play (beat 205) and 10 in soak.
+    ///      * Full Ascent (108 cells): Peaks at 7 components in natural play (beat 160) and 9 in soak.
+    ///      * Deep Stack (157 cells): Peaks at 3 components in natural play (beat 11) and 4 in soak (beat 247).
+    ///    - Pocket Threshold Protection:
+    ///      Pocket's 8-cell corridor naturally splits into 2 components (sizes 2 and 6) on beat 1
+    ///      when an unmatched card is played, resolving back to 1 component at beat 4. A minimum
+    ///      threshold of 3 (`.max(3)`) prevents premature beat-1 Rogue victories, preserving the
+    ///      tutorial card-play loop.
     pub const DEFAULT_SEVER_PERCENT: usize = 11;
 
     #[must_use]
@@ -270,7 +261,7 @@ impl ArchitectLab {
         } else {
             (initial_occupiable_count * Self::DEFAULT_SEVER_PERCENT)
                 .div_ceil(100)
-                .max(2)
+                .max(3)
         }
     }
 
@@ -1173,6 +1164,44 @@ impl ArchitectLab {
         self.exits(from)
             .into_iter()
             .find(|&next| self.world.config.grid().neighbor(from, face) == Some(next))
+    }
+
+    /// Adjacency check for structural topology (used by Sever).
+    /// Respects lateral doors, void, retracted cells, and vertical port compatibility,
+    /// but deliberately ignores power state so blackouts do not mimic structural severing.
+    #[must_use]
+    pub fn structural_step_through(&self, from: HexCoord, face: HexFace) -> Option<HexCoord> {
+        let placement = self.world.placements.get(&from)?;
+        if placement.space == HexSpace::Void || self.retracted.contains(&from) {
+            return None;
+        }
+        let next = self.world.config.grid().neighbor(from, face)?;
+        let other = self.world.placements.get(&next)?;
+        if other.space == HexSpace::Void || self.retracted.contains(&next) {
+            return None;
+        }
+        if face.is_lateral() {
+            if !placement.is_open(face) || !other.is_open(face.opposite()) {
+                return None;
+            }
+            if self
+                .threshold_key(from, face)
+                .and_then(|key| self.doors.get(&key))
+                == Some(&DoorState::Closed)
+            {
+                return None;
+            }
+        } else {
+            if placement.ports().port(face) == observed_hex::PortClass::Sealed
+                || !ports_compatible(
+                    placement.ports().port(face),
+                    other.ports().port(face.opposite()),
+                )
+            {
+                return None;
+            }
+        }
+        Some(next)
     }
 
     fn refresh_contradictions(&mut self) {

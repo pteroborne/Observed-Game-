@@ -1,8 +1,8 @@
 //! Incremental facility topology tracking and disjoint-set primitive.
 //!
-//! Owns the traversal graph over cells that are actually passable (routing through
-//! [`ArchitectLab::step_through`], which enforces sealed ports, closed doors,
-//! retracted cells, void spaces, and unpowered floor vertical links).
+//! Owns the structural traversal graph over cells that are actually passable (routing through
+//! [`ArchitectLab::structural_step_through`], which enforces sealed ports, closed doors,
+//! retracted cells, and void spaces, while deliberately ignoring electrical power state).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -171,12 +171,12 @@ impl FacilityTopology {
             return;
         }
 
-        // 2. DisjointSet over all passable cells, routing adjacency through step_through.
+        // 2. DisjointSet over all passable cells, routing adjacency through structural_step_through.
         let mut ds = DisjointSet::new();
         for &cell in &passable_cells {
             ds.insert(cell);
             for face in HexFace::ALL {
-                if let Some(next) = lab.step_through(cell, face)
+                if let Some(next) = lab.structural_step_through(cell, face)
                     && passable_cells.contains(&next)
                 {
                     ds.union(cell, next);
@@ -393,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn floor_power_cut_splits_multi_floor_facility() {
+    fn floor_power_cut_does_not_split_structural_topology() {
         let mut lab = ArchitectLab::for_mode(ArchitectMode::QuickClimb).unwrap();
         assert_eq!(lab.world.config.levels, 2);
 
@@ -401,16 +401,13 @@ mod tests {
 
         // Cut power on level 1
         assert!(lab.cut_floor_power(1));
-        assert!(lab.topology.is_dirty());
         lab.sync_topology();
 
-        let count_unpowered = lab.component_count();
-        // Severing inter-floor vertical ports increases or maintains disjoint components
-        assert!(count_unpowered >= count_powered);
+        // Power outage halts transit/observation, but does NOT fracture the structural building graph
+        assert_eq!(lab.component_count(), count_powered);
 
         // Restore power
         lab.economy.power.insert(1, true);
-        lab.topology.mark_dirty();
         lab.sync_topology();
         assert_eq!(lab.component_count(), count_powered);
     }
@@ -742,7 +739,7 @@ mod sever_ceiling {
     fn sever_threshold_scales_proportionally_with_occupiable_cells() {
         let pocket = ArchitectLab::for_mode(ArchitectMode::Pocket).unwrap();
         assert_eq!(pocket.initial_occupiable.len(), 8);
-        assert_eq!(pocket.sever_threshold, 2);
+        assert_eq!(pocket.sever_threshold, 3);
 
         let quick = ArchitectLab::for_mode(ArchitectMode::QuickClimb).unwrap();
         assert_eq!(quick.initial_occupiable.len(), 60);
@@ -764,36 +761,103 @@ mod sever_ceiling {
     /// mode with Sever disabled and records the whole trajectory.
     #[test]
     fn meaningful_component_ceiling_with_sever_disabled() {
-        println!("\n============== SEVER CEILING (objective off) ==============");
+        println!(
+            "\n============== 1. NATURAL PLAY (objective off, ends on summit or purge) =============="
+        );
         for mode in ArchitectMode::ALL {
-            let mut lab = ArchitectLab::for_mode(mode).expect("scenario boots");
-            lab.bot_architect = true;
-            lab.sever_threshold = 0;
+            for policy in crate::sim::PowerPolicy::ALL {
+                let mut lab =
+                    ArchitectLab::for_mode_with_policy(mode, policy).expect("scenario boots");
+                lab.bot_architect = true;
+                lab.sever_threshold = 0;
 
-            let mut max_meaningful = 0usize;
-            let mut first_reaching: BTreeMap<usize, u64> = BTreeMap::new();
-            let mut beat = 0u64;
-            while beat < 1000 && lab.outcome == MatchOutcome::Running {
-                lab.step_beat();
-                beat += 1;
-                let n = lab.meaningful_component_count();
-                if n > max_meaningful {
-                    for threshold in (max_meaningful + 1)..=n {
-                        first_reaching.entry(threshold).or_insert(beat);
+                let init_n = lab.meaningful_component_count();
+                let mut max_meaningful = init_n;
+                let mut first_reaching: BTreeMap<usize, u64> = BTreeMap::new();
+                for threshold in 2..=init_n {
+                    first_reaching.insert(threshold, 0);
+                }
+                let mut beat = 0u64;
+                while beat < 1000 && lab.outcome == MatchOutcome::Running {
+                    lab.step_beat();
+                    beat += 1;
+                    let n = lab.meaningful_component_count();
+                    if n > max_meaningful {
+                        for threshold in (max_meaningful + 1)..=n {
+                            first_reaching.entry(threshold).or_insert(beat);
+                        }
+                        max_meaningful = n;
                     }
-                    max_meaningful = n;
+                }
+                println!(
+                    "{:>12} ({:?}): {} cells, beat 0={}, {beat} beats, outcome {:?}, max meaningful {max_meaningful}, final {}, retractions={}",
+                    mode.short_label(),
+                    policy,
+                    lab.initial_occupiable.len(),
+                    init_n,
+                    lab.outcome,
+                    lab.meaningful_component_count(),
+                    lab.retracted.len()
+                );
+                let milestones: Vec<String> = [2usize, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 20]
+                    .into_iter()
+                    .filter_map(|t| first_reaching.get(&t).map(|b| format!("N={t} at beat {b}")))
+                    .collect();
+                if !milestones.is_empty() {
+                    println!("              first reached: {}", milestones.join(", "));
                 }
             }
-            println!(
-                "{:>12}: {beat} beats, outcome {:?}, max meaningful components {max_meaningful}",
-                mode.short_label(),
-                lab.outcome
-            );
-            let milestones: Vec<String> = [2usize, 4, 6, 8, 10, 12, 16, 20]
-                .into_iter()
-                .filter_map(|t| first_reaching.get(&t).map(|b| format!("N={t} at beat {b}")))
-                .collect();
-            println!("              first reached: {}", milestones.join(", "));
+        }
+
+        println!(
+            "\n============== 2. EXTENDED SOAK (summit exit bypassed, 1000 beats) =============="
+        );
+        for mode in ArchitectMode::ALL {
+            for policy in crate::sim::PowerPolicy::ALL {
+                let mut lab =
+                    ArchitectLab::for_mode_with_policy(mode, policy).expect("scenario boots");
+                lab.bot_architect = true;
+                lab.sever_threshold = 0;
+
+                let init_n = lab.meaningful_component_count();
+                let mut max_meaningful = init_n;
+                let mut first_reaching: BTreeMap<usize, u64> = BTreeMap::new();
+                for threshold in 2..=init_n {
+                    first_reaching.insert(threshold, 0);
+                }
+                let mut beat = 0u64;
+                while beat < 1000 && lab.outcome != MatchOutcome::RogueVictory {
+                    lab.step_beat();
+                    beat += 1;
+                    if lab.outcome == MatchOutcome::LoyalVictory {
+                        lab.outcome = MatchOutcome::Running;
+                    }
+                    let n = lab.meaningful_component_count();
+                    if n > max_meaningful {
+                        for threshold in (max_meaningful + 1)..=n {
+                            first_reaching.entry(threshold).or_insert(beat);
+                        }
+                        max_meaningful = n;
+                    }
+                }
+                println!(
+                    "{:>12} ({:?}): {} cells, beat 0={}, {beat} beats, outcome {:?}, max meaningful {max_meaningful}, final {}, retractions={}",
+                    mode.short_label(),
+                    policy,
+                    lab.initial_occupiable.len(),
+                    init_n,
+                    lab.outcome,
+                    lab.meaningful_component_count(),
+                    lab.retracted.len()
+                );
+                let milestones: Vec<String> = [2usize, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 20]
+                    .into_iter()
+                    .filter_map(|t| first_reaching.get(&t).map(|b| format!("N={t} at beat {b}")))
+                    .collect();
+                if !milestones.is_empty() {
+                    println!("              first reached: {}", milestones.join(", "));
+                }
+            }
         }
         println!("===========================================================\n");
     }
