@@ -236,32 +236,58 @@ impl ArchitectLab {
     ///      5 in Quick Climb, 3 in Full Ascent, and 5 singletons + shaft + room in Deep Stack).
     ///      All four modes start with only active, traversable Observer sectors.
     ///
-    /// 2. Relative Threshold Scaling (Candidate a vs Candidate b):
+    /// 2. Structural Sever Threshold Calibration:
     ///    - Structural Severing vs Floor Power:
     ///      Components are computed over the physical layout via `structural_step_through`,
     ///      respecting lateral door states and vertical port compatibility, but deliberately
     ///      omitting `is_powered`. Blackouts and elevator power cuts govern agent transit and
     ///      Darkness (O11), while Sever (O8) tracks genuine physical fragmentation.
-    ///    - Empirical Component Ceilings (Sever disabled):
-    ///      * Pocket (8 cells): Peaks at 2 components on beat 1 during the generator contest.
-    ///      * Quick Climb (60 cells): Peaks at 8 components in natural play (beat 205) and 10 in soak.
-    ///      * Full Ascent (108 cells): Peaks at 7 components in natural play (beat 160) and 9 in soak.
-    ///      * Deep Stack (157 cells): Peaks at 3 components in natural play (beat 11) and 4 in soak (beat 247).
-    ///    - Pocket Threshold Protection:
-    ///      Pocket's 8-cell corridor naturally splits into 2 components (sizes 2 and 6) on beat 1
-    ///      when an unmatched card is played, resolving back to 1 component at beat 4. A minimum
-    ///      threshold of 3 (`.max(3)`) prevents premature beat-1 Rogue victories, preserving the
-    ///      tutorial card-play loop.
-    pub const DEFAULT_SEVER_PERCENT: usize = 11;
+    ///
+    ///    - The Geometric Scaling Inversion:
+    ///      Counter-intuitively, structural fragmentation ceiling does not scale linearly
+    ///      with cell count. Larger facilities (e.g. Deep Stack, 157 cells across 5 levels)
+    ///      feature broad hexagonal floor plates with high degree connectivity and redundant
+    ///      loops. Localized retractions punch holes or alcoves but rarely bisect an entire
+    ///      plate. Conversely, compact facilities with narrow chokepoints (Quick Climb, 60 cells)
+    ///      readily shatter into isolated rooms.
+    ///
+    ///    - Empirical Component Ceilings & Milestones (Sever disabled, 300-beat soak):
+    ///      * Pocket (8 cells):
+    ///        - Starts at 1 component.
+    ///        - Jumps to 2 components (sizes 2 and 6) at beat 1 when the Rogue bot plays an
+    ///          unmatched card against the central generator at (4, 0, 0).
+    ///        - Recovers back to 1 component by beat 4 once the dispute resolves.
+    ///        - Max ceiling: 2. Any threshold <= 2 triggers an accidental beat-1 Rogue win;
+    ///          threshold >= 3 ensures Sever is safely unreachable, preserving the tutorial.
+    ///      * Quick Climb (60 cells):
+    ///        - Starts at 1 component. Max ceiling: 8 (natural play & 300b soak); 9 (extreme soak).
+    ///        - Milestones: N=2 (b7), N=3 (b16), N=4 (b34-41), N=5 (b36-56), N=6 (b64-118),
+    ///          N=7 (b64-136), N=8 (b85-205).
+    ///      * Full Ascent (108 cells):
+    ///        - Starts at 1 component. Max ceiling: 7 (natural play & 300b soak); 9 (1000b soak).
+    ///        - Milestones: N=2 (b36-41), N=3 (b52-61), N=4 (b58-67), N=5 (b76-82), N=6 (b79-182),
+    ///          N=7 (b160-383).
+    ///      * Deep Stack (157 cells):
+    ///        - Starts at 2 components (scenario route gap disconnects summit room at beat 0).
+    ///        - Reaches N=3 at beat 11. Max ceiling: 3 in 300-beat soak; reaches 4 at beat 247 in 1000b soak.
+    ///
+    ///    - Calibration Choice: `DEFAULT_SEVER_THRESHOLD = 6`
+    ///      A uniform threshold of 6 achieves ideal pacing across the climb modes:
+    ///      - Quick Climb triggers at beat 64 (OneWay) or beat 118 (Restorable), representing
+    ///        a decisive mid-game severance before Observers can summit (b146-205).
+    ///      - Full Ascent triggers at beat 79 (Restorable) or beat 182 (OneWay), rewarding
+    ///        sustained stairwell and corridor slicing in mid/late game.
+    ///      - Pocket (ceiling 2) and Deep Stack (ceiling 3-4) cannot reach 6, appropriately
+    ///        leaving Pocket to summit quorum / purge tutorial logic, and Deep Stack to its
+    ///        5-floor ascent, darkness, and purge dynamics.
+    pub const DEFAULT_SEVER_THRESHOLD: usize = 6;
 
     #[must_use]
     pub fn default_sever_threshold(initial_occupiable_count: usize) -> usize {
         if initial_occupiable_count == 0 {
             0
         } else {
-            (initial_occupiable_count * Self::DEFAULT_SEVER_PERCENT)
-                .div_ceil(100)
-                .max(3)
+            Self::DEFAULT_SEVER_THRESHOLD
         }
     }
 

@@ -736,22 +736,25 @@ mod sever_ceiling {
     }
 
     #[test]
-    fn sever_threshold_scales_proportionally_with_occupiable_cells() {
+    fn sever_threshold_is_calibrated_for_structural_topology() {
         let pocket = ArchitectLab::for_mode(ArchitectMode::Pocket).unwrap();
         assert_eq!(pocket.initial_occupiable.len(), 8);
-        assert_eq!(pocket.sever_threshold, 3);
+        assert_eq!(
+            pocket.sever_threshold,
+            ArchitectLab::DEFAULT_SEVER_THRESHOLD
+        );
 
         let quick = ArchitectLab::for_mode(ArchitectMode::QuickClimb).unwrap();
         assert_eq!(quick.initial_occupiable.len(), 60);
-        assert_eq!(quick.sever_threshold, 7);
+        assert_eq!(quick.sever_threshold, ArchitectLab::DEFAULT_SEVER_THRESHOLD);
 
         let full = ArchitectLab::for_mode(ArchitectMode::FullAscent).unwrap();
         assert_eq!(full.initial_occupiable.len(), 108);
-        assert_eq!(full.sever_threshold, 12);
+        assert_eq!(full.sever_threshold, ArchitectLab::DEFAULT_SEVER_THRESHOLD);
 
         let deep = ArchitectLab::for_mode(ArchitectMode::DeepStack).unwrap();
         assert_eq!(deep.initial_occupiable.len(), 157);
-        assert_eq!(deep.sever_threshold, 18);
+        assert_eq!(deep.sever_threshold, ArchitectLab::DEFAULT_SEVER_THRESHOLD);
     }
 
     /// How far does the facility actually fragment, when Sever is not ending the match?
@@ -826,11 +829,15 @@ mod sever_ceiling {
                     first_reaching.insert(threshold, 0);
                 }
                 let mut beat = 0u64;
-                while beat < 1000 && lab.outcome != MatchOutcome::RogueVictory {
+                let mut natural_outcome = None;
+                let mut natural_beat = 0u64;
+                while beat < 300 {
+                    lab.outcome = MatchOutcome::Running;
                     lab.step_beat();
                     beat += 1;
-                    if lab.outcome == MatchOutcome::LoyalVictory {
-                        lab.outcome = MatchOutcome::Running;
+                    if lab.outcome != MatchOutcome::Running && natural_outcome.is_none() {
+                        natural_outcome = Some(lab.outcome);
+                        natural_beat = beat;
                     }
                     let n = lab.meaningful_component_count();
                     if n > max_meaningful {
@@ -841,12 +848,13 @@ mod sever_ceiling {
                     }
                 }
                 println!(
-                    "{:>12} ({:?}): {} cells, beat 0={}, {beat} beats, outcome {:?}, max meaningful {max_meaningful}, final {}, retractions={}",
+                    "{:>12} ({:?}): {} cells, beat 0={}, 300 beats (natural {:?} at b{}), max meaningful {max_meaningful}, final {}, retractions={}",
                     mode.short_label(),
                     policy,
                     lab.initial_occupiable.len(),
                     init_n,
-                    lab.outcome,
+                    natural_outcome.unwrap_or(MatchOutcome::Running),
+                    natural_beat,
                     lab.meaningful_component_count(),
                     lab.retracted.len()
                 );
