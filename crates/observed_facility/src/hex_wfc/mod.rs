@@ -30,7 +30,7 @@ mod trace_tests;
 mod validate;
 mod variants;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use observed_content::ArchitectureRegister;
 use observed_core::{CorridorId, RoomId};
@@ -69,7 +69,22 @@ pub use variants::{
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum HexSpace {
+    /// Unbuilt mass. Opaque, impassable, and not somewhere anything can be put.
     Void,
+    /// Open air: outside the building, or the hollow core of it.
+    ///
+    /// Impassable like `Void` and distinguished from it by one thing that matters —
+    /// **sight passes through**. `Void` meant both "solid rock" and "outside", and
+    /// conflating them is why an Observer cannot see out of a window or across an atrium.
+    ///
+    /// Measured before it was added: letting observation cross open space multiplies
+    /// what a watcher covers by 2.6x to 3.2x across the four scenario shapes, and
+    /// saturates by a range of four cells. See `labs/suspension_lab`.
+    ///
+    /// The collapse never produces this. It is applied afterwards by
+    /// [`HexWfcWorld::mark_open_air`], so a facility that does not ask for it is byte for
+    /// byte what it was.
+    Air,
     Room,
     Hall,
 }
@@ -638,6 +653,67 @@ impl HexWfcWorld {
 
     /// Breadth-first route between two cells over open doors.
     #[must_use]
+    /// Re-read the facility's unbuilt cells, and call the ones open to the outside `Air`.
+    ///
+    /// The collapse never places [`HexSpace::Air`]; it is a property of a solved shape
+    /// rather than a thing the lottery can draw. A `Void` cell becomes `Air` when a path
+    /// of unbuilt cells connects it to the edge of the lattice — so the sky around the
+    /// building, and any atrium or shaft open to it, is air, while a sealed pocket
+    /// entombed in unbuilt mass stays rock.
+    ///
+    /// That distinction earns its place because **sight passes through air and not through
+    /// rock**. Measured across the four scenario shapes and eight seeds each, it
+    /// multiplies what a watcher covers by 2.6x to 3.2x and saturates by a range of four
+    /// cells — see `labs/suspension_lab`.
+    ///
+    /// Deterministic, and idempotent: running it twice changes nothing the second time.
+    /// Returns how many cells were reclassified.
+    pub fn mark_open_air(&mut self) -> usize {
+        let grid = self.config.grid();
+        let unbuilt = |placements: &BTreeMap<HexCoord, HexPlacement>, at: HexCoord| {
+            placements
+                .get(&at)
+                .is_none_or(|placement| matches!(placement.space, HexSpace::Void | HexSpace::Air))
+        };
+
+        // Seed from every unbuilt cell on the lattice boundary: that is what "outside"
+        // means when the world is a box.
+        let mut open: BTreeSet<HexCoord> = BTreeSet::new();
+        let mut queue: VecDeque<HexCoord> = VecDeque::new();
+        for &at in self.placements.keys() {
+            let on_the_edge = at.q == 0
+                || at.r == 0
+                || at.level == 0
+                || u32::from(at.q) + 1 == u32::from(self.config.cols)
+                || u32::from(at.r) + 1 == u32::from(self.config.rows)
+                || u32::from(at.level) + 1 == u32::from(self.config.levels);
+            if on_the_edge && unbuilt(&self.placements, at) && open.insert(at) {
+                queue.push_back(at);
+            }
+        }
+        while let Some(at) = queue.pop_front() {
+            for face in HexFace::ALL {
+                let Some(next) = grid.neighbor(at, face) else {
+                    continue;
+                };
+                if unbuilt(&self.placements, next) && open.insert(next) {
+                    queue.push_back(next);
+                }
+            }
+        }
+
+        let mut changed = 0;
+        for at in open {
+            if let Some(placement) = self.placements.get_mut(&at)
+                && placement.space == HexSpace::Void
+            {
+                placement.space = HexSpace::Air;
+                changed += 1;
+            }
+        }
+        changed
+    }
+
     pub fn route_between(&self, from: HexCoord, to: HexCoord) -> Option<Vec<HexCoord>> {
         topology::route_between(self.config, &self.placements, from, to)
     }

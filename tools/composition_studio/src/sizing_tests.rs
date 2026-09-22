@@ -192,7 +192,7 @@ fn survey_what_changes_when_the_lattice_does() {
             solved += 1;
             for (&coord, placement) in &world.placements {
                 match placement.space {
-                    HexSpace::Void => voids += 1,
+                    HexSpace::Void | HexSpace::Air => voids += 1,
                     HexSpace::Hall => {
                         degrees[HexFace::LATERAL
                             .into_iter()

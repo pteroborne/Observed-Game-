@@ -161,3 +161,82 @@ fn report_sight_on_real_facilities() {
     }
     println!("===========================================================\n");
 }
+
+/// `mark_open_air` must find the sky and leave sealed pockets alone.
+#[test]
+fn open_air_reaches_the_outside_and_stops_at_sealed_pockets() {
+    use crate::facility::{scenario_configs, solve};
+    use observed_facility::hex_wfc::HexSpace;
+
+    let (_, config) = scenario_configs()[2];
+    let mut world = solve(config, 3).expect("Full Ascent solves");
+    let voids_before = world
+        .placements
+        .values()
+        .filter(|p| p.space == HexSpace::Void)
+        .count();
+    assert!(
+        voids_before > 0,
+        "the scenario has unbuilt cells to classify"
+    );
+
+    let changed = world.mark_open_air();
+    assert!(
+        changed > 0,
+        "a facility in a bounded lattice touches the outside"
+    );
+
+    let air = world
+        .placements
+        .values()
+        .filter(|p| p.space == HexSpace::Air)
+        .count();
+    let rock = world
+        .placements
+        .values()
+        .filter(|p| p.space == HexSpace::Void)
+        .count();
+    assert_eq!(air + rock, voids_before, "nothing built was reclassified");
+
+    // Idempotent: the second pass has nothing left to find.
+    assert_eq!(world.mark_open_air(), 0);
+
+    // Deterministic: the same seed classifies the same cells.
+    let mut again = solve(config, 3).expect("solves");
+    let _ = again.mark_open_air();
+    assert_eq!(world.placements, again.placements);
+}
+
+/// How much of a facility is open air, and how much is entombed rock?
+#[test]
+fn report_how_much_is_sky() {
+    use crate::facility::{scenario_configs, solve};
+    use observed_facility::hex_wfc::HexSpace;
+    println!("\n============== AIR vs ROCK vs BUILT ==============");
+    for (name, config) in scenario_configs() {
+        let (mut air, mut rock, mut built, mut seeds) = (0usize, 0usize, 0usize, 0usize);
+        for seed in 0..8u64 {
+            let Some(mut world) = solve(config, seed) else {
+                continue;
+            };
+            seeds += 1;
+            let _ = world.mark_open_air();
+            for placement in world.placements.values() {
+                match placement.space {
+                    HexSpace::Air => air += 1,
+                    HexSpace::Void => rock += 1,
+                    HexSpace::Room | HexSpace::Hall => built += 1,
+                }
+            }
+        }
+        let total = air + rock + built;
+        println!(
+            "{name:>12}: {seeds} seeds, {total} cells -> built {built} ({:.0}%), \
+             air {air} ({:.0}%), sealed rock {rock} ({:.0}%)",
+            100.0 * built as f64 / total as f64,
+            100.0 * air as f64 / total as f64,
+            100.0 * rock as f64 / total as f64
+        );
+    }
+    println!("==================================================\n");
+}

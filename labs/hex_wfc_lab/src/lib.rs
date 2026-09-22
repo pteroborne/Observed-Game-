@@ -221,7 +221,9 @@ fn rebuild_visuals(
                     deck.emissive * 1.3
                 }
             }
-            Some((HexSpace::Void, _)) => plain.base_color.to_linear() * 0.4,
+            // Air is unbuilt like Void and takes the same treatment here. Giving open
+            // air a look of its own is a renderer decision, not this lab's.
+            Some((HexSpace::Void | HexSpace::Air, _)) => plain.base_color.to_linear() * 0.4,
             None if view.forced => spine.emissive * 0.20,
             None if view.site => spine.emissive * 0.09,
             None if view.pruned_to.is_some() => plain.emissive * 0.5,

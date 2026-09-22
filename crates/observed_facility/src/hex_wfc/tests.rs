@@ -2039,7 +2039,7 @@ fn survey_what_the_space_mix_buys() {
             for placement in world.placements.values() {
                 total += 1;
                 match placement.space {
-                    HexSpace::Void => void += 1,
+                    HexSpace::Void | HexSpace::Air => void += 1,
                     HexSpace::Room => room += 1,
                     HexSpace::Hall => hall += 1,
                 }
@@ -2612,7 +2612,7 @@ fn survey_what_routing_the_corridors_buys() {
             for (&coord, placement) in &world.placements {
                 cells += 1;
                 match placement.space {
-                    HexSpace::Void => voids += 1,
+                    HexSpace::Void | HexSpace::Air => voids += 1,
                     HexSpace::Hall => {
                         let open = HexFace::LATERAL
                             .into_iter()
@@ -2802,7 +2802,7 @@ fn survey_what_the_carve_produces_and_what_still_blocks_it() {
         let (mut halls, mut voids) = (0usize, 0usize);
         for (&coord, placement) in &world.placements {
             match placement.space {
-                HexSpace::Void => voids += 1,
+                HexSpace::Void | HexSpace::Air => voids += 1,
                 HexSpace::Hall => {
                     degrees[HexFace::LATERAL
                         .into_iter()

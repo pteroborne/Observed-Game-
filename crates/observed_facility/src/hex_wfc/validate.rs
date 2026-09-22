@@ -401,7 +401,9 @@ fn hall_components_valid(
                     HexSpace::Room => {
                         endpoints.insert(next);
                     }
-                    HexSpace::Void | HexSpace::Hall => {}
+                    // Air is impassable, exactly like Void. Sight is the only thing
+                    // that tells them apart, and connectivity is not sight.
+                    HexSpace::Void | HexSpace::Air | HexSpace::Hall => {}
                 }
             }
         }

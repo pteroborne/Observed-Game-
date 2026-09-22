@@ -636,7 +636,10 @@ struct SpaceLottery {
 impl SpaceLottery {
     const fn slot(space: HexSpace) -> usize {
         match space {
-            HexSpace::Void => 0,
+            // The lottery never draws air: the collapse does not place it, and
+            // `mark_open_air` applies it afterwards. It shares Void's slot so the weights
+            // stay a three-way split rather than gaining a share nothing can win.
+            HexSpace::Void | HexSpace::Air => 0,
             HexSpace::Room => 1,
             HexSpace::Hall => 2,
         }
