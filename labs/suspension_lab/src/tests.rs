@@ -126,3 +126,38 @@ fn report_what_a_cascade_takes_down() {
     }
     println!("========================================================\n");
 }
+
+/// Does the model's 2x survive contact with the real solver?
+#[test]
+fn report_sight_on_real_facilities() {
+    use crate::facility::{facility_sight, scenario_configs, solve};
+    println!("\n============== SIGHT ON GENERATED FACILITIES ==============");
+    for (name, config) in scenario_configs() {
+        for range in [4usize, 8, 16] {
+            let mut watchers = 0usize;
+            let mut stepped = 0usize;
+            let mut across = 0usize;
+            let mut solved = 0usize;
+            for seed in 0..8u64 {
+                let Some(world) = solve(config, seed) else {
+                    continue;
+                };
+                solved += 1;
+                let (w, s, a) = facility_sight(&world, range);
+                watchers += w;
+                stepped += s;
+                across += a;
+            }
+            let ratio = if stepped == 0 {
+                f64::INFINITY
+            } else {
+                across as f64 / stepped as f64
+            };
+            println!(
+                "{name:>12} range {range:>2}: {solved} seeds, {watchers} watchers, \
+                 stepped {stepped:>5}, across air {across:>5}  ({ratio:.1}x)"
+            );
+        }
+    }
+    println!("===========================================================\n");
+}

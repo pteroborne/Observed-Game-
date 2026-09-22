@@ -9,3 +9,6 @@ publish = false
 # borrowing them. See README.md for exactly what that costs.
 [dependencies]
 observed_hex = { path = "../../crates/observed_hex" }
+# The second half of the lab asks whether the model's numbers survive contact with a
+# real generated facility, so it needs the real solver.
+observed_facility = { path = "../../crates/observed_facility" }

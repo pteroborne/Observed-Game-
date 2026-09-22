@@ -3,6 +3,7 @@
 //! See `README.md` for why this is a model rather than the real machinery, and what that
 //! costs.
 
+pub mod facility;
 pub mod measure;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
