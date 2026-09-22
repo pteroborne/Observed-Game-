@@ -243,7 +243,7 @@ pub(super) fn active_component(
     let mut component = BTreeSet::new();
     if placements
         .get(&start)
-        .is_none_or(|placement| placement.space == HexSpace::Void)
+        .is_none_or(|placement| placement.space.unbuilt())
     {
         return component;
     }
@@ -258,7 +258,7 @@ pub(super) fn active_component(
             let Some(next) = grid.neighbor(cell, face) else {
                 continue;
             };
-            if placements[&next].space != HexSpace::Void && component.insert(next) {
+            if placements[&next].space.built() && component.insert(next) {
                 queue.push_back(next);
             }
         }
@@ -567,7 +567,7 @@ pub fn components(
 ) -> Vec<BTreeSet<HexCoord>> {
     let mut remaining: BTreeSet<HexCoord> = placements
         .iter()
-        .filter(|(_, placement)| placement.space != HexSpace::Void)
+        .filter(|(_, placement)| placement.space.built())
         .map(|(&coord, _)| coord)
         .collect();
     let mut groups = Vec::new();

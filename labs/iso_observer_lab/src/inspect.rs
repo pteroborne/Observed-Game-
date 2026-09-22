@@ -101,6 +101,7 @@ fn archetype_name(archetype: HexArchetype) -> &'static str {
 fn space_name(space: HexSpace) -> &'static str {
     match space {
         HexSpace::Void => "void",
+        HexSpace::Air => "air",
         HexSpace::Room => "room",
         HexSpace::Hall => "hall",
     }

@@ -195,7 +195,7 @@ impl Site {
             let cells: Vec<HexCoord> = world
                 .placements
                 .iter()
-                .filter(|(_, placement)| placement.space != HexSpace::Void)
+                .filter(|(_, placement)| placement.space.built())
                 .map(|(coord, _)| *coord)
                 .collect();
             if !(MIN_CELLS..=MAX_CELLS).contains(&cells.len()) {
@@ -923,7 +923,7 @@ fn can_decohere(world: &HexWfcWorld) -> bool {
     let built: Vec<HexCoord> = world
         .placements
         .iter()
-        .filter(|(_, placement)| placement.space != HexSpace::Void)
+        .filter(|(_, placement)| placement.space.built())
         .map(|(cell, _)| *cell)
         .collect();
     let mut observation = HexObservationFrame {

@@ -469,7 +469,7 @@ fn every_non_void_cell_is_covered_by_a_prefab_instance() {
         .map(|piece| piece.source_cell)
         .collect();
     for placement in world.placements.values() {
-        if placement.space == HexSpace::Void {
+        if placement.space.unbuilt() {
             continue;
         }
         if placement.archetype == HexArchetype::RampHead {
@@ -870,7 +870,7 @@ fn report_arc_default_collider_build_and_step_budget() {
     let non_void = world
         .placements
         .values()
-        .filter(|placement| placement.space != HexSpace::Void)
+        .filter(|placement| placement.space.built())
         .count();
     eprintln!(
         "ARC_M_MUTATION_BUDGET cells={} non_void={} colliders={} solve_ms={} projection_ms={} scene_build_ms={} pocket_cells={} changed_cells={} collider_ops={} pocket_solve_us={} logical_commit_us={} delta_projection_us={} physics_delta_us={} snapshot_delta_us={} characters={} batch_frame_us={} character_query_us={}",

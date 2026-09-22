@@ -221,7 +221,9 @@ fn rebuild_visuals(
                     deck.emissive * 1.3
                 }
             }
-            Some((HexSpace::Void, _)) => plain.base_color.to_linear() * 0.4,
+            // Air is unbuilt like Void and takes the same treatment here. Giving open
+            // air a look of its own is a renderer decision, not this lab's.
+            Some((HexSpace::Void | HexSpace::Air, _)) => plain.base_color.to_linear() * 0.4,
             None if view.forced => spine.emissive * 0.20,
             None if view.site => spine.emissive * 0.09,
             None if view.pruned_to.is_some() => plain.emissive * 0.5,
@@ -229,7 +231,7 @@ fn rebuild_visuals(
         };
         let fill = if view
             .resolved
-            .is_some_and(|placement| placement.space != HexSpace::Void)
+            .is_some_and(|placement| placement.space.built())
             && state.world.architecture[&coord] == ArchitectureRegister::LiminalGrid
         {
             observed_style::architecture_surface(
@@ -258,7 +260,7 @@ fn rebuild_visuals(
 
         // Draw lateral doors
         if let Some(placement) = view.resolved
-            && placement.space != HexSpace::Void
+            && placement.space.built()
         {
             let (space, doors, up, down) = (
                 placement.space,
@@ -410,7 +412,7 @@ fn update_status(state: Res<LabState>, mut status: Query<&mut Text, With<LabStat
                 .world
                 .placements
                 .values()
-                .filter(|placement| placement.space != HexSpace::Void)
+                .filter(|placement| placement.space.built())
                 .count()
         )
     } else {

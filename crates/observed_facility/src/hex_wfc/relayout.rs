@@ -938,7 +938,7 @@ fn select_region(
             protected_cells
                 .iter()
                 .copied()
-                .filter(|coord| world.placements[coord].space != HexSpace::Void),
+                .filter(|coord| world.placements[coord].space.built()),
         )
         .collect::<BTreeSet<_>>();
     let mut seeds = world

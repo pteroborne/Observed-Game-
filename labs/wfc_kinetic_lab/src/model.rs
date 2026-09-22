@@ -12,8 +12,8 @@ use glam::{Quat, Vec3};
 use kinetic_lab::physics::{Physics, gv, rv};
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{
-    HexInfluenceField, HexObservationFrame, HexRelayoutCandidate, HexRelayoutProgress, HexSpace,
-    HexWfcError, HexWfcWorld,
+    HexInfluenceField, HexObservationFrame, HexRelayoutCandidate, HexRelayoutProgress, HexWfcError,
+    HexWfcWorld,
 };
 use observed_hex::{HexCoord, HexFace, hex_origin};
 use observed_match::hex_wfc::HexWfcGeometrySnapshot;
@@ -758,7 +758,7 @@ impl WfcKineticWorld {
         };
         let mut visible = BTreeSet::new();
         for cell in self.world.placements.keys().copied() {
-            if self.world.placements[&cell].space == HexSpace::Void {
+            if self.world.placements[&cell].space.unbuilt() {
                 continue;
             }
             let centre = Vec3::from_array(hex_origin(cell)) + Vec3::Y * 1.2;
@@ -860,7 +860,7 @@ impl WfcKineticWorld {
             .world
             .placements
             .iter()
-            .filter(|(_, placement)| placement.space != HexSpace::Void)
+            .filter(|(_, placement)| placement.space.built())
             .map(|(cell, _)| *cell)
             .collect();
         let origin = here.unwrap_or(self.site.cells[0]);
@@ -1017,7 +1017,7 @@ impl WfcKineticWorld {
                         .world
                         .placements
                         .get(cell)
-                        .is_none_or(|placement| placement.space == HexSpace::Void)
+                        .is_none_or(|placement| placement.space.unbuilt())
             })
             .collect()
     }
@@ -1029,7 +1029,7 @@ impl WfcKineticWorld {
         let holes: BTreeSet<HexCoord> = self.holes().into_iter().collect();
         let mut found = Vec::new();
         for (cell, placement) in &self.world.placements {
-            if placement.space == HexSpace::Void || self.retracted.contains(cell) {
+            if placement.space.unbuilt() || self.retracted.contains(cell) {
                 continue;
             }
             for face in HexFace::LATERAL {

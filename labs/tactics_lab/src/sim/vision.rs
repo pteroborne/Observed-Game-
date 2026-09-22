@@ -8,7 +8,7 @@
 
 use std::collections::BTreeSet;
 
-use observed_facility::hex_wfc::{HexObservationFrame, HexSpace, HexWfcWorld};
+use observed_facility::hex_wfc::{HexObservationFrame, HexWfcWorld};
 use observed_hex::{HexCoord, HexFace, PortClass, ports_compatible};
 
 /// Cells within `hops` open ports of `origin`, including `origin` itself.
@@ -60,7 +60,7 @@ pub fn step_through(world: &HexWfcWorld, from: HexCoord, face: HexFace) -> Optio
     }
     let neighbor = world.config.grid().neighbor(from, face)?;
     let arriving = world.placements.get(&neighbor)?;
-    if arriving.space == HexSpace::Void {
+    if arriving.space.unbuilt() {
         return None;
     }
     // The same relation the solver bonds faces with, rather than a local
@@ -84,7 +84,7 @@ pub fn is_solid_space(world: &HexWfcWorld, cell: HexCoord) -> bool {
     world
         .placements
         .get(&cell)
-        .is_some_and(|placement| placement.space != HexSpace::Void)
+        .is_some_and(|placement| placement.space.built())
 }
 
 /// Seed an observation frame with the landmark cells the solver must always

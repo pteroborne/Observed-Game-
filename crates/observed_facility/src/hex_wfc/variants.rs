@@ -282,7 +282,7 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
 pub fn demandable_signatures() -> Vec<PortSignature> {
     catalogue()
         .into_iter()
-        .filter(|variant| variant.space != HexSpace::Void)
+        .filter(|variant| variant.space.built())
         .map(HexVariant::signature)
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -397,7 +397,7 @@ pub(super) fn variants_compatible(a: HexVariant, b: HexVariant, face: HexFace) -
         if a_open != b_open {
             return false;
         }
-        if a_open && (a.space == HexSpace::Void || b.space == HexSpace::Void) {
+        if a_open && (a.space.unbuilt() || b.space.unbuilt()) {
             return false;
         }
         true

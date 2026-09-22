@@ -251,7 +251,7 @@ impl PrisonState {
                 let is_solid = world
                     .placements
                     .get(&neighbor)
-                    .is_some_and(|p| p.space != HexSpace::Void);
+                    .is_some_and(|p| p.space.built());
                 candidates.push((is_solid, face, neighbor));
             }
         }
@@ -315,7 +315,7 @@ impl PrisonState {
                 .placements
                 .entry(cell)
                 .and_modify(|p| {
-                    if p.space == HexSpace::Void {
+                    if p.space.unbuilt() {
                         p.space = HexSpace::Hall;
                         p.archetype = HexArchetype::Straight;
                     }

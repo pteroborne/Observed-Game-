@@ -6,7 +6,6 @@
 //! first-person play and joins the Rogue faction. If every loyal Observer corrupts,
 //! that resolves as `MatchOutcome::RogueVictory`.
 
-use observed_facility::hex_wfc::HexSpace;
 use observed_hex::{HexCoord, HexFace};
 
 use crate::sim::{ArchitectLab, LabEventKind, MatchOutcome, ObserverId, ObserverState};
@@ -42,7 +41,7 @@ pub fn is_supporting(lab: &ArchitectLab, cell: HexCoord) -> bool {
         return false;
     }
     match lab.world.placements.get(&cell) {
-        Some(placement) => placement.space != HexSpace::Void,
+        Some(placement) => placement.space.built(),
         None => false,
     }
 }

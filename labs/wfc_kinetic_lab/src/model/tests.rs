@@ -48,7 +48,7 @@ fn the_floor_is_solver_placed_cells_with_holes_in_it() {
             site.world
                 .placements
                 .get(cell)
-                .is_none_or(|placement| placement.space == HexSpace::Void),
+                .is_none_or(|placement| placement.space.unbuilt()),
             "{cell:?} is listed as a hole but the solve built on it"
         );
     }
