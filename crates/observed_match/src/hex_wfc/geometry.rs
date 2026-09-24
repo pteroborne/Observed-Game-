@@ -1441,7 +1441,12 @@ fn push_tile(
     let climb = (!tile.spine.is_empty()).then(|| StairSpine {
         nodes: tile.spine.nodes.iter().map(|&node| center + node).collect(),
     });
-    let deck = (!tile.deck.is_empty()).then(|| DeckPath {
+    // A walkway keeps none of the hall's authored floor, so none of its authored path:
+    // the only line across a span is its axis, which centre-to-centre steering already
+    // walks. Following the hall's deck path walked bots off the side of the first
+    // unrailed span they met.
+    let span = open.is_some_and(|open| open.span.is_some());
+    let deck = (!tile.deck.is_empty() && !span).then(|| DeckPath {
         nodes: tile.deck.nodes.iter().map(|&node| center + node).collect(),
     });
     if climb.is_some() || deck.is_some() {
@@ -1503,10 +1508,17 @@ fn push_tile(
             railed,
             ..
         }) => open_edge::span_pieces(center, axis, railed),
-        Some(open) => HexFace::LATERAL
-            .into_iter()
-            .filter(|&face| open.opens(face))
-            .flat_map(|face| open_edge::edge_pieces(center, face, open.railed))
+        Some(open) => tile
+            .hulls
+            .iter()
+            .filter(|hull| open_edge::is_opened_wall(hull, &open))
+            .filter_map(|hull| open_edge::floor_under(hull, center))
+            .chain(
+                HexFace::LATERAL
+                    .into_iter()
+                    .filter(|&face| open.opens(face))
+                    .flat_map(|face| open_edge::edge_pieces(center, face, open.railed)),
+            )
             .collect(),
         None => open_edge::rim_pieces(world, source_cell),
     };

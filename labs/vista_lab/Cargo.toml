@@ -27,3 +27,6 @@ serde_json = "1"
 # The committed composition profile, so the production measurement solves the facility
 # the game actually plays rather than a fixture.
 observed_authoring = { path = "../../crates/observed_authoring" }
+# The open-edge rule the game projects, so the composition sweep counts the edges and
+# walkways a match would actually build.
+observed_match = { path = "../../crates/observed_match", default-features = false }

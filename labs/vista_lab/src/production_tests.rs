@@ -79,3 +79,114 @@ fn what_the_production_facility_shows_the_sky() {
         );
     }
 }
+
+/// What each composition knob does to the air a match is played in: the measurement
+/// behind choosing more void, printed rather than asserted.
+///
+/// For each void share: how often the production lattice still solves, how long it
+/// takes, and what open air it offers — air and rock, halls with open edges,
+/// walkways, open faces over a deep drop (two storeys or more) split into off the rim
+/// and between towers, cells floating above the ground level over true void, and
+/// whether the exit is still reachable from the spawn.
+#[test]
+#[ignore = "composition sweep: six production solves per void share, about a minute; prints, asserts nothing"]
+fn sweep_void_share() {
+    use observed_facility::hex_wfc::exposure::{Overhang, exposure};
+    use observed_match::hex_wfc::open_edges;
+
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles");
+    let catalog = RuntimeHexCatalog::load(&root, &[]).expect("committed catalog loads");
+    eprintln!(
+        "void  solved   ms | air%  rock% | open halls  spans | deep rim  deep inner | floating | exit"
+    );
+    for void in [300.0, 600.0, 1_000.0, 2_000.0, 4_000.0, 10_000.0] {
+        let mut profile = catalog.composition.clone();
+        profile.space_mix.void = void;
+        let (mut solved, mut ms, mut air, mut rock, mut cells) = (0, 0u128, 0, 0, 0);
+        let (mut halls, mut spans, mut rim, mut inner, mut floating, mut exits) =
+            (0, 0, 0, 0, 0, 0);
+        for seed in SEEDS {
+            let started = std::time::Instant::now();
+            let Ok(mut world) = HexWfcWorld::generate_with_profile(
+                seed,
+                HexWfcConfig::arc_default(),
+                None,
+                &profile,
+            ) else {
+                continue;
+            };
+            ms += started.elapsed().as_millis();
+            solved += 1;
+            let _ = world.mark_open_air();
+            let grid = world.config.grid();
+            cells += world.placements.len();
+            air += world
+                .placements
+                .values()
+                .filter(|p| p.space == HexSpace::Air)
+                .count();
+            rock += world
+                .placements
+                .values()
+                .filter(|p| p.space == HexSpace::Void)
+                .count();
+            for (&at, placement) in &world.placements {
+                if !placement.space.built() {
+                    continue;
+                }
+                if at.level > 0
+                    && matches!(
+                        exposure(&world, at, UNSAFE_FROM_LEVEL).map(|e| e.overhang),
+                        Some(Overhang::Hanging { onto: None, .. })
+                    )
+                {
+                    floating += 1;
+                }
+                let Some(edges) = open_edges(&world, at) else {
+                    continue;
+                };
+                halls += 1;
+                spans += usize::from(edges.span.is_some());
+                for face in HexFace::LATERAL.into_iter().filter(|&f| edges.opens(f)) {
+                    let Some(mut cell) = grid.neighbor(at, face) else {
+                        rim += 1;
+                        continue;
+                    };
+                    let mut depth = 0;
+                    while world
+                        .placements
+                        .get(&cell)
+                        .is_some_and(|p| p.space.unbuilt())
+                    {
+                        depth += 1;
+                        match grid.neighbor(cell, HexFace::Down) {
+                            Some(below) => cell = below,
+                            None => break,
+                        }
+                    }
+                    inner += usize::from(depth >= 2);
+                }
+            }
+            exits += usize::from(
+                world
+                    .route_between(world.config.spawn(), world.config.exit())
+                    .is_some(),
+            );
+        }
+        let n = solved.max(1);
+        #[allow(clippy::cast_precision_loss)]
+        let pct = |count: usize| 100.0 * count as f32 / cells.max(1) as f32;
+        eprintln!(
+            "{void:5} {solved}/{}  {:5} | {:4.1}  {:4.1}  | {:10} {:6} | {:8} {:10} | {:8} | {exits}/{solved}",
+            SEEDS.len(),
+            ms / n as u128,
+            pct(air),
+            pct(rock),
+            halls / n,
+            spans / n,
+            rim / n,
+            inner / n,
+            floating / n,
+        );
+    }
+}

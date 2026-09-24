@@ -373,3 +373,119 @@ fn spectator_stall_diagnostic_names_the_traversal_state() {
         );
     }
 }
+
+/// What more void does to a match, not just to a view: a solo spectator bot on the
+/// production lattice under the committed catalog, with only the void share changed.
+///
+/// Printed rather than asserted, because it is the measurement a composition change
+/// is decided on: per share, how many runs finish inside the budget, their median
+/// completion tick, and how many recoveries (falls out of the world or off a roof
+/// onto one the runner cannot leave) the bot needed on the way.
+#[test]
+#[ignore = "composition playability survey: 3 void shares x 4 production matches, minutes; prints"]
+fn survey_void_share_playability() {
+    use observed_facility::hex_wfc::HexWfcConfig;
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/tiles");
+    let slugs = observed_content::ArchitectureRegister::ALL
+        .map(observed_content::ArchitectureRegister::slug);
+    let catalog =
+        observed_authoring::RuntimeHexCatalog::load(&root, &slugs).expect("committed catalog");
+    eprintln!("void  finished  median tick  recoveries  (per seed: tick/recoveries)");
+    for void in [300.0, 1_000.0, 2_000.0] {
+        let mut catalog = catalog.clone();
+        catalog.composition.space_mix.void = void;
+        let content = std::sync::Arc::new(
+            observed_match::hex_wfc::HexMatchContent::from_runtime_catalog(catalog),
+        );
+        let (mut ticks, mut recoveries, mut rows) = (Vec::new(), 0, Vec::new());
+        for index in 0..4u64 {
+            let seed = crate::flow::MATCH_SEED.wrapping_add(index.wrapping_mul(1_000_003));
+            let config = HexMatchConfig {
+                teams: 1,
+                members_per_team: 1,
+                wfc: HexWfcConfig::arc_default(),
+                ..Default::default()
+            };
+            let Ok(mut game) = HexWfcMatch::new_with_content(seed, config, content.clone()) else {
+                rows.push("unsolved".to_string());
+                continue;
+            };
+            let mut driver = HexBotDriver::new();
+            let mut recovered = 0;
+            for _ in 0..TICK_BUDGET * 2 {
+                step_all_bots(&mut game, &mut driver);
+                recovered += game
+                    .recent_events
+                    .iter()
+                    .filter(|event| event.kind == HexMatchEventKind::PlayerRecovered)
+                    .count();
+                if game.status == HexMatchStatus::Finished {
+                    break;
+                }
+            }
+            recoveries += recovered;
+            if game.status == HexMatchStatus::Finished {
+                ticks.push(game.tick);
+                rows.push(format!("{}/{recovered}", game.tick));
+            } else {
+                rows.push(format!("stalled/{recovered}"));
+            }
+        }
+        ticks.sort_unstable();
+        let median = ticks.get(ticks.len() / 2).copied().unwrap_or(0);
+        eprintln!(
+            "{void:5}  {}/4       {median:11}  {recoveries:10}  {}",
+            ticks.len(),
+            rows.join("  ")
+        );
+    }
+}
+
+/// Open edges at production scale: the first production run with them walked the
+/// spectator off an unrailed level-7 walkway, onto the roof below, and back again for
+/// the rest of the match. It was following the full-width hall's authored deck path
+/// across a span that keeps none of that hall's floor. On the arc lattice, where the
+/// top storeys are bare, the runner must get where it is going without a recovery.
+#[test]
+fn production_runner_crosses_unrailed_open_edges_without_falling() {
+    use observed_facility::hex_wfc::HexWfcConfig;
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/tiles");
+    let slugs = observed_content::ArchitectureRegister::ALL
+        .map(observed_content::ArchitectureRegister::slug);
+    let catalog =
+        observed_authoring::RuntimeHexCatalog::load(&root, &slugs).expect("committed catalog");
+    let content = std::sync::Arc::new(
+        observed_match::hex_wfc::HexMatchContent::from_runtime_catalog(catalog),
+    );
+    let config = HexMatchConfig {
+        teams: 1,
+        members_per_team: 1,
+        wfc: HexWfcConfig::arc_default(),
+        ..Default::default()
+    };
+    let mut game = HexWfcMatch::new_with_content(crate::flow::MATCH_SEED, config, content)
+        .expect("the production match solves");
+    let mut driver = HexBotDriver::new();
+    let mut spans_crossed = 0;
+    let mut last = game.players.values().next().expect("runner").cell;
+    for _ in 0..20_000 {
+        step_all_bots(&mut game, &mut driver);
+        assert!(
+            !game
+                .recent_events
+                .iter()
+                .any(|event| event.kind == HexMatchEventKind::PlayerRecovered),
+            "the runner needed a recovery at tick {}",
+            game.tick
+        );
+        let cell = game.players.values().next().expect("runner").cell;
+        if cell != last
+            && observed_match::hex_wfc::open_edges(&game.facility, cell)
+                .is_some_and(|open| open.span.is_some() && !open.railed)
+        {
+            spans_crossed += 1;
+        }
+        last = cell;
+    }
+    assert!(spans_crossed > 0, "the route never met an unrailed span");
+}

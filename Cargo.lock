@@ -9267,6 +9267,7 @@ dependencies = [
  "observed_content",
  "observed_facility",
  "observed_hex",
+ "observed_match",
  "observed_style",
  "observed_traversal",
  "player_input",

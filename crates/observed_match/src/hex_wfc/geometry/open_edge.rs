@@ -211,6 +211,36 @@ pub fn is_opened_wall(hull: &[Vec3], open: &OpenEdges) -> bool {
         && sector_of(hull).is_some_and(|face| open.opens(face))
 }
 
+/// Where a removed hull stood, the floor it was also carrying.
+///
+/// Most halls are corridors narrower than their cell, and the solid masses either
+/// side of the corridor run from the floor slab's underside to the ceiling: they are
+/// floor as much as wall. Removing one opens the face and holes the floor, which is
+/// how the first production runs walked bots straight through it onto the roof
+/// below. The filler is the removed hull's own plan footprint as a slab, its top a
+/// centimetre under the floor so it never fights the tile's slab where they overlap.
+/// `hull` is cell-local; `origin` is the cell's world origin.
+#[must_use]
+pub fn floor_under(hull: &[Vec3], origin: Vec3) -> Option<EdgePiece> {
+    // Masses stand either from the slab's underside or from its top; either way, where
+    // they stood is floor once they are gone.
+    let bottom = hull.iter().map(|p| p.y).fold(f32::MAX, f32::min);
+    if bottom > FLOOR_SLAB_TOP + 0.1 {
+        return None;
+    }
+    let top = FLOOR_SLAB_TOP - 0.01;
+    let points = hull
+        .iter()
+        .flat_map(|p| [Vec3::new(p.x, 0.0, p.z), Vec3::new(p.x, top, p.z)])
+        .collect();
+    Some(EdgePiece {
+        part: HexPiecePart::Authored,
+        center: origin,
+        rotation: Quat::IDENTITY,
+        shape: ColliderShape::ConvexHull { points },
+    })
+}
+
 fn block(part: HexPiecePart, center: Vec3, along: Vec3, half: Vec3) -> EdgePiece {
     EdgePiece {
         part,
@@ -482,6 +512,69 @@ mod tests {
             corners * 100 < faces,
             "{corners} corners in {faces} opened faces"
         );
+    }
+
+    /// Whether a floor stands under `plan`: something spanning the deck height.
+    fn supported(hulls: &[Vec<Vec3>], plan: Vec2) -> bool {
+        let deck = FLOOR_SLAB_TOP - 0.05;
+        hulls.iter().any(|hull| {
+            let (lo, hi) = height(hull);
+            lo <= deck && hi >= deck && observed_traversal::point_in_convex_plan_hull(hull, plan)
+        })
+    }
+
+    /// Whether something stood at `plan` from floor height up: a floor, or the base of
+    /// a mass standing on the slab. Either way, a body there after opening needs floor.
+    fn grounded(hulls: &[Vec<Vec3>], plan: Vec2) -> bool {
+        hulls.iter().any(|hull| {
+            let (lo, hi) = height(hull);
+            lo <= FLOOR_SLAB_TOP + 0.1
+                && hi >= FLOOR_SLAB_TOP - 0.05
+                && observed_traversal::point_in_convex_plan_hull(hull, plan)
+        })
+    }
+
+    /// The solid masses beside a corridor carry its floor too, so opening a face must
+    /// leave floor where they stood. The first production run walked bots through the
+    /// hole this left and onto the roof below, over and over.
+    #[test]
+    fn opening_a_face_never_holes_the_floor() {
+        let mut checked = 0;
+        for tile in hall_tiles() {
+            let sealed: Vec<HexFace> = HexFace::LATERAL
+                .into_iter()
+                .filter(|&face| tile.signature.port(face) == PortClass::Sealed)
+                .collect();
+            let open = opening(sealed.iter().copied());
+            let after: Vec<Vec<Vec3>> = tile
+                .hulls
+                .iter()
+                .filter(|hull| !is_opened_wall(hull, &open))
+                .cloned()
+                .chain(
+                    tile.hulls
+                        .iter()
+                        .filter(|hull| is_opened_wall(hull, &open))
+                        .filter_map(|hull| super::floor_under(hull, Vec3::ZERO))
+                        .map(|piece| piece.local_hull(Vec3::ZERO)),
+                )
+                .collect();
+            for i in -12..=12 {
+                for j in -12..=12 {
+                    #[allow(clippy::cast_precision_loss)]
+                    let plan = Vec2::new(i as f32 * 0.55, j as f32 * 0.6);
+                    if grounded(&tile.hulls, plan) {
+                        checked += 1;
+                        assert!(
+                            supported(&after, plan) || grounded(&after, plan),
+                            "{:?}: opening its sealed faces holes the floor at {plan:?}",
+                            tile.key
+                        );
+                    }
+                }
+            }
+        }
+        assert!(checked > 10_000, "{checked} floor points checked");
     }
 
     /// One corner hall on its own at `level`, doors east and south-west.

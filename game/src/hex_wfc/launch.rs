@@ -99,12 +99,41 @@ pub(super) fn tile_dir() -> std::path::PathBuf {
     }
 }
 
+/// `OBSERVED2_HEX_VOID_SHARE=<share>` plays the committed catalog under a different
+/// void share: an authoring experiment, for seeing a composition in the game before
+/// it is committed. The share is folded into the simulation content hash, so a LAN
+/// peer running another composition refuses the match exactly as it would refuse a
+/// different catalog.
+fn with_composition_experiment(
+    mut catalog: observed_authoring::RuntimeHexCatalog,
+) -> observed_authoring::RuntimeHexCatalog {
+    let Some(void) = std::env::var("OBSERVED2_HEX_VOID_SHARE")
+        .ok()
+        .and_then(|share| share.trim().parse::<f64>().ok())
+        .filter(|share| share.is_finite() && *share > 0.0)
+    else {
+        return catalog;
+    };
+    catalog.composition.space_mix.void = void;
+    for (byte, fold) in catalog
+        .simulation_content_hash
+        .iter_mut()
+        .zip(void.to_bits().to_le_bytes())
+    {
+        *byte ^= fold;
+    }
+    catalog
+}
+
 pub(super) fn load_current_content() -> Result<Arc<HexMatchContent>, HexLaunchError> {
     static CONTENT: OnceLock<Result<Arc<HexMatchContent>, String>> = OnceLock::new();
     CONTENT
         .get_or_init(|| {
             let register_slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
-            HexMatchContent::load(&tile_dir(), &register_slugs).map(Arc::new)
+            observed_authoring::RuntimeHexCatalog::load(&tile_dir(), &register_slugs)
+                .map(with_composition_experiment)
+                .map(HexMatchContent::from_runtime_catalog)
+                .map(Arc::new)
         })
         .clone()
         .map_err(HexLaunchError::CatalogLoad)
