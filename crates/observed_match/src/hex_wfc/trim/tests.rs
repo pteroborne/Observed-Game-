@@ -93,6 +93,7 @@ fn two_cell_world() -> HexWfcWorld {
         space_mix: observed_facility::hex_wfc::profile::SpaceMix::baseline(),
         route_corridors: false,
         carve_unrouted: false,
+        open_air: false,
     }
 }
 

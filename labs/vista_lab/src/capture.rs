@@ -15,8 +15,8 @@ use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
 use crate::composition::Vista;
-use crate::exposure::Form;
 use crate::view::Lab;
+use observed_facility::hex_wfc::exposure::Form;
 
 /// Long enough for pipelines to compile and shadow cascades to settle.
 const WARM_UP: f32 = 5.0;
@@ -166,7 +166,7 @@ fn stills(
         "air_cells": lab.vista.air_cells,
         "built_cells": lab.exposures.len(),
         "sheer_faces": lab.exposures.iter().map(|e| e.sheer_count()).sum::<u32>(),
-        "hanging_cells": lab.exposures.iter().filter(|e| e.drop.hangs()).count(),
+        "hanging_cells": lab.exposures.iter().filter(|e| e.overhang.hangs()).count(),
         "spans": count(|f| matches!(f, Form::Span { .. })),
         "flights": count(|f| matches!(f, Form::Flight { .. })),
         "pieces": lab.build.pieces.len(),

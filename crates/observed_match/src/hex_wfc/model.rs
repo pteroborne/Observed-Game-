@@ -390,8 +390,11 @@ impl HexWfcMatch {
         let production_scale =
             config.wfc.cols >= 28 && config.wfc.rows >= 20 && config.wfc.levels >= 10;
         let quotas = production_scale.then(|| HexRoomQuotas::for_team_count(config.teams));
-        let facility =
+        let mut facility =
             HexWfcWorld::generate_with_profile(seed, config.wfc, quotas, content.composition())?;
+        // Sky and rock are different things; the facility says which is which, and keeps
+        // saying so across every relayout (see `HexWfcWorld::open_air`).
+        let _ = facility.mark_open_air();
         let geometry = HexWfcGeometrySnapshot::project_with_rooms(
             &facility,
             content.cells(),

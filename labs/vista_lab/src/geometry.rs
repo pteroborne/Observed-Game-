@@ -15,7 +15,7 @@ use observed_hex::{CORNERS, FLOOR_SLAB_TOP, TILE_LEVEL_HEIGHT, hex_origin};
 use observed_traversal::{ColliderShape, ColliderSpec, StableColliderId};
 
 use crate::composition::Vista;
-use crate::exposure::{Drop, Exposure, Form};
+use observed_facility::hex_wfc::exposure::{Exposure, Form, Overhang};
 
 /// Walkway deck width, metres. Wide enough to walk without thinking about it and
 /// narrow enough that both lit edges sit in view at once.
@@ -304,7 +304,7 @@ impl Builder<'_> {
             .grid()
             .neighbor(at, face)
             .and_then(|next| {
-                crate::exposure::exposure(
+                observed_facility::hex_wfc::exposure::exposure(
                     &self.vista.world,
                     next,
                     crate::composition::UNSAFE_FROM_LEVEL,
@@ -428,9 +428,9 @@ impl Builder<'_> {
     }
 
     fn keel(&mut self, e: &Exposure) {
-        let room = match e.drop {
-            Drop::Supported => return,
-            Drop::Hanging { .. } => e.drop.metres().map_or(MAX_KEEL + 14.0, |m| m - 4.0),
+        let room = match e.overhang {
+            Overhang::Supported => return,
+            Overhang::Hanging { .. } => e.overhang.metres().map_or(MAX_KEEL + 14.0, |m| m - 4.0),
         };
         #[allow(clippy::cast_precision_loss)]
         let want = 10.0 + (hash(e.coord, 99) % 15) as f32;
@@ -674,7 +674,7 @@ pub fn build(vista: &Vista, survey: &[Exposure]) -> Build {
             Form::Flight { entry } => builder.flight(e, entry),
             Form::Landing => {}
         }
-        if matches!(e.form, Form::Deck | Form::Pavilion | Form::Storey) && e.drop.hangs() {
+        if matches!(e.form, Form::Deck | Form::Pavilion | Form::Storey) && e.overhang.hangs() {
             builder.keel(e);
         }
     }

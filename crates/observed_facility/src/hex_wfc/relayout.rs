@@ -463,6 +463,13 @@ impl HexWfcWorld {
             return Err(error);
         }
 
+        // Air is a property of the whole shape, not of the pocket: closing an atrium's
+        // mouth entombs air outside the region, and opening one frees rock. The pocket
+        // itself comes back from the lottery as rock wherever it is unbuilt.
+        if self.open_air {
+            let _ = self.mark_open_air();
+        }
+
         let previous_generation = self.generation;
         let previous_attempts = self.last_attempts;
         self.generation = candidate.generation;
@@ -497,10 +504,12 @@ impl HexWfcWorld {
             previous_attempts,
             region: candidate.region,
             changed_cells: candidate.changed_cells.clone(),
+            // From the world rather than the candidate, so an unbuilt cell carries the
+            // class it ended up with after the air was re-derived.
             placements: candidate
-                .placements
-                .into_iter()
-                .filter(|(coord, _)| candidate.changed_cells.contains(coord))
+                .changed_cells
+                .iter()
+                .map(|&coord| (coord, self.placements[&coord]))
                 .collect(),
             architecture: candidate
                 .architecture
@@ -537,6 +546,11 @@ impl HexWfcWorld {
         self.blueprints = delta.previous_blueprints;
         self.generation = delta.previous_generation;
         self.last_attempts = delta.previous_attempts;
+        // The commit may have reclassified air outside its region; the derivation is a
+        // function of the shape, so re-deriving from the restored shape restores it too.
+        if self.open_air {
+            let _ = self.mark_open_air();
+        }
         Ok(())
     }
 
@@ -617,6 +631,18 @@ impl HexWfcWorld {
     }
 }
 
+/// A placement with air folded back into rock, for comparing across a re-collapse.
+fn unclassified(placement: Option<&HexPlacement>) -> Option<HexPlacement> {
+    placement.map(|&placement| HexPlacement {
+        space: if placement.space == HexSpace::Air {
+            HexSpace::Void
+        } else {
+            placement.space
+        },
+        ..placement
+    })
+}
+
 fn make_candidate(
     world: &HexWfcWorld,
     generation: u32,
@@ -648,7 +674,9 @@ fn make_candidate(
         .iter()
         .copied()
         .filter(|coord| {
-            world.placements.get(coord) != placements.get(coord)
+            // The lottery never draws air, so an air cell that stays unbuilt comes back
+            // as rock. That is not a change: the commit re-derives its class.
+            unclassified(world.placements.get(coord)) != unclassified(placements.get(coord))
                 || world.architecture.get(coord) != architecture.get(coord)
                 || blueprint_cell_identity(&world.blueprints, *coord)
                     != blueprint_cell_identity(solved_blueprints, *coord)

@@ -22,3 +22,8 @@ observed_style = { path = "../../crates/observed_style" }
 observed_traversal = { path = "../../crates/observed_traversal", default-features = false }
 player_input = { path = "../../crates/player_input", default-features = false }
 serde_json = "1"
+
+[dev-dependencies]
+# The committed composition profile, so the production measurement solves the facility
+# the game actually plays rather than a fixture.
+observed_authoring = { path = "../../crates/observed_authoring" }

@@ -9263,6 +9263,7 @@ name = "vista_lab"
 version = "0.1.0"
 dependencies = [
  "bevy 0.19.1",
+ "observed_authoring",
  "observed_content",
  "observed_facility",
  "observed_hex",

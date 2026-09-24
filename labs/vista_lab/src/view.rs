@@ -31,9 +31,9 @@ use observed_traversal::ConvexRenderMesh;
 use player_input::PlayerIntent;
 
 use crate::composition::{UNSAFE_FROM_LEVEL, Vantage, Vista};
-use crate::exposure::{Drop, Exposure, Form, survey as survey_cells};
 use crate::geometry::{Build, Look, Shape, build, face_mid, origin, yaw_toward};
 use crate::walk::{STEP, Walker};
+use observed_facility::hex_wfc::exposure::{Exposure, Form, Overhang, survey as survey_cells};
 
 /// Everything the lab spawns carries this, so a rebuild can prove it removed it all.
 #[derive(Component)]
@@ -732,10 +732,10 @@ fn draw_survey(lab: Res<Lab>, mut gizmos: Gizmos) {
             gizmos.line(a, a + up, color);
             gizmos.line(b, b + up, color);
         }
-        if let Drop::Hanging { .. } = e.drop
+        if let Overhang::Hanging { .. } = e.overhang
             && !matches!(e.form, Form::Span { .. } | Form::Flight { .. })
         {
-            let depth = e.drop.metres().unwrap_or(48.0);
+            let depth = e.overhang.metres().unwrap_or(48.0);
             gizmos.line(o, o - Vec3::Y * depth, survey(SurveyRole::Drop));
         }
         if let Form::Span { axis } = e.form {
