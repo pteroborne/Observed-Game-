@@ -298,8 +298,7 @@ impl VisionField {
             free.swap(i, rng.below(i + 1));
         }
 
-        for pair in free.chunks_exact(2) {
-            let (a, b) = (pair[0], pair[1]);
+        for &[a, b] in free.as_chunks::<2>().0 {
             self.graph.links[a.0 as usize] = b;
             self.graph.links[b.0 as usize] = a;
         }

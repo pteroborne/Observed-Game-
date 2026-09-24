@@ -232,7 +232,7 @@ pub fn structural_edges(hulls: &[Vec<Vec3>]) -> Vec<(Vec3, Vec3)> {
             continue;
         };
         let mut found: BTreeMap<EdgeKey, EdgeFaces> = BTreeMap::new();
-        for triangle in mesh.indices.chunks_exact(3) {
+        for triangle in mesh.indices.as_chunks::<3>().0 {
             let corner = |index: u32| Vec3::from_array(mesh.positions[index as usize]);
             let (a, b, c) = (
                 corner(triangle[0]),
@@ -387,10 +387,7 @@ mod tests {
     #[test]
     fn triangle_winding_faces_away_from_the_hull_centroid() {
         let mesh = ConvexRenderMesh::from_convex_hull(&cube()).expect("cube mesh");
-        for triangle in mesh.positions.chunks_exact(3) {
-            let [a, b, c] = triangle else {
-                unreachable!("chunks_exact returns three positions")
-            };
+        for [a, b, c] in mesh.positions.as_chunks::<3>().0 {
             let (a, b, c) = (
                 Vec3::from_array(*a),
                 Vec3::from_array(*b),

@@ -286,12 +286,12 @@ impl DoorWorld {
             free.swap(i, rng.below(i + 1));
         }
 
-        let mut chunks = free.chunks_exact(2);
-        for pair in chunks.by_ref() {
-            self.graph.links[pair[0].0 as usize] = pair[1];
-            self.graph.links[pair[1].0 as usize] = pair[0];
+        let (pairs, remainder) = free.as_chunks::<2>();
+        for &[a, b] in pairs {
+            self.graph.links[a.0 as usize] = b;
+            self.graph.links[b.0 as usize] = a;
         }
-        if let [leftover] = chunks.remainder() {
+        if let [leftover] = remainder {
             self.graph.links[leftover.0 as usize] = *leftover;
         }
 

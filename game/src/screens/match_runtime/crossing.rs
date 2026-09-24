@@ -42,8 +42,8 @@ fn snapshot_id(
     simulation_content_hash: [u8; 32],
 ) -> PlaceSnapshotId {
     let mut hash = 0xCBF2_9CE4_8422_2325_u64;
-    for chunk in simulation_content_hash.chunks_exact(8) {
-        mix_snapshot_word(&mut hash, u64::from_le_bytes(chunk.try_into().unwrap()));
+    for chunk in simulation_content_hash.as_chunks::<8>().0 {
+        mix_snapshot_word(&mut hash, u64::from_le_bytes(*chunk));
     }
     match place {
         Place::Room(room) => mix_snapshot_word(&mut hash, u64::from(room.0)),

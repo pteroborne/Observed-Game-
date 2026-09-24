@@ -54,7 +54,9 @@ fn pixel_luminance(r: u8, g: u8, b: u8) -> f32 {
 pub fn corridor(rgba: &[u8], stride: usize) -> CorridorVerdict {
     let stride = stride.max(1);
     let mut lums: Vec<f32> = rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .step_by(stride)
         .map(|px| pixel_luminance(px[0], px[1], px[2]))
         .collect();

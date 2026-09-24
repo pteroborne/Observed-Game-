@@ -230,13 +230,12 @@ impl ObservationWorld {
         }
 
         // Pair consecutively; seal a leftover if the free count is odd.
-        let mut iter = free.chunks_exact(2);
-        for pair in iter.by_ref() {
-            let (a, b) = (pair[0], pair[1]);
+        let (pairs, remainder) = free.as_chunks::<2>();
+        for &[a, b] in pairs {
             self.links[a.0 as usize] = b;
             self.links[b.0 as usize] = a;
         }
-        if let [leftover] = iter.remainder() {
+        if let [leftover] = remainder {
             self.links[leftover.0 as usize] = *leftover;
         }
 

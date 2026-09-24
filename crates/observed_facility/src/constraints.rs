@@ -283,13 +283,12 @@ impl ConstraintWorld {
                 shuffled.swap(i, rng.below(i + 1));
             }
 
-            let mut chunks = shuffled.chunks_exact(2);
-            for pair in chunks.by_ref() {
-                let (a, b) = (pair[0], pair[1]);
+            let (pairs, remainder) = shuffled.as_chunks::<2>();
+            for &[a, b] in pairs {
                 candidate[a.0 as usize] = b;
                 candidate[b.0 as usize] = a;
             }
-            if let [leftover] = chunks.remainder() {
+            if let [leftover] = remainder {
                 candidate[leftover.0 as usize] = *leftover;
             }
 

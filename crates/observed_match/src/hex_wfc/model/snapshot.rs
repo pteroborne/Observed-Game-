@@ -187,10 +187,8 @@ fn snapshot_digest(snapshot: &HexMatchSnapshot) -> u64 {
     };
     mix(snapshot.tick);
     mix(u64::from(snapshot.input_version));
-    for chunk in snapshot.simulation_content_hash.chunks_exact(8) {
-        mix(u64::from_le_bytes(
-            chunk.try_into().expect("eight-byte hash chunk"),
-        ));
+    for chunk in snapshot.simulation_content_hash.as_chunks::<8>().0 {
+        mix(u64::from_le_bytes(*chunk));
     }
     mix(u64::from(snapshot.generation));
     for player in &snapshot.players {
