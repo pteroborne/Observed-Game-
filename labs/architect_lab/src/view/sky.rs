@@ -143,47 +143,11 @@ fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Tiling fractal value noise, as soft white wisps in the alpha channel.
-/// Deterministic: a fixed lattice hash, no random source.
+/// The shared open-air cloud texture ([`observed_style::open_air::cloud_rgba`]),
+/// sampled so it tiles.
 fn cloud_texture() -> Image {
-    const SIZE: u32 = 128;
-    let hash = |x: u32, y: u32, period: u32| {
-        let (x, y) = (x % period, y % period);
-        let mut h = x.wrapping_mul(374_761_393) ^ y.wrapping_mul(668_265_263) ^ 0x5bd1_e995;
-        h = (h ^ (h >> 13)).wrapping_mul(1_274_126_177);
-        #[allow(clippy::cast_precision_loss)]
-        let value = (h ^ (h >> 16)) as f32 / u32::MAX as f32;
-        value
-    };
-    let noise = |x: f32, y: f32, period: u32| {
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let (x0, y0) = (x.floor() as u32, y.floor() as u32);
-        let (fx, fy) = (x.fract(), y.fract());
-        let (sx, sy) = (fx * fx * (3.0 - 2.0 * fx), fy * fy * (3.0 - 2.0 * fy));
-        let a = hash(x0, y0, period) + (hash(x0 + 1, y0, period) - hash(x0, y0, period)) * sx;
-        let b = hash(x0, y0 + 1, period)
-            + (hash(x0 + 1, y0 + 1, period) - hash(x0, y0 + 1, period)) * sx;
-        a + (b - a) * sy
-    };
-    let mut data = Vec::with_capacity((SIZE * SIZE * 4) as usize);
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let mut value = 0.0;
-            let mut amplitude = 0.5;
-            for octave in 0..4u32 {
-                let period = 4 << octave;
-                #[allow(clippy::cast_precision_loss)]
-                let scale = period as f32 / SIZE as f32;
-                #[allow(clippy::cast_precision_loss)]
-                let sample = noise(x as f32 * scale, y as f32 * scale, period);
-                value += sample * amplitude;
-                amplitude *= 0.5;
-            }
-            let alpha = smoothstep(0.42, 0.82, value);
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            data.extend_from_slice(&[255, 255, 255, (alpha * 255.0) as u8]);
-        }
-    }
+    const SIZE: u32 = observed_style::open_air::CLOUD_TEXTURE_SIZE;
+    let data = observed_style::open_air::cloud_rgba();
     let mut image = Image::new(
         Extent3d {
             width: SIZE,
