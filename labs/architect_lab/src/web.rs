@@ -357,6 +357,9 @@ mod tests {
         let before = game.snapshot();
         let _ = game.preview(0, target.q, target.r, target.level, rotation);
         assert_eq!(game.snapshot(), before);
+        // The browser opens in planning, where the first placements are free (backlog
+        // #47). Spend that allowance so the repeat below is refused on the cooldown.
+        game.sim.setup_placements_left = 0;
         game.sim.submit(command).unwrap();
         let before = game.snapshot();
         assert!(
