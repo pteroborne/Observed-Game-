@@ -156,7 +156,11 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
         .copied()
         .unwrap_or(observed_content::ArchitectureRegister::ALL[0]);
     let composition = composition_at(&runtime.match_state.facility, current);
-    let palette = style::architecture_for_composition(architecture, composition);
+    let palette = outdoors_if_open(
+        &runtime.match_state.facility,
+        current,
+        style::architecture_for_composition(architecture, composition),
+    );
     let t = (time.delta_secs() * BLEND_RATE).clamp(0.0, 1.0);
     let overview_active = frame.0.is_some();
 
@@ -222,6 +226,21 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
         light.inner_angle = lerp_f(light.inner_angle, palette.key_inner_angle, t);
         light.outer_angle = lerp_f(light.outer_angle, palette.key_outer_angle, t);
         light.shadow_maps_enabled = palette.key_shadows_enabled;
+    }
+}
+
+/// A hall that opens onto the outside is outdoors: its fog reaches across the air and
+/// fades into the horizon rather than into the dark, and the light comes from the sky.
+/// Everywhere else keeps its district palette, tuned for a body in a corridor.
+pub(super) fn outdoors_if_open(
+    world: &observed_facility::hex_wfc::HexWfcWorld,
+    coord: observed_facility::hex_wfc::HexCoord,
+    palette: style::DistrictPalette,
+) -> style::DistrictPalette {
+    if observed_match::hex_wfc::open_edges(world, coord).is_some() {
+        style::open_air::open_air(palette)
+    } else {
+        palette
     }
 }
 

@@ -9,6 +9,7 @@ use std::time::Instant;
 
 mod assets;
 pub(in crate::hex_wfc) mod camera;
+pub(in crate::hex_wfc) mod exterior;
 pub(in crate::hex_wfc) use camera::{sync_camera, sync_projection};
 mod lighting;
 /// The full-screen isometric survivor map, wired by `hex_wfc::mod`.
@@ -17,6 +18,7 @@ mod mesh_group;
 mod open_edge_materials;
 mod residency;
 mod shell;
+pub(in crate::hex_wfc) mod sky;
 pub(in crate::hex_wfc) mod spectate;
 #[cfg(test)]
 mod spectate_tests;
@@ -137,7 +139,11 @@ pub(super) fn setup_view(
         .unwrap_or(&ArchitectureRegister::ALL[0]);
     let current = runtime.local().cell;
     let composition = lighting::composition_at(&runtime.match_state.facility, current);
-    let palette = observed_style::architecture_for_composition(architecture, composition);
+    let palette = lighting::outdoors_if_open(
+        &runtime.match_state.facility,
+        current,
+        observed_style::architecture_for_composition(architecture, composition),
+    );
     if let Ok((camera, mut transform)) = camera.single_mut() {
         camera::prime_camera(&mut transform, runtime.local());
         commands.entity(camera).insert((
@@ -201,6 +207,23 @@ pub(super) fn setup_view(
     );
     let catalog = shell::HexGeometryCatalog::build(&runtime);
     shell::spawn_boundary(&mut commands, &mut assets, &mut meshes, &runtime, &catalog);
+    // The outside: the sky beyond every open edge, and the building beyond the
+    // streaming radius (`exterior`).
+    let facility = &runtime.match_state.facility;
+    let far = observed_hex::hex_origin(observed_facility::hex_wfc::HexCoord {
+        q: facility.config.cols - 1,
+        r: facility.config.rows - 1,
+        level: 0,
+    });
+    sky::spawn(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &mut images,
+        Vec3::new(far[0] * 0.5, 0.0, far[2] * 0.5),
+    );
+    let skin = exterior::spawn_all(&mut commands, &mut meshes, &assets, facility);
+    commands.insert_resource(skin);
     thresholds::spawn_thresholds(&mut commands, &mut assets, &mut meshes, &runtime);
     let capture_unbounded = capture_requests_deterministic_residency();
     let initial_budget = if capture_unbounded {
@@ -290,6 +313,7 @@ pub(super) fn clear_view(
     });
     commands.insert_resource(ClearColor(Color::srgb(0.045, 0.05, 0.065)));
     commands.remove_resource::<HexWfcVisualAssets>();
+    commands.remove_resource::<exterior::ExteriorSkin>();
     commands.remove_resource::<HexPresentationResidency>();
     commands.remove_resource::<HexPresentationReadiness>();
 }

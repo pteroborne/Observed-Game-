@@ -25,6 +25,12 @@ pub(in crate::hex_wfc) enum MeshGroupKey {
     Truss,
     /// A railing's guard: collided with, never drawn.
     Hidden,
+    /// The far-field skin's storey faces (`exterior`).
+    Facade,
+    /// The far-field skin's roofs.
+    Roof,
+    /// Lit window slits in the far-field skin: a district's practical light.
+    Window,
 }
 
 impl MeshGroupKey {

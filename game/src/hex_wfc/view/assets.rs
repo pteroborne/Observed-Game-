@@ -319,6 +319,9 @@ impl HexWfcVisualAssets {
             MeshGroupKey::Rail => self.open_edge.rail.clone(),
             MeshGroupKey::Walkway => self.open_edge.walkway.clone(),
             MeshGroupKey::Truss | MeshGroupKey::Hidden => self.open_edge.truss.clone(),
+            MeshGroupKey::Facade => self.open_edge.facade.clone(),
+            MeshGroupKey::Roof => self.open_edge.roof.clone(),
+            MeshGroupKey::Window => reg.fixture.clone(),
         }
     }
 
