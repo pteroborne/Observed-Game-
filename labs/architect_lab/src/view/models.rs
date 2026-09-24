@@ -27,8 +27,9 @@ pub(crate) struct Models {
     pub ghost: Handle<StandardMaterial>,
     /// The sawn underside of a built cell: lit, so its facets catch the key light.
     pub underside: Handle<StandardMaterial>,
-    /// One layer of the deck's soft cast shadow on the cloud below.
-    pub shadow: Handle<StandardMaterial>,
+    /// The deck's cast shadow below the cloud, core first then penumbra. Opaque, so
+    /// overlapping cells never stack into a black hole.
+    pub shadow: [Handle<StandardMaterial>; 2],
     /// Sealed rock, opaque and lit.
     pub rock: Handle<StandardMaterial>,
     /// Context decks one and two storeys down, hazed by distance.
@@ -90,11 +91,12 @@ impl Models {
             perceptual_roughness: 0.95,
             ..default()
         });
-        let shadow = materials.add(StandardMaterial {
-            base_color: Color::srgba(0.0, 0.004, 0.01, 0.2),
-            alpha_mode: AlphaMode::Blend,
-            unlit: true,
-            ..default()
+        let shadow = [0.55, 0.3].map(|depth| {
+            materials.add(StandardMaterial {
+                base_color: observed_style::architect::shadowed(depth),
+                unlit: true,
+                ..default()
+            })
         });
         let rock = materials.add(StandardMaterial {
             base_color: color(Role::Rock),

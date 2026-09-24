@@ -1,7 +1,7 @@
 //! Simulation-owned legality and live labels; no invented combat statistics.
 use super::{
     ArchitectButton, CardButton, CardText, CardTextField, ChargePip, DynamicText, HandDock,
-    HoverNote, HoverNoteText, Inspector, LabControls, Sidebar, UiAction, can_submit,
+    HazardNotice, HoverNote, HoverNoteText, Inspector, LabControls, Sidebar, UiAction, can_submit,
 };
 use crate::view::{MapCameraState, PlacementSurvey, WorkspaceLayout};
 use crate::{
@@ -75,12 +75,14 @@ type LayoutQuery<'w, 's> = Query<
         Option<&'static Inspector>,
         Option<&'static HandDock>,
         Option<&'static LabControls>,
+        Option<&'static HazardNotice>,
     ),
     Or<(
         With<Sidebar>,
         With<Inspector>,
         With<HandDock>,
         With<LabControls>,
+        With<HazardNotice>,
     )>,
 >;
 pub fn sync_layout(
@@ -93,13 +95,20 @@ pub fn sync_layout(
         Vec2::new(w.width(), w.height())
     });
     let layout = WorkspaceLayout::for_window(size);
-    for (mut node, rail, inspector, hand, lab) in &mut nodes {
+    for (mut node, rail, inspector, hand, lab, hazard) in &mut nodes {
         if rail.is_some() {
             node.display = if state.details {
                 Display::Flex
             } else {
                 Display::None
             };
+            // Never taller than the board it sits on.
+            node.max_height = px((layout.map_size.y - 66.0).max(200.0));
+            node.overflow = Overflow::clip_y();
+        }
+        if hazard.is_some() {
+            // Beside the open details panel, never over it.
+            node.left = px(if state.details { 332.0 } else { 24.0 });
         }
         if inspector.is_some() {
             node.bottom = px(layout.hand_height + 16.0);
@@ -293,14 +302,7 @@ pub fn sync_dynamic_text(
                     };
                     rows.push(format!("EYE {:02} / {status}", id.0));
                 }
-                for (id, g) in &session.sim.guardians {
-                    rows.push(format!("HUNTER {:02} / Floor {}", id.0, g.cell.level + 1));
-                }
-                if rows.len() > 4 {
-                    let extra = rows.len() - 4;
-                    rows.truncate(4);
-                    rows.push(format!("+ {extra} other hunters"));
-                }
+                rows.extend(hunter_rows(&session));
                 rows.join("\n")
             }
         };
@@ -313,21 +315,46 @@ pub fn sync_dynamic_text(
         }
     }
 }
-/// "12 targets" here, plus any other floor the card can reach, so an empty deck is
-/// never a mystery: "0 here  /  02: 7".
+/// Every Guardian, always: named one per row while that fits, otherwise counted per
+/// floor. A released pack is what the hunting party list exists to show, so it is
+/// summarised rather than cut off behind a "+ n others" row.
+fn hunter_rows(session: &LabSession) -> Vec<String> {
+    const NAMED: usize = 3;
+    let guardians = &session.sim.guardians;
+    if guardians.len() <= NAMED {
+        return guardians
+            .values()
+            .enumerate()
+            .map(|(index, g)| format!("HUNTER {index:02} / Floor {}", g.cell.level + 1))
+            .collect();
+    }
+    let mut per_floor = std::collections::BTreeMap::<u8, usize>::new();
+    for guardian in guardians.values() {
+        *per_floor.entry(guardian.cell.level).or_default() += 1;
+    }
+    let mut rows = vec![format!("HUNTERS / {} released", guardians.len())];
+    rows.extend(
+        per_floor
+            .into_iter()
+            .map(|(level, count)| format!("  Floor {}: {count}", level + 1)),
+    );
+    rows
+}
+/// "12 targets here", plus any other floor the card can reach, so an empty deck is
+/// never a mystery: "0 targets here  /  floor 02: 7".
 fn floor_targets(survey: &PlacementSurvey, floor: u8) -> String {
     let here = survey
         .by_level
         .get(usize::from(floor))
         .copied()
         .unwrap_or(0);
-    let mut text = format!("{here} target{}", if here == 1 { "" } else { "s" });
+    let mut text = format!("{here} target{} here", if here == 1 { "" } else { "s" });
     let elsewhere: Vec<_> = survey
         .by_level
         .iter()
         .enumerate()
         .filter(|&(level, &count)| level != usize::from(floor) && count > 0)
-        .map(|(level, count)| format!("{:02}: {count}", level + 1))
+        .map(|(level, count)| format!("floor {:02}: {count}", level + 1))
         .collect();
     if !elsewhere.is_empty() {
         text += &format!("   /   {}", elsewhere.join("  "));

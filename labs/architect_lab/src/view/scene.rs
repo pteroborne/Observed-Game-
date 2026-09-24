@@ -440,22 +440,23 @@ fn hang_over_air(commands: &mut Commands, models: &Models, at: Vec3) {
         at,
         "Deck underside",
     );
-    // Three widening layers of one faint shade make a soft edge without a blur pass.
-    for (step, spread) in [1.0_f32, 1.12, 1.26].into_iter().enumerate() {
-        #[allow(clippy::cast_precision_loss)]
-        let lift = step as f32 * 0.05;
+    // A dark core over a wider, lighter penumbra: a soft edge without blending.
+    for (material, spread, lift) in [
+        (&models.shadow[1], 1.3, 0.0),
+        (&models.shadow[0], 1.02, 0.08),
+    ] {
         spawn_part(
             commands,
             Part {
                 mesh: models.slab.clone(),
-                material: models.shadow.clone(),
+                material: material.clone(),
                 transform: Transform::from_translation(
                     super::sky::shadow_offset() + Vec3::Y * lift,
                 )
                 .with_scale(Vec3::new(spread, 0.1, spread)),
             },
             at,
-            "Deck shadow on the cloud",
+            "Deck shadow below the cloud",
         );
     }
 }

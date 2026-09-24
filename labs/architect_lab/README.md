@@ -40,6 +40,8 @@ source PNGs, optimized assets, symmetry handling, and rotation verification.
 
 1. Read the short introduction. Time begins paused.
 2. Select one of the five cards, then tap a tile marked by a glowing dot.
+   Tap (or hover) any other tile to see why it is locked; each floor button
+   counts the card's legal targets there.
 3. Inspect its legal orientation and immediate route/instability preview.
 4. Rotate if desired, then explicitly **Play this card**.
 5. **Begin hunt** or **Resume hunt** to watch the consequence. **Plan** pauses time
@@ -209,16 +211,22 @@ room, rotate with `Q` / `E`, then **Play card** / Space. The inspector explains
 refusals, and play is disabled for a target on another floor. `Esc` closes an open panel first, then cancels the selection. `P` resumes/pauses the hunt. No click or card selection submits a move.
 
 Page Up / Down (or the floor buttons) changes the active deck; `V` toggles context.
-The opening view focuses a known editable tile without selecting it.
-The default zoom is 60% of the fit-to-deck scale (about 1.7× closer). Selecting a
-tile snaps it to the center at this closer scale. Subsequent manual pan/zoom stays
-put until the selection changes; `F`/Home refocuses the selected tile, or the deck
-first known editable tile if nothing is selected. Wheel or `+`/`-` zoom; right/middle drag pans. Board
+The resting view fits the active deck's structure, centred. Selecting a tile pans
+only when it sits outside the middle of the view or under the inspector; otherwise
+the board stays put. `F`/Home returns to the fitted view. Wheel or `+`/`-` zoom; right/middle drag pans. Board
 input is confined to its viewport; it cannot select through the inspector, hand,
 or details/lab popup. Placement controls only appear for a selected tile on the
 active floor; opening a details/lab panel hides those controls and blocks Space
 from playing a card. `Tab` cycles targets on the active floor. A selected cell
 keeps its coordinate when the mutable-target list changes.
+
+Hovering any tile says what the selected card can do there: how many rotations
+fit, or the simulation's own refusal ("an Observer is holding that tile in view").
+The floor switcher counts the card's legal targets on this floor and names any
+other floor it can reach, and the hand header tallies what locks the rest.
+Open air under the deck is drawn as sky: a hazed well, a soft cast shadow and a
+cloud layer below, and a sawn underside on every built cell. Sealed rock is an
+opaque block. See the [presentation evidence](../../docs/evidence/architect_lab/presentation/README.md).
 
 `L` opens lab controls: `B` bot, `N` one behavior beat, `O` diagnostics, `R` reset,
 and `[`/`]` scenario. Observer positions in normal play use Rogue knowledge;

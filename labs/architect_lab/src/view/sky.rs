@@ -6,10 +6,10 @@
 //!
 //! 1. a camera-fixed backdrop, deepest straight down the middle of the view and
 //!    hazing toward its edges;
-//! 2. a thin world-fixed cloud layer far below, which pans with the deck and so
-//!    reads as belonging to the same space rather than to the screen;
-//! 3. the active deck's shadow cast on that cloud, soft-edged, offset along the
-//!    key light, so the deck visibly hangs over something;
+//! 2. the active deck's shadow far below, soft-edged and offset along the key
+//!    light, so the deck visibly hangs over something;
+//! 3. a thin world-fixed cloud layer over that shadow, which pans with the deck
+//!    and so reads as belonging to the same space rather than to the screen;
 //! 4. a sawn underside on every built cell of the active deck, so its edges are
 //!    cliffs with thickness rather than stickers.
 //!
@@ -72,9 +72,9 @@ pub(crate) fn spawn(
     commands.entity(camera).add_child(backdrop);
 
     let clouds = materials.add(StandardMaterial {
-        base_color: color(Role::SkyHaze).with_alpha(0.55),
+        base_color: color(Role::SkyHaze).lighter(0.04).with_alpha(0.34),
         base_color_texture: Some(images.add(cloud_texture())),
-        uv_transform: Affine2::from_scale(Vec2::splat(9.0)),
+        uv_transform: Affine2::from_scale(Vec2::splat(6.0)),
         alpha_mode: AlphaMode::Blend,
         unlit: true,
         ..default()
@@ -82,7 +82,8 @@ pub(crate) fn spawn(
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::default().mesh().size(1600.0, 1600.0))),
         MeshMaterial3d(clouds),
-        Transform::from_xyz(0.0, -CLOUD_DEPTH - 1.5, 0.0),
+        // Above the shadow, so the shadow reads as lying beneath the haze.
+        Transform::from_xyz(0.0, -CLOUD_DEPTH + 1.5, 0.0),
         NotShadowCaster,
         RenderLayers::layer(0),
         Name::new("Cloud layer below the deck"),

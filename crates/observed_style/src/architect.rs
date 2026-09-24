@@ -5,7 +5,7 @@
 //! Unbuilt space is two things and reads as two things. Open air is sky: a cool
 //! well, deepest straight down, hazing outward, under the deck's cast shadow.
 //! Sealed rock is an opaque block. Anything between them would say "hole".
-use bevy::color::Color;
+use bevy::color::{Color, Mix};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Role {
@@ -52,6 +52,16 @@ pub fn color(role: Role) -> Color {
         Role::SkyHaze => Color::srgb(0.090, 0.157, 0.207),
         Role::Rock => Color::srgb(0.16, 0.17, 0.165),
     }
+}
+
+/// Open air in the deck's shadow: `depth` (0..=1) of the way from the haze to black.
+#[must_use]
+pub fn shadowed(depth: f32) -> Color {
+    let haze = color(Role::SkyDeep)
+        .mix(&color(Role::SkyHaze), 0.45)
+        .to_linear();
+    let t = 1.0 - depth.clamp(0.0, 1.0);
+    Color::linear_rgb(haze.red * t, haze.green * t, haze.blue * t)
 }
 
 /// `role` seen through `amount` (0..=1) of haze: how a deck further down the

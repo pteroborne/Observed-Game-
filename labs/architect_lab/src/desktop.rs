@@ -457,6 +457,18 @@ fn capture_progress(
         if std::env::var("OBSERVED2_OVERLAY").is_ok() {
             session.debug_overlay = true;
         }
+        // Evidence from mid-match: let the bot Architect play this many beats first,
+        // through the ordinary command boundary, then hand the board back.
+        if let Some(beats) = std::env::var("OBSERVED2_CAPTURE_BEATS")
+            .ok()
+            .and_then(|beats| beats.parse::<u32>().ok())
+        {
+            session.sim.bot_architect = true;
+            for _ in 0..beats {
+                session.sim.step_beat();
+            }
+            session.sim.bot_architect = false;
+        }
 
         // Capture an actionable opening, before autonomous play can resolve it.
         session.paused = true;

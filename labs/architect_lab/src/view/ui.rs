@@ -20,6 +20,9 @@ pub(crate) struct Inspector;
 pub(crate) struct HandDock;
 #[derive(Component)]
 pub(crate) struct LabControls;
+/// The unstable-cell and retraction warning at the board's top-left corner.
+#[derive(Component)]
+pub(crate) struct HazardNotice;
 /// The note beside the pointer: what the selected card can do at the hovered tile.
 #[derive(Component)]
 pub(crate) struct HoverNote;
