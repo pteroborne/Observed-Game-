@@ -138,48 +138,54 @@ fn selection_keeps_its_coordinate_when_targets_change() {
     assert_eq!(session.target(), Some(target));
 }
 
+/// A camera that has already framed a 1200x554 board at a known scale.
+fn framed_camera() -> MapCameraState {
+    MapCameraState {
+        viewport_offset: Vec2::new(0.0, 66.0),
+        viewport_size: Vec2::new(1200.0, 554.0),
+        units_per_pixel: 0.15,
+        framed: true,
+        ..default()
+    }
+}
+
 #[test]
-fn selection_snaps_to_tile_then_leaves_manual_framing_alone() {
+fn selection_pans_only_when_the_tile_is_out_of_comfortable_view() {
     let mut session = LabSession::default();
-    let mut camera = MapCameraState::default();
-    assert!(
-        camera.zoom < 1.0,
-        "opening view should be closer than fit-to-deck"
-    );
+    let mut camera = framed_camera();
+    let config = session.sim.world.config;
+    let plane = |cell| {
+        (camera_rotation().inverse() * (board_position(config, cell) + Vec3::Y * 0.5)).truncate()
+    };
     let targets = session.sim.mutable_targets();
     let cell = targets[0];
     camera.floor = cell.level;
+    // Far outside the view: the selection is brought to the centre.
+    camera.pan = plane(cell) + Vec2::new(500.0, 0.0);
     session.select_target(cell);
     camera.sync_selection(&session);
-    let tile = board_position(session.sim.world.config, cell) + Vec3::Y * 0.5;
-    let screen_plane = (camera_rotation().inverse() * tile).truncate() - camera.pan;
-    assert!(
-        screen_plane.length() < 0.0001,
-        "selected tile must project to viewport center"
-    );
+    assert!((plane(cell) - camera.pan).length() < 0.0001);
+    // Manual framing survives until the selection changes.
     camera.pan += Vec2::new(7.0, 3.0);
     camera.zoom = 0.4;
-    let manually_framed = camera;
+    let manual = camera;
     camera.sync_selection(&session);
-    assert_eq!(camera, manually_framed);
-    session.select_target(targets[1]);
+    assert_eq!(camera, manual);
+    // A tile already comfortably in view does not move the board.
+    let near = *targets
+        .iter()
+        .find(|&&c| c != cell && c.level == cell.level && camera.comfortably_visible(plane(c)))
+        .expect("some other target is in view");
+    session.select_target(near);
     camera.sync_selection(&session);
-    assert_ne!(camera.pan, manually_framed.pan);
-    assert_eq!(camera.zoom, DEFAULT_ZOOM);
-    camera.center();
+    assert_eq!(camera.pan, manual.pan);
+    assert_eq!(camera.zoom, manual.zoom);
+    // A selection on a hidden floor never pulls the camera.
+    camera.floor = cell.level + 1;
+    let before = camera.pan;
+    session.select_target(cell);
     camera.sync_selection(&session);
-    assert_ne!(
-        camera.pan,
-        Vec2::ZERO,
-        "focus should return to the selection"
-    );
-    camera.change_floor(1, 2);
-    camera.sync_selection(&session);
-    assert_eq!(
-        camera.pan,
-        Vec2::ZERO,
-        "hidden-floor selection must not pull the camera"
-    );
+    assert_eq!(camera.pan, before);
 }
 
 #[test]
@@ -204,17 +210,40 @@ fn contextual_panel_does_not_allow_click_through_to_board() {
 }
 
 #[test]
-fn opening_focus_uses_known_editable_geometry_without_arming_a_card() {
-    let session = LabSession::default();
-    let mut camera = MapCameraState::default();
-    let cell = session.sim.mutable_targets()[0];
-    camera.sync_selection(&session);
-    let point = board_position(session.sim.world.config, cell) + Vec3::Y * 0.5;
-    assert!(((camera_rotation().inverse() * point).truncate() - camera.pan).length() < 0.0001);
-    assert_eq!(session.target(), None);
-    assert!(!ui::can_submit(&session, &camera));
-    camera.pan += Vec2::ONE;
-    let manual = camera.pan;
-    camera.sync_selection(&session);
-    assert_eq!(camera.pan, manual);
+fn the_resting_view_fits_the_whole_active_deck_without_arming_a_card() {
+    for mode in ArchitectMode::ALL {
+        let session = LabSession {
+            sim: ArchitectLab::for_mode(mode).unwrap(),
+            ..default()
+        };
+        let mut camera = framed_camera();
+        camera.framed = false;
+        let fit_scale = 0.2;
+        camera.fit_active_deck(&session, fit_scale);
+        let units_per_pixel = fit_scale * camera.zoom;
+        let config = session.sim.world.config;
+        let (mut min, mut max) = (Vec2::splat(f32::MAX), Vec2::splat(f32::MIN));
+        for (&cell, placement) in &session.sim.world.placements {
+            if cell.level != camera.floor || !placement.space.built() {
+                continue;
+            }
+            let plane = (camera_rotation().inverse() * board_position(config, cell)).truncate();
+            let pixels = (plane - camera.pan) / units_per_pixel;
+            assert!(
+                pixels.x.abs() < camera.viewport_size.x * 0.5
+                    && pixels.y.abs() < camera.viewport_size.y * 0.5,
+                "{mode:?}: {cell:?} falls outside the fitted view at {pixels}"
+            );
+            min = min.min(pixels);
+            max = max.max(pixels);
+        }
+        // Centred: the deck's extent is balanced about the middle of the view.
+        let centre = (min + max) * 0.5;
+        assert!(
+            centre.length() < 20.0,
+            "{mode:?} sits off-centre by {centre}"
+        );
+        assert_eq!(session.target(), None);
+        assert!(!ui::can_submit(&session, &camera));
+    }
 }
