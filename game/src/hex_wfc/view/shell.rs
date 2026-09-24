@@ -255,9 +255,21 @@ fn spawn_cell(
         },
     );
     let origin = Vec3::from_array(hex_origin(coord));
-    let tile_key = pieces
-        .first()
-        .and_then(|p| p.tile.as_ref().map(|t| format!("{t:?}")));
+    // The merged mesh cache is keyed on this string. A cell carrying open-edge or rim
+    // pieces is no longer a pure function of its tile - its walls came down, or a
+    // railing stands on the edge of the lattice - so it is keyed by where it is.
+    let bespoke = pieces
+        .iter()
+        .any(|piece| piece.part != observed_match::hex_wfc::HexPiecePart::Authored);
+    let tile_key = pieces.first().and_then(|p| {
+        p.tile.as_ref().map(|t| {
+            if bespoke {
+                format!("{t:?}@{coord:?}")
+            } else {
+                format!("{t:?}")
+            }
+        })
+    });
 
     struct MergedGroup<'a> {
         hulls: Vec<&'a [Vec3]>,
@@ -289,6 +301,9 @@ fn spawn_cell(
     }
 
     for (group_key, group) in groups {
+        if group_key == super::assets::MeshGroupKey::Hidden {
+            continue;
+        }
         let Some(mesh) =
             assets.merged_mesh_for(meshes, tile_key.as_deref(), group_key, &group.hulls)
         else {

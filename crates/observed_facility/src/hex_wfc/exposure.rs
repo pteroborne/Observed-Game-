@@ -91,6 +91,21 @@ impl Exposure {
     }
 }
 
+/// Whether a cell's walls can come down where it meets the outside: a one-level
+/// corridor hall. Rooms are decision beats and keep their enclosure; ramps and shafts
+/// are vertical assemblies whose walls carry the climb.
+#[must_use]
+pub fn can_open(placement: &HexPlacement) -> bool {
+    placement.space == HexSpace::Hall
+        && matches!(
+            placement.archetype,
+            HexArchetype::Straight
+                | HexArchetype::Corner
+                | HexArchetype::Junction
+                | HexArchetype::Expanse
+        )
+}
+
 /// Whether the cell behind `face` is open air. Outside the lattice counts: that is
 /// exactly how `mark_open_air` seeds the sky.
 #[must_use]

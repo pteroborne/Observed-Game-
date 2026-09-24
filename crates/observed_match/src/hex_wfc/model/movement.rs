@@ -14,6 +14,9 @@ use super::{FIXED_DT, FLOOR_SLAB_TOP, HexMatchEvent, HexMatchEventKind, HexWfcMa
 /// Net displacement required before the body establishes a new progress
 /// anchor. Small collision jitter does not count as useful movement.
 const STUCK_PROGRESS_EPS: f32 = 0.4;
+/// Three seconds on a roof: long enough to read where you landed, short enough that a
+/// fall is a setback rather than a wait.
+pub(super) const STRANDED_RECOVERY_TICKS: u16 = 180;
 
 /// Plan-view deadband a body must gain toward a new same-level cell's centre
 /// before its logical cell switches, preventing boundary jitter.
@@ -110,8 +113,16 @@ impl HexWfcMatch {
         player.pitch = body.pitch;
     }
 
-    /// Recover only bodies that genuinely leave the arena. Ordinary physical
-    /// falls between levels remain gameplay and are never converted to motion.
+    /// Recover bodies that genuinely leave the arena, and bodies stranded outside
+    /// every built cell. Ordinary physical falls between levels remain gameplay and
+    /// are never converted to motion.
+    ///
+    /// Stranding is what open edges make possible: a body that steps off a bare
+    /// high edge can land on the roof of a lower hall, where the railings that keep
+    /// people from falling out of the loggias around it also keep it from getting
+    /// back in. A fall is meant to cost time and ground, not the match, so a body
+    /// that stands on a roof for [`STRANDED_RECOVERY_TICKS`] is returned to the last
+    /// cell it stood in.
     pub(super) fn recover_fallen_bodies(&mut self) {
         let floor_y = self.geometry.arena.floor_y;
         let half_height = self
@@ -127,11 +138,16 @@ impl HexWfcMatch {
             }
             let body = self.bodies[&player.id];
             let out_of_world = !body.position.is_finite() || body.position.y < floor_y - 4.0;
-            if out_of_world {
+            let stranded =
+                body.grounded && !self.stands_in_built_cell(body.position - Vec3::Y * half_height);
+            let ticks = self.stranded_ticks.entry(player.id).or_insert(0);
+            *ticks = if stranded { ticks.saturating_add(1) } else { 0 };
+            if out_of_world || *ticks >= STRANDED_RECOVERY_TICKS {
                 recovered.push((player.id, player.cell));
             }
         }
         for (id, cell) in recovered {
+            self.stranded_ticks.insert(id, 0);
             let anchor =
                 Vec3::from_array(hex_origin(cell)) + Vec3::Y * (FLOOR_SLAB_TOP + half_height);
             *self.bodies.get_mut(&id).expect("body") =
@@ -144,6 +160,19 @@ impl HexWfcMatch {
                 cell: Some(cell),
             });
         }
+    }
+
+    /// Whether feet at `feet` stand inside a built cell: the deck nearest them, at the
+    /// plan cell under them. A roof resolves to the unbuilt cell above it.
+    fn stands_in_built_cell(&self, feet: Vec3) -> bool {
+        let top_level = f32::from(self.facility.config.levels.saturating_sub(1));
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let level = ((feet.y - FLOOR_SLAB_TOP) / TILE_LEVEL_HEIGHT)
+            .round()
+            .clamp(0.0, top_level) as u8;
+        containing_cell(self.facility.config, feet, level)
+            .and_then(|cell| self.facility.placements.get(&cell))
+            .is_some_and(|placement| placement.space.built())
     }
 
     /// Update each player's no-progress counter for the objective bot's
@@ -227,6 +256,34 @@ pub(super) fn horizontal_cell(config: HexWfcConfig, position: Vec3, level: u8) -
             level,
         },
     )
+}
+
+/// The cell whose footprint contains a plan position, exactly: the nearest cell
+/// centre among the candidates around the rounded guess. [`horizontal_cell`] rounds
+/// each axial coordinate on its own, which is close but can name a neighbour near a
+/// corner; that is harmless for tracking and not for deciding somebody is on a roof.
+pub(super) fn containing_cell(config: HexWfcConfig, position: Vec3, level: u8) -> Option<HexCoord> {
+    let guess = horizontal_cell(config, position, level)?;
+    let mut best: Option<(f32, HexCoord)> = None;
+    for dr in -1..=1 {
+        for dq in -1..=1 {
+            let (q, r) = (i32::from(guess.q) + dq, i32::from(guess.r) + dr);
+            if q < 0 || r < 0 || q >= i32::from(config.cols) || r >= i32::from(config.rows) {
+                continue;
+            }
+            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+            let cell = HexCoord {
+                q: q as u16,
+                r: r as u16,
+                level,
+            };
+            let distance = plan_distance_xz(position, hex_origin(cell));
+            if best.is_none_or(|(nearest, _)| distance < nearest) {
+                best = Some((distance, cell));
+            }
+        }
+    }
+    best.map(|(_, cell)| cell)
 }
 
 /// Plan-view unit direction of a lateral face.

@@ -30,7 +30,7 @@ use observed_hex::{HexCoord, HexFace, TILE_LEVEL_HEIGHT, face_edge, hex_origin};
 
 use observed_facility::hex_wfc::HexWfcWorld;
 
-use super::geometry::{HexStructurePiece, HexStructureRole, HexWfcGeometrySnapshot};
+use super::geometry::{HexPiecePart, HexStructurePiece, HexStructureRole, HexWfcGeometrySnapshot};
 
 /// Waist height for a railing descriptor above its owning cell's floor, in
 /// meters. Purely a placement hint for the later renderer pass.
@@ -95,6 +95,9 @@ pub struct HexTrimPiece {
 struct CellSummary<'a> {
     role: HexStructureRole,
     register: Option<&'a str>,
+    /// The cell's edges onto the outside are real: open-edge lips and railings
+    /// projected with the structure. Trim must not draw a second railing over them.
+    open_edges: bool,
 }
 
 /// Derive decorative seam trim from a projected snapshot. Pure and
@@ -159,6 +162,9 @@ fn push_cell_trim(
             continue;
         };
         match cells.get(&neighbor_coord) {
+            None if summary.open_edges => {
+                // Already a real edge: projected with the structure, and collided with.
+            }
             None => {
                 // Solid <-> void: an open ledge. `cells` already excludes
                 // the Boundary-role shell (see `summarize_cells`), so
@@ -205,10 +211,12 @@ fn summarize_cells<'a>(
         if within.is_some_and(|within| !within.contains(&piece.source_cell)) {
             continue;
         }
-        cells.entry(piece.source_cell).or_insert(CellSummary {
+        let summary = cells.entry(piece.source_cell).or_insert(CellSummary {
             role: piece.role,
             register: piece.tile.as_ref().map(|key| key.register.as_str()),
+            open_edges: false,
         });
+        summary.open_edges |= matches!(piece.part, HexPiecePart::Lip | HexPiecePart::Walkway);
     }
     cells
 }

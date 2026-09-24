@@ -544,24 +544,41 @@ fn projected_ramp_pair_is_walkable_in_the_continuous_scene() {
 }
 
 #[test]
-fn boundary_shell_traces_the_rhombic_domain_outline() {
+fn nothing_walls_the_lattice_and_its_rim_halls_open_onto_the_outside() {
     let world = showcase();
     let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("projection");
-    let outline = rhombus_outline(&world);
-    let boundaries: Vec<_> = snapshot
-        .pieces
-        .iter()
-        .filter(|piece| piece.role == HexStructureRole::Boundary)
-        .collect();
-    assert_eq!(boundaries.len(), outline.len());
     assert!(
-        outline.len() >= 6,
-        "quantized rhombus has a faceted outline"
+        snapshot
+            .pieces
+            .iter()
+            .all(|piece| piece.role != HexStructureRole::Boundary),
+        "the arena shell is gone: the edge of the lattice is open air"
     );
+    let grid = world.config.grid();
+    let rim_halls = world
+        .placements
+        .values()
+        .filter(|placement| {
+            open_edge::can_open(placement)
+                && HexFace::LATERAL.into_iter().any(|face| {
+                    !placement.is_open(face) && grid.neighbor(placement.coord, face).is_none()
+                })
+        })
+        .collect::<Vec<_>>();
+    assert!(!rim_halls.is_empty());
+    for placement in rim_halls {
+        assert!(
+            snapshot.pieces.iter().any(
+                |piece| piece.source_cell == placement.coord && piece.part == HexPiecePart::Lip
+            ),
+            "rim hall {:?} has no lip",
+            placement.coord
+        );
+    }
 }
 
 #[test]
-fn boundary_start_uses_its_authored_blueprint_signature_and_the_shell_closes_it() {
+fn boundary_start_uses_its_authored_blueprint_signature() {
     let world = showcase();
     let start = world
         .blueprints
@@ -590,12 +607,6 @@ fn boundary_start_uses_its_authored_blueprint_signature_and_the_shell_closes_it(
             .as_ref()
             .is_some_and(|key| key.archetype == expected)
     }));
-    assert!(
-        snapshot
-            .pieces
-            .iter()
-            .any(|piece| piece.role == HexStructureRole::Boundary)
-    );
 }
 
 #[test]
@@ -738,8 +749,20 @@ fn bounded_delta_matches_full_projection_and_preserves_pinned_pieces() {
         delta
             .upserted_pieces
             .iter()
-            .all(|piece| logical.changed_cells.contains(&piece.source_cell))
+            .all(|piece| delta.changed_cells.contains(&piece.source_cell))
     );
+    // The only cells re-projected beyond the logical change are halls beside it,
+    // whose open edges may have moved with it.
+    let grid = world.config.grid();
+    for cell in delta.changed_cells.difference(&logical.changed_cells) {
+        assert!(open_edge::can_open(&world.placements[cell]), "{cell:?}");
+        assert!(
+            HexFace::LATERAL.into_iter().any(|face| grid
+                .neighbor(*cell, face)
+                .is_some_and(|next| logical.changed_cells.contains(&next))),
+            "{cell:?} re-projected without touching the change"
+        );
+    }
     let mut incremental = before.clone();
     let mut scene = before.rapier_scene();
     scene

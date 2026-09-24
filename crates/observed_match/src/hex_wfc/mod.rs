@@ -10,10 +10,11 @@ mod model;
 pub mod trim;
 
 pub use content::HexMatchContent;
+pub use geometry::open_edge::{OpenEdges, RAILED_BELOW_LEVEL, open_edges};
 pub use geometry::{
     HexGeometryDelta, HexGeometryError, HexLightSource, HexModuleInstanceId, HexModuleRevision,
-    HexRoomSocket, HexStructurePiece, HexStructureRole, HexTileCatalogue, HexTileSupply,
-    HexTraversalCursor, HexTraversalLease, HexWfcGeometrySnapshot, ProjectedPort,
+    HexPiecePart, HexRoomSocket, HexStructurePiece, HexStructureRole, HexTileCatalogue,
+    HexTileSupply, HexTraversalCursor, HexTraversalLease, HexWfcGeometrySnapshot, ProjectedPort,
     ProjectedTraversalGraph, ProjectedTraversalGuide, project_hypothetical_cell,
 };
 pub use model::{

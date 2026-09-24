@@ -893,6 +893,27 @@ fn protected_with_halo(
             }
         }
     }
+    // A protected corridor hall's walls follow its lateral neighbours (`exposure`):
+    // one becoming built or unbuilt opens or closes an edge of the hall itself. So a
+    // protected hall's neighbours are held too, and the pocket shrinks around it
+    // rather than solving a change that would have to be thrown away.
+    let halls: Vec<HexCoord> = protected
+        .iter()
+        .copied()
+        .filter(|coord| {
+            world
+                .placements
+                .get(coord)
+                .is_some_and(super::exposure::can_open)
+        })
+        .collect();
+    for coord in halls {
+        for face in HexFace::LATERAL {
+            if let Some(neighbor) = world.config.grid().neighbor(coord, face) {
+                protected.insert(neighbor);
+            }
+        }
+    }
     protected
 }
 

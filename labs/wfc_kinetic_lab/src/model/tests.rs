@@ -285,26 +285,35 @@ fn every_seed_a_player_can_type_produces_a_playable_floor() {
 
 /// The finding this lab was built to discover, kept as a falsifiable claim.
 ///
-/// The design says a shove commits a minor "off unrailed geometry". On this
-/// tile corpus there is no unrailed geometry to use: every face onto void comes
-/// back parapeted, and the solver never points a door at a cell it declined to
-/// build. If either number below ever moves, the assumption has become
-/// satisfiable without the Architect's help and this test should be read as
-/// good news rather than a regression.
+/// The design says a shove commits a minor "off unrailed geometry". When this lab
+/// was built the corpus had none: every face onto void came back walled, the arena
+/// shell closed the rim, and the solver never points a door at a cell it declined to
+/// build, so only the Architect's retraction could make a ledge. The test said that
+/// if the number ever moved it should be read as good news.
+///
+/// It moved on purpose. Open edges (`observed_match`'s `open_edge`) take the wall
+/// down wherever a corridor hall meets the outside, and railings stand only below
+/// the unsafe height, so a solved floor now offers ledges of its own. The claim that
+/// survives is the one that matters: **every ledge is a deliberate open edge** — an
+/// opened hall face — and none is a hole the geometry forgot to close, such as a room
+/// port that used to lean on the shell. (On this one-level floor they are railed; the detector still reports some,
+/// because it launches from the top of a hall's central plinth, clear over the rail.)
+/// Doors still never open onto void.
 #[test]
-fn the_corpus_seals_every_face_onto_void() {
+fn every_ledge_on_a_solved_floor_is_a_deliberate_open_edge() {
     let content = load_content();
     let grid = crate::site::config().grid();
     for requested in [0u64, 3, 8, 17, 42] {
         let site = Site::solve(requested, &content).expect("a floor");
-        assert!(
-            site.ledges.is_empty(),
-            "seed {}: {} face(s) now open onto void at body height — the tile \
-             corpus has gained unrailed geometry, and the design's shove has a \
-             site on a solved floor without a retraction",
-            site.seed,
-            site.ledges.len(),
-        );
+        for ledge in &site.ledges {
+            let opened = observed_match::hex_wfc::open_edges(&site.world, ledge.cell)
+                .is_some_and(|open| open.opens(ledge.face));
+            assert!(
+                opened,
+                "seed {}: ({}, {}) {:?} is a ledge that no open edge put there",
+                site.seed, ledge.cell.q, ledge.cell.r, ledge.face,
+            );
+        }
         for cell in &site.cells {
             let placement = site.placement(*cell).expect("occupied");
             for face in observed_hex::HexFace::LATERAL {

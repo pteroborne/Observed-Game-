@@ -13,6 +13,8 @@ pub(in crate::hex_wfc) use camera::{sync_camera, sync_projection};
 mod lighting;
 /// The full-screen isometric survivor map, wired by `hex_wfc::mod`.
 pub(crate) mod map;
+mod mesh_group;
+mod open_edge_materials;
 mod residency;
 mod shell;
 pub(in crate::hex_wfc) mod spectate;

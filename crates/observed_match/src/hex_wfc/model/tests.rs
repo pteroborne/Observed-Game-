@@ -711,9 +711,19 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // representation change and not a behavioural one: the snapshot now folds
     // carried plates, placed plates and the re-arm clock, while this bot never
     // presses the button, so its route is tick-for-tick what it was.
+    //
+    // Open edges moved it again (0x6c57_5514_722f_6934 -> 0x6721_adbd_eade_9b9f),
+    // once more without moving the tick. Bisected rather than guessed: not the new
+    // edges, the rim railings, the missing shell or the stranding recovery - each
+    // disabled alone left the new digest - but the relayout halo. A watched corridor
+    // hall now holds its lateral neighbours out of the pocket, because its walls
+    // follow them, so pockets land elsewhere: 22 relayouts touching 20 cells, where
+    // it was 21 touching 14. The note above that this gate never relayouts is out of
+    // date; it commits twenty-odd, and the bot's route is tick for tick the same
+    // through all of them.
     assert_eq!(
         first.snapshot().digest,
-        0x6c57_5514_722f_6934,
+        0x6721_adbd_eade_9b9f,
         "TR-10 pins the declared-ramp final snapshot digest"
     );
 }
@@ -1640,5 +1650,80 @@ fn an_offered_anchor_site_is_one_deploy_actually_takes() {
             .values()
             .any(|lantern| lantern.threshold == site.threshold),
         "and the lantern must land on the threshold the marker named"
+    );
+}
+
+/// Open edges let a body fall onto the roof of a lower hall, where the railings that
+/// keep people in the loggias around it also keep it out. A fall is a setback, not a
+/// softlock: after three seconds on a roof the body goes back to the last cell it
+/// stood in, and not a tick sooner.
+#[test]
+fn a_body_stranded_on_a_roof_is_returned_to_the_last_cell_it_stood_in() {
+    let mut game = HexWfcMatch::new_with_rooms(
+        0x5AFE,
+        HexMatchConfig {
+            guardian: false,
+            teams: 1,
+            members_per_team: 1,
+            wfc: showcase_config(4),
+        },
+        &tiles(),
+        rooms(),
+    )
+    .expect("showcase match");
+    let id = PlayerId(0);
+    let grid = game.facility.config.grid();
+    let roof = game
+        .facility
+        .placements
+        .values()
+        .find(|placement| {
+            placement.space.built()
+                && placement.archetype == observed_facility::hex_wfc::HexArchetype::Straight
+                && grid
+                    .neighbor(placement.coord, HexFace::Up)
+                    .is_some_and(|above| game.facility.placements[&above].space.unbuilt())
+        })
+        .expect("a hall with open sky over it")
+        .coord;
+    let last = game.players[&id].cell;
+    assert_ne!(last.level, roof.level + 1);
+    let half_height = game
+        .content
+        .traversal_profile()
+        .requirements()
+        .capsule_half_height;
+    let on_roof = Vec3::from_array(hex_origin(roof))
+        + Vec3::Y * (observed_hex::TILE_LEVEL_HEIGHT + half_height + 0.05);
+    // Where a fall would leave it: body and logical position move together in play,
+    // and the match snaps a body back to its player's position at every tick.
+    *game.bodies.get_mut(&id).expect("body") = observed_traversal::FpsBody::spawned(on_roof, 0.0);
+    game.players.get_mut(&id).expect("player").position = on_roof;
+
+    let mut recovered_at = None;
+    for tick in 0..400 {
+        let events = game.step(&HexInputFrame {
+            version: HEX_INPUT_VERSION,
+            tick,
+            commands: BTreeMap::new(),
+        });
+        if events
+            .iter()
+            .any(|event| event.kind == HexMatchEventKind::PlayerRecovered)
+        {
+            recovered_at = Some(tick);
+            break;
+        }
+    }
+    let tick = recovered_at.expect("a stranded body must be recovered");
+    assert!(
+        tick + 1 >= u64::from(super::movement::STRANDED_RECOVERY_TICKS),
+        "recovered after {tick} ticks, before the grace period"
+    );
+    assert_eq!(game.players[&id].cell, last);
+    let feet = game.bodies[&id].position.y - half_height;
+    assert!(
+        (feet - (hex_origin(last)[1] + FLOOR_SLAB_TOP)).abs() < 0.5,
+        "back on the floor of {last:?}, feet at {feet}"
     );
 }
