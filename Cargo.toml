@@ -117,6 +117,7 @@ members = [
     "labs/wfc_kinetic_lab",
     "labs/plumb_lab",
     "labs/suspension_lab",
+    "labs/vista_lab",
     "labs/kinetic_lab",
     "tools/content_baker",
     "tools/composition_studio",

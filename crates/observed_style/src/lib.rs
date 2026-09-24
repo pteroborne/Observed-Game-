@@ -19,6 +19,7 @@ pub mod iso;
 pub mod kinetic;
 
 pub mod architect;
+pub mod open_air;
 
 use bevy::color::{Color, LinearRgba};
 

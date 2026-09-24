@@ -1,0 +1,24 @@
+[package]
+name = "vista_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.19", default-features = false, features = [
+    "3d",
+    "ui",
+    "default_font",
+    "png",
+] }
+observed_content = { path = "../../crates/observed_content" }
+# The real facility: typed ports, the routing oracle, and `mark_open_air`, which is
+# the only thing allowed to decide what is sky.
+observed_facility = { path = "../../crates/observed_facility", default-features = false }
+observed_hex = { path = "../../crates/observed_hex" }
+# Colours come from the production style crate, never invented locally.
+observed_style = { path = "../../crates/observed_style" }
+# The shared controller: the walkways must hold on production movement code.
+observed_traversal = { path = "../../crates/observed_traversal", default-features = false }
+player_input = { path = "../../crates/player_input", default-features = false }
+serde_json = "1"

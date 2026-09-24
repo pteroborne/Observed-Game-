@@ -131,6 +131,6 @@ Per-worktree caches are the other half of the budget. Each is 13-15 GB, so **del
 worktree's cache the moment its branch merges** rather than letting them stack up.
 
 ### Authoring Hex Tiles & Capturing Evidence
-Tileforge/tilec workflow, showcase PNG capture, and bot-POV GIF capture: see the
+Tileforge/tilec workflow, showcase PNG capture, and walkthrough MP4 capture: see the
 `capture-evidence` skill ([.claude/skills/capture-evidence/SKILL.md](.claude/skills/capture-evidence/SKILL.md))
 and [docs/tile_authoring.md](docs/tile_authoring.md).
