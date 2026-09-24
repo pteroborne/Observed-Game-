@@ -9,7 +9,7 @@ use observed_style::open_air::{SurveyRole, survey};
 use observed_style::{MarkerRole, SurfaceRole, Treatment, marker, surface};
 
 use super::{Lab, ViewMode, VistaEntity, cell_at};
-use crate::exposure::{Drop, Form};
+use observed_facility::hex_wfc::exposure::{Form, Overhang};
 
 #[derive(Component)]
 pub(super) struct Status;
@@ -211,19 +211,19 @@ pub(super) fn update(
                     .filter(|&f| e.is_sheer(f))
                     .count()
             ));
-            let below = match (e.form, e.drop) {
-                (_, Drop::Supported) => "Below: structure".to_string(),
-                (_, Drop::Hanging { onto: None, .. }) => {
+            let below = match (e.form, e.overhang) {
+                (_, Overhang::Supported) => "Below: structure".to_string(),
+                (_, Overhang::Hanging { onto: None, .. }) => {
                     "Below: open air, then true void".to_string()
                 }
                 (
                     _,
-                    Drop::Hanging {
+                    Overhang::Hanging {
                         onto: Some(onto), ..
                     },
                 ) => format!(
                     "Below: {:.0} m of air to {}",
-                    e.drop.metres().unwrap_or(0.0),
+                    e.overhang.metres().unwrap_or(0.0),
                     lab.vista
                         .landmarks
                         .get(&onto)

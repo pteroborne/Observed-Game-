@@ -1,10 +1,11 @@
 //! What each built cell shows to the air around it.
 //!
-//! This is the whole of the lab's architectural judgement, and it is deliberately a
+//! Proven in `labs/vista_lab`, which draws a first-person vista from nothing else,
+//! and promoted here once the game became its second consumer. It is deliberately a
 //! pure function of the facility: a cell's *form* and its *exposure* follow from its
 //! space, its ports, and which of its neighbours [`HexWfcWorld::mark_open_air`] called
-//! sky. The renderer draws what this module says and nothing else, so a vista that
-//! looks wrong is either an authoring mistake or a rule written down here.
+//! sky. A renderer draws what this module says and nothing else, so a view that looks
+//! wrong is either a facility that is wrong or a rule written down here.
 //!
 //! The rules, in the order they bite:
 //!
@@ -16,9 +17,7 @@
 //!   measured down through the air to whatever would catch a fall — or to nothing.
 //! * A straight hall cell whose four flanks are all air is a **span**: it is drawn
 //!   narrow, because nothing beside it needs its full width.
-use observed_facility::hex_wfc::{
-    HexArchetype, HexCoord, HexFace, HexPlacement, HexSpace, HexWfcWorld, PortClass,
-};
+use super::{HexArchetype, HexCoord, HexFace, HexPlacement, HexSpace, HexWfcWorld, PortClass};
 
 /// What kind of architecture a built cell is.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -40,14 +39,14 @@ pub enum Form {
 
 /// How far a cell hangs over what is below it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Drop {
+pub enum Overhang {
     /// Structure directly beneath: nothing hangs.
     Supported,
     /// `levels` storeys of open air, then `onto` — or true void if `None`.
     Hanging { levels: u8, onto: Option<HexCoord> },
 }
 
-impl Drop {
+impl Overhang {
     /// Metres from this cell's floor to what would catch a fall, or `None` for void.
     #[must_use]
     pub fn metres(self) -> Option<f32> {
@@ -74,7 +73,7 @@ pub struct Exposure {
     pub form: Form,
     /// Lateral faces that border open air, bit `face.index()`.
     pub sheer: u8,
-    pub drop: Drop,
+    pub overhang: Overhang,
     /// Whether this cell's edges are railed. Low levels are; high ones are not.
     pub railed: bool,
 }
@@ -90,6 +89,21 @@ impl Exposure {
     pub const fn sheer_count(&self) -> u32 {
         self.sheer.count_ones()
     }
+}
+
+/// Whether a cell's walls can come down where it meets the outside: a one-level
+/// corridor hall. Rooms are decision beats and keep their enclosure; ramps and shafts
+/// are vertical assemblies whose walls carry the climb.
+#[must_use]
+pub fn can_open(placement: &HexPlacement) -> bool {
+    placement.space == HexSpace::Hall
+        && matches!(
+            placement.archetype,
+            HexArchetype::Straight
+                | HexArchetype::Corner
+                | HexArchetype::Junction
+                | HexArchetype::Expanse
+        )
 }
 
 /// Whether the cell behind `face` is open air. Outside the lattice counts: that is
@@ -144,20 +158,20 @@ fn form(world: &HexWfcWorld, placement: &HexPlacement) -> Form {
     }
 }
 
-fn drop_below(world: &HexWfcWorld, at: HexCoord) -> Drop {
+fn drop_below(world: &HexWfcWorld, at: HexCoord) -> Overhang {
     let grid = world.config.grid();
     let mut levels = 0u8;
     let mut here = at;
     loop {
         match grid.neighbor(here, HexFace::Down) {
-            None => return Drop::Hanging { levels, onto: None },
+            None => return Overhang::Hanging { levels, onto: None },
             Some(below) => match world.placements.get(&below).map(|p| p.space) {
                 // Rock catches a fall as surely as a floor does; it just is not one.
                 Some(space) if space.built() || space == HexSpace::Void => {
                     return if levels == 0 {
-                        Drop::Supported
+                        Overhang::Supported
                     } else {
-                        Drop::Hanging {
+                        Overhang::Hanging {
                             levels,
                             onto: Some(below),
                         }
@@ -193,7 +207,7 @@ pub fn exposure(world: &HexWfcWorld, at: HexCoord, unsafe_from: u8) -> Option<Ex
         coord: at,
         form,
         sheer,
-        drop: drop_below(world, at),
+        overhang: drop_below(world, at),
         railed: rail_level < unsafe_from,
     })
 }

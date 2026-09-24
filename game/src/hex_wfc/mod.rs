@@ -19,6 +19,7 @@ mod perf;
 pub(crate) use perf::GPU_PROFILE_ENV;
 pub mod sim;
 pub(crate) mod view;
+mod vista_capture;
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
@@ -97,8 +98,14 @@ impl Plugin for HexWfcPlugin {
                         overlay::refresh_setting_labels,
                     )
                         .chain(),
-                    view::sync_changed_geometry,
-                    view::sync_streamed_cells,
+                    // Grouped: the facility's outside follows its detailed geometry.
+                    (
+                        view::exterior::rebuild_changed,
+                        view::sync_changed_geometry,
+                        view::sync_streamed_cells,
+                        view::exterior::sync_visibility,
+                    )
+                        .chain(),
                     view::sync_practical_shadow_budget,
                     // Grouped: the spectator overview is one concern, and the
                     // flat tuple had reached Bevy's 21-system limit.
@@ -112,7 +119,12 @@ impl Plugin for HexWfcPlugin {
                         view::spectate::sync_key_light,
                     )
                         .chain(),
-                    view::sync_camera,
+                    (
+                        view::sync_camera,
+                        view::sky::follow_camera,
+                        view::sky::drift_clouds,
+                    )
+                        .chain(),
                     view::sync_projection,
                     view::sync_lighting_and_atmosphere,
                     hud::sync,
@@ -147,8 +159,12 @@ impl Plugin for HexWfcPlugin {
                 )
                     .chain(),
             );
-        let capture = std::env::var("OBSERVED2_CAPTURE_HEX_WFC_STYLE")
-            .map(|path| (path, HexWfcCaptureMode::Style))
+        let capture = std::env::var("OBSERVED2_CAPTURE_HEX_WFC_VISTA")
+            .map(|path| (path, HexWfcCaptureMode::Vista))
+            .or_else(|_| {
+                std::env::var("OBSERVED2_CAPTURE_HEX_WFC_STYLE")
+                    .map(|path| (path, HexWfcCaptureMode::Style))
+            })
             .or_else(|_| {
                 std::env::var("OBSERVED2_CAPTURE_HEX_WFC_RELAYOUT")
                     .map(|path| (path, HexWfcCaptureMode::Relayout))
@@ -171,6 +187,7 @@ impl Plugin for HexWfcPlugin {
                 HexWfcCaptureMode::Style
                     | HexWfcCaptureMode::Relayout
                     | HexWfcCaptureMode::Traversal
+                    | HexWfcCaptureMode::Vista
             ) {
                 std::fs::create_dir_all(&path)
                     .expect("hex-WFC directory-style capture directory must be creatable");
@@ -181,6 +198,7 @@ impl Plugin for HexWfcPlugin {
                 mode,
                 last_shot_tick: 0,
                 stills: 0,
+                vista: None,
             })
             .add_systems(Startup, autostart_capture)
             .add_systems(
@@ -203,6 +221,8 @@ pub(super) struct HexWfcCapture {
     /// Relayout mode only: bitset of which labeled stills (before / warning / after)
     /// have been taken.
     stills: u8,
+    /// Vista mode only: the open edges to stand in, found once the facility exists.
+    vista: Option<Vec<vista_capture::VistaPose>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -220,6 +240,8 @@ pub(super) enum HexWfcCaptureMode {
     /// This is evidence-only automation: every frame still advances the authoritative
     /// match through `PlayerIntent` and the production controller.
     Traversal,
+    /// Stand in the production facility's open edges and look out (`vista_capture`).
+    Vista,
 }
 
 /// How many screenshots the style montage takes before exiting; matched to a spectated
@@ -287,6 +309,19 @@ fn capture_progress(
             } else if request.frame == 7_330 {
                 exit.write(AppExit::Success);
             }
+        }
+        HexWfcCaptureMode::Vista => {
+            let HexWfcCapture {
+                frame, path, vista, ..
+            } = &mut *request;
+            vista_capture::progress(
+                *frame,
+                path,
+                runtime.as_deref_mut(),
+                vista,
+                &mut commands,
+                &mut exit,
+            );
         }
         HexWfcCaptureMode::Gameplay => {
             if request.frame == 60 {

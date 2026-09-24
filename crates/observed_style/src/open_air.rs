@@ -42,16 +42,23 @@ pub enum SkyRole {
     Underside,
     /// The sheer exterior face of a storey stack.
     SheerFace,
+    /// A storey face seen from far off, where the moon is all that lights it: drawn
+    /// unlit, shaded by the moon's angle, and brighter than `SheerFace` for it.
+    MoonlitFace,
+    /// A roof seen from far off, likewise.
+    MoonlitRoof,
 }
 
 impl SkyRole {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 8] = [
         Self::Zenith,
         Self::Horizon,
         Self::Nadir,
         Self::Cloud,
         Self::Underside,
         Self::SheerFace,
+        Self::MoonlitFace,
+        Self::MoonlitRoof,
     ];
 }
 
@@ -64,6 +71,8 @@ pub fn sky(role: SkyRole) -> Color {
         SkyRole::Cloud => Color::srgb(0.26, 0.33, 0.40),
         SkyRole::Underside => Color::srgb(0.085, 0.088, 0.092),
         SkyRole::SheerFace => Color::srgb(0.16, 0.165, 0.17),
+        SkyRole::MoonlitFace => Color::srgb(0.28, 0.29, 0.31),
+        SkyRole::MoonlitRoof => Color::srgb(0.2, 0.21, 0.23),
     }
 }
 
@@ -91,8 +100,10 @@ pub fn open_air(mut palette: DistrictPalette) -> DistrictPalette {
     palette.fog_color = sky(SkyRole::Horizon);
     palette.fog_start = OPEN_AIR_FOG_START;
     palette.fog_end = OPEN_AIR_FOG_END;
-    // Out here the fill comes from the sky, not from the room, so it is low and cool.
-    palette.ambient_color = sky(SkyRole::Horizon).mix(&Color::srgb(0.55, 0.62, 0.78), 0.6);
+    // Out here the fill comes from the sky, not from the room: low, and the moon's cool
+    // neutral. Not the horizon's hue - where nothing else lights a surface, a tinted
+    // fill tints everything, and the first captures in the facility came out teal.
+    palette.ambient_color = moon();
     palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
     palette
 }

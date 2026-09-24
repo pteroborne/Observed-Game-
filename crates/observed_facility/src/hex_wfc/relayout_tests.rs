@@ -6,8 +6,8 @@ use observed_core::PlayerId;
 use super::relayout::fallback_geometry_relayout;
 use super::{
     DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, HexArchetype, HexCoord, HexFace,
-    HexInfluenceField, HexObservationFrame, HexRelayoutProgress, HexThresholdKey, HexWfcConfig,
-    HexWfcError, HexWfcWorld,
+    HexInfluenceField, HexObservationFrame, HexRelayoutProgress, HexSpace, HexThresholdKey,
+    HexWfcConfig, HexWfcError, HexWfcWorld,
 };
 
 fn config() -> HexWfcConfig {
@@ -704,4 +704,96 @@ fn a_relayout_leaves_routed_corridors_as_narrow_as_it_found_them() {
         checked > 0,
         "the pocket touched no corridor cell, so this proved nothing"
     );
+}
+
+/// Whether a world's air is what a fresh derivation of its shape would say.
+fn air_is_current(world: &HexWfcWorld) -> bool {
+    let mut again = world.clone();
+    again.mark_open_air() == 0
+}
+
+#[test]
+fn entombed_air_goes_back_to_rock() {
+    let mut world = HexWfcWorld::generate(0xA1A0_0001, config()).expect("world");
+    assert!(
+        !world.open_air,
+        "a solve does not classify air unless asked"
+    );
+    assert!(world.mark_open_air() > 0);
+    assert!(world.open_air);
+    let grid = world.config.grid();
+    // An air cell off the lattice edge, sealed in by building every unbuilt neighbour.
+    let pocket = world
+        .placements
+        .values()
+        .map(|placement| placement.coord)
+        .find(|&at| {
+            world.placements[&at].space == HexSpace::Air
+                && HexFace::ALL
+                    .iter()
+                    .all(|&face| grid.neighbor(at, face).is_some())
+        })
+        .expect("an interior air cell");
+    for face in HexFace::ALL {
+        let next = grid.neighbor(pocket, face).expect("interior");
+        let neighbour = world.placements.get_mut(&next).expect("cell");
+        if neighbour.space.unbuilt() {
+            neighbour.space = HexSpace::Room;
+        }
+    }
+    assert!(world.mark_open_air() >= 1);
+    assert_eq!(world.placements[&pocket].space, HexSpace::Void);
+    assert_eq!(world.mark_open_air(), 0, "idempotent in both directions");
+}
+
+#[test]
+fn air_stays_derived_across_committed_and_reverted_relayouts() {
+    let frame = HexObservationFrame::default();
+    let (mut committed, mut air_in_regions) = (0, 0);
+    for seed in 0xA1A0_0100..0xA1A0_0110 {
+        let mut world = HexWfcWorld::generate(seed, config()).expect("world");
+        let _ = world.mark_open_air();
+        let before = world.clone();
+        let proposal = candidate(&world, &frame);
+        air_in_regions += proposal
+            .region
+            .cells
+            .iter()
+            .filter(|at| before.placements[at].space == HexSpace::Air)
+            .count();
+        // Air that the pocket leaves unbuilt comes back from the lottery as rock; that
+        // alone is not a change, or every relayout would churn revisions for nothing.
+        for at in &proposal.changed_cells {
+            let (was, now) = (before.placements[at], proposal.placements[at]);
+            assert!(
+                !(was.space == HexSpace::Air
+                    && now.space == HexSpace::Void
+                    && super::HexPlacement {
+                        space: HexSpace::Void,
+                        ..was
+                    } == now
+                    && before.architecture[at] == proposal.architecture[at]),
+                "{at:?} counted as changed for losing only its air"
+            );
+        }
+        let Ok(delta) = world.commit_relayout_delta(proposal, &frame) else {
+            continue;
+        };
+        committed += 1;
+        assert!(
+            air_is_current(&world),
+            "seed {seed:#x}: stale air after commit"
+        );
+        for (at, placement) in &delta.placements {
+            assert_eq!(
+                world.placements[at], *placement,
+                "delta disagrees at {at:?}"
+            );
+        }
+        world.revert_relayout_delta(delta).expect("revert");
+        assert_eq!(world.placements, before.placements, "seed {seed:#x}");
+        assert!(air_is_current(&world));
+    }
+    assert!(committed >= 4, "only {committed} relayouts committed");
+    assert!(air_in_regions > 0, "no relayout region ever touched air");
 }

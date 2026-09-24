@@ -11,6 +11,7 @@ pub mod blueprint;
 mod collapse;
 mod constraints;
 mod context;
+pub mod exposure;
 pub mod neighborhood;
 #[cfg(test)]
 mod neighborhood_tests;
@@ -481,6 +482,15 @@ pub struct HexWfcWorld {
     /// and the space mix would have - quietly, a pocket at a time, with nothing
     /// erroring anywhere.
     pub carve_unrouted: bool,
+    /// Whether this world classifies its unbuilt cells into air and rock.
+    ///
+    /// Carried a fourth time, against a failure of the same family with a new shape.
+    /// A relayout re-collapses a pocket from the lottery, and the lottery never draws
+    /// air, so every air cell it touches comes back as rock; and a pocket that closes
+    /// can entomb air elsewhere that no longer has any path to the sky. Set by
+    /// [`HexWfcWorld::mark_open_air`], and re-derived after every committed or
+    /// reverted relayout while it is set.
+    pub open_air: bool,
 }
 
 impl HexWfcWorld {
@@ -672,6 +682,7 @@ impl HexWfcWorld {
                 space_mix: profile.space_mix,
                 route_corridors: profile.route_corridors,
                 carve_unrouted: profile.carve_unrouted,
+                open_air: false,
             },
             attempts,
         ))
@@ -692,8 +703,13 @@ impl HexWfcWorld {
     /// multiplies what a watcher covers by 2.6x to 3.2x and saturates by a range of four
     /// cells — see `labs/suspension_lab`.
     ///
+    /// It is a derivation, not an accumulation: air that has lost its path to the edge —
+    /// because a relayout built across the mouth of an atrium — goes back to rock. The
+    /// first call also marks the world as one that [classifies air](Self::open_air),
+    /// which is what keeps the classification true across relayouts.
+    ///
     /// Deterministic, and idempotent: running it twice changes nothing the second time.
-    /// Returns how many cells were reclassified.
+    /// Returns how many cells were reclassified, in either direction.
     pub fn mark_open_air(&mut self) -> usize {
         let grid = self.config.grid();
         let unbuilt = |placements: &BTreeMap<HexCoord, HexPlacement>, at: HexCoord| {
@@ -728,17 +744,18 @@ impl HexWfcWorld {
             }
         }
 
+        self.open_air = true;
         let mut changed = 0;
-        for at in open {
-            // Rock specifically, not "unbuilt": a cell already classified as air must not
-            // count as a change, or the pass stops being idempotent and reports its own
-            // previous work every time it runs.
-            if let Some(placement) = self.placements.get_mut(&at)
-                && placement.space == HexSpace::Void
-            {
-                placement.space = HexSpace::Air;
-                changed += 1;
-            }
+        for (at, placement) in &mut self.placements {
+            // Only a flip counts: a cell already in the right class must not, or the pass
+            // stops being idempotent and reports its own previous work every time it runs.
+            let classified = match placement.space {
+                HexSpace::Void if open.contains(at) => HexSpace::Air,
+                HexSpace::Air if !open.contains(at) => HexSpace::Void,
+                _ => continue,
+            };
+            placement.space = classified;
+            changed += 1;
         }
         changed
     }

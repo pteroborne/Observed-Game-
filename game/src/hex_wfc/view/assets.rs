@@ -16,6 +16,8 @@ use observed_match::hex_wfc::{HexStructurePiece, HexStructureRole, HexTrimKind};
 use observed_style::{self as style, ArchitectureSurfaceRole, SurfaceRole};
 use observed_traversal::{ColliderShape, ConvexRenderMesh};
 
+pub(in crate::hex_wfc) use super::mesh_group::MeshGroupKey;
+use super::open_edge_materials::OpenEdgeMaterials;
 use crate::view::assets::ContentScene;
 use crate::view::environment::{cuboid_mesh, load_content_scene, load_repeating_texture};
 
@@ -60,71 +62,15 @@ enum HorizontalSurface {
     Ceiling,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(in crate::hex_wfc) enum MeshGroupKey {
-    Floor,
-    Ceiling,
-    Interior,
-    Perimeter(u8),
-    Ramp,
-    Shaft,
-    Boundary,
-}
-
-impl MeshGroupKey {
-    pub(in crate::hex_wfc) fn for_piece(piece: &HexStructurePiece) -> Self {
-        match piece.role {
-            HexStructureRole::Ramp => Self::Ramp,
-            HexStructureRole::Shaft => Self::Shaft,
-            HexStructureRole::Boundary => Self::Boundary,
-            HexStructureRole::Room | HexStructureRole::Hall => {
-                let points = match &piece.shape {
-                    ColliderShape::ConvexHull { points } => points.as_slice(),
-                    ColliderShape::Cuboid { .. } => return Self::Interior,
-                };
-                if observed_traversal::render_mesh::is_overhead_slab(points) {
-                    Self::Ceiling
-                } else if observed_traversal::render_mesh::is_horizontal_slab(points) {
-                    Self::Floor
-                } else {
-                    let centroid = if points.is_empty() {
-                        Vec3::ZERO
-                    } else {
-                        #[allow(clippy::cast_precision_loss)]
-                        let sum: Vec3 = points.iter().copied().sum();
-                        #[allow(clippy::cast_precision_loss)]
-                        let c = sum / points.len() as f32;
-                        c
-                    };
-                    let plan = Vec2::new(centroid.x, centroid.z);
-                    if plan.length() < 0.5 {
-                        Self::Interior
-                    } else {
-                        let mut best_face = 0u8;
-                        let mut best_dot = f32::NEG_INFINITY;
-                        for face in observed_hex::HexFace::LATERAL {
-                            let [(ax, az), (bx, bz)] = observed_hex::metrics::face_edge(face);
-                            let mid = Vec2::new((ax + bx) as f32 * 0.5, (az + bz) as f32 * 0.5);
-                            let dot = plan.dot(mid);
-                            if dot > best_dot {
-                                best_dot = dot;
-                                best_face = face as u8;
-                            }
-                        }
-                        Self::Perimeter(best_face)
-                    }
-                }
-            }
-        }
-    }
-}
-
 #[derive(Resource)]
 pub(in crate::hex_wfc) struct HexWfcVisualAssets {
     registers: Vec<RegisterMaterials>,
     hull_cache: HashMap<(String, usize), Handle<Mesh>>,
     cuboid_cache: HashMap<[u32; 3], Handle<Mesh>>,
     merged_hull_cache: HashMap<(String, MeshGroupKey), Handle<Mesh>>,
+    /// Open-edge pieces are the same in every register: the lip is a signal, and the
+    /// railing, walkway and truss belong to the connective structure, not a district.
+    open_edge: OpenEdgeMaterials,
     /// The doorway model stood in a named threshold. `None` when the asset is
     /// absent, which is a missing frame rather than a missing facility - the
     /// aperture is authored into the room's own geometry either way.
@@ -219,6 +165,7 @@ impl HexWfcVisualAssets {
             hull_cache: HashMap::new(),
             cuboid_cache: HashMap::new(),
             merged_hull_cache: HashMap::new(),
+            open_edge: OpenEdgeMaterials::new(materials),
             threshold_gate: load_content_scene(asset_server, content, "kenney_gate"),
         }
     }
@@ -243,6 +190,7 @@ impl HexWfcVisualAssets {
             hull_cache: HashMap::new(),
             cuboid_cache: HashMap::new(),
             merged_hull_cache: HashMap::new(),
+            open_edge: OpenEdgeMaterials::new(materials),
             threshold_gate: None,
         }
     }
@@ -367,6 +315,13 @@ impl HexWfcVisualAssets {
             MeshGroupKey::Ramp => reg.ramp.clone(),
             MeshGroupKey::Shaft => reg.shaft.clone(),
             MeshGroupKey::Boundary => reg.boundary.clone(),
+            MeshGroupKey::Lip => self.open_edge.lip.clone(),
+            MeshGroupKey::Rail => self.open_edge.rail.clone(),
+            MeshGroupKey::Walkway => self.open_edge.walkway.clone(),
+            MeshGroupKey::Truss | MeshGroupKey::Hidden => self.open_edge.truss.clone(),
+            MeshGroupKey::Facade => self.open_edge.facade.clone(),
+            MeshGroupKey::Roof => self.open_edge.roof.clone(),
+            MeshGroupKey::Window => reg.fixture.clone(),
         }
     }
 
@@ -516,6 +471,7 @@ fn horizontal_surface(piece: &HexStructurePiece) -> HorizontalSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use observed_match::hex_wfc::HexPiecePart;
     use observed_traversal::StableColliderId;
 
     fn piece(points: Vec<Vec3>) -> HexStructurePiece {
@@ -524,6 +480,7 @@ mod tests {
             anchor: default(),
             source_cell: default(),
             role: HexStructureRole::Hall,
+            part: HexPiecePart::Authored,
             tile: None,
             center: Vec3::ZERO,
             rotation: [0.0, 0.0, 0.0, 1.0],

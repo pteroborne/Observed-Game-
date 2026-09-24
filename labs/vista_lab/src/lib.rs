@@ -11,10 +11,11 @@
 //! is what the tests exercise; `view` draws what it says.
 pub mod capture;
 pub mod composition;
-pub mod exposure;
 pub mod geometry;
 pub mod view;
 pub mod walk;
 
+#[cfg(test)]
+mod production_tests;
 #[cfg(test)]
 mod tests;

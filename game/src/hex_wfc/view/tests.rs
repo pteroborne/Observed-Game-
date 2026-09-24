@@ -306,12 +306,20 @@ fn cell_entity_count_falls_with_merged_hull_meshes() {
     let mut materials = Assets::<StandardMaterial>::default();
     let mut assets = HexWfcVisualAssets::for_test(&mut materials);
 
-    // Pick a non-trivial cell with multiple raw pieces
+    // Pick a non-trivial cell with multiple raw pieces, all of them its tile's own:
+    // a cell with open edges carries lips and railings too, which this does not measure.
+    let pieces = &runtime.match_state.geometry.pieces;
     let (coord, cell_index) = catalog
         .cells
         .iter()
-        .find(|(_, index)| index.piece_indices.len() >= 10)
-        .expect("must have a cell with >= 10 raw pieces");
+        .find(|(_, index)| {
+            index.piece_indices.len() >= 10
+                && index
+                    .piece_indices
+                    .iter()
+                    .all(|&i| pieces[i].part == observed_match::hex_wfc::HexPiecePart::Authored)
+        })
+        .expect("must have a walled cell with >= 10 raw pieces");
 
     let raw_piece_count = cell_index.piece_indices.len();
     assert!(
@@ -351,11 +359,14 @@ fn cell_entity_count_falls_with_merged_hull_meshes() {
         })
         .count();
 
-    // The cell's 24 raw collider hull pieces were merged into exactly 8 mesh entities
-    // (Floor, Ceiling, and 6 perimeter walls), dropping structural hull entities by 66.7%.
-    assert_eq!(raw_piece_count, 24);
-    assert_eq!(structural_hull_mesh_count, 8);
-    assert_eq!(child_pieces, 16);
+    // The cell's 28 raw collider hull pieces were merged into exactly 9 mesh entities,
+    // one per surface group, dropping structural hull entities by two thirds. It was a 24-piece cell until open edges: that cell
+    // now opens onto the outside, carries lips and railings, and is no longer a
+    // measurement of one tile's own hulls, so the walled cell measured here is the
+    // next one along.
+    assert_eq!(raw_piece_count, 28);
+    assert_eq!(structural_hull_mesh_count, 9);
+    assert_eq!(child_pieces, 13);
     assert!(
         structural_hull_mesh_count < raw_piece_count,
         "structural hull meshes ({structural_hull_mesh_count}) must be strictly less than raw pieces ({raw_piece_count})"

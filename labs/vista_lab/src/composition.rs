@@ -434,6 +434,7 @@ impl Vista {
             space_mix: SpaceMix::baseline(),
             route_corridors: false,
             carve_unrouted: false,
+            open_air: false,
         };
         let air_cells = world.mark_open_air();
 

@@ -3,9 +3,9 @@ use observed_facility::hex_wfc::{HexCoord, HexFace, HexSpace, PortClass};
 use player_input::PlayerIntent;
 
 use crate::composition::{CONFIG, UNSAFE_FROM_LEVEL, Vista, c};
-use crate::exposure::{Drop, Form, exposure, survey};
 use crate::geometry::{Look, Shape, WALKWAY_WIDTH, build, face_mid, floor_point};
 use crate::walk::Walker;
+use observed_facility::hex_wfc::exposure::{Form, Overhang, exposure, survey};
 
 fn span_cells() -> [HexCoord; 8] {
     [
@@ -122,22 +122,22 @@ fn floating_structures_hang_over_true_void() {
     ] {
         let e = exposure(&vista.world, at, UNSAFE_FROM_LEVEL).expect("built");
         assert!(
-            matches!(e.drop, Drop::Hanging { onto: None, .. }),
+            matches!(e.overhang, Overhang::Hanging { onto: None, .. }),
             "{at:?}: {:?}",
-            e.drop
+            e.overhang
         );
     }
     // The Gallery span's drop is caught: the understory is twenty-four metres down.
     let over = exposure(&vista.world, c(9, 10, 4), UNSAFE_FROM_LEVEL).expect("built");
     assert_eq!(
-        over.drop,
-        Drop::Hanging {
+        over.overhang,
+        Overhang::Hanging {
             levels: 2,
             onto: Some(c(9, 10, 1))
         }
     );
     // Floor to floor: level four down to level one is three storeys, not two.
-    assert_eq!(over.drop.metres(), Some(24.0));
+    assert_eq!(over.overhang.metres(), Some(24.0));
 }
 
 #[test]
@@ -248,9 +248,9 @@ fn keels_never_reach_what_they_hang_over() {
     let keels = pieces.iter().filter(|p| p.look == Look::Underside).count();
     assert!(keels > 20, "{keels}");
     for e in &exposures {
-        let Drop::Hanging {
+        let Overhang::Hanging {
             onto: Some(onto), ..
-        } = e.drop
+        } = e.overhang
         else {
             continue;
         };

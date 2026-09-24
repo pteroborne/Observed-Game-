@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use glam::{Quat, Vec2, Vec3};
+use glam::{Vec2, Vec3};
 use observed_authoring::{
     AssemblyScope, DeckPath, ModuleCellRef, ModuleFamilyId, RoomPrototype, RoomSocketKind,
     StairSpine, TileKey, TileLightKind, TilePrototype,
@@ -19,8 +19,9 @@ use observed_traversal::{
 };
 
 const COLLIDER_STRIDE: usize = 128;
-const SHELL_ID_BASE: u32 = 0xF000_0000;
-const SHELL_THICKNESS: f32 = 0.5;
+/// Collider IDs at and above this are never a cell's. It was the arena shell's range
+/// until open edges took the shell away; the ceiling on cell IDs stays where it was.
+const RESERVED_ID_BASE: u32 = 0xF000_0000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HexStructureRole {
@@ -31,7 +32,25 @@ pub enum HexStructureRole {
     Boundary,
 }
 
-/// One render/collision primitive from an authored prefab or the arena shell.
+/// What one piece is, as opposed to what its cell is ([`HexStructureRole`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum HexPiecePart {
+    /// A hull of the authored tile or room.
+    Authored,
+    /// The lit lip along an open edge: the commitment line.
+    Lip,
+    /// A railing's visible rail or post.
+    Rail,
+    /// The collider behind a railing, its full height so nothing slips under it.
+    /// Solid to a body and never drawn: drawn at that size it reads as a wall.
+    Guard,
+    /// A walkway's deck.
+    Walkway,
+    /// The slender structure under a walkway.
+    Truss,
+}
+
+/// One render/collision primitive from an authored prefab or an open edge.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HexStructurePiece {
     pub id: StableColliderId,
@@ -40,6 +59,7 @@ pub struct HexStructurePiece {
     /// The concrete lattice cell whose ID range owns this primitive.
     pub source_cell: HexCoord,
     pub role: HexStructureRole,
+    pub part: HexPiecePart,
     pub tile: Option<TileKey>,
     pub center: Vec3,
     pub rotation: [f32; 4],
@@ -339,7 +359,6 @@ impl HexWfcGeometrySnapshot {
             )?;
         }
 
-        push_boundary_shell(world, &mut out.pieces);
         sort_lights(&mut out.lights);
         let ProjectedCells {
             pieces,
@@ -417,6 +436,24 @@ impl HexWfcGeometrySnapshot {
                 changed_cells.extend(stamped.cells.iter().copied());
             }
         }
+        // A cell that became built or unbuilt opens or closes its neighbours' walls
+        // (`open_edge`). The observation halo keeps those neighbours unwatched, so they
+        // are re-projected here; any whose edges did not move re-project identically
+        // and drop out of the collider delta below.
+        let grid = world.config.grid();
+        let neighbours: BTreeSet<HexCoord> = changed_cells
+            .iter()
+            .flat_map(|&cell| {
+                HexFace::LATERAL
+                    .into_iter()
+                    .filter_map(move |face| grid.neighbor(cell, face))
+            })
+            .filter(|cell| {
+                !changed_cells.contains(cell)
+                    && world.placements.get(cell).is_some_and(open_edge::can_open)
+            })
+            .collect();
+        changed_cells.extend(neighbours);
         let mut upserted = ProjectedCells::default();
         let mut projected_rooms = BTreeSet::new();
         for &coord in &changed_cells {
@@ -736,7 +773,7 @@ fn validate_id_capacity(world: &HexWfcWorld) -> Result<(), HexGeometryError> {
         * u64::from(world.config.rows)
         * u64::from(world.config.levels);
     let required_max = cells.saturating_mul(COLLIDER_STRIDE as u64);
-    if required_max >= u64::from(SHELL_ID_BASE) {
+    if required_max >= u64::from(RESERVED_ID_BASE) {
         return Err(HexGeometryError::ColliderIdCapacity {
             cells,
             required_max,
@@ -1397,6 +1434,8 @@ fn push_tile(
         * COLLIDER_STRIDE as u64
         + 1;
     let center = Vec3::from_array(hex_origin(source_cell));
+    // Where this hall meets the outside, its wall comes down (see `open_edge`).
+    let open = open_edge::open_edges(world, source_cell);
     // Navigation is recorded here, where the cell resolves to one concrete
     // tile, so collision and both annotations always describe the same module.
     let climb = (!tile.spine.is_empty()).then(|| StairSpine {
@@ -1420,27 +1459,78 @@ fn push_tile(
             },
         );
     }
-    out.lights
-        .extend(tile.lights.iter().map(|light| HexLightSource {
-            source_cell,
-            role,
-            tile: tile.key.clone(),
-            kind: light.kind,
-            position: center + light.position,
-        }));
+    // A walkway has no ceiling to hang the tile's practicals from.
+    let lights = if open.is_some_and(|open| open.span.is_some()) {
+        &[][..]
+    } else {
+        &tile.lights[..]
+    };
+    out.lights.extend(lights.iter().map(|light| HexLightSource {
+        source_cell,
+        role,
+        tile: tile.key.clone(),
+        kind: light.kind,
+        position: center + light.position,
+    }));
+    let id = |index: usize| {
+        StableColliderId(
+            u32::try_from(base + index as u64).expect("validated collider ID capacity"),
+        )
+    };
+    // A removed wall keeps its index unused rather than renumbering the rest, so a
+    // hull's collider ID never depends on whether its neighbour's wall came down.
     for (index, hull) in tile.hulls.iter().enumerate() {
+        if open.is_some_and(|open| open.span.is_some() || open_edge::is_opened_wall(hull, &open)) {
+            continue;
+        }
         out.pieces.push(HexStructurePiece {
-            id: StableColliderId(
-                u32::try_from(base + index as u64).expect("validated collider ID capacity"),
-            ),
+            id: id(index),
             anchor,
             source_cell,
             role,
+            part: HexPiecePart::Authored,
             tile: Some(tile.key.clone()),
             center,
             rotation: [0.0, 0.0, 0.0, 1.0],
             shape: ColliderShape::ConvexHull {
                 points: hull.clone(),
+            },
+        });
+    }
+    let added = match open {
+        Some(OpenEdges {
+            span: Some(axis),
+            railed,
+            ..
+        }) => open_edge::span_pieces(center, axis, railed),
+        Some(open) => HexFace::LATERAL
+            .into_iter()
+            .filter(|&face| open.opens(face))
+            .flat_map(|face| open_edge::edge_pieces(center, face, open.railed))
+            .collect(),
+        None => open_edge::rim_pieces(world, source_cell),
+    };
+    if tile.hulls.len() + added.len() > COLLIDER_STRIDE {
+        return Err(HexGeometryError::TooManyHulls {
+            coord: source_cell,
+            hulls: tile.hulls.len() + added.len(),
+        });
+    }
+    // Expressed like every authored hull: points local to the cell origin, no
+    // rotation. Presentation merges a cell's hulls by that convention, and a piece
+    // that broke it would collide without ever being drawn.
+    for (offset, piece) in added.into_iter().enumerate() {
+        out.pieces.push(HexStructurePiece {
+            id: id(tile.hulls.len() + offset),
+            anchor,
+            source_cell,
+            role,
+            part: piece.part,
+            tile: Some(tile.key.clone()),
+            center,
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            shape: ColliderShape::ConvexHull {
+                points: piece.local_hull(center),
             },
         });
     }
@@ -1502,6 +1592,7 @@ fn push_room(
             anchor: stamped.anchor,
             source_cell: stamped.anchor,
             role: HexStructureRole::Room,
+            part: HexPiecePart::Authored,
             tile: Some(room.key.clone()),
             center,
             rotation: [0.0, 0.0, 0.0, 1.0],
@@ -1510,37 +1601,37 @@ fn push_room(
             },
         });
     }
-    Ok(())
-}
-
-fn push_boundary_shell(world: &HexWfcWorld, pieces: &mut Vec<HexStructurePiece>) {
-    let outline = rhombus_outline(world);
-    let height = f32::from(world.config.levels) * TILE_LEVEL_HEIGHT;
-    let anchor = world.config.spawn();
-    for (index, pair) in outline
+    // The room's rim faces, if it stands on the edge of the lattice (`rim_pieces`).
+    let rim: Vec<open_edge::EdgePiece> = stamped
+        .cells
         .iter()
-        .zip(outline.iter().cycle().skip(1))
-        .take(outline.len())
-        .enumerate()
-    {
-        let (a, b) = pair;
-        let edge = *b - *a;
-        let midpoint = (*a + *b) * 0.5;
-        let yaw = (-edge.y).atan2(edge.x);
-        let rotation = Quat::from_rotation_y(yaw).to_array();
-        pieces.push(HexStructurePiece {
-            id: StableColliderId(SHELL_ID_BASE + index as u32),
-            anchor,
-            source_cell: anchor,
-            role: HexStructureRole::Boundary,
-            tile: None,
-            center: Vec3::new(midpoint.x, height * 0.5, midpoint.y),
-            rotation,
-            shape: ColliderShape::Cuboid {
-                half: Vec3::new(edge.length() * 0.5, height * 0.5, SHELL_THICKNESS * 0.5),
+        .flat_map(|&cell| open_edge::rim_pieces(world, cell))
+        .collect();
+    if room.hulls.len() + rim.len() > COLLIDER_STRIDE {
+        return Err(HexGeometryError::TooManyHulls {
+            coord: stamped.anchor,
+            hulls: room.hulls.len() + rim.len(),
+        });
+    }
+    for (offset, piece) in rim.into_iter().enumerate() {
+        out.pieces.push(HexStructurePiece {
+            id: StableColliderId(
+                u32::try_from(base + (room.hulls.len() + offset) as u64)
+                    .expect("validated collider ID capacity"),
+            ),
+            anchor: stamped.anchor,
+            source_cell: stamped.anchor,
+            role: HexStructureRole::Room,
+            part: piece.part,
+            tile: Some(room.key.clone()),
+            center,
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            shape: ColliderShape::ConvexHull {
+                points: piece.local_hull(center),
             },
         });
     }
+    Ok(())
 }
 
 /// Convex outline of the rhombic axial domain including the canonical hex footprint.
@@ -1614,5 +1705,7 @@ fn arena_for(world: &HexWfcWorld, pieces: &[HexStructurePiece]) -> ArenaSpec {
     }
 }
 
+pub(super) mod open_edge;
+use open_edge::OpenEdges;
 #[cfg(test)]
 mod tests;

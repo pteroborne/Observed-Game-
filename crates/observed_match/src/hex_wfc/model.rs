@@ -294,6 +294,10 @@ pub struct HexWfcMatch {
     /// The last position from which a player made clear net progress; the
     /// reference the stuck tracker measures displacement against.
     pub(super) progress_anchor: BTreeMap<PlayerId, Vec3>,
+    /// Consecutive ticks each player has stood outside every built cell: on a roof,
+    /// after a fall from an open edge. Omitted from snapshots for the same reason as
+    /// [`Self::stuck_ticks`]; it only ever counts toward a recovery.
+    pub(super) stranded_ticks: BTreeMap<PlayerId, u16>,
     /// Immutable content retained so relayout uses the same catalog,
     /// composition, movement profile, and network identity as initial solve.
     pub(super) content: Arc<HexMatchContent>,
@@ -390,8 +394,11 @@ impl HexWfcMatch {
         let production_scale =
             config.wfc.cols >= 28 && config.wfc.rows >= 20 && config.wfc.levels >= 10;
         let quotas = production_scale.then(|| HexRoomQuotas::for_team_count(config.teams));
-        let facility =
+        let mut facility =
             HexWfcWorld::generate_with_profile(seed, config.wfc, quotas, content.composition())?;
+        // Sky and rock are different things; the facility says which is which, and keeps
+        // saying so across every relayout (see `HexWfcWorld::open_air`).
+        let _ = facility.mark_open_air();
         let geometry = HexWfcGeometrySnapshot::project_with_rooms(
             &facility,
             content.cells(),
@@ -478,6 +485,7 @@ impl HexWfcMatch {
             bodies,
             physics,
             stuck_ticks: BTreeMap::new(),
+            stranded_ticks: BTreeMap::new(),
             progress_anchor: BTreeMap::new(),
             content,
             pending_relayout: None,

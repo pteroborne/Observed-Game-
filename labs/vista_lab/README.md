@@ -59,8 +59,9 @@ downstream of placement is borrowed from the real facility:
 1. The cells load into a real `HexWfcWorld`, with typed doors and ramp ports.
 2. **`HexWfcWorld::mark_open_air` alone decides what is sky.** The renderer never
    guesses.
-3. [`exposure.rs`](src/exposure.rs) is the lab's whole architectural judgement,
-   and it is a pure function of the world:
+3. [`hex_wfc::exposure`](../../crates/observed_facility/src/hex_wfc/exposure.rs)
+   is the lab's whole architectural judgement, and it is a pure function of the
+   world. Proven here, it now lives in `observed_facility` for the game to share:
    - a face that borders air (or the lattice edge) is **sheer**;
    - a face against rock is **buried**;
    - a cell with nothing beneath it **hangs**, with its drop measured to whatever
@@ -96,6 +97,8 @@ downstream of placement is borrowed from the real facility:
 - **The production controller walks the whole tour** without dipping below the
   Bastion terrace or needing recovery.
 - **An unrailed span lets you walk off it. A railed span holds you.**
+- On the production facility: every sheer face really borders air, and no door
+  opens onto it (`production_tests.rs`).
 - A rebuild replaces every lab entity and leaks none. Only the invisible guard
   colliders go undrawn. The HUD finds the cell under your feet.
 
@@ -125,8 +128,24 @@ downstream of placement is borrowed from the real facility:
    treads with air between for the eye.
 5. **Spans are a presentation of existing cells.** The facility has no walkway
    type. A span is a `Straight` hall whose four flanks happen to be air, so a
-   production renderer could draw one without a new tile. Whether the corpus
-   *produces* such cells is a separate question this lab does not answer.
+   production renderer could draw one without a new tile.
+6. **The production facility is dense, walled in, and half of it touches the sky.**
+   Solved exactly as a match solves it (the 24 × 17 × 8 arc lattice, the
+   committed composition profile, six seeds; `production_tests.rs`):
+
+   | | per facility |
+   | --- | --- |
+   | built / air / rock | ~2,480 / ~680 / ~105 cells (76% / 21% / 3%) |
+   | built cells with a face open to air | ~1,230, carrying ~2,540 sheer faces |
+   | cells hanging over air | ~600, ~407 of them the bottom layer over true void |
+   | spans (straight halls, air on all four flanks) | 7 to 11 |
+   | doors that open onto air | **0** |
+
+   Sealed rock exists at production scale, always entombed and invisible, as
+   finding 1 says it must be. The sky wraps half the building, but no door ever
+   opens onto it and every face that borders it is a tile wall. **From inside the
+   facility the game plays, nobody can see out.** Bringing this lab's vista into
+   the game is therefore not only a renderer: something has to open onto the air.
 
 ## What this lab deliberately is not
 

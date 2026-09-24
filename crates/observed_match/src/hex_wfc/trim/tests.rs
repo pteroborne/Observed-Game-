@@ -93,11 +93,12 @@ fn two_cell_world() -> HexWfcWorld {
         space_mix: observed_facility::hex_wfc::profile::SpaceMix::baseline(),
         route_corridors: false,
         carve_unrouted: false,
+        open_air: false,
     }
 }
 
 #[test]
-fn two_cell_world_yields_one_buttress_and_ten_railings_at_the_expected_faces() {
+fn two_cell_world_yields_one_buttress_and_railings_only_where_edges_stay_walled() {
     let world = two_cell_world();
     let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("tiny projection");
     let trim = derive_trim(&snapshot);
@@ -125,24 +126,34 @@ fn two_cell_world_yields_one_buttress_and_ten_railings_at_the_expected_faces() {
         .iter()
         .filter(|piece| piece.kind == HexTrimKind::Railing)
         .collect();
-    assert_eq!(railings.len(), 10, "five open ledges on each of A and B");
-    for face in HexFace::LATERAL {
-        if face == HexFace::East {
-            assert!(
-                !railings
-                    .iter()
-                    .any(|piece| piece.cell == a && piece.face == face),
-                "A's East face borders B, not void"
-            );
-        } else {
-            assert!(
-                railings
-                    .iter()
-                    .any(|piece| piece.cell == a && piece.face == face),
-                "missing railing on A's {face:?} face"
-            );
-        }
-    }
+    // A is a straight hall with doors east and west and void on its four flanks: a
+    // span. Its edges are real, projected with the structure as a walkway, so trim
+    // leaves them alone. B is a ramp, which keeps its walls, so its five void faces
+    // still get the decorative ledge railing.
+    assert_eq!(railings.len(), 5, "five walled ledges on B, none on A");
+    assert!(railings.iter().all(|piece| piece.cell == b));
+    let a_parts: Vec<_> = snapshot
+        .pieces
+        .iter()
+        .filter(|piece| piece.source_cell == a)
+        .map(|piece| piece.part)
+        .collect();
+    let count = |part| a_parts.iter().filter(|&&p| p == part).count();
+    assert_eq!(
+        count(crate::hex_wfc::HexPiecePart::Walkway),
+        1,
+        "{a_parts:?}"
+    );
+    assert_eq!(
+        count(crate::hex_wfc::HexPiecePart::Lip),
+        2,
+        "one lip per flank"
+    );
+    assert_eq!(
+        count(crate::hex_wfc::HexPiecePart::Authored),
+        0,
+        "the hall tile is replaced"
+    );
     for face in HexFace::LATERAL {
         if face == HexFace::West {
             assert!(
@@ -174,27 +185,28 @@ fn railing_sits_at_the_face_edge_midpoint_one_meter_above_the_floor() {
     let world = two_cell_world();
     let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("tiny projection");
     let trim = derive_trim(&snapshot);
-    let a = observed_hex::HexCoord {
-        q: 5,
+    // B, the ramp: A's edges are real open edges now and carry no trim railing.
+    let b = observed_hex::HexCoord {
+        q: 6,
         r: 5,
         level: 0,
     };
-    let west = trim
+    let east = trim
         .iter()
         .find(|piece| {
-            piece.kind == HexTrimKind::Railing && piece.cell == a && piece.face == HexFace::West
+            piece.kind == HexTrimKind::Railing && piece.cell == b && piece.face == HexFace::East
         })
-        .expect("A has a west railing");
+        .expect("B has an east railing");
 
-    let origin = Vec3::from_array(hex_origin(a));
-    let [edge_a, edge_b] = face_edge(HexFace::West);
+    let origin = Vec3::from_array(hex_origin(b));
+    let [edge_a, edge_b] = face_edge(HexFace::East);
     let expected_xz = Vec2::new(
         (edge_a.0 + edge_b.0) as f32 * 0.5,
         (edge_a.1 + edge_b.1) as f32 * 0.5,
     );
-    assert_eq!(west.position.x, origin.x + expected_xz.x);
-    assert_eq!(west.position.z, origin.z + expected_xz.y);
-    assert_eq!(west.position.y, origin.y + RAILING_HEIGHT);
+    assert_eq!(east.position.x, origin.x + expected_xz.x);
+    assert_eq!(east.position.z, origin.z + expected_xz.y);
+    assert_eq!(east.position.y, origin.y + RAILING_HEIGHT);
 }
 
 fn showcase_config(levels: u8) -> HexWfcConfig {
