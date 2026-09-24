@@ -1,0 +1,48 @@
+{
+  "air_cells": 3030,
+  "built_cells": 138,
+  "colliders": 848,
+  "flights": 1,
+  "hanging_cells": 46,
+  "lab": "vista_lab",
+  "pieces": 3537,
+  "sheer_faces": 544,
+  "spans": 8,
+  "vantages": [
+    {
+      "file": "vista_01_bastion_terrace.png",
+      "standing": true,
+      "title": "The Bastion terrace, looking out along the railed span"
+    },
+    {
+      "file": "vista_02_mid_span.png",
+      "standing": true,
+      "title": "Mid-span: the understory twenty-four metres down"
+    },
+    {
+      "file": "vista_03_stair_foot.png",
+      "standing": true,
+      "title": "The flight up to the unrailed span and the Needle"
+    },
+    {
+      "file": "vista_04_needle_edge.png",
+      "standing": true,
+      "title": "The Needle's unrailed edge, looking back at the Bastion's cliff"
+    },
+    {
+      "file": "vista_05_gallery_gap.png",
+      "standing": true,
+      "title": "The Gallery: the far shore is one cell of air away"
+    },
+    {
+      "file": "vista_06_under_the_isle.png",
+      "standing": false,
+      "title": "Under Lantern Isle: the keel and the span's truss"
+    },
+    {
+      "file": "vista_07_from_outside.png",
+      "standing": false,
+      "title": "From outside: sheer faces in the moonlight"
+    }
+  ]
+}

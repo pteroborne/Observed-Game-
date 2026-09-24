@@ -19,6 +19,7 @@ pub mod iso;
 pub mod kinetic;
 
 pub mod architect;
+pub mod open_air;
 
 use bevy::color::{Color, LinearRgba};
 
@@ -3122,9 +3123,9 @@ mod tests {
             paper.len(),
             SURFACE_WEAVE_SIZE as usize * SURFACE_WEAVE_SIZE as usize * 4
         );
-        assert!(paper.chunks_exact(4).all(|pixel| pixel[3] == 255));
-        assert!(paper.chunks_exact(4).any(|pixel| pixel[0] == 255));
-        assert!(paper.chunks_exact(4).any(|pixel| pixel[0] < 100));
+        assert!(paper.as_chunks::<4>().0.iter().all(|pixel| pixel[3] == 255));
+        assert!(paper.as_chunks::<4>().0.iter().any(|pixel| pixel[0] == 255));
+        assert!(paper.as_chunks::<4>().0.iter().any(|pixel| pixel[0] < 100));
         assert!(surface_weave_rgba(architecture_weave(R::Monolith)).is_none());
     }
 

@@ -149,7 +149,7 @@ Lean into what an LLM agent is good at and away from what it is not.
 
 The visual language lives in **one shared, tested module** — the `style` module, proven in `style_lab` — that maps *semantic state → visual treatment*. Presentation code asks the module how to draw a thing; it never invents ad-hoc colours.
 
-* **Evidence capturing with FFmpeg.** To make visual evidence in walkthroughs more interactive and easier to review, agents can use `ffmpeg` to compile sequential screenshot folders (e.g. `docs/evidence/bot_pov/bot_pov_*.png`) into a single high-quality loopable animated GIF (e.g. `docs/evidence/bot_pov/bot_pov.gif`) using a palette filter, and embed it in markdown walkthrough files.
+* **Evidence capturing with FFmpeg.** To make visual evidence in walkthroughs more interactive and easier to review, agents can use `ffmpeg` to compile sequential screenshot folders into a single **H.264 MP4** (`-c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart`) and link it from the walkthrough beside a still. MP4, not GIF: a GIF's 256-colour palette bands exactly the dark sky, fog and bloom gradients the evidence exists to show. The frames stay out of git; the `.mp4` is the tracked artefact.
 
 ## Development Philosophy
 

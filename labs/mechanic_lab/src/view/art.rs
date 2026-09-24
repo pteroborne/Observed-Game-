@@ -95,7 +95,7 @@ fn simulate(rgba: &mut [u8], mode: ColorVisionMode) {
     if mode == ColorVisionMode::Normal {
         return;
     }
-    for pixel in rgba.chunks_exact_mut(4) {
+    for pixel in rgba.as_chunks_mut::<4>().0 {
         if pixel[3] == 0 {
             continue;
         }
@@ -192,7 +192,12 @@ mod tests {
         for icon in Icon::ALL {
             let pixels =
                 rasterize(icon.source(), ICON_PIXELS).unwrap_or_else(|| panic!("{icon:?} failed"));
-            let opaque = pixels.chunks_exact(4).filter(|p| p[3] > 32).count();
+            let opaque = pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|p| p[3] > 32)
+                .count();
             assert!(
                 opaque > (ICON_PIXELS * ICON_PIXELS / 100) as usize,
                 "{icon:?} rasterized nearly empty ({opaque} visible pixels)"

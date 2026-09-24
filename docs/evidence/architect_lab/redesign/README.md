@@ -7,11 +7,12 @@ These are application screenshots, not generated mockups.
 
 ![Selected tile centered in the enlarged board view](focused.png)
 
-The board uses the full window width. The default orthographic scale is 0.6 of
-fit-to-deck: approximately 1.7× closer. A new tile selection snaps to the viewport
-center; subsequent manual pan and zoom remain untouched until another selection.
-Before selection, the opening view focuses the first known editable tile without
-arming a card.
+The board uses the full window width. *Superseded by the
+[presentation pass](../presentation/README.md):* the resting view now fits the
+active deck's structure, centred, and a new selection only pans when the tile is
+outside the middle of the view or under the inspector. Snapping every selection
+to the centre, and opening on the first editable tile, is what left the board off
+to one side in the captures below.
 `F`/Home refocuses the selection. Changing floors never follows a hidden target.
 
 The permanent side rails, duplicate selected-card image, coordinate/orientation

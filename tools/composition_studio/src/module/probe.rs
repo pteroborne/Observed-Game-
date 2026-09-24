@@ -21,7 +21,7 @@ impl Probe {
             let Some(mesh) = ConvexRenderMesh::from_convex_hull(hull) else {
                 continue;
             };
-            for face in mesh.indices.chunks_exact(3) {
+            for face in mesh.indices.as_chunks::<3>().0 {
                 let point = |index: u32| {
                     let p = mesh.positions[index as usize];
                     Vec3::new(p[0], p[1], p[2])

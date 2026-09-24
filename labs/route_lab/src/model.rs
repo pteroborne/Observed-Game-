@@ -159,13 +159,12 @@ impl RouteWorld {
             free.swap(i, rng.below(i + 1));
         }
 
-        let mut chunks = free.chunks_exact(2);
-        for pair in chunks.by_ref() {
-            let (a, b) = (pair[0], pair[1]);
+        let (pairs, remainder) = free.as_chunks::<2>();
+        for &[a, b] in pairs {
             self.graph.links[a.0 as usize] = b;
             self.graph.links[b.0 as usize] = a;
         }
-        if let [leftover] = chunks.remainder() {
+        if let [leftover] = remainder {
             self.graph.links[leftover.0 as usize] = *leftover;
         }
         self.last_event = format!("Decohered ({} cabled routes held).", self.cables.len());

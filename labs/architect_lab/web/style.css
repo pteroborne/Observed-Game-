@@ -188,8 +188,15 @@ h2 {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 18px;
+  /* Open air: a well of sky, deepest beneath the middle of the board. */
   background:
-    radial-gradient(ellipse at 50% 40%, #1c2923, transparent 70%), var(--screen);
+    radial-gradient(
+      ellipse 75% 65% at 50% 52%,
+      var(--sky-deep) 0%,
+      var(--sky-mid) 58%,
+      var(--sky-high) 100%
+    ),
+    var(--sky-mid);
   min-width: 0;
   min-height: 260px;
 }
@@ -225,6 +232,107 @@ h2 {
 #floors button[aria-pressed="true"] {
   border-color: var(--selected);
   color: var(--selected);
+}
+#floors .floor {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Legal targets for the selected card on that floor. */
+#floors .count {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--selected);
+  color: var(--screen);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  line-height: 16px;
+}
+.map-toolbar > div:last-child {
+  display: flex;
+  gap: 5px;
+}
+#floors .floor,
+.map-toolbar button {
+  white-space: nowrap;
+}
+@media (max-width: 800px) {
+  .map-toolbar button.small {
+    min-height: 38px;
+    padding: 5px 10px;
+  }
+}
+@media (max-width: 520px) {
+  #floors .floor-district {
+    display: none;
+  }
+}
+#floors .count[data-zero="true"] {
+  background: transparent;
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.tile-tip {
+  position: absolute;
+  z-index: 3;
+  max-width: min(260px, calc(100% - 16px));
+  padding: 9px 12px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 30px #0009;
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+.tile-tip[hidden] {
+  display: none;
+}
+.tile-tip b {
+  display: block;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.tile-tip[data-kind="legal"] {
+  border-left-color: var(--selected);
+}
+.tile-tip[data-kind="legal"] b {
+  color: var(--selected);
+}
+.tile-tip[data-code="Observed"] {
+  border-left-color: var(--watched);
+}
+.tile-tip[data-code="Observed"] b {
+  color: var(--watched);
+}
+.tile-tip[data-code="PrisonCore"],
+.tile-tip[data-code="Anchored"] {
+  border-left-color: var(--guardian);
+}
+.tile-tip::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--arrow, 50%) - 5px);
+  width: 10px;
+  height: 10px;
+  background: var(--paper);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  transform: rotate(45deg);
+  bottom: -6px;
+}
+.tile-tip[data-side="below"]::after {
+  bottom: auto;
+  top: -6px;
+  transform: rotate(225deg);
 }
 .map-note {
   position: absolute;
@@ -545,6 +653,42 @@ dialog .primary {
 #loading small {
   color: var(--muted);
 }
+.sky-drift {
+  opacity: 0.075;
+  pointer-events: none;
+}
+.depth {
+  pointer-events: none;
+}
+.context-deck polygon {
+  fill: var(--context);
+  stroke: color-mix(in srgb, var(--context), white 12%);
+  stroke-width: 1;
+}
+.depth .haze {
+  fill: var(--sky-mid);
+  opacity: 0.42;
+}
+.plate-shadow {
+  fill: #010407;
+  opacity: 0.55;
+  filter: url(#soften);
+}
+.plate-edge polygon {
+  fill: var(--plate-edge);
+  stroke: #0a0806;
+  stroke-width: 1;
+}
+.rock polygon {
+  fill: var(--rock);
+  stroke: #0d0f10;
+  stroke-width: 1.5;
+}
+.rock-grain {
+  fill: none;
+  stroke: #ffffff14;
+  stroke-width: 2;
+}
 .tile {
   cursor: pointer;
   outline: none;
@@ -565,6 +709,15 @@ dialog .primary {
   fill: transparent;
   stroke-dasharray: 3 5;
   opacity: 0.5;
+}
+.tile.locked:hover .hex,
+.tile.locked:focus-visible .hex {
+  stroke: var(--muted);
+  stroke-width: 2.5;
+}
+.tile:not(.locked):hover .hex {
+  stroke: var(--selected);
+  stroke-width: 2;
 }
 .tile.selected .hex {
   stroke: var(--selected);
@@ -972,6 +1125,13 @@ dialog .primary {
   --stone: #d1b77d;
   --wall-stone: #9d875c;
   --tile-ink: #302717;
+  --plate-edge: #4a3c24;
+  --rock: #2a2c2b;
+  /* Open air. Deep in the middle, hazier towards the edges of view. */
+  --sky-deep: #03060a;
+  --sky-mid: #0a141c;
+  --sky-high: #172835;
+  --context: #1b2a35;
 }
 .tile .hex.illustrated {
   fill: transparent;

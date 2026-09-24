@@ -87,26 +87,31 @@ impl RogueGame {
         let target = HexCoord { q, r, level };
         let mut before = self.sim.clone();
         before.cooldown = 0;
-        let legal: Vec<_> = before
-            .mutable_targets()
-            .into_iter()
-            .filter_map(|cell| {
-                let rotations: Vec<_> = (0..6)
-                    .filter(|&rot| {
-                        before
-                            .selected_command(card, cell, rot)
-                            .is_some_and(|command| before.refusal(command).is_none())
-                    })
-                    .collect();
-                (!rotations.is_empty())
-                    .then(|| json!({"cell": coord(cell), "rotations": rotations}))
+        let verdicts = crate::placement::survey(&before, card);
+        let legal: Vec<_> = verdicts
+            .iter()
+            .filter(|verdict| verdict.legal())
+            .map(|verdict| json!({"cell": coord(verdict.cell), "rotations": verdict.rotations}))
+            .collect();
+        // Why every other drawn tile is locked, so the board can say so before a tap.
+        let refused: Vec<_> = verdicts
+            .iter()
+            .filter_map(|verdict| {
+                let refusal = verdict.refusal?;
+                Some(json!({"cell": coord(verdict.cell), "reason": refusal.label(),
+                    "code": format!("{refusal:?}"), "tally": crate::placement::refusal_tally(refusal)}))
             })
             .collect();
+        let floor_counts = crate::placement::legal_by_level(&verdicts, before.world.config.levels);
         let Some(command) = before.selected_command(card, target, rotation) else {
-            return json!({"legal": legal, "reason": "Choose a card.", "ok": false}).to_string();
+            return json!({"legal": legal, "refused": refused, "floor_counts": floor_counts,
+                "reason": "Choose a card.", "ok": false})
+            .to_string();
         };
         if let Some(refusal) = before.refusal(command) {
-            return json!({"legal": legal, "reason": refusal.label(), "ok": false}).to_string();
+            return json!({"legal": legal, "refused": refused, "floor_counts": floor_counts,
+                "reason": refusal.label(), "code": format!("{refusal:?}"), "ok": false})
+            .to_string();
         }
         let before_routes = pursuit_routes(&before);
         let mut after = before.clone();
@@ -126,7 +131,8 @@ impl RogueGame {
             _ if gained > 0 => "Opens more ground for the Guardian",
             _ => "Changes the connections",
         };
-        json!({"legal": legal, "ok": true, "reason": route_effect,
+        json!({"legal": legal, "refused": refused, "floor_counts": floor_counts,
+            "ok": true, "reason": route_effect,
             "reachable_gain": gained,
             "before_steps": before_steps.map(|v| v.saturating_sub(1)),
             "after_steps": after_steps.map(|v| v.saturating_sub(1)),
@@ -165,7 +171,13 @@ impl RogueGame {
         let next = sim.next_retraction();
         let cells: Vec<_> = sim.known.iter().filter_map(|&cell| {
             let tile = sim.world.placements.get(&cell)?;
-            Some(json!({"cell": coord(cell), "solid": tile.space.built(),
+            // Air is sky and Void is rock; the board draws them differently.
+            let space = match tile.space {
+                HexSpace::Air => "air",
+                HexSpace::Void => "rock",
+                HexSpace::Room | HexSpace::Hall => "built",
+            };
+            Some(json!({"cell": coord(cell), "solid": tile.space.built(), "space": space,
                 "doors": tile.doors, "observed": sim.observed.contains(&cell),
                 "prison": sim.prison_core.contains(&cell),
                 "unstable": sim.contradictions.contains(&cell),
@@ -248,6 +260,9 @@ impl RogueGame {
             "cells": cells, "observers": observers, "guardians": guardians, "cards": cards,
             "doors": doors, "events": events, "routes": pursuit_routes(sim),
             "collapsed_floors": sim.collapsed_floors,
+            "floor_districts": (0..sim.world.config.levels)
+                .map(|level| crate::sim::District::for_level(level).label())
+                .collect::<Vec<_>>(),
         }).to_string()
     }
 
@@ -342,6 +357,9 @@ mod tests {
         let before = game.snapshot();
         let _ = game.preview(0, target.q, target.r, target.level, rotation);
         assert_eq!(game.snapshot(), before);
+        // The browser opens in planning, where the first placements are free (backlog
+        // #47). Spend that allowance so the repeat below is refused on the cooldown.
+        game.sim.setup_placements_left = 0;
         game.sim.submit(command).unwrap();
         let before = game.snapshot();
         assert!(
@@ -376,6 +394,42 @@ mod tests {
         assert_eq!(game.power_policy(), "One-Way");
         game.reset(0).unwrap();
         assert_eq!(game.power_policy(), "One-Way");
+    }
+
+    #[test]
+    fn preview_explains_every_drawn_tile_it_does_not_offer() {
+        for mode in 0..3 {
+            let game = RogueGame::new(mode).unwrap();
+            let snapshot: Value = serde_json::from_str(&game.snapshot()).unwrap();
+            for card in 0..game.sim.deck.hand.len() {
+                let preview: Value = serde_json::from_str(&game.preview(card, 0, 0, 0, 0)).unwrap();
+                let cells = |key: &str| -> Vec<Value> {
+                    preview[key]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|entry| entry["cell"].clone())
+                        .collect()
+                };
+                let (legal, refused) = (cells("legal"), cells("refused"));
+                for cell in snapshot["cells"].as_array().unwrap() {
+                    if cell["solid"].as_bool().unwrap() {
+                        assert!(
+                            legal.contains(&cell["cell"]) != refused.contains(&cell["cell"]),
+                            "mode {mode} card {card}: {} is neither offered nor explained",
+                            cell["cell"]
+                        );
+                    }
+                }
+                let counted: u64 = preview["floor_counts"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|n| n.as_u64().unwrap())
+                    .sum();
+                assert_eq!(counted as usize, legal.len());
+            }
+        }
     }
 
     #[test]

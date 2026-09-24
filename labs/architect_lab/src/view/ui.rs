@@ -8,7 +8,7 @@ use bevy::prelude::*;
 pub use spawn::spawn;
 pub use sync::{
     sync_action_buttons, sync_card_buttons, sync_card_text, sync_charge_pips, sync_dynamic_text,
-    sync_layout,
+    sync_hover_note, sync_layout,
 };
 #[derive(Component)]
 pub(crate) struct InterfaceRoot;
@@ -20,6 +20,17 @@ pub(crate) struct Inspector;
 pub(crate) struct HandDock;
 #[derive(Component)]
 pub(crate) struct LabControls;
+/// The unstable-cell and retraction warning at the board's top-left corner.
+#[derive(Component)]
+pub(crate) struct HazardNotice;
+/// The note beside the pointer: what the selected card can do at the hovered tile.
+#[derive(Component)]
+pub(crate) struct HoverNote;
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HoverNoteText {
+    Title,
+    Reason,
+}
 #[derive(Component)]
 pub(crate) struct ChargePip(pub usize);
 #[derive(Component)]
@@ -58,6 +69,7 @@ pub(crate) enum DynamicText {
     Guidance,
     Scenario,
     Floor,
+    FloorTargets,
     Hazard,
     Pause,
 }

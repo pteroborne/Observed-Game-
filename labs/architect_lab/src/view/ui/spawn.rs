@@ -1,6 +1,7 @@
 //! A quiet board with details and placement controls revealed when needed.
 use super::{
-    ArchitectButton, DynamicText, Inspector, InterfaceRoot, LabControls, Sidebar, UiAction,
+    ArchitectButton, DynamicText, HazardNotice, HoverNote, HoverNoteText, Inspector, InterfaceRoot,
+    LabControls, Sidebar, UiAction,
 };
 use crate::view::scene::Previews;
 use bevy::prelude::*;
@@ -15,23 +16,25 @@ pub fn spawn(commands: &mut Commands, camera: Entity, previews: &Previews) {
             BackgroundColor(color(Role::Panel)),BorderColor::all(color(Role::Border)))).with_children(|bar| {
             row(bar,|r| {label(r,"ARCHITECT",21.0,Role::Text);dynamic(r,DynamicText::Match,13.0,Role::Muted);});
             row(bar,|r| {button(r,UiAction::FloorPrevious,"<",false);
-                dynamic(r,DynamicText::Floor,13.0,Role::Text);button(r,UiAction::FloorNext,">",false);});
+                dynamic(r,DynamicText::Floor,13.0,Role::Text);button(r,UiAction::FloorNext,">",false);
+                dynamic(r,DynamicText::FloorTargets,12.0,Role::Selected);});
             row(bar,|r|{button(r,UiAction::TogglePause,"",false);button(r,UiAction::Details,"DETAILS",false);button(r,UiAction::LabControls,"LAB",false);});
         });
-        root.spawn((Node {position_type:PositionType::Absolute,left:px(24.0),top:px(84.0),..default()},Pickable::IGNORE)).with_children(|notice| {
+        root.spawn((HazardNotice,Node {position_type:PositionType::Absolute,left:px(24.0),top:px(84.0),..default()},Pickable::IGNORE)).with_children(|notice| {
             dynamic(notice,DynamicText::Hazard,14.0,Role::Guardian);
         });
         root.spawn((Sidebar,GlobalZIndex(200),Node {position_type:PositionType::Absolute,left:px(16.0),top:px(116.0),width:px(300.0),
             display:Display::None,padding:UiRect::all(px(20.0)),flex_direction:FlexDirection::Column,row_gap:px(12.0),
             border:UiRect::all(px(1.0)),border_radius:BorderRadius::all(px(6.0)),..default()},BackgroundColor(color(Role::Panel)),BorderColor::all(color(Role::Border)))).with_children(|rail| {
-            row(rail,|r|{button(r,UiAction::Recenter,"FOCUS [F]",false);button(r,UiAction::Overview,"CONTEXT [V]",false);});
+            // Controls first, so however long the party grows it never runs under them.
+            row(rail,|r|{button(r,UiAction::Recenter,"FOCUS [F]",false);button(r,UiAction::Overview,"CONTEXT [V]",false);
+                r.spawn(Node {flex_grow:1.0,..default()});button(r,UiAction::Details,"CLOSE [H]",false);});
             label(rail,"HUNTING PARTY",12.0,Role::Muted);
             dynamic(rail,DynamicText::Mode,12.0,Role::Muted);
             dynamic(rail,DynamicText::Traces,12.0,Role::Text);
             label(rail,"MAP KEY",12.0,Role::Muted);
             label(rail,"Eye: Observer sighting   /   Pyramid: Guardian\nAmber: selected   /   Cyan: watched\nViolet: prison   /   Red cross: unstable\nChevron: vertical port",12.0,Role::Muted);
             label(rail,"Drag: pan   /   Wheel: zoom\n1-5: card   /   Tab: next tile\nQ/E: rotate   /   Space: play\nPage Up/Down: floor   /   Esc: deselect",12.0,Role::Muted);
-            button(rail,UiAction::Details,"CLOSE [H]",false);
         });
         root.spawn((Inspector,Node {position_type:PositionType::Absolute,right:px(16.0),bottom:px(236.0),width:px(260.0),height:px(220.0),
             display:Display::None,flex_direction:FlexDirection::Column,row_gap:px(10.0),padding:UiRect::all(px(16.0)),
@@ -44,6 +47,14 @@ pub fn spawn(commands: &mut Commands, camera: Entity, previews: &Previews) {
             button(panel,UiAction::Submit,"PLAY  [SPACE]",true);
         });
         super::cards::spawn_hand(root,previews);
+        root.spawn((HoverNote,GlobalZIndex(300),Pickable::IGNORE,Node {position_type:PositionType::Absolute,max_width:px(280.0),
+            display:Display::None,flex_direction:FlexDirection::Column,row_gap:px(4.0),padding:UiRect::new(px(12.0),px(12.0),px(9.0),px(10.0)),
+            border:UiRect::new(px(3.0),px(1.0),px(1.0),px(1.0)),border_radius:BorderRadius::all(px(5.0)),..default()},
+            BackgroundColor(color(Role::Panel).with_alpha(0.96)),BorderColor::all(color(Role::Border)),Name::new("Hover placement note"))).with_children(|note| {
+            for (kind,size,role) in [(HoverNoteText::Title,11.0,Role::Muted),(HoverNoteText::Reason,13.0,Role::Text)] {
+                note.spawn((kind,Text::new(""),TextFont {font_size:FontSize::Px(size),..default()},TextColor(color(role)),Pickable::IGNORE));
+            }
+        });
         root.spawn((LabControls,GlobalZIndex(200),Node {position_type:PositionType::Absolute,right:px(16.0),top:px(82.0),width:px(360.0),
             display:Display::None,flex_direction:FlexDirection::Column,padding:UiRect::all(px(20.0)),row_gap:px(15.0),
             border:UiRect::all(px(1.0)),border_radius:BorderRadius::all(px(6.0)),..default()},

@@ -11,6 +11,7 @@ use bevy::camera::{RenderTarget, visibility::RenderLayers};
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use observed_content::ArchitectureRegister;
+use observed_facility::hex_wfc::HexSpace;
 use observed_hex::{HexFace, PortClass};
 use observed_style::architect::{Role, color};
 
@@ -132,6 +133,7 @@ pub fn rebuild_board(
     mut commands: Commands,
     mut session: ResMut<LabSession>,
     state: Res<MapCameraState>,
+    survey: Res<super::PlacementSurvey>,
     mut last_view: Local<Option<(u8, bool)>>,
     existing: Query<Entity, With<BoardVisual>>,
     assets: ModelAssets,
@@ -163,6 +165,30 @@ pub fn rebuild_board(
         if !active {
             at += Vec3::new(-4.0, -12.0, -4.0) * f32::from(depth);
         }
+        // Rock is the unbuilt cell you cannot fall through, so it is drawn as a block.
+        // A retracted cell is Void to the simulation but is a hole, not stone.
+        let rock = p.space == HexSpace::Void && !session.sim.retracted.contains(&cell);
+        if rock {
+            spawn_part(
+                &mut commands,
+                Part {
+                    mesh: models.slab.clone(),
+                    material: if active {
+                        models.rock.clone()
+                    } else {
+                        models.context[usize::from(depth.unsigned_abs() - 1).min(1)].clone()
+                    },
+                    transform: Transform::from_xyz(0.0, -2.4, 0.0).with_scale(Vec3::new(
+                        1.0,
+                        if active { 10.0 } else { 1.0 },
+                        1.0,
+                    )),
+                },
+                at,
+                "Sealed rock",
+            );
+            continue;
+        }
         if p.space.unbuilt() {
             if active && targets.contains(&cell) {
                 ring(
@@ -189,6 +215,7 @@ pub fn rebuild_board(
             for part in parts {
                 spawn_part(&mut commands, part, at, "Authored deck");
             }
+            hang_over_air(&mut commands, &models, at);
             if session.sim.prison_core.contains(&cell) {
                 ring(
                     &mut commands,
@@ -248,7 +275,7 @@ pub fn rebuild_board(
                 }
             }
         } else {
-            let material = models.signal(Role::Context, &mut materials);
+            let material = models.context[usize::from(depth.unsigned_abs() - 1).min(1)].clone();
             spawn_part(
                 &mut commands,
                 Part {
@@ -262,13 +289,16 @@ pub fn rebuild_board(
         }
     }
     if let Some(cell) = session.hovered_target.filter(|c| c.level == state.floor) {
+        // A locked tile answers the pointer too, quietly, so the note beside it reads
+        // as belonging to that tile rather than to nothing.
+        let locked = !survey.verdict(cell).is_some_and(|v| v.legal());
         ring(
             &mut commands,
             &mut models,
             &mut materials,
             board_position(config, cell),
-            Role::Text,
-            0.15,
+            if locked { Role::Muted } else { Role::Text },
+            if locked { 0.1 } else { 0.15 },
             "Pointer target",
         );
     }
@@ -395,6 +425,38 @@ pub fn rebuild_board(
             },
             board_position(config, guardian.cell) + Vec3::Y * 0.6,
             "Guardian pyramid",
+        );
+    }
+}
+/// A built cell's thickness and its soft shadow on the cloud layer far below.
+fn hang_over_air(commands: &mut Commands, models: &Models, at: Vec3) {
+    spawn_part(
+        commands,
+        Part {
+            mesh: models.slab.clone(),
+            material: models.underside.clone(),
+            transform: Transform::from_xyz(0.0, -2.6, 0.0).with_scale(Vec3::new(1.0, 5.3, 1.0)),
+        },
+        at,
+        "Deck underside",
+    );
+    // A dark core over a wider, lighter penumbra: a soft edge without blending.
+    for (material, spread, lift) in [
+        (&models.shadow[1], 1.3, 0.0),
+        (&models.shadow[0], 1.02, 0.08),
+    ] {
+        spawn_part(
+            commands,
+            Part {
+                mesh: models.slab.clone(),
+                material: material.clone(),
+                transform: Transform::from_translation(
+                    super::sky::shadow_offset() + Vec3::Y * lift,
+                )
+                .with_scale(Vec3::new(spread, 0.1, spread)),
+            },
+            at,
+            "Deck shadow below the cloud",
         );
     }
 }

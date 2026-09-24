@@ -57,16 +57,22 @@
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
-            <pattern
-              id="dots"
-              width="28"
-              height="28"
-              patternUnits="userSpaceOnUse"
-            >
-              <circle cx="1" cy="1" r="0.7" fill="currentColor" opacity=".18" />
-            </pattern>
+            <filter id="drift" x="0" y="0" width="100%" height="100%">
+              <feTurbulence
+                type="fractalNoise"
+                baseFrequency="0.006 0.011"
+                numOctaves="3"
+                seed="7"
+              />
+              <feColorMatrix
+                values="0 0 0 0 0.55  0 0 0 0 0.68  0 0 0 0 0.78  0 0 0 0.9 -0.28"
+              />
+            </filter>
+            <filter id="soften" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="7" />
+            </filter>
           </defs>
-          <rect width="100%" height="100%" fill="url(#dots)" />
+          <rect class="sky-drift" width="100%" height="100%" filter="url(#drift)" />
           <g id="map-content"></g>
         </svg>
         <div id="map-note" class="map-note">
@@ -76,10 +82,14 @@
           <span><i class="legend-eye">◉</i> Observer</span
           ><span><i class="legend-guardian">▲</i> Guardian</span
           ><span><i class="legend-held">◌</i> Watched</span
-          ><span><i class="legend-warning">!</i> Unstable</span>
+          ><span><i class="legend-warning">!</i> Unstable</span
           ><span><i class="legend-condemned">⚠</i> Condemned</span>
         </div>
         <div id="collapse" class="collapse-banner" hidden></div>
+        <div id="tile-tip" class="tile-tip" role="status" hidden>
+          <b id="tip-title"></b>
+          <span id="tip-reason"></span>
+        </div>
       </section>
       <aside class="command-panel">
         <div class="panel-heading">
