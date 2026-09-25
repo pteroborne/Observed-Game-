@@ -11,6 +11,8 @@ bevy = { version = "0.19", default-features = false, features = [
     "default_font",
     "png",
 ] }
+# The forms themselves, shared with the game.
+observed_guardian = { path = "../../crates/observed_guardian" }
 # Colours come from the production style crate, never invented locally.
 observed_style = { path = "../../crates/observed_style" }
 # The existing minor Guardian, stood beside the candidates for scale and contrast.

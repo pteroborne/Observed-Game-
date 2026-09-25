@@ -22,6 +22,7 @@ use observed_style::{MarkerRole, marker};
 use crate::capture::{self, Frame};
 use crate::form::{self, Form, Look, Stage, State};
 use crate::mesh::mesh;
+use crate::sound;
 
 /// What is on the stage.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -163,6 +164,18 @@ struct LabCamera;
 #[derive(Component)]
 struct Caption;
 
+/// What the lab last sounded, to know what changed.
+#[derive(Resource, Default)]
+struct Heard {
+    form: Option<Form>,
+    state: Option<State>,
+    clock: f32,
+    t: f32,
+}
+
+#[derive(Component)]
+struct Hum;
+
 pub fn run() {
     let capture = std::env::var("OBSERVED2_CAPTURE").ok().map(|dir| Capture {
         dir: PathBuf::from(dir),
@@ -172,15 +185,24 @@ pub fn run() {
     let mut app = App::new();
     app.insert_resource(ClearColor(sky(SkyRole::Horizon)))
         .init_resource::<Lab>()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Observed 2 — Guardian Form Lab".to_string(),
-                resolution: WindowResolution::new(1440, 900),
-                present_mode: PresentMode::AutoVsync,
-                ..default()
-            }),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Observed 2 — Guardian Form Lab".to_string(),
+                        resolution: WindowResolution::new(1440, 900),
+                        present_mode: PresentMode::AutoVsync,
+                        ..default()
+                    }),
+                    ..default()
+                })
+                // The workspace's assets, where the guardian sounds are.
+                .set(AssetPlugin {
+                    file_path: format!("{}/../../assets", env!("CARGO_MANIFEST_DIR")),
+                    ..default()
+                }),
+        )
+        .init_resource::<Heard>()
         .add_systems(Startup, (setup, kinetic_lab::guardian::setup).chain())
         .add_systems(
             Update,
@@ -193,6 +215,7 @@ pub fn run() {
                 pose_minor,
                 place_camera,
                 caption,
+                play_sounds,
             )
                 .chain(),
         );
@@ -670,4 +693,67 @@ fn caption(lab: Res<Lab>, mut text: Query<&mut Text, With<Caption>>) {
     };
     let state = lab.state.name().replace('_', " ");
     text.0 = format!("{what} - {state}\n{company}");
+}
+
+/// Sound the candidate on stage: its hum or its steps while hunting, and a one-shot on
+/// entering a state. Silent in capture, whose films are mixed afterwards.
+fn play_sounds(
+    mut commands: Commands,
+    lab: Res<Lab>,
+    capture: Option<Res<Capture>>,
+    assets: Res<AssetServer>,
+    mut heard: ResMut<Heard>,
+    hums: Query<Entity, With<Hum>>,
+) {
+    if capture.is_some() {
+        return;
+    }
+    let one_shot = |commands: &mut Commands, name: &str| {
+        commands.spawn((
+            Actor,
+            AudioPlayer::<AudioSource>(assets.load(sound::path(name))),
+            PlaybackSettings::DESPAWN,
+        ));
+    };
+    let Layout::Single(form) = lab.layout else {
+        for entity in &hums {
+            commands.entity(entity).despawn();
+        }
+        *heard = Heard::default();
+        return;
+    };
+    let voice = sound::voice(form);
+    let new_form = heard.form != Some(form);
+    if new_form || heard.state != Some(lab.state) {
+        if let (Some(from), false) = (heard.state, new_form)
+            && let Some(name) = sound::on_entering(form, from, lab.state)
+        {
+            one_shot(&mut commands, name);
+        }
+        for entity in &hums {
+            commands.entity(entity).despawn();
+        }
+        if lab.state == State::Hunting
+            && let Some(hum) = voice.hum
+        {
+            commands.spawn((
+                Actor,
+                Hum,
+                AudioPlayer::<AudioSource>(assets.load(sound::path(hum))),
+                PlaybackSettings::LOOP,
+            ));
+        }
+    } else if lab.state == State::Hunting
+        && let Some(step) = voice.step
+        && sound::landings(heard.clock, lab.clock) > 0
+    {
+        one_shot(&mut commands, step);
+    } else if lab.state == State::Catch && lab.t < heard.t {
+        // The catch plays again.
+        one_shot(&mut commands, voice.catch);
+    }
+    heard.form = Some(form);
+    heard.state = Some(lab.state);
+    heard.clock = lab.clock;
+    heard.t = lab.t;
 }

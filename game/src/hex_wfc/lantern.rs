@@ -1,4 +1,4 @@
-//! Presentation for the caged anchor lantern and physical Guardian.
+//! Presentation for the caged anchor lantern. The Guardian is drawn by `guardian`.
 //!
 //! The lantern is an observation torch: a knurled grip, a hexagonal cage and glass
 //! chamber, and inside it the guide core the player reads the exit from, circled by
@@ -7,7 +7,7 @@
 //! ([`observed_assets::LANTERN`]) replaces the procedural hardware when an author
 //! supplies one; the core and gyro ride inside either. Every material comes from
 //! `observed_style`; geometry communicates state in addition to colour (cage, core,
-//! deployed threshold lock, tall threat body).
+//! deployed threshold lock).
 
 use std::collections::BTreeMap;
 
@@ -53,9 +53,6 @@ pub(super) struct LanternCoreLight {
 #[derive(Component)]
 pub(super) struct AnchorGhost;
 
-#[derive(Component)]
-pub(super) struct HexGuardianVisual;
-
 #[derive(Clone, Copy)]
 pub(super) struct LanternSignalSample {
     seed: u64,
@@ -78,8 +75,6 @@ pub(super) struct LanternVisualAssets {
     gyro: Handle<Mesh>,
     accent: Handle<Mesh>,
     ghost: Handle<Mesh>,
-    cage_ring: Handle<Mesh>,
-    guardian_body: Handle<Mesh>,
     finishes: BTreeMap<Hardware, Handle<StandardMaterial>>,
     glass: Handle<StandardMaterial>,
     guide: Handle<StandardMaterial>,
@@ -87,7 +82,6 @@ pub(super) struct LanternVisualAssets {
     held_core: Handle<StandardMaterial>,
     cage: Handle<StandardMaterial>,
     held_cage: Handle<StandardMaterial>,
-    threat: Handle<StandardMaterial>,
 }
 
 #[derive(Resource, Default)]
@@ -115,8 +109,6 @@ pub(super) fn setup(
         gyro: meshes.add(Torus::new(0.033, 0.039).mesh().build()),
         accent: meshes.add(hex_ring(0.0665, 0.0605, -0.0745, -0.0705)),
         ghost: meshes.add(Sphere::new(0.18)),
-        cage_ring: meshes.add(Torus::new(0.20, 0.235)),
-        guardian_body: meshes.add(Capsule3d::new(0.52, 1.6)),
         finishes,
         glass: materials.add(StandardMaterial {
             base_color: glass.base_color,
@@ -134,7 +126,6 @@ pub(super) fn setup(
         // budget; its guide core stays signal-tier while the purple does not bloom
         // to white. A lantern set down keeps the full control-device treatment.
         held_cage: scaled_signal_material(&mut materials, MarkerRole::Control, held),
-        threat: signal_material(&mut materials, MarkerRole::Collapse),
     };
     // One persistent marker, moved and hidden rather than respawned: it changes
     // every time the player turns their head, and spawn/despawn churn at look
@@ -164,7 +155,6 @@ pub(super) fn sync_projection(
     assets: Res<LanternVisualAssets>,
     mut projection: ResMut<LanternProjection>,
     existing: Query<Entity, With<LanternVisual>>,
-    guardian: Query<Entity, With<HexGuardianVisual>>,
 ) {
     let signature = equipment_signature(&runtime);
     if projection.signature == signature {
@@ -172,9 +162,6 @@ pub(super) fn sync_projection(
     }
     projection.signature = signature;
     for entity in &existing {
-        commands.entity(entity).despawn();
-    }
-    for entity in &guardian {
         commands.entity(entity).despawn();
     }
 
@@ -229,38 +216,6 @@ pub(super) fn sync_projection(
             None,
         );
     }
-
-    let guardian_state = &runtime.match_state.guardian;
-    commands
-        .spawn((
-            HexGuardianVisual,
-            DespawnOnExit(GameState::HexWfc),
-            Transform::from_translation(guardian_state.position),
-            Visibility::Visible,
-            Name::new("Hex Guardian procedural threat"),
-        ))
-        .with_children(|root| {
-            root.spawn((
-                Mesh3d(assets.guardian_body.clone()),
-                MeshMaterial3d(assets.threat.clone()),
-                Transform::from_scale(Vec3::new(0.8, 1.45, 0.8)),
-            ));
-            root.spawn((
-                Mesh3d(assets.cage_ring.clone()),
-                MeshMaterial3d(assets.threat.clone()),
-                Transform::from_translation(Vec3::Y * 1.25),
-            ));
-            root.spawn((
-                PointLight {
-                    color: observed_style::marker(MarkerRole::Collapse).base_color,
-                    intensity: 1_000.0,
-                    range: 6.0,
-                    shadow_maps_enabled: false,
-                    ..default()
-                },
-                Transform::from_translation(Vec3::Y * 0.8),
-            ));
-        });
 }
 
 /// Show the bead exactly while the press would work, and nowhere else.
@@ -295,7 +250,6 @@ pub(super) fn sync_dynamic(
     sway: Res<HeldSway>,
     mut lanterns: Query<(&LanternVisual, &mut Transform)>,
     mut core_lights: Query<(&mut LanternCoreLight, &mut PointLight)>,
-    mut guardian: Query<&mut Transform, (With<HexGuardianVisual>, Without<LanternVisual>)>,
     mut signal_cache: Local<BTreeMap<PlayerId, LanternSignalSample>>,
 ) {
     for (visual, mut transform) in &mut lanterns {
@@ -351,9 +305,6 @@ pub(super) fn sync_dynamic(
         light.intensity = intensity;
         light.range = range;
         owner.glow = core_glow(sample.guide, pulse);
-    }
-    if let Ok(mut transform) = guardian.single_mut() {
-        transform.translation = runtime.match_state.guardian.position;
     }
 }
 

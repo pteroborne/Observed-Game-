@@ -65,7 +65,8 @@ pub(super) fn setup(
         recover: assets.load(observed_assets::REROUTE.path),
         escape: assets.load(observed_assets::ESCAPE.path),
         complete: assets.load(observed_assets::EXIT_UNLOCK.path),
-        guardian: assets.load(observed_assets::GUARDIAN_DREAD.path),
+        // The Tumbler's own catch: its tiers telescope up and stamp.
+        guardian: assets.load(observed_assets::GUARDIAN_CATCH.path),
     });
     commands.insert_resource(HexWfcAudioState::default());
     // GameCam is the app's one persistent world camera (`game/src/lib.rs`), reused across

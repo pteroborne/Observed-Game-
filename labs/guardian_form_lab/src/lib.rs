@@ -6,10 +6,10 @@
 //! person and the facility's real doorway, so size and silhouette can be judged
 //! together. The forms that are not chosen are candidates for new kinds of minor.
 //!
-//! The pure core (`form`, `roll`) has no rendering in it and is what the tests
-//! exercise; `view` draws what it says, and `capture` writes the evidence.
+//! The forms live in `observed_guardian`, shared with the game, which carries their
+//! tests; `view` draws them here, and `capture` writes the evidence.
 pub mod capture;
-pub mod form;
-pub mod mesh;
-pub mod roll;
+pub mod sound;
 pub mod view;
+
+pub use observed_guardian::{form, mesh, roll};

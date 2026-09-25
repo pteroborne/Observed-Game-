@@ -1,4 +1,4 @@
-//! The candidate major Guardians, as parts and poses, with no rendering in them.
+//! The Guardians' forms, as parts and poses, with no rendering in them.
 //!
 //! Each form is a list of [`Part`]s (a shape and a look) and a pose function that places
 //! every part for a [`State`], the seconds spent in it, and the lab's clock. The pose
@@ -159,6 +159,9 @@ pub struct Stage {
 
 /// How long a catch plays before it repeats, seconds.
 pub const CATCH_SECONDS: f32 = 1.8;
+/// The Roller's step, seconds: it lands on its next face at each whole multiple of
+/// this, which is when its fall is heard.
+pub const ROLLER_STEP_SECONDS: f32 = 1.0;
 
 fn ease_out(u: f32) -> f32 {
     let u = u.clamp(0.0, 1.0);
@@ -629,7 +632,7 @@ mod plumb {
 mod roller {
     use super::*;
 
-    const STEP_SECONDS: f32 = 1.0;
+    const STEP_SECONDS: f32 = ROLLER_STEP_SECONDS;
     const STEPS: usize = 3;
     const EYE: f32 = 0.42;
 

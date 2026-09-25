@@ -4,9 +4,66 @@ Three candidate forms for the major Guardian, modelled in `labs/guardian_form_la
 Each acts out the four things a major does in a match: hunting, frozen because someone
 sees it, frozen by an anchor lantern, and the catch. Each stands beside the existing
 minor Guardian, a 1.8 m person and the facility's real doorway (4.5 m wide, 4 m clear).
-One is to be chosen for the major; the others may become new kinds of minor.
+**The Tumbler is the major Guardian** (chosen 2026-09-25), and it is in the game with
+its sounds. The Plumb and the Roller stay here for the minor roster; the Plumb may yet be
+a second major or another special.
 
 ![The three candidates, the minor Guardian and a person, hunting](evidence/guardian_forms/40_lineup_hunting.png)
+
+## In the game
+
+The game draws its Guardian as the Tumbler at four tiers (`game/src/hex_wfc/guardian.rs`).
+The forms moved from the lab into a shared crate, `observed_guardian`, so the game and
+the lab draw the same thing. The simulation is unchanged: it owns where the Guardian
+is and its status, and the view follows.
+
+- **Hunting, frozen by sight, frozen by an anchor** are the simulation's three
+  statuses, drawn as the lab draws them.
+- **The catch** sends the Guardian home in the same tick, so it plays as a short-lived
+  second Tumbler where the Guardian was last drawn, for 1.8 s.
+- **It glides.** The simulation moves the Guardian a whole cell (14 m) at a time; the
+  drawn one glides there at 12 m/s, and snaps only when a catch sends it home.
+- **Its eye throws red light:** strong while it hunts, dim while it is held.
+
+On the Phase 101 arc gate (uncapped) the Tumbler costs nothing measurable: median
+9,360 µs, p95 13,108 µs, worst mutation frame 13,626 µs, against 9,645, 13,551 and
+14,730 µs before it.
+
+| In the moonlit loggia, frozen by the runner's gaze | In the windowed room, frozen by the runner's gaze |
+| --- | --- |
+| ![](evidence/guardian_forms/50_in_game_loggia.png) | ![](evidence/guardian_forms/51_in_game_room.png) |
+
+```powershell
+$env:OBSERVED2_CAPTURE_HEX_WFC_GUARDIAN = "docs/evidence/guardian_forms"; cargo dev-run -p observed_game
+```
+
+The capture stages the Guardian ahead of the runner. The simulation freezes it there
+itself, because the runner is looking at it.
+
+## Sound
+
+Every sound is original, synthesised by `tools/generate_guardian_audio.py` (standard
+library and ffmpeg, fixed seeds, 48 kHz mono, peak headroom). The loops are crossfaded
+into their own heads so they repeat without a seam. The Tumbler's sounds carry its
+states by ear:
+
+| When | Sound |
+| --- | --- |
+| Hunting | a bronze drone on 55 Hz and its fifth, breathing, under a turning ratchet: looped |
+| Seen | the ratchet runs out faster and faster, and the latch drops home. The hum stops: silence means frozen |
+| Anchored | a falling hiss, a magnetic thunk, and a glassy dyad: the lantern's voice, not the Guardian's bronze |
+| Let go | the latch lifts, and the ratchet winds back up into the hum |
+| A catch | the tiers telescope up with a rising ratchet, then a sub boom and a tritone bronze ring |
+
+In the game the hum is spatial and follows the Guardian, fading out within a fraction
+of a second of it being seen. The one-shots play from where it stands. The catch
+replaces the old dread swell as the catch event's cue, so it plays once, from the catch.
+
+The Plumb has a pale drone with its three orbits whooshing past, its rings settling
+when seen, and faces creaking open in its catch. The Roller is heard landing on each
+face (a hollow thud and a rattle of struts); seen, a pure tone holds as it balances.
+The lab plays all of them; the films below carry them.
+
 
 ## The brief
 
@@ -40,7 +97,7 @@ tier count: three, four or five.
 | --- | --- | --- | --- |
 | ![](evidence/guardian_forms/11_tumbler_4_hunting.png) | ![](evidence/guardian_forms/12_tumbler_4_frozen_by_sight.png) | ![](evidence/guardian_forms/13_tumbler_4_frozen_by_anchor.png) | ![](evidence/guardian_forms/14_tumbler_4_catch.png) |
 
-Films: [seen](evidence/guardian_forms/film_tumbler_4_seen.mp4) ·
+Films, with sound: [seen](evidence/guardian_forms/film_tumbler_4_seen.mp4) ·
 [catch](evidence/guardian_forms/film_tumbler_4_catch.mp4) ·
 [encounter](evidence/guardian_forms/15_tumbler_4_encounter.png) ·
 [ranks](evidence/guardian_forms/41_tumbler_ranks.png)
@@ -56,7 +113,7 @@ the three up close. The catch opens its six faces like petals around a red core.
 | --- | --- | --- | --- |
 | ![](evidence/guardian_forms/21_plumb_hunting.png) | ![](evidence/guardian_forms/22_plumb_frozen_by_sight.png) | ![](evidence/guardian_forms/23_plumb_frozen_by_anchor.png) | ![](evidence/guardian_forms/24_plumb_catch.png) |
 
-Films: [seen](evidence/guardian_forms/film_plumb_seen.mp4) ·
+Films, with sound: [seen](evidence/guardian_forms/film_plumb_seen.mp4) ·
 [catch](evidence/guardian_forms/film_plumb_catch.mp4) ·
 [encounter](evidence/guardian_forms/25_plumb_encounter.png)
 
@@ -71,7 +128,7 @@ pose, so it reads as frozen from any distance. The catch splits it at the equato
 | --- | --- | --- | --- |
 | ![](evidence/guardian_forms/31_roller_hunting.png) | ![](evidence/guardian_forms/32_roller_frozen_by_sight.png) | ![](evidence/guardian_forms/33_roller_frozen_by_anchor.png) | ![](evidence/guardian_forms/34_roller_catch.png) |
 
-Films: [seen](evidence/guardian_forms/film_roller_seen.mp4) ·
+Films, with sound: [seen](evidence/guardian_forms/film_roller_seen.mp4) ·
 [catch](evidence/guardian_forms/film_roller_catch.mp4) ·
 [encounter](evidence/guardian_forms/35_roller_encounter.png)
 
@@ -114,12 +171,16 @@ Keys: `1`-`3` the Tumbler at 3, 4 or 5 tiers; `4` the Plumb; `5` the Roller; `L`
 line-up; `K` the ranks. States: `H` hunting, `S` frozen by sight, `A` frozen by an
 anchor, `C` catch. `Tab` changes the camera, `P` pauses, `R` resets.
 
-The capture writes the stills and a frame folder per film. Films are compiled to MP4
-(frames stay out of git):
+The capture writes the stills and a frame folder per film (frames stay out of git).
+`tools/mux_guardian_films.py` compiles each film to MP4 with its soundtrack, rebuilt
+from the same timeline the capture used:
 
 ```bash
-ffmpeg -framerate 30 -i film_tumbler_4_seen/f_%04d.png -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart film_tumbler_4_seen.mp4
+python3 tools/mux_guardian_films.py <capture dir> --out /tmp/films   # then copy in
 ```
+
+Render to a local directory and copy the MP4s into the repository. On the ntfs3 mount
+the repository lives on, ffmpeg writing one of them in place stalled indefinitely.
 
 ## What is tested
 
@@ -136,10 +197,14 @@ properties the choice rests on:
 
 ## Still thin
 
-- **No sound.** The Tumbler's latch, the rings' settle and the Roller's fall are all
-  written to be heard, and none of them is yet.
-- **Not in the facility.** The stage is a lab deck, with the facility's light, doorway
-  and floor-cell size. The chosen form still has to be promoted into the game's
-  Guardian and seen in play.
+- **The sounds have not been heard by a person.** They were checked by their shapes
+  (waveforms and a spectrogram) and by what the tests can hold: headroom, seamless
+  loops, and that each state change has its cue. Levels and the hum's spatial falloff
+  want a listening pass on real speakers.
+- **You can walk through it.** The Guardian has no collider; the simulation never gave
+  it one, and adding one would change the simulation. The Tumbler's base is 3 m
+  across, so a body standing against a frozen one clips into it.
+- **Hunting has only been seen in the lab.** In first person a Guardian that is in view
+  is frozen by definition, so the in-game stills can only show it frozen.
 - **The Roller's roll is not tied to a speed.** It walks a fixed out-and-back. In a
   match its roll would have to keep pace with the simulation's 2.5 m/s glide.

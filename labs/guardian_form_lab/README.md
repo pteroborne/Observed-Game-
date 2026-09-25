@@ -12,5 +12,7 @@ cargo dev-run -p guardian_form_lab
 $env:OBSERVED2_CAPTURE = "docs/evidence/guardian_forms"; cargo dev-run -p guardian_form_lab
 ```
 
-`form.rs` and `roll.rs` are the pure core (parts, poses, the octahedron's roll) and
-carry the tests; `view.rs` draws them; `capture.rs` is the evidence plan.
+The Tumbler was chosen as the major Guardian and is in the game. The forms live in the
+shared `observed_guardian` crate, which carries their tests. Here `view.rs` draws them,
+`sound.rs` says what each sounds like and when, and `capture.rs` is the evidence plan.
+Films are compiled with their sound by `tools/mux_guardian_films.py`.
