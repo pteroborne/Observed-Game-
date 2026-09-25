@@ -5,7 +5,7 @@ storey cliffs, floating structures, walkways with nothing on either side. This n
 records how that was brought into the facility the game actually plays. It covers the
 rules, the decisions behind them, what was measured, and what is still thin.
 
-![The summit: an open court at the top of the production facility](evidence/open_air_facility/vista_04_summit.png)
+![The summit: the open-air facility's skyline under the stars](evidence/open_air_facility/vista_05_summit.png)
 
 ## Decisions
 
@@ -16,6 +16,7 @@ Made on 2026-09-24, before implementation:
 | How does the facility open onto the air? | **Open edges by rule**, derived from the solved shape. No new tiles. |
 | What happens at a drop? | **The height rule**: railed below level 5, bare from level 5 up. |
 | The boundary wall around the lattice? | **Removed.** The rim is open air like everywhere else. |
+| May tiles seen across open air change while someone is looking? | **Yes, for now.** Observation still follows door connections, so a distant tile seen across air is not frozen: a relayout can rewrite it in plain sight, and its far skin swaps in place. That may look good; revisit once it has been seen in play. |
 
 ## The rules
 
@@ -61,6 +62,12 @@ seconds on a roof, the body goes back to the last cell it stood in.
 - **The sky**: a dome that is darkest straight down, and a two-layer cloud sea below
   the lattice. It uses the same `observed_style::open_air` colours and cloud texture
   as the Architect cutaway and the vista lab.
+- **The moon and the stars**: a large moon, nearly twenty degrees across because the
+  megastructure stands so high, hanging low in the west-south-west with a soft halo,
+  and eighteen hundred stars thinning toward the horizon haze. The moon's direction is
+  one constant (`open_air::toward_moon`), shared by the disc in the sky, the shading
+  baked into the far skin, and the vista lab's moonlight. It is HDR and blooms, but it
+  stays under the signal floor, so no gameplay cue competes with it.
 - **Outdoors atmosphere**: when the player's cell has open edges, the palette becomes
   `open_air(palette)`. Fog reaches about 300 m and fades into the horizon instead of
   black, and the fill light is the moon's cool neutral.
@@ -110,7 +117,8 @@ deepest drop beyond them, and takes one still at each.
 | | |
 | --- | --- |
 | ![Railed loggia over the cloud sea](evidence/open_air_facility/vista_01_railed_loggia.png) | ![A bare edge above the unsafe height](evidence/open_air_facility/vista_02_bare_edge.png) |
-| ![A walkway, railed, at level 1](evidence/open_air_facility/vista_03_walkway.png) | ![The summit court](evidence/open_air_facility/vista_04_summit.png) |
+| ![A railed walkway across the void](evidence/open_air_facility/vista_03_walkway.png) | ![The moon over the cloud sea](evidence/open_air_facility/vista_04_moon.png) |
+| ![The summit: a skyline under the stars](evidence/open_air_facility/vista_05_summit.png) | |
 
 ## More void: the composition
 
@@ -172,12 +180,14 @@ runs the seed that looped, on the arc lattice, in the gate.
 
 ## Still thin
 
-- **The far skin is only a stand-in.** It reads well at 2,000, but without a real moon
-  the distant building is lit by its baked shading and window light, not by anything
-  in the scene.
-- **Observer sight does not yet cross open edges.** Observation in the match still
-  follows ports. Seeing across air (which `architect_lab` already models) is the next
-  gameplay step, and it touches the observation contract, so it is a design decision.
+- **The far skin is lit by its bake.** The moon now hangs in the sky where the bake says
+  it is, but nothing in the scene casts its light: the facility still carries no
+  directional light, because one without shadows would light every interior through
+  its walls, and one with them has a cost at this scale that has not been measured.
+- **Observer sight does not cross open edges, by decision for now.** Observation in the
+  match still follows ports, so tiles seen across air can change in plain sight (see
+  *Decisions*). Freezing them, as `architect_lab` models, remains available if watching
+  the distance rewrite itself turns out to read as a bug rather than a spectacle.
 - **The retired boundary role is still in the code.** `HexStructureRole::Boundary` and
   the per-piece spawn path that drew the shell are now dead. Removing them touches
   `hex_wfc_lab` and the spectator, and is left for a clean-up.

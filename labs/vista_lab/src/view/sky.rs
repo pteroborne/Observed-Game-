@@ -1,5 +1,5 @@
-//! The sky from inside it: a dome that is darkest straight down, and a cloud sea in
-//! two layers far below every deck.
+//! The sky from inside it: a dome that is darkest straight down, a large moon and a
+//! field of stars above, and a cloud sea in two layers far below every deck.
 //!
 //! The cutaway had to fake depth with atmosphere because an orthographic camera has
 //! no parallax. A first-person eye has parallax for free, so the two cloud layers sit
@@ -12,7 +12,10 @@ use bevy::math::Affine2;
 use bevy::mesh::VertexAttributeValues;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use observed_style::open_air::{CLOUD_TEXTURE_SIZE, SkyRole, cloud_rgba, sky, sky_along};
+use observed_style::open_air::{
+    CLOUD_TEXTURE_SIZE, MOON_ANGULAR_DIAMETER, MOON_TEXTURE_SIZE, SkyRole, cloud_rgba, halo_rgba,
+    moon_disc, moon_halo, moon_rgba, sky, sky_along, stars, toward_moon,
+};
 
 use super::{Lab, VistaCamera, VistaEntity};
 
@@ -56,21 +59,73 @@ pub(super) fn spawn(
             .collect();
         dome.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
     }
-    commands.spawn((
-        VistaEntity,
-        SkyDome,
-        Mesh3d(meshes.add(dome)),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::WHITE,
+    let dome = commands
+        .spawn((
+            VistaEntity,
+            SkyDome,
+            Mesh3d(meshes.add(dome)),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::WHITE,
+                unlit: true,
+                fog_enabled: false,
+                cull_mode: None,
+                ..default()
+            })),
+            Transform::from_scale(Vec3::splat(DOME_RADIUS)),
+            NotShadowCaster,
+            NotShadowReceiver,
+            Name::new("Sky dome"),
+        ))
+        .id();
+    // The same moon and stars the game draws, in the dome's unit-sphere frame.
+    let toward = Vec3::from_array(toward_moon());
+    let facing = |at: Vec3| Transform::from_translation(at).looking_at(Vec3::ZERO, Vec3::Y);
+    let (moon_at, halo_at) = (0.72, 0.7);
+    let body =
+        |texture: Option<Handle<Image>>, color: LinearRgba, alpha: AlphaMode| StandardMaterial {
+            base_color: Color::LinearRgba(color),
+            base_color_texture: texture,
+            alpha_mode: alpha,
             unlit: true,
             fog_enabled: false,
             cull_mode: None,
             ..default()
-        })),
-        Transform::from_scale(Vec3::splat(DOME_RADIUS)),
-        NotShadowCaster,
-        NotShadowReceiver,
-        Name::new("Sky dome"),
+        };
+    let halo_width = halo_at * MOON_ANGULAR_DIAMETER * 2.4;
+    let halo = materials.add(body(
+        Some(images.add(square_image(halo_rgba(), MOON_TEXTURE_SIZE))),
+        moon_halo(),
+        AlphaMode::Add,
+    ));
+    let disc = materials.add(body(
+        Some(images.add(square_image(moon_rgba(), MOON_TEXTURE_SIZE))),
+        moon_disc(),
+        AlphaMode::Blend,
+    ));
+    let starlight = materials.add(body(None, LinearRgba::WHITE, AlphaMode::Add));
+    commands.spawn((
+        Mesh3d(meshes.add(Rectangle::new(halo_width, halo_width))),
+        MeshMaterial3d(halo),
+        facing(toward * halo_at),
+        ChildOf(dome),
+        Name::new("Moon halo"),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Rectangle::new(
+            moon_at * MOON_ANGULAR_DIAMETER,
+            moon_at * MOON_ANGULAR_DIAMETER,
+        ))),
+        MeshMaterial3d(disc),
+        facing(toward * moon_at),
+        ChildOf(dome),
+        Name::new("Moon"),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(star_field())),
+        MeshMaterial3d(starlight),
+        Transform::IDENTITY,
+        ChildOf(dome),
+        Name::new("Stars"),
     ));
 
     let texture = images.add(cloud_image());
@@ -100,6 +155,53 @@ pub(super) fn spawn(
             Name::new("Cloud sea"),
         ));
     }
+}
+
+/// Every star as a tiny quad facing the eye, brightness in its vertex colour.
+fn star_field() -> Mesh {
+    let field = stars(1_800);
+    let mut positions = Vec::with_capacity(field.len() * 4);
+    let mut colors = Vec::with_capacity(field.len() * 4);
+    let mut indices = Vec::with_capacity(field.len() * 6);
+    for star in field {
+        let direction = Vec3::from_array(star.direction);
+        let right = Vec3::Y.cross(direction).normalize_or(Vec3::X);
+        let up = direction.cross(right);
+        let at = direction * 0.97;
+        let half = 0.97 * star.size * 0.5;
+        let base = u32::try_from(positions.len()).expect("star count fits");
+        for (x, y) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            positions.push((at + (right * x + up * y) * half).to_array());
+            colors.push([
+                star.brightness,
+                star.brightness,
+                star.brightness * 1.08,
+                1.0,
+            ]);
+        }
+        indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+    Mesh::new(
+        bevy::mesh::PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors)
+    .with_inserted_indices(bevy::mesh::Indices::U32(indices))
+}
+
+fn square_image(data: Vec<u8>, size: u32) -> Image {
+    Image::new(
+        Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    )
 }
 
 fn cloud_image() -> Image {

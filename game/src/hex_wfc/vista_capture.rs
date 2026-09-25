@@ -152,6 +152,27 @@ pub(super) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
     {
         poses.push(pose("walkway", at, axis, 9.0, -0.18));
     }
+    // Toward the moon: the high open face that looks most straight at it, eyes raised.
+    let moon = observed_style::open_air::toward_moon();
+    let moon_plan = Vec2::new(moon[0], moon[2]).normalize_or_zero();
+    if let Some((at, face)) = open
+        .iter()
+        .filter(|(at, edges)| at.level + 2 >= top && edges.span.is_none())
+        .flat_map(|&(at, edges)| {
+            HexFace::LATERAL
+                .into_iter()
+                .filter(move |&face| edges.opens(face))
+                .map(move |face| (at, face))
+        })
+        .max_by(|a, b| {
+            face_dir(a.1)
+                .dot(moon_plan)
+                .total_cmp(&face_dir(b.1).dot(moon_plan))
+                .then(b.0.cmp(&a.0))
+        })
+    {
+        poses.push(pose("moon", at, face, 1.5, 0.28));
+    }
     // From the top, across the building: the open edge nearest the middle.
     let far = hex_origin(HexCoord {
         q: world.config.cols - 1,

@@ -200,6 +200,169 @@ pub fn cloud_rgba() -> Vec<u8> {
     data
 }
 
+/// The direction toward the moon, unit length, in world axes (`x` east, `y` up, `z`
+/// south): low in the west-south-west, about thirty degrees up.
+///
+/// One direction for everything the moon touches: the disc in the sky, the shading
+/// baked into the far-field skin, and a lab's moonlight. If they disagreed, the light
+/// on the buildings would come from somewhere the moon is not.
+#[must_use]
+pub fn toward_moon() -> [f32; 3] {
+    let (x, y, z) = (-1.0_f32, 0.62_f32, 0.45_f32);
+    let length = (x * x + y * y + z * z).sqrt();
+    [x / length, y / length, z / length]
+}
+
+/// The moon's apparent diameter, radians. Nearly twenty degrees, forty times the real
+/// one: the megastructure stands high enough that the moon fills the western sky.
+pub const MOON_ANGULAR_DIAMETER: f32 = 0.34;
+
+/// The moon's surface: a cool, bright grey. An HDR colour, above one so it blooms,
+/// and kept below the signal floor so that no gameplay cue ever has to compete with
+/// it (`the_moon_never_outshines_a_signal`).
+#[must_use]
+pub fn moon_disc() -> LinearRgba {
+    LinearRgba::rgb(1.35, 1.40, 1.55)
+}
+
+/// The glow around the moon, at its brightest just outside the limb.
+#[must_use]
+pub fn moon_halo() -> LinearRgba {
+    LinearRgba::rgb(0.07, 0.085, 0.12)
+}
+
+/// Side of the square moon texture, texels.
+pub const MOON_TEXTURE_SIZE: u32 = 256;
+
+/// The moon's face as RGBA8, [`MOON_TEXTURE_SIZE`] square: a disc darkened toward
+/// its limb, with dark maria and brighter highlands from low-frequency noise, and
+/// transparent outside the disc. Deterministic.
+#[must_use]
+pub fn moon_rgba() -> Vec<u8> {
+    const SIZE: u32 = MOON_TEXTURE_SIZE;
+    let hash = |x: u32, y: u32| {
+        let mut h = x.wrapping_mul(0x9E37_79B1) ^ y.wrapping_mul(0x85EB_CA77) ^ 0x27D4_EB2F;
+        h = (h ^ (h >> 15)).wrapping_mul(0x2C1B_3C6D);
+        #[allow(clippy::cast_precision_loss)]
+        let value = (h ^ (h >> 12)) as f32 / u32::MAX as f32;
+        value
+    };
+    let noise = |x: f32, y: f32| {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let (x0, y0) = (x.floor() as u32, y.floor() as u32);
+        let (fx, fy) = (x.fract(), y.fract());
+        let (sx, sy) = (fx * fx * (3.0 - 2.0 * fx), fy * fy * (3.0 - 2.0 * fy));
+        let a = hash(x0, y0) + (hash(x0 + 1, y0) - hash(x0, y0)) * sx;
+        let b = hash(x0, y0 + 1) + (hash(x0 + 1, y0 + 1) - hash(x0, y0 + 1)) * sx;
+        a + (b - a) * sy
+    };
+    let mut data = Vec::with_capacity((SIZE * SIZE * 4) as usize);
+    #[allow(clippy::cast_precision_loss)]
+    let half = SIZE as f32 * 0.5;
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            #[allow(clippy::cast_precision_loss)]
+            let (u, v) = (
+                (x as f32 + 0.5 - half) / half,
+                (y as f32 + 0.5 - half) / half,
+            );
+            let r = (u * u + v * v).sqrt();
+            // The limb: a thin antialiased edge, and darkening toward it.
+            let alpha = 1.0 - smoothstep(0.97, 1.0, r);
+            let limb = (1.0 - r * r).max(0.0).sqrt().powf(0.35);
+            // Five octaves: broad maria, then highland texture, then fine grain.
+            let (px, py) = ((u + 1.0) * 2.2, (v + 1.0) * 2.2);
+            let mut maria = 0.0;
+            let (mut amplitude, mut frequency) = (0.5, 1.0);
+            for _ in 0..5 {
+                maria += noise(px * frequency + 7.1, py * frequency + 3.7) * amplitude;
+                amplitude *= 0.5;
+                frequency *= 2.1;
+            }
+            let tone = limb * (0.66 + 0.34 * smoothstep(0.28, 0.72, maria));
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let (grey, a) = ((tone * 255.0) as u8, (alpha * 255.0) as u8);
+            data.extend_from_slice(&[grey, grey, grey, a]);
+        }
+    }
+    data
+}
+
+/// A soft radial glow as RGBA8, [`MOON_TEXTURE_SIZE`] square, for a halo drawn larger
+/// than the disc behind it.
+#[must_use]
+pub fn halo_rgba() -> Vec<u8> {
+    const SIZE: u32 = MOON_TEXTURE_SIZE;
+    #[allow(clippy::cast_precision_loss)]
+    let half = SIZE as f32 * 0.5;
+    let mut data = Vec::with_capacity((SIZE * SIZE * 4) as usize);
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            #[allow(clippy::cast_precision_loss)]
+            let (u, v) = (
+                (x as f32 + 0.5 - half) / half,
+                (y as f32 + 0.5 - half) / half,
+            );
+            let r = (u * u + v * v).sqrt();
+            let glow = (1.0 - smoothstep(0.0, 1.0, r)).powi(3);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let a = (glow * 255.0) as u8;
+            data.extend_from_slice(&[255, 255, 255, a]);
+        }
+    }
+    data
+}
+
+/// One star: where it is, how big it looks (radians) and how bright (linear).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Star {
+    pub direction: [f32; 3],
+    pub size: f32,
+    pub brightness: f32,
+}
+
+/// A deterministic star field: `count` stars above the horizon haze, denser toward
+/// the zenith, none behind the moon. The thin air of a high megastructure shows
+/// stars low down too, so the field fades out near the horizon rather than above it.
+#[must_use]
+pub fn stars(count: usize) -> Vec<Star> {
+    let moon = toward_moon();
+    let mut state: u64 = 0x005E_ED0F_5747;
+    let mut next = || {
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        #[allow(clippy::cast_precision_loss)]
+        let unit = (z ^ (z >> 31)) as f32 / u64::MAX as f32;
+        unit
+    };
+    let mut field = Vec::with_capacity(count);
+    while field.len() < count {
+        // Uniform over the upper hemisphere, then thinned toward the horizon.
+        let up = next();
+        let angle = next() * std::f32::consts::TAU;
+        let across = (1.0 - up * up).max(0.0).sqrt();
+        let direction = [across * angle.cos(), up, across * angle.sin()];
+        let keep = smoothstep(0.03, 0.3, up);
+        let behind_moon = direction[0] * moon[0] + direction[1] * moon[1] + direction[2] * moon[2]
+            > (MOON_ANGULAR_DIAMETER * 0.9).cos();
+        let roll = next();
+        let magnitude = next();
+        if behind_moon || roll > keep {
+            continue;
+        }
+        // Many faint, few bright.
+        let brightness = 0.25 + 1.4 * magnitude.powi(6);
+        field.push(Star {
+            direction,
+            size: 0.0022 + 0.0024 * magnitude.powi(4),
+            brightness,
+        });
+    }
+    field
+}
+
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -212,6 +375,49 @@ mod tests {
         ATMOSPHERE_MAX_LUMINANCE, MarkerRole, SIGNAL_MIN_LUMINANCE, SurfaceRole, luminance, marker,
         surface,
     };
+
+    #[test]
+    fn the_moon_never_outshines_a_signal() {
+        let brightest = luminance(moon_disc()).max(luminance(moon_halo()));
+        assert!(brightest < SIGNAL_MIN_LUMINANCE, "{brightest}");
+        // But it is the brightest thing in the sky, and bright enough to bloom.
+        assert!(luminance(moon_disc()) > 1.0);
+        for role in SkyRole::ALL {
+            assert!(luminance(moon_disc()) > luminance(sky(role).to_linear()) * 10.0);
+        }
+    }
+
+    #[test]
+    fn the_moon_is_where_the_light_comes_from_and_up_in_the_sky() {
+        let [x, y, z] = toward_moon();
+        assert!(((x * x + y * y + z * z).sqrt() - 1.0).abs() < 1e-5);
+        assert!(y > 0.3, "the moon is above the horizon haze");
+        let face = moon_rgba();
+        let size = MOON_TEXTURE_SIZE as usize;
+        let alpha = |x: usize, y: usize| face[(y * size + x) * 4 + 3];
+        assert_eq!(alpha(0, 0), 0, "transparent outside the disc");
+        assert_eq!(alpha(size / 2, size / 2), 255, "opaque at its centre");
+    }
+
+    #[test]
+    fn stars_fill_the_sky_but_never_the_moon_or_the_drop() {
+        let field = stars(1_500);
+        assert_eq!(field.len(), 1_500);
+        assert_eq!(field, stars(1_500), "deterministic");
+        let moon = toward_moon();
+        for star in &field {
+            let [x, y, z] = star.direction;
+            assert!(y > 0.0, "a star below the horizon, in the drop");
+            let toward = x * moon[0] + y * moon[1] + z * moon[2];
+            assert!(
+                toward < (MOON_ANGULAR_DIAMETER * 0.5).cos(),
+                "a star on the moon"
+            );
+            assert!(star.brightness < SIGNAL_MIN_LUMINANCE);
+        }
+        let high = field.iter().filter(|star| star.direction[1] > 0.5).count();
+        assert!(high * 2 > field.len(), "denser toward the zenith: {high}");
+    }
 
     #[test]
     fn clouds_tile_and_are_neither_empty_nor_overcast() {

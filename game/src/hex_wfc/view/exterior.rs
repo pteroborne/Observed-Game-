@@ -46,11 +46,11 @@ pub(super) struct SkinData {
     indices: Vec<u32>,
 }
 
-/// Where the moon is, for the shading baked into the skin. Low and from the west, as
-/// in `labs/vista_lab`, so faces rake into light and shadow rather than all reading
-/// as one flat grey; baked because the facility carries no directional light.
+/// The moon's light, baked into the skin: from where the moon hangs in the sky
+/// (`open_air::toward_moon`), so faces rake into light and shadow rather than all
+/// reading as one flat grey; baked because the facility carries no directional light.
 fn moon_shade(normal: Vec3) -> f32 {
-    let toward_moon = Vec3::new(-1.0, 0.62, 0.45).normalize();
+    let toward_moon = Vec3::from_array(observed_style::open_air::toward_moon());
     0.38 + 0.62 * normal.dot(toward_moon).max(0.0)
 }
 

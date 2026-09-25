@@ -21,7 +21,9 @@ use bevy::window::{CursorGrabMode, CursorOptions, PresentMode, PrimaryWindow, Wi
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{HexCoord, HexFace};
 use observed_hex::{FLOOR_SLAB_TOP, TILE_LEVEL_HEIGHT};
-use observed_style::open_air::{SkyRole, SurveyRole, moon, open_air, sky as sky_color, survey};
+use observed_style::open_air::{
+    SkyRole, SurveyRole, moon, open_air, sky as sky_color, survey, toward_moon,
+};
 use observed_style::{
     ArchitectureSurfaceRole, MarkerRole, SurfaceRole, Treatment, architecture,
     architecture_practical_fixture, architecture_surface, architecture_tactical, hex_shell_look,
@@ -300,7 +302,7 @@ fn setup(
         Transform::from_translation(eye).with_rotation(rotation),
         Name::new("Vista eye"),
     ));
-    // The moon: low and from the west, so sheer faces rake into light and shadow.
+    // The moon: low in the west-south-west, so sheer faces rake into light and shadow.
     commands.spawn((
         DirectionalLight {
             color: moon(),
@@ -316,7 +318,9 @@ fn setup(
             overlap_proportion: 0.2,
         }
         .build(),
-        Transform::from_xyz(-1.0, 0.62, 0.45).looking_at(Vec3::ZERO, Vec3::Y),
+        // From where the moon hangs in the sky (`open_air::toward_moon`).
+        Transform::from_translation(Vec3::from_array(toward_moon()))
+            .looking_at(Vec3::ZERO, Vec3::Y),
         Name::new("Moon"),
     ));
     commands.insert_resource(GlobalAmbientLight {
