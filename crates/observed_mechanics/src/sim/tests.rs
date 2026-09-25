@@ -1227,6 +1227,62 @@ fn an_architect_may_not_rebuild_what_its_own_team_is_holding() {
 }
 
 #[test]
+fn symmetric_tiles_only_offer_distinct_rotations() {
+    assert_eq!(TileShape::Sealed.rotation_period(), 1);
+    assert_eq!(TileShape::Room.rotation_period(), 1);
+    assert_eq!(TileShape::Junction.rotation_period(), 2);
+    assert_eq!(TileShape::Corridor.rotation_period(), 3);
+    assert_eq!(TileShape::Hall.rotation_period(), 3);
+    assert_eq!(TileShape::DeadEnd.rotation_period(), 6);
+    assert_eq!(TileShape::Bend.rotation_period(), 6);
+
+    for shape in TileShape::ALL {
+        for face in observed_hex::faces::HexFace::LATERAL {
+            assert_eq!(
+                shape.port(0, face),
+                shape.port(shape.rotation_period(), face),
+                "{shape:?} repeats after its advertised period"
+            );
+        }
+    }
+}
+
+#[test]
+fn inspecting_a_play_is_read_only_and_names_no_effect() {
+    let spec = architect_spec();
+    let rules = Rules::from_spec(&spec);
+    let state = deal(&spec);
+    let locks = rules.vision.locks(&state);
+    let before = state.digest();
+    let cell = at(4, 4);
+    let doors = observed_hex::faces::HexFace::LATERAL
+        .into_iter()
+        .filter(|&face| state.board.passable(cell, face))
+        .count();
+    let shape = TileShape::ALL
+        .into_iter()
+        .find(|candidate| candidate.doorway_count() == doors)
+        .unwrap_or(TileShape::Room);
+    let mut no_effect = None;
+    for rotation in 0..shape.rotation_period() {
+        let play = TilePlay {
+            cell,
+            shape,
+            rotation,
+        };
+        let preview = crate::sim::architect::inspect(&state, &locks, play);
+        if preview.changes.is_empty() {
+            no_effect = Some(preview);
+            break;
+        }
+    }
+    let preview = no_effect.expect("one orientation matches the chosen cell");
+    assert_eq!(preview.refusal, Some(Refusal::NoEffect));
+    assert!(!preview.is_valid());
+    assert_eq!(state.digest(), before, "inspection mutated the match");
+}
+
+#[test]
 fn no_accepted_play_can_ever_strand_the_objective() {
     // Rather than hand-pick a cell that happens to be a bridge — which depends
     // on a board that rewires every turn — assert the invariant itself over

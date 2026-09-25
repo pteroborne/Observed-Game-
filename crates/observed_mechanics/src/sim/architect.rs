@@ -20,6 +20,23 @@ use crate::sim::rules::{LockSet, Mutation};
 use crate::sim::state::{ChangeSource, MatchState, PendingChange, TeamId};
 use crate::sim::tiles::{Refusal, TilePlay};
 
+/// Everything a UI needs to explain a prospective play without mutating the
+/// match. The turn resolver consumes this same result, so a green preview can
+/// never become a surprise refusal at commit time.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlacementPreview {
+    pub play: TilePlay,
+    pub changes: Vec<(Edge, PortClass)>,
+    pub refusal: Option<Refusal>,
+}
+
+impl PlacementPreview {
+    #[must_use]
+    pub const fn is_valid(&self) -> bool {
+        self.refusal.is_none()
+    }
+}
+
 /// Which team's architect is playing, how much churn runs beside it, and how
 /// many tiles it may lay per turn.
 #[derive(Clone, Copy, Debug)]
@@ -70,26 +87,49 @@ pub fn footprint(board: &Board, play: TilePlay) -> Vec<(Edge, PortClass)> {
 /// are holding — **including their own team's**. Their attention is the price
 /// of their safety, and it is paid to their own architect as much as to the
 /// enemy's.
-pub fn vet(state: &MatchState, locks: &LockSet, play: TilePlay) -> Result<(), Refusal> {
-    if !state.board.on_board(play.cell) {
-        return Err(Refusal::OffBoard);
-    }
-    if state.flags.iter().any(|flag| flag.at == play.cell)
+pub fn inspect(state: &MatchState, locks: &LockSet, play: TilePlay) -> PlacementPreview {
+    let refusal = if !state.board.on_board(play.cell) {
+        Some(Refusal::OffBoard)
+    } else if state.flags.iter().any(|flag| flag.at == play.cell)
         || state.prisons.contains(&play.cell)
         || state.spawns.contains(&play.cell)
     {
-        return Err(Refusal::Protected);
+        Some(Refusal::Protected)
+    } else if locks.is_held(play.cell) {
+        Some(Refusal::Held)
+    } else {
+        None
+    };
+
+    let changes = if state.board.on_board(play.cell) {
+        footprint(&state.board, play)
+    } else {
+        Vec::new()
+    };
+    if refusal.is_some() {
+        return PlacementPreview {
+            play,
+            changes,
+            refusal,
+        };
     }
-    if locks.is_held(play.cell) {
-        return Err(Refusal::Held);
+    if changes.is_empty() {
+        return PlacementPreview {
+            play,
+            changes,
+            refusal: Some(Refusal::NoEffect),
+        };
     }
 
     let size = state.board.size();
-    let changes = footprint(&state.board, play);
     for (edge, _) in &changes {
         let other = size.neighbor(edge.cell, edge.face);
         if locks.is_held(edge.cell) || other.is_some_and(|other| locks.is_held(other)) {
-            return Err(Refusal::Held);
+            return PlacementPreview {
+                play,
+                changes,
+                refusal: Some(Refusal::Held),
+            };
         }
     }
 
@@ -97,7 +137,7 @@ pub fn vet(state: &MatchState, locks: &LockSet, play: TilePlay) -> Result<(), Re
     // wastes the tester's time, and an architect who can wall the objective off
     // by accident is worse than one who cannot play at all.
     let mut trial = state.board.clone();
-    for (edge, port) in changes {
+    for &(edge, port) in &changes {
         trial.set_port(edge, port);
     }
     let anchors: Vec<HexCoord> = state
@@ -107,12 +147,31 @@ pub fn vet(state: &MatchState, locks: &LockSet, play: TilePlay) -> Result<(), Re
         .chain(state.pawns.iter().map(|pawn| pawn.at))
         .collect();
     let Some(&first) = anchors.first() else {
-        return Ok(());
+        return PlacementPreview {
+            play,
+            changes,
+            refusal: None,
+        };
     };
     if anchors.iter().any(|&cell| !trial.connected(first, cell)) {
-        return Err(Refusal::WouldDisconnect);
+        return PlacementPreview {
+            play,
+            changes,
+            refusal: Some(Refusal::WouldDisconnect),
+        };
     }
-    Ok(())
+    PlacementPreview {
+        play,
+        changes,
+        refusal: None,
+    }
+}
+
+pub fn vet(state: &MatchState, locks: &LockSet, play: TilePlay) -> Result<(), Refusal> {
+    match inspect(state, locks, play).refusal {
+        Some(refusal) => Err(refusal),
+        None => Ok(()),
+    }
 }
 
 impl Mutation for Architect {
@@ -145,11 +204,12 @@ impl Mutation for Architect {
                 state.refusals.push((play, Refusal::NotInHand));
                 continue;
             }
-            if let Err(refusal) = vet(state, locks, play) {
+            let preview = inspect(state, locks, play);
+            if let Some(refusal) = preview.refusal {
                 state.refusals.push((play, refusal));
                 continue;
             }
-            for (edge, to) in footprint(&state.board, play) {
+            for (edge, to) in preview.changes {
                 pending.push(PendingChange {
                     edge,
                     to,

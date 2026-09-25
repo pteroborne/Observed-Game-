@@ -1,0 +1,25 @@
+[package]
+name = "architect_hand_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+observed_hex = { path = "../../crates/observed_hex" }
+observed_mechanics = { path = "../../crates/observed_mechanics" }
+observed_style = { path = "../../crates/observed_style" }
+bevy = { version = "0.19", default-features = false, features = [
+    "2d",
+    "png",
+    "ui",
+    "bevy_ui_widgets",
+    "default_font",
+    "png",
+    "webgl2",
+] }
+usvg = { version = "0.45", default-features = false }
+resvg = { version = "0.45", default-features = false }
+tiny-skia = "0.11"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Navigator", "Clipboard"] }

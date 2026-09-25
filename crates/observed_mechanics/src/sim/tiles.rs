@@ -87,10 +87,32 @@ impl TileShape {
         count
     }
 
+    /// Number of visually distinct sixth-turn orientations.
+    ///
+    /// Symmetric cards should never make a player press Rotate only to see the
+    /// same card again. A room and a sealed cell have one orientation, the
+    /// alternating junction has two, opposite corridors and four-door halls
+    /// have three, and the asymmetric shapes use all six.
+    #[must_use]
+    pub const fn rotation_period(self) -> u8 {
+        match self {
+            TileShape::Sealed | TileShape::Room => 1,
+            TileShape::Junction => 2,
+            TileShape::Corridor | TileShape::Hall => 3,
+            TileShape::DeadEnd | TileShape::Bend => 6,
+        }
+    }
+
+    /// Collapse any sixth-turn rotation onto this shape's distinct range.
+    #[must_use]
+    pub const fn normalize_rotation(self, rotation: u8) -> u8 {
+        rotation % self.rotation_period()
+    }
+
     /// The port on `face` once the shape is turned by `rotation` sixths.
     #[must_use]
     pub fn port(self, rotation: u8, face: HexFace) -> PortClass {
-        let index = (face.index() + 6 - (rotation % 6) as usize) % 6;
+        let index = (face.index() + 6 - self.normalize_rotation(rotation) as usize) % 6;
         if self.doors()[index] {
             PortClass::Door
         } else {
@@ -122,6 +144,9 @@ pub enum Refusal {
     Protected,
     /// It would strand part of the facility.
     WouldDisconnect,
+    /// The card already matches every interior boundary at this cell. Spending
+    /// a scarce card for no visible result is never a useful successful play.
+    NoEffect,
     /// That shape is not in hand.
     NotInHand,
     /// The architect has already played its allowance this turn.
@@ -136,6 +161,7 @@ impl Refusal {
             Refusal::Held => "held - somebody is standing there or watching it",
             Refusal::Protected => "a flag or prison sits there",
             Refusal::WouldDisconnect => "it would strand part of the facility",
+            Refusal::NoEffect => "the tile already has that shape",
             Refusal::NotInHand => "that tile is not in hand",
             Refusal::NoPlaysLeft => "no plays left this turn",
         }

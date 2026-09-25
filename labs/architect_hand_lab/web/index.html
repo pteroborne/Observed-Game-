@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+    <meta name="theme-color" content="#07101a" />
+    <title>Observed — Architect Hand Lab</title>
+    <style>
+      :root { color-scheme: dark; background: #07101a; }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
+      body { background: radial-gradient(circle at 30% 20%, #122637, #07101a 58%); font-family: system-ui, sans-serif; }
+      #architect-hand-canvas { width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
+      #loading { position: fixed; inset: 0; display: grid; place-items: center; color: #dce8ef; letter-spacing: .14em; font-weight: 700; background: #07101a; z-index: 5; transition: opacity .25s; }
+      #loading.ready { opacity: 0; pointer-events: none; }
+      #loading.failed { color: #ffb057; padding: 2rem; text-align: center; letter-spacing: normal; }
+    </style>
+  </head>
+  <body>
+    <canvas id="architect-hand-canvas" tabindex="0" aria-label="Architect tile-card placement lab"></canvas>
+    <div id="loading">DEALING THE ARCHITECT'S HAND…</div>
+    <script type="module">
+      const loading = document.querySelector('#loading');
+      try {
+        const build = "__ARCHITECT_HAND_BUILD__";
+        const { default: init } = await import(`./architect_hand_lab.js?v=${build}`);
+        await init({ module_or_path: new URL(`./architect_hand_lab_bg.${build}.wasm`, import.meta.url) });
+        loading.classList.add('ready');
+        document.querySelector('#architect-hand-canvas').focus();
+      } catch (error) {
+        console.error(error);
+        loading.textContent = `Could not start the Architect Hand Lab: ${error}`;
+        loading.classList.add('failed');
+      }
+    </script>
+  </body>
+</html>
