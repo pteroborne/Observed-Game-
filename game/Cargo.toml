@@ -44,6 +44,8 @@ observed_core = { path = "../crates/observed_core" }
 observed_content = { path = "../crates/observed_content" }
 observed_diagnostics = { path = "../crates/observed_diagnostics" }
 observed_style = { path = "../crates/observed_style" }
+# The Guardians' forms, shared with guardian_form_lab.
+observed_guardian = { path = "../crates/observed_guardian" }
 # Shared focusable menu chrome, extracted from this crate in Arc R.
 observed_ui = { path = "../crates/observed_ui" }
 observed_assets = { path = "../crates/observed_assets" }

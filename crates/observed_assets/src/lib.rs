@@ -326,6 +326,42 @@ pub const GUARDIAN_DREAD: AssetSlot = AssetSlot {
     path: "sounds/guardian_dread.ogg",
     hint: "subtle CC0 guardian proximity dread cue",
 };
+/// The major Guardian (the Tumbler) hunting: a bronze hum under a turning ratchet,
+/// looped. Synthesised by `tools/generate_guardian_audio.py`.
+pub const GUARDIAN_HUM: AssetSlot = AssetSlot {
+    name: "guardian_hum",
+    kind: AssetKind::Sound,
+    path: "sounds/guardian/tumbler_hum.ogg",
+    hint: "looping mechanical hum of a hunting major Guardian",
+};
+/// Seen: the ratchet runs out and the latch drops home. Silence after it means frozen.
+pub const GUARDIAN_LATCH: AssetSlot = AssetSlot {
+    name: "guardian_latch",
+    kind: AssetKind::Sound,
+    path: "sounds/guardian/tumbler_latch.ogg",
+    hint: "a major Guardian locking still when seen",
+};
+/// Let go: the latch lifts and the ratchet winds back up into the hum.
+pub const GUARDIAN_RELEASE: AssetSlot = AssetSlot {
+    name: "guardian_release",
+    kind: AssetKind::Sound,
+    path: "sounds/guardian/tumbler_release.ogg",
+    hint: "a major Guardian starting to move again",
+};
+/// An anchor lantern clamps it: the lantern's dark glass voice, not the Guardian's bronze.
+pub const GUARDIAN_CLAMP: AssetSlot = AssetSlot {
+    name: "guardian_clamp",
+    kind: AssetKind::Sound,
+    path: "sounds/guardian/tumbler_clamp.ogg",
+    hint: "an anchor lantern clamping a major Guardian",
+};
+/// A catch: the tiers telescope up and stamp.
+pub const GUARDIAN_CATCH: AssetSlot = AssetSlot {
+    name: "guardian_catch",
+    kind: AssetKind::Sound,
+    path: "sounds/guardian/tumbler_catch.ogg",
+    hint: "a major Guardian catching an unwatched Observer",
+};
 pub const RUNNER_STAND: AssetSlot = AssetSlot {
     name: "runner_stand",
     kind: AssetKind::Texture,
@@ -509,6 +545,11 @@ pub const SLOTS: &[AssetSlot] = &[
     KEYSTONE,
     EXIT_UNLOCK,
     GUARDIAN_DREAD,
+    GUARDIAN_HUM,
+    GUARDIAN_LATCH,
+    GUARDIAN_RELEASE,
+    GUARDIAN_CLAMP,
+    GUARDIAN_CATCH,
     RUNNER_STAND,
     RUNNER_WALK1,
     RUNNER_WALK2,

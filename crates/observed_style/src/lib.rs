@@ -20,6 +20,7 @@ pub mod kinetic;
 
 pub mod architect;
 pub mod equipment;
+pub mod guardian;
 pub mod open_air;
 
 use bevy::color::{Color, LinearRgba};

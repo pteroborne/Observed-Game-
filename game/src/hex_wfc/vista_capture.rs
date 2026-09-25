@@ -48,6 +48,10 @@ pub(super) enum Stage {
     LoneAndRival,
     /// And a lantern cache standing in the middle of the cell, with a linked pair.
     SetDown,
+    /// The major Guardian stood `metres` ahead, where the runner is looking at it.
+    Guardian {
+        metres: u8,
+    },
 }
 
 fn face_dir(face: HexFace) -> Vec2 {
@@ -118,12 +122,50 @@ pub(super) fn equipment_poses(world: &HexWfcWorld) -> Vec<VistaPose> {
     out
 }
 
+/// `OBSERVED2_CAPTURE_HEX_WFC_GUARDIAN`: the major Guardian in the facility, frozen by
+/// the runner looking at it, in the moonlit loggia and in the windowed room.
+#[must_use]
+pub(super) fn guardian_poses(world: &HexWfcWorld) -> Vec<VistaPose> {
+    let vistas = poses(world);
+    let find = |name: &str| vistas.iter().find(|pose| pose.name == name).cloned();
+    let mut out = Vec::new();
+    if let Some(loggia) = find("railed_loggia") {
+        let dir = Vec2::new(loggia.yaw.sin(), -loggia.yaw.cos());
+        let o = Vec3::from_array(hex_origin(loggia.cell));
+        out.push(VistaPose {
+            name: "guardian_loggia",
+            feet: o + Vec3::new(dir.x * 5.9, FLOOR_SLAB_TOP, dir.y * 5.9),
+            yaw: loggia.yaw + std::f32::consts::PI,
+            pitch: 0.12,
+            stage: Stage::Guardian { metres: 7 },
+            ..loggia
+        });
+    }
+    if let Some(room) = find("moonlit_room") {
+        out.push(VistaPose {
+            name: "guardian_room",
+            pitch: 0.05,
+            stage: Stage::Guardian { metres: 5 },
+            ..room
+        });
+    }
+    out
+}
+
 /// Hold `pose`'s staging in the simulation: what the runner carries, and which plates
 /// and lantern caches lie where. Evidence only, like the pose itself.
 fn stage(runtime: &mut HexWfcRuntime, pose: &VistaPose) {
     use observed_core::{EquipmentId, TeamId};
     use observed_match::hex_wfc::HexDeployedPad;
     if pose.stage == Stage::Nothing {
+        return;
+    }
+    if let Stage::Guardian { metres } = pose.stage {
+        // Where the runner is looking: the simulation freezes it there itself.
+        let ahead = Vec3::new(pose.yaw.sin(), 0.0, -pose.yaw.cos());
+        let guardian = &mut runtime.match_state.guardian;
+        guardian.cell = pose.cell;
+        guardian.position = pose.feet + ahead * f32::from(metres) + Vec3::Y * 0.4;
         return;
     }
     let id = runtime.local_player;
@@ -149,7 +191,7 @@ fn stage(runtime: &mut HexWfcRuntime, pose: &VistaPose) {
     };
     let floor = pose.feet;
     match pose.stage {
-        Stage::Nothing | Stage::InHand => {}
+        Stage::Nothing | Stage::InHand | Stage::Guardian { .. } => {}
         Stage::LinkedPads => {
             pad(0, team, floor + ahead * 2.6 - right * 1.0);
             pad(1, team, floor + ahead * 3.4 + right * 1.2);

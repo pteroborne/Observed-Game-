@@ -1,0 +1,23 @@
+[package]
+name = "guardian_form_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.19", default-features = false, features = [
+    "3d",
+    "ui",
+    "default_font",
+    "png",
+] }
+# The forms themselves, shared with the game.
+observed_guardian = { path = "../../crates/observed_guardian" }
+# Colours come from the production style crate, never invented locally.
+observed_style = { path = "../../crates/observed_style" }
+# The existing minor Guardian, stood beside the candidates for scale and contrast.
+kinetic_lab = { path = "../kinetic_lab" }
+
+[[bin]]
+name = "guardian_form_lab"
+path = "src/main.rs"

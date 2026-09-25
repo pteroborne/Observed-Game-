@@ -289,8 +289,14 @@ fn reset_paths_clear_the_darkness_hold_without_leaks() {
 fn web_reset_restores_prison_and_jailed_observers() {
     let mut game = crate::web::RogueGame::new(2).unwrap();
     game.sim.jail(ObserverId(0));
-    assert_eq!(game.sim.observers[&ObserverId(0)].state, ObserverState::Jailed);
+    assert_eq!(
+        game.sim.observers[&ObserverId(0)].state,
+        ObserverState::Jailed
+    );
     game.reset(2).unwrap();
-    assert_eq!(game.sim.observers[&ObserverId(0)].state, ObserverState::Active);
+    assert_eq!(
+        game.sim.observers[&ObserverId(0)].state,
+        ObserverState::Active
+    );
     assert_eq!(game.sim.prison_core.len(), 11);
 }

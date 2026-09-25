@@ -8,6 +8,7 @@ mod cues;
 mod entities;
 mod equipment;
 mod feedback;
+mod guardian;
 mod hud;
 mod input;
 mod lantern;
@@ -71,6 +72,7 @@ impl Plugin for HexWfcPlugin {
                     entities::setup,
                     equipment::setup,
                     lantern::setup,
+                    guardian::setup,
                     pad::setup,
                     input::grab_cursor,
                 )
@@ -149,6 +151,7 @@ impl Plugin for HexWfcPlugin {
                         equipment::spin,
                     )
                         .chain(),
+                    (guardian::sync, guardian::play_catches).chain(),
                     sim::finish_runtime,
                 )
                     .chain()
@@ -165,6 +168,7 @@ impl Plugin for HexWfcPlugin {
                     audio::cleanup,
                     entities::cleanup,
                     lantern::cleanup,
+                    guardian::cleanup,
                     pad::cleanup,
                     equipment::cleanup,
                     hud::play::cleanup,
@@ -181,6 +185,10 @@ impl Plugin for HexWfcPlugin {
             .or_else(|_| {
                 std::env::var("OBSERVED2_CAPTURE_HEX_WFC_EQUIPMENT")
                     .map(|path| (path, HexWfcCaptureMode::Equipment))
+            })
+            .or_else(|_| {
+                std::env::var("OBSERVED2_CAPTURE_HEX_WFC_GUARDIAN")
+                    .map(|path| (path, HexWfcCaptureMode::Guardian))
             })
             .or_else(|_| {
                 std::env::var("OBSERVED2_CAPTURE_HEX_WFC_STYLE")
@@ -211,6 +219,7 @@ impl Plugin for HexWfcPlugin {
                     | HexWfcCaptureMode::Traversal
                     | HexWfcCaptureMode::Vista
                     | HexWfcCaptureMode::Equipment
+                    | HexWfcCaptureMode::Guardian
             ) {
                 std::fs::create_dir_all(&path)
                     .expect("hex-WFC directory-style capture directory must be creatable");
@@ -270,6 +279,9 @@ pub(super) enum HexWfcCaptureMode {
     /// The carried and placed equipment, staged in the vista's loggia and moonlit room
     /// (`vista_capture::equipment_poses`).
     Equipment,
+    /// The major Guardian, frozen by the runner looking at it, in the loggia and the
+    /// windowed room (`vista_capture::guardian_poses`).
+    Guardian,
 }
 
 /// How many screenshots the style montage takes before exiting; matched to a spectated
@@ -355,11 +367,11 @@ fn capture_progress(
                 exit.write(AppExit::Success);
             }
         }
-        HexWfcCaptureMode::Vista | HexWfcCaptureMode::Equipment => {
-            let which = if request.mode == HexWfcCaptureMode::Vista {
-                vista_capture::poses
-            } else {
-                vista_capture::equipment_poses
+        HexWfcCaptureMode::Vista | HexWfcCaptureMode::Equipment | HexWfcCaptureMode::Guardian => {
+            let which = match request.mode {
+                HexWfcCaptureMode::Vista => vista_capture::poses,
+                HexWfcCaptureMode::Equipment => vista_capture::equipment_poses,
+                _ => vista_capture::guardian_poses,
             };
             let HexWfcCapture {
                 frame, path, vista, ..

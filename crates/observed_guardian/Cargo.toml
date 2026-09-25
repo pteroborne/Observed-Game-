@@ -1,0 +1,10 @@
+[package]
+name = "observed_guardian"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# Math, transforms and meshes only: the forms are data and pure poses, drawn by
+# whoever uses them.
+bevy = { version = "0.19", default-features = false }

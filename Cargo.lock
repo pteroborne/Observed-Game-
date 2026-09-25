@@ -5281,6 +5281,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "guardian_form_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy 0.19.1",
+ "kinetic_lab",
+ "observed_guardian",
+ "observed_style",
+]
+
+[[package]]
 name = "guillotiere"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7070,6 +7080,7 @@ dependencies = [
  "observed_core",
  "observed_diagnostics",
  "observed_facility",
+ "observed_guardian",
  "observed_hex",
  "observed_match",
  "observed_net",
@@ -7084,6 +7095,13 @@ dependencies = [
  "rapier3d",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "observed_guardian"
+version = "0.1.0"
+dependencies = [
+ "bevy 0.19.1",
 ]
 
 [[package]]

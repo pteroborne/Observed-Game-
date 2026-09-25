@@ -209,9 +209,16 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
                 } else {
                     "Regroup at the exit"
                 };
-                let next = if game.objectives.enabled && team.objectives.keystones < game.objectives.keystones_required {
-                    format!("Find keystones | {} / {}", team.objectives.keystones, game.objectives.keystones_required)
-                } else { next.to_owned() };
+                let next = if game.objectives.enabled
+                    && team.objectives.keystones < game.objectives.keystones_required
+                {
+                    format!(
+                        "Find keystones | {} / {}",
+                        team.objectives.keystones, game.objectives.keystones_required
+                    )
+                } else {
+                    next.to_owned()
+                };
                 format!(
                     "FLOOR {}  |  TEAM {}\n{next}",
                     player.cell.level + 1,
