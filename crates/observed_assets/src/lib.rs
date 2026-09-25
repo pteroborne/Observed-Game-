@@ -348,7 +348,7 @@ pub const GUARDIAN_RELEASE: AssetSlot = AssetSlot {
     path: "sounds/guardian/tumbler_release.ogg",
     hint: "a major Guardian starting to move again",
 };
-/// An anchor lantern clamps it: the lantern's glassy voice, not the Guardian's bronze.
+/// An anchor lantern clamps it: the lantern's dark glass voice, not the Guardian's bronze.
 pub const GUARDIAN_CLAMP: AssetSlot = AssetSlot {
     name: "guardian_clamp",
     kind: AssetKind::Sound,

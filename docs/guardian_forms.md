@@ -44,24 +44,34 @@ itself, because the runner is looking at it.
 
 Every sound is original, synthesised by `tools/generate_guardian_audio.py` (standard
 library and ffmpeg, fixed seeds, 48 kHz mono, peak headroom). The loops are crossfaded
-into their own heads so they repeat without a seam. The Tumbler's sounds carry its
-states by ear:
+into their own heads so they repeat without a seam.
+
+The palette is dark and crunchy. Nothing is struck high: a tick is a low knock with a
+burst of band-limited grit, not a sine ping; a rush is dark noise, never white; bronze
+rings an octave or more down. Every cue is driven into a soft saturator for grit and
+then low-passed, so the harmonics the saturation adds stay warm. The first palette was
+judged too bright; the second pass took each cue's energy-weighted spectral centroid
+down, the Tumbler's from 750-1,460 Hz to 300-550 Hz, and the Plumb's hum from 8,760 Hz
+(it whooshed with white noise) to 267 Hz.
+
+The Tumbler's sounds carry its states by ear:
 
 | When | Sound |
 | --- | --- |
-| Hunting | a bronze drone on 55 Hz and its fifth, breathing, under a turning ratchet: looped |
-| Seen | the ratchet runs out faster and faster, and the latch drops home. The hum stops: silence means frozen |
-| Anchored | a falling hiss, a magnetic thunk, and a glassy dyad: the lantern's voice, not the Guardian's bronze |
-| Let go | the latch lifts, and the ratchet winds back up into the hum |
-| A catch | the tiers telescope up with a rising ratchet, then a sub boom and a tritone bronze ring |
+| Hunting | a bronze drone on 55 Hz, its fifth and octave, breathing, under grinding gear teeth and a knocking ratchet: looped |
+| Seen | the ratchet knocks faster and faster, and the latch drops home with a crunch and a low bronze ring. The hum stops: silence means frozen |
+| Anchored | a falling rush, a magnetic thunk, and a dark glass dyad (370 and 554 Hz): the lantern's voice, not the Guardian's bronze |
+| Let go | the latch lifts, and the ratchet knocks its way back up into the hum |
+| A catch | the tiers telescope up over a crunching ratchet, then a sub boom, a burst of grit and a low tritone ring (110 and 155 Hz) |
 
 In the game the hum is spatial and follows the Guardian, fading out within a fraction
 of a second of it being seen. The one-shots play from where it stands. The catch
 replaces the old dread swell as the catch event's cue, so it plays once, from the catch.
 
-The Plumb has a pale drone with its three orbits whooshing past, its rings settling
-when seen, and faces creaking open in its catch. The Roller is heard landing on each
-face (a hollow thud and a rattle of struts); seen, a pure tone holds as it balances.
+The Plumb has a low pale drone with its three orbits rushing past, its rings settling
+when seen, and faces grinding open in its catch. The Roller is heard landing on each
+face (a hollow thud and its struts crunching); seen, a low pure tone holds as it
+balances.
 The lab plays all of them; the films below carry them.
 
 

@@ -5,11 +5,16 @@ No recordings or borrowed assets. Fixed per-cue seeds, 48 kHz mono, peak headroo
 short fade edges on one-shots. Loops have no fades: their tails are crossfaded into
 their heads, so they repeat without a seam.
 
-The Tumbler's sounds carry its states by ear, as the design asks of every critical
-state: hunting is a bronze hum under a turning ratchet; being seen cuts it with a
-latch, so silence means frozen; being let go unwinds back into the hum; an anchor
-clamps on in the lantern's glassy voice, not the Guardian's bronze; a catch rises and
-stamps. The Plumb and Roller have their own palettes for the form lab.
+Dark and crunchy, not bright. Nothing is struck high: a tick is a low knock with a
+burst of band-limited grit, not a sine ping; hiss is dark rush, never white noise;
+bronze rings an octave or more down. Every cue is driven into a soft saturator for grit
+and then low-passed, so the harmonics the saturation adds stay warm instead of fizzing.
+
+The Tumbler's sounds carry its states by ear: hunting is a bronze drone under a
+grinding, turning ratchet; being seen cuts it with a latch, so silence means frozen;
+being let go unwinds back into the hum; an anchor clamps on in the lantern's darker
+glass, not the Guardian's bronze; a catch rises and stamps. The Plumb and Roller have
+their own palettes for the form lab.
 
 --preview writes a labelled audition reel.
 """
@@ -26,41 +31,68 @@ import wave
 RATE = 48000
 TAU = math.tau
 
-# name: (duration seconds, peak, loop)
+# name: (duration seconds, peak, loop, saturation drive, low-pass cutoff Hz)
 CUES = {
-    'tumbler_hum': (4.0, 0.30, True),
-    'tumbler_latch': (0.95, 0.45, False),
-    'tumbler_release': (0.85, 0.38, False),
-    'tumbler_clamp': (1.25, 0.40, False),
-    'tumbler_catch': (1.9, 0.46, False),
-    'plumb_hum': (4.0, 0.26, True),
-    'plumb_seal': (0.95, 0.40, False),
-    'plumb_catch': (1.9, 0.46, False),
-    'roller_fall': (0.55, 0.44, False),
-    'roller_balance': (1.2, 0.34, False),
-    'roller_catch': (1.7, 0.46, False),
+    'tumbler_hum': (4.0, 0.30, True, 2.6, 1300),
+    'tumbler_latch': (0.95, 0.45, False, 3.0, 1500),
+    'tumbler_release': (0.85, 0.38, False, 2.6, 1300),
+    'tumbler_clamp': (1.25, 0.40, False, 1.8, 2200),
+    'tumbler_catch': (1.9, 0.46, False, 3.2, 1400),
+    'plumb_hum': (4.0, 0.26, True, 1.8, 900),
+    'plumb_seal': (0.95, 0.40, False, 2.0, 1700),
+    'plumb_catch': (1.9, 0.46, False, 3.0, 1400),
+    'roller_fall': (0.55, 0.44, False, 3.0, 1400),
+    'roller_balance': (1.2, 0.34, False, 1.3, 1500),
+    'roller_catch': (1.7, 0.46, False, 3.0, 1400),
 }
 
-# The Tumbler's ratchet: one tick every this many seconds while hunting.
+# The Tumbler's ratchet: one tick every this many seconds while hunting, and the gear
+# teeth grinding under it. Both divide the 4 s loop exactly.
 TICK = 4.0 / 21
+TOOTH = 4.0 / 96
 
 
-def click(t, at, freq, rate):
-    """A struck click at time `at`: a decaying partial, silent before it."""
+class Noise:
+    """Seeded noise in two dark bands: `low`, a rumble under about 300 Hz, and
+    `grit`, the band between that and about 1.2 kHz, where a crunch lives."""
+
+    def __init__(self, rng):
+        self.rng = rng
+        self.low = 0.0
+        self.mid = 0.0
+
+    def step(self):
+        white = self.rng.uniform(-1, 1)
+        self.low += 0.04 * (white - self.low)
+        self.mid += 0.15 * (white - self.mid)
+        return self.low, (self.mid - self.low) * 2.5
+
+
+def knock(t, at, freq, rate):
+    """A low knock: a thump whose pitch drops as it dies. The tick of a heavy ratchet."""
     d = t - at
     if d < 0:
         return 0.0
-    return math.sin(TAU * freq * d) * math.exp(-d * rate) * min(1.0, d * 3000)
+    f = freq * (1.0 + 1.2 * math.exp(-d * 40))
+    return math.sin(TAU * f * d) * math.exp(-d * rate) * min(1.0, d * 2500)
+
+
+def grain(t, at, rate, grit):
+    """A burst of grit, decaying at `rate`: the crunch in a knock."""
+    d = t - at
+    if d < 0:
+        return 0.0
+    return grit * math.exp(-d * rate) * min(1.0, d * 4000)
 
 
 def bronze(t, at, base, rate):
-    """A bronze ring: three inharmonic partials, struck at `at`."""
+    """A dark bronze ring: three inharmonic partials, the upper ones quiet."""
     d = t - at
     if d < 0:
         return 0.0
     ring = (math.sin(TAU * base * d)
-            + 0.55 * math.sin(TAU * base * 2.51 * d)
-            + 0.30 * math.sin(TAU * base * 4.14 * d))
+            + 0.45 * math.sin(TAU * base * 2.51 * d)
+            + 0.15 * math.sin(TAU * base * 4.14 * d))
     return ring * math.exp(-d * rate) * min(1.0, d * 2000)
 
 
@@ -73,113 +105,147 @@ def thump(t, at, freq, rate):
     return math.sin(TAU * f * d) * math.exp(-d * rate) * min(1.0, d * 1500)
 
 
+def crunch(t, at, freq, grit, level=1.0):
+    """A ratchet tick: a knock and its grit."""
+    return level * (0.6 * knock(t, at, freq, 55) + 0.5 * grain(t, at, 70, grit))
+
+
+def saturate(samples, drive):
+    """Soft clipping for grit: tanh, scaled so full scale stays full scale."""
+    peak = max(abs(s) for s in samples) or 1.0
+    norm = math.tanh(drive)
+    return [math.tanh(drive * s / peak) / norm for s in samples]
+
+
+def lowpass(samples, cutoff):
+    """Two one-pole low-passes in series: a gentle 12 dB/octave roll-off."""
+    a = 1.0 - math.exp(-TAU * cutoff / RATE)
+    for _ in range(2):
+        y = 0.0
+        out = []
+        for s in samples:
+            y += a * (s - y)
+            out.append(y)
+        samples = out
+    return samples
+
+
 def synth(name, duration, seed):
     rng = random.Random(seed)
+    _, _, loop, drive, cutoff = CUES[name]
     # Loops are made long by half a second, which is crossfaded into their head.
-    extra = 0.5 if CUES[name][2] else 0.0
+    extra = 0.5 if loop else 0.0
     count = round(RATE * (duration + extra))
     ticks = []
+    teeth = []
     if name == 'tumbler_hum':
         ticks = [(k * TICK + rng.uniform(-0.012, 0.012), rng.uniform(0.7, 1.0))
                  for k in range(-1, 26)]
+        teeth = [(k * TOOTH + rng.uniform(-0.004, 0.004), rng.uniform(0.3, 1.0))
+                 for k in range(-1, 110)]
     rattle = [rng.uniform(0.0, 0.05) for _ in range(8)]
+    noise = Noise(rng)
     samples = []
-    low = 0.0
     phase = 0.0
     for i in range(count):
         t = i / RATE
         x = t / duration
-        noise = rng.uniform(-1, 1)
-        low += 0.04 * (noise - low)
-        air = noise - low
+        low, grit = noise.step()
         if name == 'tumbler_hum':
-            # Bronze drone on 55 Hz and its fifth, breathing twice per loop, under a
-            # turning ratchet.
+            # Bronze drone on 55 Hz, its fifth and octave, breathing twice per loop,
+            # under grinding teeth and a turning ratchet.
             breath = 0.75 + 0.25 * math.sin(TAU * 0.5 * t)
-            s = breath * (0.55 * math.sin(TAU * 55 * t) + 0.3 * math.sin(TAU * 82.5 * t)
-                          + 0.12 * math.sin(TAU * 165 * t))
-            s += 0.5 * low * breath
+            s = breath * (0.6 * math.sin(TAU * 55 * t) + 0.3 * math.sin(TAU * 82.5 * t)
+                          + 0.15 * math.sin(TAU * 110 * t))
+            s += 0.6 * low * breath
+            for at, level in teeth:
+                s += 0.18 * level * grain(t, at, 140, grit)
             for at, level in ticks:
-                s += level * (0.35 * click(t, at, 1760, 70) + 0.25 * click(t, at, 523, 45))
+                s += crunch(t, at, 150, grit, 0.9 * level)
         elif name == 'tumbler_latch':
             # The ratchet runs faster and faster, then the latch drops home.
             s = 0.0
             for k in range(9):
                 at = 0.2 * (1 - (1 - k / 9) ** 1.8)
-                s += 0.3 * click(t, at, 1500 + 90 * k, 80)
-            s += 1.2 * thump(t, 0.22, 68, 16)
-            s += 0.6 * click(t, 0.22, 740, 40) + 0.45 * click(t, 0.22, 1113, 55)
-            s += 0.35 * bronze(t, 0.22, 220, 5.0)
-            s += 0.6 * low * math.exp(-max(0.0, t - 0.22) * 20) * (t > 0.22)
+                s += crunch(t, at, 170 + 12 * k, grit, 0.8)
+            s += 1.3 * thump(t, 0.22, 52, 14)
+            s += 1.1 * grain(t, 0.22, 22, grit) + 0.5 * knock(t, 0.22, 240, 30)
+            s += 0.4 * bronze(t, 0.22, 110, 4.5)
+            s += 0.7 * low * math.exp(-max(0.0, t - 0.22) * 16) * (t > 0.22)
         elif name == 'tumbler_release':
             # The latch lifts, and the ratchet winds back up into the hum.
-            s = 0.5 * click(t, 0.02, 900, 60) + 0.4 * thump(t, 0.02, 90, 30)
-            phase += TAU * (35 + 25 * x) / RATE
+            s = 0.7 * crunch(t, 0.02, 200, grit) + 0.5 * thump(t, 0.02, 70, 26)
+            phase += TAU * (32 + 23 * x) / RATE
             s += 0.45 * math.sin(phase) * min(1.0, x * 2) * (1 - 0.3 * x)
+            s += 0.3 * low * min(1.0, x * 2)
             k, at = 0, 0.12
             while at < duration - 0.02:
-                s += 0.28 * click(t, at, 1500 + 200 * x, 75)
+                s += crunch(t, at, 140 + 40 * x, grit, 0.75)
                 k += 1
                 at += 0.16 * (1 - 0.55 * min(1.0, k / 8))
         elif name == 'tumbler_clamp':
-            # The anchor's voice: a falling hiss, a magnetic thunk, a glassy dyad.
-            s = 0.25 * air * max(0.0, 1 - t / 0.3) * min(1.0, t * 40)
-            s += 1.1 * thump(t, 0.3, 58, 12)
+            # The anchor's voice: a falling rush, a magnetic thunk, a dark glass dyad.
+            s = 0.8 * low * max(0.0, 1 - t / 0.3) * min(1.0, t * 40)
+            s += 1.2 * thump(t, 0.3, 48, 11) + 0.6 * grain(t, 0.3, 30, grit)
             d = t - 0.3
             if d > 0:
-                shimmer = 1 + 0.004 * math.sin(TAU * 6 * d)
-                s += (0.35 * math.sin(TAU * 988 * shimmer * d)
-                      + 0.28 * math.sin(TAU * 1480 * d)) * math.exp(-d * 3.2) * min(1.0, d * 400)
+                shimmer = 1 + 0.003 * math.sin(TAU * 4 * d)
+                s += (0.3 * math.sin(TAU * 370 * shimmer * d)
+                      + 0.2 * math.sin(TAU * 554 * d)) * math.exp(-d * 2.8) * min(1.0, d * 300)
         elif name == 'tumbler_catch':
-            # The tiers telescope up, then the stamp: a sub boom and a tritone ring.
+            # The tiers telescope up, then the stamp: a sub boom, a crunch, and a low
+            # tritone ring.
             rise = min(1.0, t / 0.45)
-            phase += TAU * (40 + 260 * rise ** 2) / RATE
-            s = 0.35 * math.sin(phase) * (t < 0.5) * min(1.0, t * 20)
+            phase += TAU * (30 + 150 * rise ** 2) / RATE
+            s = 0.4 * math.sin(phase) * (t < 0.5) * min(1.0, t * 20)
             for k in range(12):
-                s += 0.2 * click(t, 0.035 * k, 1200 + 70 * k, 90)
-            s += 1.5 * thump(t, 0.5, 44, 7)
-            s += 0.8 * low * math.exp(-max(0.0, t - 0.5) * 10) * (t > 0.5)
-            s += 0.3 * bronze(t, 0.5, 220, 2.6) + 0.22 * bronze(t, 0.5, 311, 2.9)
+                s += crunch(t, 0.035 * k, 160 + 10 * k, grit, 0.7)
+            s += 1.6 * thump(t, 0.5, 38, 6.5) + 1.2 * grain(t, 0.5, 14, grit)
+            s += 0.9 * low * math.exp(-max(0.0, t - 0.5) * 8) * (t > 0.5)
+            s += 0.35 * bronze(t, 0.5, 110, 2.4) + 0.25 * bronze(t, 0.5, 155, 2.7)
         elif name == 'plumb_hum':
-            # A pale drone with three orbits whooshing past at their own rates.
-            s = 0.4 * math.sin(TAU * 165 * t) + 0.2 * math.sin(TAU * 247.5 * t)
-            for rate, width in ((0.75, 0.6), (1.0, 0.5), (1.25, 0.4)):
-                s += width * air * (0.5 + 0.5 * math.sin(TAU * rate * t)) ** 3
+            # A low pale drone, with three orbits rushing past at their own rates.
+            s = 0.45 * math.sin(TAU * 82.5 * t) + 0.22 * math.sin(TAU * 123.75 * t)
+            for rate, width in ((0.75, 1.2), (1.0, 1.0), (1.25, 0.8)):
+                s += width * low * (0.5 + 0.5 * math.sin(TAU * rate * t)) ** 3
             s *= 0.8
         elif name == 'plumb_seal':
-            # Three rings settle, high to low, and the point sets down.
+            # Three rings settle, high to low, and the point sets down with a crunch.
             s = 0.0
-            for k, (at, f) in enumerate(((0.0, 1318), (0.09, 1046), (0.18, 880))):
-                s += (0.5 - 0.08 * k) * bronze(t, at, f, 9)
-            s += 0.8 * thump(t, 0.3, 110, 22)
+            for k, (at, f) in enumerate(((0.0, 330), (0.09, 262), (0.18, 220))):
+                s += (0.5 - 0.08 * k) * bronze(t, at, f, 7)
+            s += 0.9 * thump(t, 0.3, 80, 20) + 0.5 * grain(t, 0.3, 40, grit)
         elif name == 'plumb_catch':
-            # Six faces creak open, the core swells, and the stamp.
+            # Six faces grind open, the core swells, and the stamp.
             s = 0.0
             for k in range(6):
-                s += 0.25 * click(t, 0.05 + 0.06 * k + rattle[k], 420 - 20 * k, 30)
-            phase += TAU * (90 + 150 * min(1.0, x * 2)) / RATE
+                s += crunch(t, 0.05 + 0.06 * k + rattle[k], 190 - 10 * k, grit, 0.7)
+            phase += TAU * (60 + 100 * min(1.0, x * 2)) / RATE
             s += 0.4 * math.sin(phase) * math.sin(math.pi * min(1.0, x * 1.6))
-            s += 1.3 * thump(t, 0.5, 50, 8) + 0.3 * bronze(t, 0.5, 330, 3)
+            s += 1.4 * thump(t, 0.5, 42, 7.5) + 1.0 * grain(t, 0.5, 16, grit)
+            s += 0.3 * bronze(t, 0.5, 165, 3)
         elif name == 'roller_fall':
-            # A hollow cage landing on a face: a thud and a rattle of struts.
-            s = 1.2 * thump(t, 0.0, 62, 14) + 0.7 * low * math.exp(-t * 18)
+            # A hollow cage landing on a face: a thud, and its struts crunching.
+            s = 1.3 * thump(t, 0.0, 52, 13) + 0.9 * low * math.exp(-t * 16)
             for k in range(5):
-                s += 0.18 * click(t, 0.01 + rattle[k], 1900 + 300 * k, 60)
+                s += crunch(t, 0.01 + rattle[k], 240 + 60 * k, grit, 0.55)
         elif name == 'roller_balance':
-            # It tips onto one point, and a pure tone holds, as if nothing should.
-            s = 0.6 * thump(t, 0.0, 80, 20)
+            # It tips onto one point, and a low pure tone holds, as if nothing should.
+            s = 0.7 * thump(t, 0.0, 70, 18) + 0.4 * grain(t, 0.0, 45, grit)
             d = t - 0.12
             if d > 0:
-                s += 0.45 * math.sin(TAU * 523.25 * d) * min(1.0, d * 8) * math.exp(-d * 1.2)
-                s += 0.12 * math.sin(TAU * 1046.5 * d) * min(1.0, d * 8) * math.exp(-d * 2.0)
+                s += 0.45 * math.sin(TAU * 261.6 * d) * min(1.0, d * 8) * math.exp(-d * 1.2)
+                s += 0.15 * math.sin(TAU * 130.8 * d) * min(1.0, d * 8) * math.exp(-d * 1.0)
         elif name == 'roller_catch':
-            # The halves split with a hiss and a clank, and the stamp.
-            s = 0.3 * air * math.exp(-t * 5) * min(1.0, t * 60)
-            s += 0.5 * click(t, 0.15, 650, 25) + 1.3 * thump(t, 0.4, 48, 8)
-            s += 0.28 * bronze(t, 0.4, 262, 3.2)
+            # The halves split with a rush and a grinding clank, and the stamp.
+            s = 0.9 * low * math.exp(-t * 5) * min(1.0, t * 60)
+            s += crunch(t, 0.15, 220, grit, 1.2) + 1.4 * thump(t, 0.4, 40, 7.5)
+            s += 1.0 * grain(t, 0.4, 16, grit) + 0.28 * bronze(t, 0.4, 131, 3.0)
         else:
             raise ValueError(name)
         samples.append(s)
+    # Grit, then warmth: saturate, and low-pass what the saturation adds.
+    samples = lowpass(saturate(samples, drive), cutoff)
     if extra:
         # Crossfade the tail into the head: the loop point is the same sound.
         n = round(RATE * duration)
@@ -221,7 +287,7 @@ def main():
     report = {}
     reel = []
     with tempfile.TemporaryDirectory() as temp:
-        for index, (name, (duration, _peak, loop)) in enumerate(CUES.items()):
+        for index, (name, (duration, _peak, loop, _drive, _cutoff)) in enumerate(CUES.items()):
             samples = synth(name, duration, 7300 + index)
             assert all(math.isfinite(s) for s in samples)
             assert max(abs(s) for s in samples) <= 0.5

@@ -3,66 +3,66 @@
     "duration": 4.0,
     "loop": true,
     "peak_dbfs": -10.46,
-    "rms_dbfs": -20.46
+    "rms_dbfs": -15.78
   },
   "tumbler_latch": {
     "duration": 0.95,
     "loop": false,
     "peak_dbfs": -6.94,
-    "rms_dbfs": -26.35
+    "rms_dbfs": -20.14
   },
   "tumbler_release": {
     "duration": 0.85,
     "loop": false,
     "peak_dbfs": -8.4,
-    "rms_dbfs": -19.73
+    "rms_dbfs": -13.87
   },
   "tumbler_clamp": {
     "duration": 1.25,
     "loop": false,
     "peak_dbfs": -7.96,
-    "rms_dbfs": -26.73
+    "rms_dbfs": -22.39
   },
   "tumbler_catch": {
     "duration": 1.9,
     "loop": false,
     "peak_dbfs": -6.74,
-    "rms_dbfs": -24.89
+    "rms_dbfs": -17.57
   },
   "plumb_hum": {
     "duration": 4.0,
     "loop": true,
     "peak_dbfs": -11.7,
-    "rms_dbfs": -24.37
+    "rms_dbfs": -17.84
   },
   "plumb_seal": {
     "duration": 0.95,
     "loop": false,
     "peak_dbfs": -7.96,
-    "rms_dbfs": -22.89
+    "rms_dbfs": -18.68
   },
   "plumb_catch": {
     "duration": 1.9,
     "loop": false,
     "peak_dbfs": -6.74,
-    "rms_dbfs": -24.04
+    "rms_dbfs": -17.93
   },
   "roller_fall": {
     "duration": 0.55,
     "loop": false,
     "peak_dbfs": -7.13,
-    "rms_dbfs": -21.8
+    "rms_dbfs": -17.93
   },
   "roller_balance": {
     "duration": 1.2,
     "loop": false,
     "peak_dbfs": -9.37,
-    "rms_dbfs": -19.38
+    "rms_dbfs": -18.75
   },
   "roller_catch": {
     "duration": 1.7,
     "loop": false,
     "peak_dbfs": -6.74,
-    "rms_dbfs": -25.3
+    "rms_dbfs": -19.95
   }
 }

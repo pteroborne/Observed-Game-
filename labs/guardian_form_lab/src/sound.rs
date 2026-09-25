@@ -4,7 +4,7 @@
 //! Hunting has a voice: the Tumbler hums under its ratchet, the Plumb's orbits whoosh,
 //! and the Roller is heard landing on each face. Frozen is silent, after the sound of
 //! freezing: the Tumbler's latch, the Plumb's rings settling, the Roller's held tone.
-//! An anchor clamps on in the lantern's glassy voice, the same for every form.
+//! An anchor clamps on in the lantern's dark glass voice, the same for every form.
 use observed_guardian::form::{Form, ROLLER_STEP_SECONDS, State};
 
 /// A form's sounds, as files under `sounds/guardian/`.

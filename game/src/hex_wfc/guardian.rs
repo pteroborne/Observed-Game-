@@ -8,7 +8,7 @@
 //! - **Seen:** the tiers snap into line and the latch drops home. The hum stops, so
 //!   silence means frozen.
 //! - **Anchored:** the same, with the anchor's purple clamped round its base and the
-//!   clamp in the lantern's glassy voice.
+//!   clamp in the lantern's dark glass voice.
 //! - **Let go:** the ratchet winds back up into the hum.
 //! - **A catch:** the simulation sends the Guardian home in the same tick as the catch,
 //!   so the catch plays as its own short-lived Tumbler where the Guardian was last
