@@ -118,6 +118,7 @@ members = [
     "labs/plumb_lab",
     "labs/suspension_lab",
     "labs/vista_lab",
+    "labs/guardian_form_lab",
     "labs/kinetic_lab",
     "tools/content_baker",
     "tools/composition_studio",
