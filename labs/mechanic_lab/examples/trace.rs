@@ -1,7 +1,7 @@
 //! One scripted match, turn by turn. `cargo run -p mechanic_lab --example trace -- base`
 
-use mechanic_lab::sim::{bot, step::step};
-use mechanic_lab::spec::{ModeSpec, Rules, deal};
+use observed_mechanics::spec::{ModeSpec, Rules, deal};
+use observed_mechanics::{bot, step::step};
 
 fn main() {
     let which = std::env::args().nth(1).unwrap_or_else(|| "plant".into());

@@ -1,0 +1,21 @@
+[package]
+name = "observed_mechanics"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# The rules kernel behind the mechanic bench: a hexagonal board whose edges
+# carry passability, a fixed turn pipeline, and the six swappable strategies
+# that fill it — resolution, vision, threat, setback, mutation, objective —
+# plus the tiles an architect plays.
+#
+# Extracted from `labs/mechanic_lab` once `labs/asymmetry_lab` needed the same
+# rules behind a different pair of screens. `agents.md` permits generalising
+# only after the prototype works, its requirements are understood, its reuse is
+# demonstrated and its failure cases are known; all four held before this moved.
+#
+# Deliberately Bevy-free and dependency-light: a match is pure data stepped by
+# pure functions, which is what lets it be replayed from an order log and
+# tested headlessly.
+[dependencies]
+observed_hex = { path = "../observed_hex" }

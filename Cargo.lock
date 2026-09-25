@@ -345,6 +345,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "asymmetry_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy 0.19.1",
+ "observed_hex",
+ "observed_mechanics",
+ "observed_style",
+ "resvg",
+ "tiny-skia",
+ "usvg",
+ "web-sys",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6154,6 +6168,7 @@ version = "0.1.0"
 dependencies = [
  "bevy 0.19.1",
  "observed_hex",
+ "observed_mechanics",
  "observed_style",
  "resvg",
  "tiny-skia",
@@ -7082,6 +7097,13 @@ dependencies = [
  "observed_observation",
  "observed_traversal",
  "player_input",
+]
+
+[[package]]
+name = "observed_mechanics"
+version = "0.1.0"
+dependencies = [
+ "observed_hex",
 ]
 
 [[package]]

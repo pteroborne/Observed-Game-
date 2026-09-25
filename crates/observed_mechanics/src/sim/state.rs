@@ -9,6 +9,7 @@ use observed_hex::faces::HexFace;
 
 use crate::sim::board::{Board, Edge};
 use crate::sim::prng::Prng;
+use crate::sim::tiles::{Hand, Refusal, TilePlay};
 use observed_hex::ports::PortClass;
 
 /// Index into [`MatchState::pawns`]. Also the deterministic tie-break order for
@@ -104,6 +105,20 @@ pub enum Outcome {
 pub struct PendingChange {
     pub edge: Edge,
     pub to: PortClass,
+    /// Who wants this. **The whole experiment lives on this field**: a player
+    /// has to be able to tell a deliberate play from background churn, and if
+    /// they cannot, an architect is just a more expensive random number
+    /// generator.
+    pub source: ChangeSource,
+}
+
+/// What is rewiring the facility.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChangeSource {
+    /// The facility decohering on its own — the rogue AI.
+    Rogue,
+    /// A tile somebody played.
+    Architect(TeamId),
 }
 
 /// Per-turn record of what the rules actually did, for the HUD and the metrics.
@@ -113,6 +128,8 @@ pub struct TurnReport {
     pub refused_moves: Vec<PawnId>,
     pub rewired: Vec<PendingChange>,
     pub refused_rewires: Vec<PendingChange>,
+    /// Tiles that actually landed this turn.
+    pub tiles_played: Vec<TilePlay>,
     pub taken: Vec<PawnId>,
     pub released: Vec<PawnId>,
     pub planted: Vec<HexCoord>,
@@ -132,6 +149,12 @@ pub struct MatchState {
     pub turn: u16,
     /// What the facility will do to itself next turn unless held.
     pub telegraph: Vec<PendingChange>,
+    /// One hand per team; only teams with an architect have cards in theirs.
+    pub hands: Vec<Hand>,
+    /// Tile plays declared this turn, waiting to be validated and telegraphed.
+    pub architect_queue: Vec<TilePlay>,
+    /// Plays refused since the last turn, and why. Read by the HUD only.
+    pub refusals: Vec<(TilePlay, Refusal)>,
     pub outcome: Option<Outcome>,
     pub report: TurnReport,
     pub rng: Prng,
@@ -159,6 +182,19 @@ impl MatchState {
         teams.sort_unstable();
         teams.dedup();
         teams
+    }
+
+    /// Credit a team's architect for something its operatives achieved.
+    /// Harmless for teams without one: their hand has no capacity.
+    pub fn earn(&mut self, team: TeamId, cards: u8) {
+        if let Some(hand) = self.hands.get_mut(team.0 as usize) {
+            hand.owed = hand.owed.saturating_add(cards);
+        }
+    }
+
+    #[must_use]
+    pub fn hand_of(&self, team: TeamId) -> Option<&Hand> {
+        self.hands.get(team.0 as usize)
     }
 
     #[must_use]
@@ -252,6 +288,16 @@ impl MatchState {
             eat(u64::from(change.edge.cell.q) << 32 | u64::from(change.edge.cell.r));
             eat(change.edge.face.index() as u64);
             eat(change.to as u64);
+            eat(match change.source {
+                ChangeSource::Rogue => 0,
+                ChangeSource::Architect(team) => 1 + u64::from(team.0),
+            });
+        }
+        for hand in &self.hands {
+            eat(hand.cards.len() as u64);
+            for card in &hand.cards {
+                eat(*card as u64);
+            }
         }
         hash
     }

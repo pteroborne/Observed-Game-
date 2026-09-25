@@ -9,8 +9,9 @@
 use observed_hex::coords::HexCoord;
 use observed_hex::faces::HexFace;
 
+use crate::sim::architect::Architect;
 use crate::sim::board::Board;
-use crate::sim::mutation::{NoMutation, TelegraphedRewire};
+use crate::sim::mutation::{NoMutation, Scope, TelegraphedRewire};
 use crate::sim::objective::{PlantFlags, PlantRule, PlantWin, ReachExit};
 use crate::sim::prng::Prng;
 use crate::sim::resolution::{Sequential, Simultaneous};
@@ -19,6 +20,7 @@ use crate::sim::rules::{Mutation, Objective, Resolution, Setback, Threat, Vision
 use crate::sim::setback::{Prison, RespawnAtStart};
 use crate::sim::state::{Flag, Guardian, MatchState, Pawn, PawnId, TeamId, TurnReport};
 use crate::sim::threat::{ConeInteraction, GuardianTarget, Guardians, NoThreat};
+use crate::sim::tiles::Hand;
 use crate::sim::vision::{Cone, Radius};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -43,7 +45,15 @@ pub enum VisionKind {
 impl Default for VisionKind {
     fn default() -> Self {
         Self::Cone {
-            width: 1,
+            // Three faces, not one, and the width is what makes the shield real
+            // rather than nominal. Measured over guardian counts and cadences:
+            // at width 1 the shipped configuration loses all three pawns
+            // whether or not the cone blocks guardians - the arc is so narrow
+            // that a guardian essentially never steps into it. At width 3 the
+            // same configuration loses three pawns when the cone is ignored and
+            // *none* when it blocks. A one-face cone makes "observation is your
+            // defence" a rule that does not fire.
+            width: 3,
             range: 1,
             lock_own_hex: true,
         }
@@ -79,9 +89,12 @@ pub enum MutationPreview {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Stacking {
     /// One pawn per cell. Teammates block each other.
-    #[default]
     Forbidden,
-    /// Teammates may pile up.
+    /// Teammates may pile up. **The shipped rule.** Forbidding it turned every
+    /// corridor into a bottleneck for your own squad on top of being a
+    /// guardian trap, and made overwatch — which already needs two pawns at one
+    /// objective — close to unsatisfiable.
+    #[default]
     Allowed,
 }
 
@@ -119,13 +132,21 @@ pub enum SetbackKind {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MutationKind {
-    TelegraphedRewire { base: u16, cap: u16 },
+    TelegraphedRewire {
+        scope: Scope,
+    },
+    /// A player lays tiles; the rogue churn runs beside them.
+    Architect {
+        rogue: Scope,
+    },
     None,
 }
 
 impl Default for MutationKind {
     fn default() -> Self {
-        Self::TelegraphedRewire { base: 2, cap: 6 }
+        Self::TelegraphedRewire {
+            scope: Scope::AllUnobserved,
+        }
     }
 }
 
@@ -313,6 +334,11 @@ pub struct ModeSpec {
     pub walls: u16,
     /// Presentation only — how much of the telegraph a player is shown.
     pub preview: MutationPreview,
+    /// Which team, if any, has a player laying tiles. `None` leaves the
+    /// facility entirely to the rogue churn.
+    pub architect: Option<u8>,
+    pub hand_size: u8,
+    pub plays_per_turn: u8,
     pub resolution: ResolutionKind,
     pub stacking: Stacking,
     pub vision: VisionKind,
@@ -343,14 +369,17 @@ impl ModeSpec {
             turn_limit: 16,
             walls: 22,
             preview: MutationPreview::Outcome,
+            architect: None,
+            hand_size: 4,
+            plays_per_turn: 1,
             resolution: ResolutionKind::Simultaneous,
-            stacking: Stacking::Forbidden,
+            stacking: Stacking::Allowed,
             vision: VisionKind::default(),
             cone_timing: ConeTiming::PostMove,
             threats: vec![ThreatKind::Guardians],
             guardian_count: 2,
             guardian_target: GuardianTarget::NearestPawn,
-            cone_interaction: ConeInteraction::Ignores,
+            cone_interaction: ConeInteraction::Blocked,
             guardian_cadence: 2,
             setback: SetbackKind::Prison,
             mutation: MutationKind::default(),
@@ -409,8 +438,40 @@ impl ModeSpec {
                 ..Self::base()
             },
             Self {
-                name: "Base: cone blocks guardians".to_string(),
-                cone_interaction: ConeInteraction::Blocked,
+                name: "Architect".to_string(),
+                architect: Some(0),
+                hand_size: 4,
+                plays_per_turn: 1,
+                mutation: MutationKind::Architect {
+                    rogue: Scope::Capped { base: 2, cap: 4 },
+                },
+                turn_limit: 20,
+                ..Self::plant()
+            },
+            Self {
+                name: "Plant: only a few boundaries churn".to_string(),
+                mutation: MutationKind::TelegraphedRewire {
+                    scope: Scope::Capped { base: 2, cap: 6 },
+                },
+                ..Self::plant()
+            },
+            Self {
+                name: "Plant: narrow one-face cone".to_string(),
+                vision: VisionKind::Cone {
+                    width: 1,
+                    range: 1,
+                    lock_own_hex: true,
+                },
+                ..Self::plant()
+            },
+            Self {
+                name: "Base: cone ignores guardians".to_string(),
+                cone_interaction: ConeInteraction::Ignores,
+                ..Self::base()
+            },
+            Self {
+                name: "Base: no team stacking".to_string(),
+                stacking: Stacking::Forbidden,
                 ..Self::base()
             },
             Self {
@@ -419,13 +480,8 @@ impl ModeSpec {
                 ..Self::base()
             },
             Self {
-                name: "Base: squad may stack".to_string(),
-                stacking: Stacking::Allowed,
-                ..Self::base()
-            },
-            Self {
-                name: "Plant: squad may stack".to_string(),
-                stacking: Stacking::Allowed,
+                name: "Plant: no team stacking".to_string(),
+                stacking: Stacking::Forbidden,
                 ..Self::plant()
             },
             Self {
@@ -495,9 +551,11 @@ impl Rules {
             SetbackKind::RespawnAtStart => Box::new(RespawnAtStart),
         };
         let mutation: Box<dyn Mutation> = match spec.mutation {
-            MutationKind::TelegraphedRewire { base, cap } => {
-                Box::new(TelegraphedRewire { base, cap })
-            }
+            MutationKind::TelegraphedRewire { scope } => Box::new(TelegraphedRewire { scope }),
+            MutationKind::Architect { rogue } => Box::new(Architect {
+                team: TeamId(spec.architect.unwrap_or(0)),
+                rogue,
+            }),
             MutationKind::None => Box::new(NoMutation),
         };
         let objective: Box<dyn Objective> = match spec.objective {
@@ -554,7 +612,9 @@ impl Rules {
 pub fn deal(spec: &ModeSpec) -> MatchState {
     let mut state = deal_board(spec);
     // The opening telegraph, so turn one is a decision rather than a surprise.
-    Rules::from_spec(spec).mutation.telegraph(&mut state);
+    let rules = Rules::from_spec(spec);
+    let locks = rules.vision.locks(&state);
+    rules.mutation.telegraph(&mut state, &locks);
     state
 }
 
@@ -623,6 +683,19 @@ fn deal_board(spec: &ModeSpec) -> MatchState {
         spawns: spec.board.spawns.clone(),
         turn: 0,
         telegraph: Vec::new(),
+        hands: (0..spec.teams)
+            .map(|team| {
+                let mut hand = if spec.architect == Some(team) {
+                    Hand::new(spec.hand_size, spec.plays_per_turn)
+                } else {
+                    Hand::new(0, 0)
+                };
+                hand.deal_opening(&mut rng);
+                hand
+            })
+            .collect(),
+        architect_queue: Vec::new(),
+        refusals: Vec::new(),
         outcome: None,
         report: TurnReport::default(),
         rng,

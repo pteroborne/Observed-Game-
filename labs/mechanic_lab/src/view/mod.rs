@@ -16,8 +16,8 @@ use observed_hex::coords::HexCoord;
 use observed_hex::faces::HexFace;
 use observed_style::ColorVisionMode;
 
-use crate::sim::state::{Intent, MatchState, PawnId, TeamId};
-use crate::spec::{ModeSpec, Rules, deal};
+use observed_mechanics::spec::{ModeSpec, Rules, deal};
+use observed_mechanics::state::{Intent, MatchState, PawnId, TeamId};
 
 /// Everything the running lab is: which mode, its rules, the match, and the
 /// orders the human has declared but not yet resolved.
@@ -96,11 +96,11 @@ impl Session {
         }
         let mut intents = Vec::new();
         for team in self.state.teams() {
-            intents.extend(crate::sim::bot::team_intents(&self.state, team));
+            intents.extend(observed_mechanics::bot::team_intents(&self.state, team));
         }
         intents.sort_by_key(|intent| intent.pawn);
         let Session { state, rules, .. } = self;
-        crate::sim::step::step(state, rules, &intents);
+        observed_mechanics::step::step(state, rules, &intents);
         self.queued.clear();
     }
 
@@ -133,7 +133,7 @@ impl Session {
             return (actor.at, actor.facing);
         };
         let at = match intent.action {
-            crate::sim::state::Action::Step(face) => self
+            observed_mechanics::state::Action::Step(face) => self
                 .state
                 .board
                 .passable(actor.at, face)

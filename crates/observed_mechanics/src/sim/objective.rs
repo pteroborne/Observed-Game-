@@ -75,6 +75,8 @@ impl Objective for PlantFlags {
         {
             flag.planted_by = Some(team);
             state.report.planted.push(at);
+            // The objective is what an architect is ultimately paid for.
+            state.earn(team, 3);
         }
     }
 

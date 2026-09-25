@@ -3,10 +3,10 @@
 //! The point of the bench in miniature: change one thing, see whether the match
 //! changes. `cargo run -p mechanic_lab --example sweep`
 
-use mechanic_lab::sim::objective::{PlantRule, PlantWin};
-use mechanic_lab::sim::threat::ConeInteraction;
-use mechanic_lab::sim::{bot, step::step};
-use mechanic_lab::spec::{ModeSpec, ObjectiveKind, Rules, ThreatKind, deal};
+use observed_mechanics::objective::{PlantRule, PlantWin};
+use observed_mechanics::spec::{ModeSpec, ObjectiveKind, Rules, ThreatKind, deal};
+use observed_mechanics::threat::ConeInteraction;
+use observed_mechanics::{bot, step::step};
 
 fn play(label: &str, spec: &ModeSpec) {
     let rules = Rules::from_spec(spec);

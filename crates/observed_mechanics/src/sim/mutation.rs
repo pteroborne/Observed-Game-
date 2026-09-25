@@ -18,16 +18,24 @@ use crate::sim::state::{MatchState, PendingChange};
 /// A change is refused when either cell it joins is held, so standing in a
 /// doorway keeps it — which is the anchor-and-threshold mechanic the shipped
 /// game has, at a cadence a person can read.
-#[derive(Clone, Copy, Debug)]
-pub struct TelegraphedRewire {
-    pub base: u16,
-    pub cap: u16,
+/// How much of the facility is in play each turn.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Scope {
+    /// A handful of boundaries, growing with the turn.
+    Capped { base: u16, cap: u16 },
+    /// **Everything nobody is looking at.**
+    ///
+    /// The strongest reading of observe-to-freeze, and the one that makes sight
+    /// genuinely precious: the only stable architecture is the architecture
+    /// somebody has their eyes on. A capped churn lets a player ignore the
+    /// facility for turns at a time; this one never does.
+    #[default]
+    AllUnobserved,
 }
 
-impl Default for TelegraphedRewire {
-    fn default() -> Self {
-        Self { base: 2, cap: 6 }
-    }
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TelegraphedRewire {
+    pub scope: Scope,
 }
 
 impl Mutation for TelegraphedRewire {
@@ -35,8 +43,7 @@ impl Mutation for TelegraphedRewire {
         "TelegraphedRewire"
     }
 
-    fn telegraph(&self, state: &mut MatchState) {
-        let wanted = (self.base + state.turn).min(self.cap) as usize;
+    fn telegraph(&self, state: &mut MatchState, locks: &LockSet) {
         let size = state.board.size();
 
         // Never touch a boundary of a flag or a prison cell. Walling one off is
@@ -58,14 +65,25 @@ impl Mutation for TelegraphedRewire {
                 !protected.contains(&edge.cell)
                     && other.is_some_and(|other| !protected.contains(&other))
             })
+            .filter(|edge| {
+                // A boundary somebody is holding is not going to change, so
+                // telegraphing it would be promising something that cannot
+                // happen. What is drawn is what is genuinely at risk.
+                let other = size.neighbor(edge.cell, edge.face);
+                !locks.is_held(edge.cell) && !other.is_some_and(|other| locks.is_held(other))
+            })
             .collect();
-        state.rng.shuffle(&mut candidates);
-        candidates.truncate(wanted);
+        if let Scope::Capped { base, cap } = self.scope {
+            let wanted = (base + state.turn).min(cap) as usize;
+            state.rng.shuffle(&mut candidates);
+            candidates.truncate(wanted);
+        }
         candidates.sort_unstable();
 
         state.telegraph = candidates
             .into_iter()
             .map(|edge| PendingChange {
+                source: crate::sim::state::ChangeSource::Rogue,
                 edge,
                 to: match state.board.port(edge) {
                     PortClass::Door => PortClass::Sealed,
@@ -102,7 +120,7 @@ impl Mutation for NoMutation {
         "None"
     }
 
-    fn telegraph(&self, state: &mut MatchState) {
+    fn telegraph(&self, state: &mut MatchState, _locks: &LockSet) {
         state.telegraph.clear();
     }
 

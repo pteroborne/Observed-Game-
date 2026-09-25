@@ -14,10 +14,19 @@ use observed_hex::faces::HexFace;
 use crate::sim::state::{MatchState, Outcome, PawnId};
 
 /// Which cells are held against structural change this turn.
+/// Which cells are held against structural change this turn, and *how*.
+///
+/// The distinction matters because the two do different jobs. Occupancy holds
+/// structure — you cannot rewire the floor somebody is standing on. Being
+/// *looked at* is what shields against a guardian. Collapsing them made a pawn
+/// permanently invulnerable, since its own cell is always held: guardians could
+/// never enter any pawn's cell and simply parked next to the squad doing
+/// nothing for a whole match.
 #[derive(Clone, Debug)]
 pub struct LockSet {
     size: HexGridSize,
     held: Vec<bool>,
+    covered: Vec<bool>,
 }
 
 impl LockSet {
@@ -26,9 +35,11 @@ impl LockSet {
         Self {
             size,
             held: vec![false; size.cell_count()],
+            covered: vec![false; size.cell_count()],
         }
     }
 
+    /// Held against structural change — by occupancy or by sight.
     pub fn hold(&mut self, coord: HexCoord) {
         if self.size.contains(coord) {
             let index = self.size.index(coord);
@@ -36,9 +47,25 @@ impl LockSet {
         }
     }
 
+    /// Held *and* actually looked at, which is what shields it.
+    pub fn cover(&mut self, coord: HexCoord) {
+        if self.size.contains(coord) {
+            let index = self.size.index(coord);
+            self.held[index] = true;
+            self.covered[index] = true;
+        }
+    }
+
     #[must_use]
     pub fn is_held(&self, coord: HexCoord) -> bool {
         self.size.contains(coord) && self.held[self.size.index(coord)]
+    }
+
+    /// Whether somebody's cone reaches this cell. A pawn standing in a cell it
+    /// is not looking at does not cover it.
+    #[must_use]
+    pub fn is_covered(&self, coord: HexCoord) -> bool {
+        self.size.contains(coord) && self.covered[self.size.index(coord)]
     }
 
     #[must_use]
@@ -70,13 +97,19 @@ pub trait Vision: Send + Sync {
     fn covers(&self, state: &MatchState, from: HexCoord, facing: HexFace, target: HexCoord)
     -> bool;
 
-    /// Every cell held by every free pawn.
+    /// Every cell held by every free pawn, separating what is merely occupied
+    /// from what is actually being looked at.
     fn locks(&self, state: &MatchState) -> LockSet {
         let mut locks = LockSet::empty(state.board.size());
         for pawn in state.free_pawns() {
             for cell in state.board.cells() {
-                if self.covers(state, pawn.at, pawn.facing, cell) {
+                if !self.covers(state, pawn.at, pawn.facing, cell) {
+                    continue;
+                }
+                if cell == pawn.at {
                     locks.hold(cell);
+                } else {
+                    locks.cover(cell);
                 }
             }
         }
@@ -109,10 +142,9 @@ pub trait Setback: Send + Sync {
 pub trait Mutation: Send + Sync {
     fn name(&self) -> &'static str;
 
-    /// Choose and record the cells that will change at the end of this turn.
-    /// Called at the top of the turn so the change is telegraphed, which is the
-    /// shipped `MUTATION_WARNING_TICKS` contract at a readable cadence.
-    fn telegraph(&self, state: &mut MatchState);
+    /// Choose and record what will change, given what is currently held.
+    /// Called at the *end* of a turn, for the turn about to be played.
+    fn telegraph(&self, state: &mut MatchState, locks: &LockSet);
 
     /// Apply whatever the telegraph promised and the locks did not refuse.
     fn apply(&self, state: &mut MatchState, locks: &LockSet);

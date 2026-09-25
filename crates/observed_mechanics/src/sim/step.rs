@@ -110,7 +110,7 @@ pub fn step(state: &mut MatchState, rules: &Rules, intents: &[Intent]) -> Option
     // invisible. Bot play never noticed, because the driver does not read the
     // telegraph. `deal` seeds the first one.
     if state.outcome.is_none() {
-        rules.mutation.telegraph(state);
+        rules.mutation.telegraph(state, &locks);
     }
     state.outcome = rules.objective.evaluate(state);
     state.outcome

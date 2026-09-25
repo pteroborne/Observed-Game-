@@ -8,16 +8,17 @@
 //! match. A seam no test can distinguish is not a seam — it is a speculative
 //! abstraction with two names, which is exactly what this lab must not become.
 
-use observed_hex::coords::HexCoord;
+use observed_hex::coords::{HexCoord, lateral_distance};
 use observed_hex::faces::HexFace;
 use observed_hex::ports::PortClass;
 
 use crate::sim::board::Edge;
 use crate::sim::bot;
 use crate::sim::objective::{PlantRule, PlantWin};
-use crate::sim::state::{Action, Intent, MatchState, PawnId, TeamId};
+use crate::sim::state::{Action, ChangeSource, Intent, MatchState, PawnId, TeamId};
 use crate::sim::step::step;
 use crate::sim::threat::{ConeInteraction, GuardianTarget};
+use crate::sim::tiles::{Refusal, TilePlay, TileShape};
 use crate::spec::{
     ConeTiming, ModeSpec, MutationKind, MutationPreview, ObjectiveKind, ResolutionKind, Rules,
     SetbackKind, ThreatKind, VisionKind, deal,
@@ -29,11 +30,18 @@ const fn at(q: u16, r: u16) -> HexCoord {
 
 /// A quiet board: no guardians, no reseal, so a conflict test measures only the
 /// resolution strategy.
+///
+/// Stacking is pinned `Forbidden` on purpose. The shipped default is `Allowed`,
+/// and under it most of the conflict table simply does not apply — teammates
+/// stop contending for space at all. These rows describe the *forbidden* rule,
+/// so they name it rather than inheriting whichever way the default happens to
+/// point today.
 fn still_spec() -> ModeSpec {
     ModeSpec {
         pawns_per_team: 3,
         threats: vec![ThreatKind::None],
         mutation: MutationKind::None,
+        stacking: crate::spec::Stacking::Forbidden,
         ..ModeSpec::plant()
     }
 }
@@ -226,10 +234,26 @@ fn every_seam_changes_the_match_it_is_swapped_into() {
     // "two matches in which nothing happened". One guardian still catches
     // people - the setback seam needs that - while leaving the squad alive long
     // enough to reach an objective.
+    //
+    // `ConeInteraction::Ignores` rather than the shipped shield, and that is
+    // the third departure worth recording: with the shield on, a three-face
+    // cone stops the guardians taking anybody at all in driver play, so
+    // `Setback` never fires and Prison and RespawnAtStart become the same
+    // match. The seam is real; the shipped rule is what silences it.
+    //
+    // And a capped churn rather than the shipped `AllUnobserved`: when every
+    // unheld boundary rewires each turn, the board reshapes faster than a
+    // twenty-four turn drive can express anything, and matches end the same way
+    // whatever else is swapped. A mild churn still exercises the mutation seam
+    // while leaving the others room to differ.
     let base = ModeSpec {
         pawns_per_team: 5,
         guardian_count: 1,
         turn_limit: 24,
+        cone_interaction: ConeInteraction::Ignores,
+        mutation: MutationKind::TelegraphedRewire {
+            scope: crate::sim::mutation::Scope::Capped { base: 2, cap: 6 },
+        },
         objective: ObjectiveKind::PlantFlags {
             rule: PlantRule::StandOnly,
             win: PlantWin::All,
@@ -304,8 +328,21 @@ fn cone_timing_relocates_the_lock_and_changes_the_match() {
 
 #[test]
 fn each_cone_interaction_reading_plays_differently() {
+    // At the shipped three-face cone all three readings play differently. At a
+    // one-face cone they do not: the arc is so narrow that a guardian
+    // essentially never steps into it, and the shipped configuration loses
+    // every pawn whether the cone blocks or is ignored. That measurement is why
+    // the default cone is three faces wide.
+    // Cadence 1, so the guardians actually make contact inside the drive; at
+    // the shipped cadence 2 an evading squad can simply outrun them on a walled
+    // board and none of the three readings gets a chance to differ.
     let base = ModeSpec {
         guardian_count: 3,
+        guardian_cadence: 1,
+        cone_interaction: ConeInteraction::Ignores,
+        mutation: MutationKind::TelegraphedRewire {
+            scope: crate::sim::mutation::Scope::Capped { base: 2, cap: 6 },
+        },
         ..ModeSpec::plant()
     };
     let ignores = drive(&base, 12);
@@ -323,9 +360,99 @@ fn each_cone_interaction_reading_plays_differently() {
         },
         12,
     );
-    assert_ne!(ignores, blocked);
-    assert_ne!(ignores, slowed);
-    assert_ne!(blocked, slowed);
+    assert_ne!(ignores, blocked, "the shield did nothing");
+    // `Slowed` is deliberately not asserted here. Once the shield reads
+    // coverage rather than occupancy it only fires when a *teammate* is looking
+    // at the threatened cell, and the driver does not coordinate coverage — it
+    // faces wherever it is walking. The crafted case below is what proves it.
+    let _ = slowed;
+}
+
+/// The shield is a **teammate** mechanic, and this is where that is pinned.
+///
+/// A pawn's own cell is held but not *covered*, so looking after yourself is
+/// not a defence — somebody else has to be watching you. That is a much better
+/// rule than the one it replaced, where every pawn was permanently unreachable
+/// and the guardians spent whole matches parked next to the squad, and it is
+/// squarely the co-operation the north star asks for within a team.
+#[test]
+fn a_watched_teammate_is_shielded_and_an_unwatched_one_is_not() {
+    use crate::spec::Stacking;
+
+    fn caught(cone: ConeInteraction, escort_looks: bool) -> (bool, HexCoord) {
+        let spec = ModeSpec {
+            pawns_per_team: 2,
+            guardian_count: 1,
+            guardian_cadence: 1,
+            guardian_target: GuardianTarget::NearestPawn,
+            cone_interaction: cone,
+            mutation: MutationKind::None,
+            stacking: Stacking::Forbidden,
+            ..ModeSpec::plant()
+        };
+        let rules = Rules::from_spec(&spec);
+        let mut state = deal(&spec);
+
+        let (target, escort, post) = (at(3, 3), at(2, 3), at(4, 3));
+        for edge in [
+            Edge {
+                cell: escort,
+                face: HexFace::East,
+            },
+            Edge {
+                cell: target,
+                face: HexFace::East,
+            },
+        ] {
+            state.board.set_port(edge, PortClass::Door);
+        }
+        place(&mut state, &[(0, target), (1, escort)]);
+        state.guardians[0].at = post;
+
+        // The escort either watches its teammate or looks away.
+        let watch = if escort_looks {
+            HexFace::East
+        } else {
+            HexFace::West
+        };
+        step(
+            &mut state,
+            &rules,
+            &[
+                Intent {
+                    pawn: PawnId(0),
+                    facing: HexFace::East,
+                    action: Action::Hold,
+                },
+                Intent {
+                    pawn: PawnId(1),
+                    facing: watch,
+                    action: Action::Hold,
+                },
+            ],
+        );
+        (state.pawn(PawnId(0)).jailed, state.guardians[0].at)
+    }
+
+    let (taken, _) = caught(ConeInteraction::Ignores, true);
+    assert!(
+        taken,
+        "without a shield the guardian walks in and takes you"
+    );
+
+    let (taken, where_it_stopped) = caught(ConeInteraction::Blocked, true);
+    assert!(!taken, "a watched teammate is safe");
+    assert_ne!(where_it_stopped, at(3, 3), "and the guardian is kept out");
+
+    let (taken, where_it_went) = caught(ConeInteraction::Slowed, true);
+    assert!(!taken, "slowed forfeits the catch");
+    assert_eq!(where_it_went, at(3, 3), "but it still walks in");
+
+    let (taken, _) = caught(ConeInteraction::Blocked, false);
+    assert!(
+        taken,
+        "looking after yourself is not a defence - somebody must watch you"
+    );
 }
 
 #[test]
@@ -472,7 +599,8 @@ fn the_telegraph_never_marks_a_flag_or_prison_boundary() {
     let rules = Rules::from_spec(&spec);
     let mut state = deal(&spec);
     for _ in 0..40 {
-        rules.mutation.telegraph(&mut state);
+        let locks = rules.vision.locks(&state);
+        rules.mutation.telegraph(&mut state, &locks);
         for change in &state.telegraph {
             let other = state
                 .board
@@ -963,12 +1091,13 @@ fn stacking_is_a_seam_that_changes_the_match() {
     assert_ne!(
         drive(
             &ModeSpec {
-                stacking: Stacking::Allowed,
+                stacking: Stacking::Forbidden,
                 ..base.clone()
             },
             24
         ),
         drive(&base, 24),
+        "the shipped rule is Allowed, so Forbidden is the variant under test",
     );
 }
 
@@ -1033,4 +1162,397 @@ fn a_driven_team_only_ever_orders_its_own_pawns() {
             );
         }
     }
+}
+
+// --- the architect ---------------------------------------------------------
+
+fn architect_spec() -> ModeSpec {
+    ModeSpec {
+        architect: Some(0),
+        hand_size: 7,
+        plays_per_turn: 2,
+        threats: vec![ThreatKind::None],
+        mutation: MutationKind::Architect {
+            rogue: crate::sim::mutation::Scope::Capped { base: 0, cap: 0 },
+        },
+        ..ModeSpec::plant()
+    }
+}
+
+/// Declare plays, run a turn, and report what was refused and what landed.
+fn lay(spec: &ModeSpec, plays: &[TilePlay]) -> (Vec<Refusal>, Vec<TilePlay>) {
+    let rules = Rules::from_spec(spec);
+    let mut state = deal(spec);
+    state.architect_queue = plays.to_vec();
+    let hold: Vec<Intent> = state
+        .free_pawns()
+        .map(|pawn| Intent {
+            pawn: pawn.id,
+            facing: pawn.facing,
+            action: Action::Hold,
+        })
+        .collect();
+    step(&mut state, &rules, &hold);
+    (
+        state.refusals.iter().map(|(_, why)| *why).collect(),
+        state.report.tiles_played.clone(),
+    )
+}
+
+#[test]
+fn an_architect_may_not_rebuild_what_its_own_team_is_holding() {
+    // Observe-to-freeze from the other side of the table. The operatives'
+    // attention is the price of their safety, and it is paid to their own
+    // architect as much as to anyone else's — which is what forces an architect
+    // to build *ahead* of the squad rather than underneath it.
+    let spec = architect_spec();
+    let underfoot = TilePlay {
+        cell: at(0, 4),
+        shape: TileShape::Corridor,
+        rotation: 1,
+    };
+    let (refused, played) = lay(&spec, &[underfoot]);
+    assert_eq!(refused, vec![Refusal::Held]);
+    assert!(played.is_empty());
+
+    // Two hexes clear of the squad, the same tile lands.
+    let ahead = TilePlay {
+        cell: at(4, 4),
+        shape: TileShape::Corridor,
+        rotation: 1,
+    };
+    let (refused, played) = lay(&spec, &[ahead]);
+    assert!(refused.is_empty(), "unexpected refusal: {refused:?}");
+    assert_eq!(played, vec![ahead]);
+}
+
+#[test]
+fn no_accepted_play_can_ever_strand_the_objective() {
+    // Rather than hand-pick a cell that happens to be a bridge — which depends
+    // on a board that rewires every turn — assert the invariant itself over
+    // every cell and shape: whatever the architect is allowed to play, the
+    // flags and the squad remain mutually reachable afterwards. A lab that can
+    // deal an unwinnable match wastes the tester's time.
+    let spec = ModeSpec {
+        hand_size: 24,
+        plays_per_turn: 1,
+        ..architect_spec()
+    };
+    let rules = Rules::from_spec(&spec);
+
+    for shape in TileShape::ALL {
+        for rotation in 0..6_u8 {
+            let mut state = deal(&spec);
+            let cells: Vec<_> = state.board.cells().collect();
+            for cell in cells {
+                let mut trial = state.clone();
+                trial.architect_queue = vec![TilePlay {
+                    cell,
+                    shape,
+                    rotation,
+                }];
+                let hold: Vec<Intent> = trial
+                    .free_pawns()
+                    .map(|pawn| Intent {
+                        pawn: pawn.id,
+                        facing: pawn.facing,
+                        action: Action::Hold,
+                    })
+                    .collect();
+                step(&mut trial, &rules, &hold);
+                if trial.report.tiles_played.is_empty() {
+                    continue;
+                }
+                let anchor = trial.pawns[0].at;
+                for flag in &trial.flags {
+                    assert!(
+                        trial.board.connected(anchor, flag.at),
+                        "{shape:?} rot {rotation} at {:?} stranded a flag",
+                        (cell.q, cell.r)
+                    );
+                }
+            }
+            state.architect_queue.clear();
+        }
+    }
+}
+
+#[test]
+fn a_hand_is_a_cadence_and_the_allowance_is_enforced() {
+    let spec = ModeSpec {
+        plays_per_turn: 1,
+        ..architect_spec()
+    };
+    let plays = [
+        TilePlay {
+            cell: at(4, 4),
+            shape: TileShape::Corridor,
+            rotation: 1,
+        },
+        TilePlay {
+            cell: at(3, 4),
+            shape: TileShape::Corridor,
+            rotation: 1,
+        },
+    ];
+    let (refused, played) = lay(&spec, &plays);
+    assert_eq!(played.len(), 1, "only one play per turn");
+    assert_eq!(refused, vec![Refusal::NoPlaysLeft]);
+}
+
+#[test]
+fn a_tile_not_in_hand_cannot_be_played() {
+    let spec = ModeSpec {
+        hand_size: 1,
+        ..architect_spec()
+    };
+    let rules = Rules::from_spec(&spec);
+    let mut state = deal(&spec);
+    let held = state.hands[0].cards[0];
+    let absent = TileShape::ALL
+        .into_iter()
+        .find(|shape| *shape != held)
+        .expect("more than one shape exists");
+    state.architect_queue = vec![TilePlay {
+        cell: at(4, 4),
+        shape: absent,
+        rotation: 0,
+    }];
+    step(&mut state, &rules, &[]);
+    assert_eq!(
+        state
+            .refusals
+            .iter()
+            .map(|(_, why)| *why)
+            .collect::<Vec<_>>(),
+        vec![Refusal::NotInHand]
+    );
+}
+
+#[test]
+fn a_played_tile_is_marked_as_a_decision_and_churn_is_not() {
+    // If a player cannot tell a deliberate play from background noise, an
+    // architect is only an expensive random number generator. The source is
+    // what the view draws differently, so it has to be right in the simulation.
+    let spec = ModeSpec {
+        mutation: MutationKind::Architect {
+            rogue: crate::sim::mutation::Scope::Capped { base: 3, cap: 3 },
+        },
+        ..architect_spec()
+    };
+    let rules = Rules::from_spec(&spec);
+    let mut state = deal(&spec);
+    // Play something the hand actually holds; the deck is shuffled, so naming
+    // a shape up front would be testing the draw rather than the rule.
+    let card = state.hands[0].cards[0];
+    state.architect_queue = vec![TilePlay {
+        cell: at(4, 4),
+        shape: card,
+        rotation: 0,
+    }];
+    let hold: Vec<Intent> = state
+        .free_pawns()
+        .map(|pawn| Intent {
+            pawn: pawn.id,
+            facing: pawn.facing,
+            action: Action::Hold,
+        })
+        .collect();
+    step(&mut state, &rules, &hold);
+
+    let mine: Vec<_> = state
+        .telegraph
+        .iter()
+        .filter(|change| matches!(change.source, ChangeSource::Architect(_)))
+        .collect();
+    let rogue: Vec<_> = state
+        .telegraph
+        .iter()
+        .filter(|change| change.source == ChangeSource::Rogue)
+        .collect();
+    assert!(
+        state.refusals.is_empty(),
+        "the play was refused: {:?}",
+        state.refusals
+    );
+    assert!(!mine.is_empty(), "the play left no marked footprint");
+    assert!(!rogue.is_empty(), "the rogue churn stopped running");
+    // And the played footprint is contiguous around one cell, which is what
+    // makes it read as intent rather than scatter.
+    assert!(
+        mine.iter()
+            .all(|change| lateral_distance(change.edge.cell, at(4, 4)) <= 1),
+        "a play's footprint should sit on the cell it was played at"
+    );
+}
+
+#[test]
+fn an_architect_plays_a_different_match_than_a_generator() {
+    let spec = architect_spec();
+    let plain = ModeSpec {
+        architect: None,
+        mutation: MutationKind::TelegraphedRewire {
+            scope: crate::sim::mutation::Scope::Capped { base: 2, cap: 4 },
+        },
+        ..spec.clone()
+    };
+    assert_ne!(drive(&spec, 12), drive(&plain, 12));
+}
+
+#[test]
+fn the_squad_earns_the_architects_cards() {
+    // Nothing refills on a clock. An architect whose operatives achieve nothing
+    // runs out of tiles, which is what makes the two seats need each other
+    // rather than merely coexist.
+    let spec = ModeSpec {
+        hand_size: 3,
+        plays_per_turn: 1,
+        ..architect_spec()
+    };
+    let rules = Rules::from_spec(&spec);
+    let mut state = deal(&spec);
+    assert_eq!(state.hands[0].cards.len(), 3, "an opening hand is dealt");
+    assert_eq!(state.hands[0].owed, 0, "and nothing is owed on top of it");
+
+    // Spend one and idle: no clock draw puts it back.
+    let card = state.hands[0].cards[0];
+    state.architect_queue = vec![TilePlay {
+        cell: at(4, 4),
+        shape: card,
+        rotation: 0,
+    }];
+    let hold: Vec<Intent> = state
+        .free_pawns()
+        .map(|pawn| Intent {
+            pawn: pawn.id,
+            facing: pawn.facing,
+            action: Action::Hold,
+        })
+        .collect();
+    step(&mut state, &rules, &hold);
+    assert_eq!(
+        state.hands[0].cards.len(),
+        2,
+        "a spent tile is not replaced for free"
+    );
+
+    // Planting pays. The pawn has to actually be on the flag for `claim` to do
+    // anything, so put it there.
+    let flag = state.flags[0].at;
+    place(&mut state, &[(0, flag)]);
+    let before = state.hands[0].cards.len();
+    rules.objective.claim(&mut state, PawnId(0));
+    assert!(
+        state.hands[0].owed > 0 || state.hands[0].cards.len() > before,
+        "planting a flag must pay the architect"
+    );
+}
+
+#[test]
+fn an_idle_squad_starves_its_architect() {
+    // The end state the economy is meant to produce, asserted rather than
+    // assumed: a squad that holds nothing and achieves nothing eventually
+    // leaves its architect with no tiles at all.
+    let spec = ModeSpec {
+        hand_size: 2,
+        plays_per_turn: 1,
+        mutation: MutationKind::Architect {
+            rogue: crate::sim::mutation::Scope::Capped { base: 0, cap: 0 },
+        },
+        ..architect_spec()
+    };
+    let rules = Rules::from_spec(&spec);
+    let mut state = deal(&spec);
+
+    for _ in 0..6 {
+        if let Some(&card) = state.hands[0].cards.first() {
+            state.architect_queue = vec![TilePlay {
+                cell: at(4, 4),
+                shape: card,
+                rotation: 0,
+            }];
+        }
+        let hold: Vec<Intent> = state
+            .free_pawns()
+            .map(|pawn| Intent {
+                pawn: pawn.id,
+                facing: pawn.facing,
+                action: Action::Hold,
+            })
+            .collect();
+        step(&mut state, &rules, &hold);
+    }
+    assert!(
+        state.hands[0].cards.is_empty(),
+        "an architect spending on an idle squad should run dry, still holds {:?}",
+        state.hands[0].cards
+    );
+}
+
+// --- what a team knows -----------------------------------------------------
+
+#[test]
+fn a_squad_learns_only_what_it_looks_at() {
+    use crate::sim::knowledge::Knowledge;
+
+    let spec = still_spec();
+    let rules = Rules::from_spec(&spec);
+    let state = deal(&spec);
+
+    let mut known = Knowledge::blank(state.board.size());
+    assert_eq!(known.known_count(), 0, "a squad starts knowing nothing");
+
+    known.observe(&state, rules.vision.as_ref(), TeamId(0));
+    let learned = known.known_count();
+    assert!(learned > 0, "standing somewhere is a kind of looking");
+    assert!(
+        learned < state.board.cells().count(),
+        "but a cone is not the whole board"
+    );
+    for pawn in state.free_pawns() {
+        assert!(known.known(pawn.at), "a pawn knows where it stands");
+    }
+}
+
+#[test]
+fn knowledge_goes_stale_when_the_facility_moves_behind_you() {
+    // The operator's picture is a memory, not a feed. An architect rewires
+    // ground nobody is watching, so a squad that trusted its map would walk
+    // into a wall that was a doorway when it last looked — which is exactly the
+    // pressure the two-seat design runs on.
+    use crate::sim::knowledge::Knowledge;
+
+    let spec = ModeSpec {
+        threats: vec![ThreatKind::None],
+        ..ModeSpec::plant()
+    };
+    let rules = Rules::from_spec(&spec);
+    let mut state = deal(&spec);
+
+    let mut known = Knowledge::blank(state.board.size());
+    known.observe(&state, rules.vision.as_ref(), TeamId(0));
+    let watched = state.pawn(PawnId(0)).at;
+    assert!(!known.stale(watched, state.turn), "just seen is not stale");
+
+    let hold: Vec<Intent> = state
+        .free_pawns()
+        .map(|pawn| Intent {
+            pawn: pawn.id,
+            facing: pawn.facing,
+            action: Action::Hold,
+        })
+        .collect();
+    step(&mut state, &rules, &hold);
+
+    assert!(
+        known.stale(watched, state.turn),
+        "a turn passed without re-observing, so the memory is old"
+    );
+    // Somewhere the squad has never been stays unknown entirely, however many
+    // turns go by.
+    let far = at(6, 3);
+    assert!(
+        !known.known(far),
+        "the far side of the board is not knowledge"
+    );
 }
