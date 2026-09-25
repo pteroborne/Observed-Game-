@@ -200,7 +200,9 @@ impl HexWfcMatch {
         for id in self.players.keys().copied().collect::<Vec<_>>() {
             let player = &self.players[&id];
             let position = player.position;
-            if !player.in_facility() {
+            // A jailed body walks too, and can wedge in its maze like anywhere else.
+            let walking = player.in_facility() || player.place == super::HexBodyPlace::Prison;
+            if !walking {
                 self.progress_anchor.insert(id, position);
                 self.stuck_ticks.insert(id, 0);
                 continue;

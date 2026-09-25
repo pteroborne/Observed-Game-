@@ -77,6 +77,7 @@ fn offline_pause_stops_the_authoritative_system_tick() {
             results_delay_frames: 0,
             networked: false,
             resync_attempts: 0,
+            ascent: None,
         })
         .insert_resource(HexWfcIntent {
             intent: PlayerIntent {

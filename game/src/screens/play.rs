@@ -10,7 +10,7 @@ use crate::hex_wfc::{
     launch::{HexLaunchSpec, HexSeedPolicy},
     loading::HexLaunchRequestSequence,
 };
-use crate::play_setup::{LaunchContext, PlayPreset, PlaySetupDraft, save_play_setup};
+use crate::play_setup::{LaunchContext, PlayPreset, PlayRules, PlaySetupDraft, save_play_setup};
 use crate::view::theme::{ACCENT, DIM, TITLE, panel, screen_root, summary_panel, text};
 
 const HUB_SCOPE: FocusScopeId = FocusScopeId("play_hub");
@@ -18,6 +18,7 @@ const SOLO: WidgetId = WidgetId::named("play.preset.solo");
 const CO_OP: WidgetId = WidgetId::named("play.preset.co_op");
 const TEAM_RACE: WidgetId = WidgetId::named("play.preset.team_race");
 const SPECTATE: WidgetId = WidgetId::named("play.preset.spectate");
+const RULES: WidgetId = WidgetId::named("play.rules");
 const ADVANCED: WidgetId = WidgetId::named("play.advanced");
 const START: WidgetId = WidgetId::named("play.start");
 const LAN: WidgetId = WidgetId::named("play.lan");
@@ -34,6 +35,7 @@ const ADVANCED_BACK: WidgetId = WidgetId::named("play.advanced.back");
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PlayAction {
     SelectPreset(PlayPreset),
+    CycleRules,
     Advanced,
     Launch,
     Lan,
@@ -85,22 +87,27 @@ pub(crate) fn setup_hub(mut commands: Commands, setup: Res<PlaySetupDraft>) {
                 }
                 widgets::spawn_button(
                     panel,
-                    WidgetSpec::enabled(ADVANCED, HUB_SCOPE, 4, "Advanced setup"),
+                    WidgetSpec::enabled(RULES, HUB_SCOPE, 4, rules_label(&setup)),
+                    PlayAction::CycleRules,
+                );
+                widgets::spawn_button(
+                    panel,
+                    WidgetSpec::enabled(ADVANCED, HUB_SCOPE, 5, "Advanced setup"),
                     PlayAction::Advanced,
                 );
                 widgets::spawn_button(
                     panel,
-                    WidgetSpec::enabled(START, HUB_SCOPE, 5, launch_label(&setup)),
+                    WidgetSpec::enabled(START, HUB_SCOPE, 6, launch_label(&setup)),
                     PlayAction::Launch,
                 );
                 widgets::spawn_button(
                     panel,
-                    WidgetSpec::enabled(LAN, HUB_SCOPE, 6, "LAN play"),
+                    WidgetSpec::enabled(LAN, HUB_SCOPE, 7, "LAN play"),
                     PlayAction::Lan,
                 );
                 widgets::spawn_button(
                     panel,
-                    WidgetSpec::enabled(BACK, HUB_SCOPE, 7, "Back"),
+                    WidgetSpec::enabled(BACK, HUB_SCOPE, 8, "Back"),
                     PlayAction::Back,
                 );
             });
@@ -175,6 +182,10 @@ pub(crate) fn activate_hub(
             setup.select_preset(preset);
             save_play_setup(&setup);
         }
+        PlayAction::CycleRules => {
+            setup.rules = setup.rules.next();
+            save_play_setup(&setup);
+        }
         PlayAction::Advanced => next.set(GameState::PlayAdvanced),
         PlayAction::Launch => launch_local(&mut commands, &mut sequence, &setup, &mut next),
         PlayAction::Lan => next.set(GameState::LanBrowser),
@@ -247,6 +258,7 @@ pub(crate) fn refresh_hub(
     for (action, mut label) in &mut preset_buttons {
         label.0 = match action {
             PlayAction::SelectPreset(preset) => preset_label(*preset, &setup),
+            PlayAction::CycleRules => rules_label(&setup),
             PlayAction::Launch => launch_label(&setup),
             PlayAction::Advanced => "Advanced setup".to_string(),
             PlayAction::Lan => "LAN play".to_string(),
@@ -313,7 +325,14 @@ fn preset_label(preset: PlayPreset, setup: &PlaySetupDraft) -> String {
 }
 
 fn launch_label(setup: &PlaySetupDraft) -> String {
-    format!("Start {}", setup.preset.label())
+    match setup.rules {
+        PlayRules::Race => format!("Start {}", setup.preset.label()),
+        PlayRules::Ascent => format!("Start {}: {}", setup.preset.label(), setup.rules.label()),
+    }
+}
+
+fn rules_label(setup: &PlaySetupDraft) -> String {
+    format!("Rules: {}", setup.rules.label())
 }
 
 fn advanced_label(action: AdvancedAction, setup: &PlaySetupDraft) -> String {
@@ -345,6 +364,12 @@ fn play_summary(setup: &PlaySetupDraft) -> String {
     if !setup.fill_empty_seats && setup.teams.saturating_mul(setup.members_per_team) > 1 {
         summary.push_str("\nLocal: one controllable seat | LAN: remaining seats require humans");
     }
+    if setup.rules == PlayRules::Ascent {
+        summary.push_str(
+            "\nEach team's Architect is a bot that builds and repairs with cards. A catch is \
+             prison; LAN still plays the race.",
+        );
+    }
     summary
 }
 
@@ -363,6 +388,7 @@ mod tests {
                         members_per_team: size,
                         fill_empty_seats: true,
                         guardian: true,
+                        rules: crate::play_setup::PlayRules::Race,
                     };
                     assert!(draft.validate().is_ok());
                 }

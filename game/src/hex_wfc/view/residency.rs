@@ -388,7 +388,7 @@ pub(crate) fn sync_streamed_cells(
         &mut commands,
         &mut assets,
         &mut meshes,
-        &runtime,
+        (&runtime.match_state.facility, &runtime.match_state.geometry),
         &residency.catalog,
         &requested,
     );

@@ -22,13 +22,28 @@ use super::{
     HexArchetype, HexPlacement, HexSpace, HexWfcConfig, HexWfcWorld, authored_hall, lateral_bit,
 };
 
+/// Where a maze of [`braided_maze`] is entered: its spawn corner.
+#[must_use]
+pub const fn maze_entry(maze: &HexWfcWorld) -> HexCoord {
+    maze.config.spawn()
+}
+
+/// Where a maze of [`braided_maze`] is left: its far corner.
+#[must_use]
+pub const fn maze_exit(maze: &HexWfcWorld) -> HexCoord {
+    maze.config.exit()
+}
+
 /// A cell's doors in the carved tree, leaving room for braiding to add one more.
 const TREE_DEGREE: u32 = 3;
 /// The most doors an authored flat hall has.
 const HALL_DEGREE: u32 = 4;
 
-/// A braided maze of `cols` by `rows` cells on one level, entered at the lattice's spawn
-/// corner and left at its exit corner, every hall in `register`.
+/// A braided maze of `cols` by `rows` cells on one level, entered at [`maze_entry`] and
+/// left at [`maze_exit`], its two far corners, every hall in `register`.
+///
+/// It is sealed ([`HexWfcWorld::sealed`]): no wall of it opens onto the rock around it and
+/// no railing stands on its edge.
 ///
 /// Deterministic in `seed`. The two corners are always joined.
 #[must_use]
@@ -87,6 +102,7 @@ pub fn braided_maze(
         route_corridors: false,
         carve_unrouted: false,
         open_air: false,
+        sealed: true,
     }
 }
 
@@ -273,7 +289,7 @@ mod tests {
     fn every_built_cell_reaches_the_way_out() {
         for seed in 0..64 {
             let world = maze(seed);
-            let exit = world.config.exit();
+            let exit = maze_exit(&world);
             for (&cell, placement) in &world.placements {
                 if placement.space.built() {
                     assert!(
@@ -282,7 +298,7 @@ mod tests {
                     );
                 }
             }
-            assert!(world.placements[&world.config.spawn()].space.built());
+            assert!(world.placements[&maze_entry(&world)].space.built());
         }
     }
 
@@ -301,7 +317,7 @@ mod tests {
                 .filter(|p| p.doors.count_ones() >= 3)
                 .count();
             let route = world
-                .route_between(world.config.spawn(), world.config.exit())
+                .route_between(maze_entry(&world), maze_exit(&world))
                 .expect("the corners are joined")
                 .len();
             assert!(

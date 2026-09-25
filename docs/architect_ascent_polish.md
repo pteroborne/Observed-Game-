@@ -150,6 +150,47 @@ from the bodies the way they learn positions:
 - The rules see a jailed body as jailed at the lobby, and a lost one as corrupted, whose
   seat becomes a Rogue seat. All loyal Observers jailed is the Rogue's win.
 
+### Playing it in the game
+
+Play has a **Rules** row: *Facility race* or *Architect Ascent*. It is kept apart from
+the roster preset and survives changing it. Ascent is local only for now; LAN still
+plays the race.
+
+- The runtime keeps its `HexWfcMatch` where every presentation system reads it and holds
+  the rules beside it (`AscentRules`, the rules without the match inside them). Each tick
+  steps both together; the rules' outcome ends the match and decides the result.
+- Every team's Architect seat is held by the loyal bot (`ascent/sim/loyal.rs`): repair
+  mismatched doorways, otherwise shorten the team's way to the summit without breaking
+  anything, otherwise hold. It asks the human legality query and submits through the human
+  path, in its team's hand context. It judges a play without making it (one search from
+  the summit, a bounded one from each Observer, and the doorways round the played cell),
+  which took a production beat from 388 ms to about 3 ms. A healthy facility gives it
+  nothing to do; it answers damage.
+- A jailed body is drawn in its team's maze, 1 km below the facility and 2 km from the
+  next team's, with the camera and hands. The maze is spawned whole when the local body
+  arrives. The maze is a sealed world (`HexWfcWorld::sealed`): no wall of it comes down
+  onto the rock around it and no railing stands on its edge, so it is corridors, not the
+  facility's walkways under a sky. Every facility stays unsealed.
+- The prison has a gate, in the equipment's language: a cage of six bronze bars (the
+  Guardian's trim) between a lit ring and a cap, lit with the new `MarkerRole::Prison`, a
+  pale cold light apart from every saturated hue. It stands on the lobby tile, where a
+  column of that light fills with the local team's hold, and in the maze's way-out hall.
+- The objective panel says what the prison asks: *Find the way out of the maze* when
+  jailed, *Hold the prison lobby to free a teammate* when one is, and *Climb to the
+  summit* otherwise, in place of the race's keystones.
+
+Evidence (`OBSERVED2_CAPTURE_HEX_WFC_PRISON=<dir> cargo dev-run -p observed_game`, a
+production facility, the local body jailed and walked out by the game's own bot):
+
+- [In the maze](evidence/ascent-prison/prison-maze-1280x800.png)
+- [At its way out](evidence/ascent-prison/prison-way-out-1280x800.png)
+- [The lobby's gate, from the hall next door](evidence/ascent-prison/prison-lobby-1280x800.png)
+
+Measured at production scale: a tick is about 0.1 ms of rules, a bot Architect's beat
+about 3 ms, and a Guardian's catch 35-40 ms, which is the new maze's geometry (17 ms) and
+colliders (17 ms) built on the tick of the catch. Spreading that build over several ticks,
+as a relayout is spread, is the fix when it matters.
+
 ### Not yet joined
 
 - The rules' own Guardians (the lab's cell-level hunters) are not placed; the physical
@@ -160,7 +201,9 @@ from the bodies the way they learn positions:
   thing.
 - A match snapshot does not yet carry where each body is or the prison's mazes, so a
   replay or LAN peer of an Ascent match would not see them. That is part of the LAN slice.
-- Nothing draws the maze yet: the game does not run an Ascent match.
+- A human cannot take an Architect's seat yet: every Architect is the bot. The
+  Architect's own screen (map, hand, placement) is the next part of this slice.
+- A replay tape of an Ascent match samples jailed bodies at their maze coordinates.
 
 ## Remaining integration
 

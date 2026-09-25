@@ -455,6 +455,7 @@ fn oversized_grid_reports_collider_id_capacity_before_projection() {
         route_corridors: false,
         carve_unrouted: false,
         open_air: false,
+        sealed: false,
     };
     assert!(matches!(
         HexWfcGeometrySnapshot::project(&world, &[]),
@@ -1057,6 +1058,7 @@ fn multi_cell_world(role: RoomRole, anchor: HexCoord) -> HexWfcWorld {
         route_corridors: false,
         carve_unrouted: false,
         open_air: false,
+        sealed: false,
     }
 }
 

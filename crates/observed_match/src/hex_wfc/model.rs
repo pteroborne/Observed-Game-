@@ -602,7 +602,10 @@ impl HexWfcMatch {
         self.step_prison();
         self.sync_teleports_to_bodies();
         self.update_map_knowledge();
-        self.resolve_escapes();
+        // In a match the Architects direct, the Ascent rules decide who has won.
+        if !self.directed {
+            self.resolve_escapes();
+        }
         &self.recent_events
     }
 

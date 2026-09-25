@@ -109,11 +109,12 @@ fn opens_outward(world: &HexWfcWorld, at: HexCoord, face: HexFace) -> bool {
 
 /// The open edges of one cell, or `None` if it keeps every wall.
 ///
-/// Only cells that [`can_open`] do.
+/// Only cells that [`can_open`] do, and never in a sealed world
+/// ([`HexWfcWorld::sealed`]), like a prison maze, which keeps every wall.
 #[must_use]
 pub fn open_edges(world: &HexWfcWorld, at: HexCoord) -> Option<OpenEdges> {
     let placement = world.placements.get(&at)?;
-    if !can_open(placement) {
+    if world.sealed || !can_open(placement) {
         return None;
     }
     let faces = HexFace::LATERAL
@@ -155,6 +156,10 @@ pub fn open_edges(world: &HexWfcWorld, at: HexCoord) -> Option<OpenEdges> {
 /// opening becomes a balcony.
 #[must_use]
 pub fn rim_pieces(world: &HexWfcWorld, at: HexCoord) -> Vec<EdgePiece> {
+    // A sealed world's lattice edge is not the edge of anything.
+    if world.sealed {
+        return Vec::new();
+    }
     let grid = world.config.grid();
     let origin = Vec3::from_array(observed_hex::hex_origin(at));
     HexFace::LATERAL
@@ -610,6 +615,7 @@ mod tests {
             route_corridors: false,
             carve_unrouted: false,
             open_air: false,
+            sealed: false,
         }
     }
 

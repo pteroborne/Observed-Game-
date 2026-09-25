@@ -52,6 +52,38 @@ impl PlayPreset {
     }
 }
 
+/// Which game the facility plays. Chosen apart from the roster preset, and kept when the
+/// preset changes.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlayRules {
+    /// The facility race: the facility rewrites what nobody watches, and teams escape.
+    #[default]
+    Race,
+    /// Architect Ascent: each team's Architect rewrites the facility with cards, a catch
+    /// is prison, and the first team to bring everyone to the summit wins. Local play only
+    /// for now; LAN still plays the race.
+    Ascent,
+}
+
+impl PlayRules {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Race => "Facility race",
+            Self::Ascent => "Architect Ascent",
+        }
+    }
+
+    #[must_use]
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Race => Self::Ascent,
+            Self::Ascent => Self::Race,
+        }
+    }
+}
+
 /// Editable setup retained when the player moves between frontend screens.
 #[derive(Resource, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -61,6 +93,7 @@ pub struct PlaySetupDraft {
     pub members_per_team: u8,
     pub fill_empty_seats: bool,
     pub guardian: bool,
+    pub rules: PlayRules,
 }
 
 impl Default for PlaySetupDraft {
@@ -79,6 +112,7 @@ impl PlaySetupDraft {
                 members_per_team: 1,
                 fill_empty_seats: false,
                 guardian: true,
+                rules: PlayRules::Race,
             },
             PlayPreset::CoOp => Self {
                 preset,
@@ -86,6 +120,7 @@ impl PlaySetupDraft {
                 members_per_team: 4,
                 fill_empty_seats: true,
                 guardian: true,
+                rules: PlayRules::Race,
             },
             PlayPreset::TeamRace => Self {
                 preset,
@@ -93,6 +128,7 @@ impl PlaySetupDraft {
                 members_per_team: 2,
                 fill_empty_seats: true,
                 guardian: true,
+                rules: PlayRules::Race,
             },
             PlayPreset::Spectate => Self {
                 preset,
@@ -100,6 +136,7 @@ impl PlaySetupDraft {
                 members_per_team: 2,
                 fill_empty_seats: true,
                 guardian: true,
+                rules: PlayRules::Race,
             },
             PlayPreset::Custom => Self {
                 preset,
@@ -107,6 +144,7 @@ impl PlaySetupDraft {
                 members_per_team: 2,
                 fill_empty_seats: true,
                 guardian: true,
+                rules: PlayRules::Race,
             },
         }
     }
@@ -115,7 +153,10 @@ impl PlaySetupDraft {
         if preset == PlayPreset::Custom {
             self.preset = PlayPreset::Custom;
         } else {
-            *self = Self::for_preset(preset);
+            *self = Self {
+                rules: self.rules,
+                ..Self::for_preset(preset)
+            };
         }
     }
 
@@ -126,7 +167,10 @@ impl PlaySetupDraft {
             self.members_per_team = self.members_per_team.clamp(1, maximum_team_size);
             self
         } else {
-            Self::for_preset(self.preset)
+            Self {
+                rules: self.rules,
+                ..Self::for_preset(self.preset)
+            }
         }
     }
 
@@ -151,6 +195,7 @@ impl PlaySetupDraft {
             fill_empty_seats: self.fill_empty_seats,
             guardian: self.guardian,
             spectator: self.preset == PlayPreset::Spectate,
+            rules: self.rules,
         })
     }
 
@@ -247,6 +292,7 @@ pub struct ValidatedPlaySetup {
     pub fill_empty_seats: bool,
     pub guardian: bool,
     pub spectator: bool,
+    pub rules: PlayRules,
 }
 
 impl ValidatedPlaySetup {
@@ -280,9 +326,10 @@ impl ValidatedPlaySetup {
             format!("{} teams x {}", self.teams, self.members_per_team)
         };
         format!(
-            "{roster} | bots {} | Guardian {}",
+            "{roster} | bots {} | Guardian {} | {}",
             if self.fill_empty_seats { "fill" } else { "off" },
             if self.guardian { "on" } else { "off" },
+            self.rules.label(),
         )
     }
 }
@@ -430,6 +477,7 @@ mod tests {
             members_per_team: 4,
             fill_empty_seats: true,
             guardian: false,
+            rules: PlayRules::Race,
         };
         assert_eq!(valid.validate().expect("4x4 is valid").seats(), 16);
 
@@ -451,6 +499,7 @@ mod tests {
             members_per_team: 4,
             fill_empty_seats: false,
             guardian: false,
+            rules: PlayRules::Race,
         }
         .validate()
         .expect("draft validates");
@@ -477,6 +526,7 @@ mod tests {
             members_per_team: u8::MAX,
             fill_empty_seats: true,
             guardian: true,
+            rules: PlayRules::Race,
         }
         .normalized_after_load();
         assert_eq!(draft.teams, MAX_ROSTER);

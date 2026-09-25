@@ -16,6 +16,7 @@
 //! (90-125%) wraps within the panel rather than stretching it.
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
+use observed_match::hex_wfc::HexBodyPlace;
 
 use super::super::{HexOnboardingGate, overlay::MatchOverlayState, sim::HexWfcRuntime};
 use super::words::{
@@ -384,6 +385,15 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
         required: game.objectives.keystones_required,
         station_done: team.objectives.dual_station_complete,
         solo: team.members.len() == 1,
+        ascent: runtime.ascent.is_some(),
+        jailed: player.place == HexBodyPlace::Prison,
+        teammates_jailed: u8::try_from(
+            team.members
+                .iter()
+                .filter(|&&id| id != player.id && game.players[&id].place == HexBodyPlace::Prison)
+                .count(),
+        )
+        .unwrap_or(u8::MAX),
     });
     let prompt = game
         .interaction(runtime.local_player)

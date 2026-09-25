@@ -435,6 +435,7 @@ impl Vista {
             route_corridors: false,
             carve_unrouted: false,
             open_air: false,
+            sealed: false,
         };
         let air_cells = world.mark_open_air();
 

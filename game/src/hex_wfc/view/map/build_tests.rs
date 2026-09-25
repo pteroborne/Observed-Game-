@@ -45,6 +45,7 @@ fn test_runtime() -> HexWfcRuntime {
         results_delay_frames: 0,
         networked: false,
         resync_attempts: 0,
+        ascent: None,
     }
 }
 

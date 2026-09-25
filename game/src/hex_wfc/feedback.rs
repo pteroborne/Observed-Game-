@@ -56,6 +56,7 @@ pub(super) struct FeedbackAssets {
     teammate: Handle<StandardMaterial>,
     rival: Handle<StandardMaterial>,
     director: Handle<StandardMaterial>,
+    prison: Handle<StandardMaterial>,
 }
 
 #[derive(Resource, Default)]
@@ -79,6 +80,7 @@ pub(super) fn setup(
         teammate: beacon_material(&mut materials, MarkerRole::Teammate),
         rival: beacon_material(&mut materials, MarkerRole::Rival),
         director: beacon_material(&mut materials, MarkerRole::Director),
+        prison: beacon_material(&mut materials, MarkerRole::Prison),
     });
     commands.insert_resource(FeedbackState::default());
 }
@@ -194,6 +196,7 @@ fn material_for(assets: &FeedbackAssets, role: MarkerRole) -> Handle<StandardMat
         MarkerRole::Teammate => assets.teammate.clone(),
         MarkerRole::Rival => assets.rival.clone(),
         MarkerRole::Director => assets.director.clone(),
+        MarkerRole::Prison => assets.prison.clone(),
     }
 }
 

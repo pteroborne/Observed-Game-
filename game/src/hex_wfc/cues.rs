@@ -137,13 +137,11 @@ pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
         ),
         // The prison (Architect Ascent): a catch lands in the maze, and the lobby is
         // where a body comes back into the facility.
-        HexMatchEventKind::PlayerJailed => {
-            cue("PRISON", MarkerRole::Collapse, HexWfcSound::Guardian)
-        }
+        HexMatchEventKind::PlayerJailed => cue("PRISON", MarkerRole::Prison, HexWfcSound::Guardian),
         HexMatchEventKind::PlayerReleased => {
-            cue("PRISON EXIT", MarkerRole::Control, HexWfcSound::Recover)
+            cue("PRISON EXIT", MarkerRole::Prison, HexWfcSound::Recover)
         }
-        HexMatchEventKind::Jailbreak => cue("JAILBREAK", MarkerRole::Control, HexWfcSound::Recover),
+        HexMatchEventKind::Jailbreak => cue("JAILBREAK", MarkerRole::Prison, HexWfcSound::Recover),
         HexMatchEventKind::PlayerLost => {
             cue("LOST TO THE VOID", MarkerRole::Collapse, HexWfcSound::Hold)
         }

@@ -294,13 +294,17 @@ fn test_runtime() -> crate::hex_wfc::sim::HexWfcRuntime {
         results_delay_frames: 0,
         networked: false,
         resync_attempts: 0,
+        ascent: None,
     }
 }
 
 #[test]
 fn cell_entity_count_falls_with_merged_hull_meshes() {
     let runtime = test_runtime();
-    let catalog = shell::HexGeometryCatalog::build(&runtime);
+    let catalog = shell::HexGeometryCatalog::build(
+        &runtime.match_state.facility,
+        &runtime.match_state.geometry,
+    );
     let mut world = World::default();
     let mut meshes = Assets::<Mesh>::default();
     let mut materials = Assets::<StandardMaterial>::default();
@@ -334,7 +338,7 @@ fn cell_entity_count_falls_with_merged_hull_meshes() {
         &mut commands,
         &mut assets,
         &mut meshes,
-        &runtime,
+        (&runtime.match_state.facility, &runtime.match_state.geometry),
         &catalog,
         &requested,
     );
@@ -376,7 +380,10 @@ fn cell_entity_count_falls_with_merged_hull_meshes() {
 #[test]
 fn despawned_cell_rebuilds_identically_when_re_entered() {
     let runtime = test_runtime();
-    let catalog = shell::HexGeometryCatalog::build(&runtime);
+    let catalog = shell::HexGeometryCatalog::build(
+        &runtime.match_state.facility,
+        &runtime.match_state.geometry,
+    );
     let mut world = World::default();
     let mut meshes = Assets::<Mesh>::default();
     let mut materials = Assets::<StandardMaterial>::default();
@@ -397,7 +404,7 @@ fn despawned_cell_rebuilds_identically_when_re_entered() {
         &mut commands,
         &mut assets,
         &mut meshes,
-        &runtime,
+        (&runtime.match_state.facility, &runtime.match_state.geometry),
         &catalog,
         &requested,
     );
@@ -452,7 +459,7 @@ fn despawned_cell_rebuilds_identically_when_re_entered() {
         &mut commands,
         &mut assets,
         &mut meshes,
-        &runtime,
+        (&runtime.match_state.facility, &runtime.match_state.geometry),
         &catalog,
         &requested,
     );

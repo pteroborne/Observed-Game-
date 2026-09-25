@@ -89,7 +89,7 @@ pub(in crate::hex_wfc) fn sync_practical_shadow_budget(
         return;
     }
     *last_cell = Some(current);
-    let focus = runtime.local().position;
+    let focus = crate::hex_wfc::ascent::presented_position(runtime.local());
 
     // Nearest fixtures by squared distance to the runner (small budget → cheap select).
     let mut ranked: Vec<(f32, Entity)> = practicals
@@ -333,6 +333,7 @@ mod tests {
             results_delay_frames: 0,
             networked: false,
             resync_attempts: 0,
+            ascent: None,
         })
         .add_systems(Update, sync_practical_shadow_budget);
         for _ in 0..4 {

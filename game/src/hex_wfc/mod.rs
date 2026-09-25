@@ -3,6 +3,8 @@
 //! feedback, replay, and screen lifecycle integration. It parallels `full_wfc/` in
 //! structure and fidelity, driven by [`observed_match::hex_wfc::HexWfcMatch`].
 
+mod ascent;
+mod ascent_capture;
 mod audio;
 mod cues;
 mod entities;
@@ -18,6 +20,7 @@ mod objective_models;
 pub(crate) mod overlay;
 mod pad;
 mod perf;
+mod prison_gate;
 
 pub(crate) use perf::GPU_PROFILE_ENV;
 pub mod sim;
@@ -58,6 +61,7 @@ impl Plugin for HexWfcPlugin {
             })
             .init_resource::<HexOnboardingGate>()
             .init_resource::<view::camera::OverviewFrame>()
+            .init_resource::<view::PrisonView>()
             .add_observer(overlay::activate)
             .add_systems(
                 OnEnter(GameState::HexWfc),
@@ -85,6 +89,7 @@ impl Plugin for HexWfcPlugin {
                     perf::begin_fixed,
                     drive_traversal_capture,
                     hud::capture::drive,
+                    ascent_capture::drive,
                     sim::step_runtime,
                     perf::end_fixed,
                 )
@@ -110,6 +115,8 @@ impl Plugin for HexWfcPlugin {
                         view::exterior::rebuild_changed,
                         view::sync_changed_geometry,
                         view::sync_streamed_cells,
+                        view::sync_prison_view,
+                        prison_gate::sync_lobby_gate,
                         view::exterior::sync_visibility,
                     )
                         .chain(),
@@ -180,6 +187,10 @@ impl Plugin for HexWfcPlugin {
         let capture = std::env::var("OBSERVED2_CAPTURE_HEX_WFC_HUD")
             .map(|path| (path, HexWfcCaptureMode::Hud))
             .or_else(|_| {
+                std::env::var("OBSERVED2_CAPTURE_HEX_WFC_PRISON")
+                    .map(|path| (path, HexWfcCaptureMode::Prison))
+            })
+            .or_else(|_| {
                 std::env::var("OBSERVED2_CAPTURE_HEX_WFC_VISTA")
                     .map(|path| (path, HexWfcCaptureMode::Vista))
             })
@@ -216,6 +227,7 @@ impl Plugin for HexWfcPlugin {
                 mode,
                 HexWfcCaptureMode::Style
                     | HexWfcCaptureMode::Hud
+                    | HexWfcCaptureMode::Prison
                     | HexWfcCaptureMode::Relayout
                     | HexWfcCaptureMode::Traversal
                     | HexWfcCaptureMode::Vista
@@ -263,6 +275,8 @@ pub(super) enum HexWfcCaptureMode {
     Gameplay,
     /// Context prompts and text scaling at the Steam Deck viewport.
     Hud,
+    /// Architect Ascent's prison: a real catch, the maze, and the lobby (`ascent_capture`).
+    Prison,
     Map,
     Style,
     /// The arc headline: a mid-match observation-safe relayout captured before, during
@@ -301,10 +315,20 @@ fn autostart_capture(
     mut commands: Commands,
     capture: Res<HexWfcCapture>,
     mut next: ResMut<NextState<GameState>>,
-    play_setup: Res<crate::play_setup::PlaySetupDraft>,
+    mut play_setup: ResMut<crate::play_setup::PlaySetupDraft>,
     mut sequence: ResMut<loading::HexLaunchRequestSequence>,
 ) {
-    if capture.mode == HexWfcCaptureMode::Hud {
+    if capture.mode == HexWfcCaptureMode::Prison {
+        // A teammate, so one catch is not every loyal Observer jailed at once.
+        *play_setup = crate::play_setup::PlaySetupDraft {
+            rules: crate::play_setup::PlayRules::Ascent,
+            ..crate::play_setup::PlaySetupDraft::for_preset(crate::play_setup::PlayPreset::TeamRace)
+        };
+    }
+    if matches!(
+        capture.mode,
+        HexWfcCaptureMode::Hud | HexWfcCaptureMode::Prison
+    ) {
         commands.insert_resource(sequence.issue(
             crate::play_setup::LaunchContext::Local,
             sim::LOCAL_PLAYER,
@@ -383,6 +407,14 @@ fn capture_progress(
                 runtime.as_deref_mut(),
                 vista,
                 which,
+                &mut commands,
+                &mut exit,
+            );
+        }
+        HexWfcCaptureMode::Prison => {
+            ascent_capture::advance(
+                &mut request,
+                runtime.as_deref_mut(),
                 &mut commands,
                 &mut exit,
             );

@@ -86,6 +86,31 @@ fn a_guardian_catch_jails_a_lone_body_and_the_rogue_wins() {
         idle(&mut game);
     }
     assert_eq!(game.rules().outcome, MatchOutcome::RogueVictory);
+    assert_eq!(
+        game.physical().status,
+        crate::hex_wfc::HexMatchStatus::Finished,
+        "the rules decided, so the physical match stops"
+    );
+}
+
+#[test]
+fn reaching_the_summit_is_the_teams_win_and_ends_the_match() {
+    let mut game = game_with(7, 1, false);
+    idle(&mut game);
+    let summit = game.physical().facility.config.exit();
+    stage(&mut game, BODY, summit);
+    for _ in 0..ACTOR_BEAT_TICKS + 1 {
+        if game.rules().outcome != MatchOutcome::Running {
+            break;
+        }
+        idle(&mut game);
+    }
+    assert_eq!(game.rules().outcome, MatchOutcome::LoyalVictory);
+    assert_eq!(game.rules().summit_team, Some(TEAM));
+    assert_eq!(
+        game.physical().status,
+        crate::hex_wfc::HexMatchStatus::Finished
+    );
 }
 
 #[test]

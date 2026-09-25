@@ -16,6 +16,7 @@ mod lighting;
 pub(crate) mod map;
 mod mesh_group;
 mod open_edge_materials;
+mod prison;
 mod residency;
 mod shell;
 pub(in crate::hex_wfc) mod sky;
@@ -205,7 +206,10 @@ pub(super) fn setup_view(
         &mut images,
         &content.manifest,
     );
-    let catalog = shell::HexGeometryCatalog::build(&runtime);
+    let catalog = shell::HexGeometryCatalog::build(
+        &runtime.match_state.facility,
+        &runtime.match_state.geometry,
+    );
     shell::spawn_boundary(&mut commands, &mut assets, &mut meshes, &runtime, &catalog);
     // The outside: the sky beyond every open edge, and the building beyond the
     // streaming radius (`exterior`).
@@ -237,7 +241,7 @@ pub(super) fn setup_view(
         &mut commands,
         &mut assets,
         &mut meshes,
-        &runtime,
+        (&runtime.match_state.facility, &runtime.match_state.geometry),
         &catalog,
         &initial,
     );
@@ -276,6 +280,7 @@ pub(super) fn setup_view(
 }
 
 pub(super) use lighting::{sync_lighting_and_atmosphere, sync_practical_shadow_budget};
+pub(super) use prison::{PrisonView, sync_prison_view};
 use residency::{initial_spawn_batch, presentation_readiness};
 pub(super) use residency::{sync_changed_geometry, sync_streamed_cells};
 

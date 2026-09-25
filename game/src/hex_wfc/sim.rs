@@ -50,6 +50,8 @@ pub struct HexWfcRuntime {
     pub networked: bool,
     /// One history replay is allowed before a repeated desync disconnects.
     pub resync_attempts: u8,
+    /// The Architect Ascent rules riding beside the match, when it plays them.
+    pub ascent: Option<observed_match::ascent::facility::AscentRules>,
 }
 
 impl HexWfcRuntime {
@@ -260,7 +262,10 @@ pub(super) fn setup_runtime(
         networked,
     ));
     let seed_offset = prepared.seed_offset;
-    let match_state = prepared.match_state;
+    let mut match_state = prepared.match_state;
+    let ascent = (!networked && play_setup.rules == crate::play_setup::PlayRules::Ascent)
+        .then(|| super::ascent::rules_for(&mut match_state))
+        .flatten();
     let replay = crate::sim::replay::ReplayTape::new_hex_wfc_for_player(&match_state, local_player);
     let map_level = match_state.players[&local_player].cell.level;
     let presented_revisions = match_state.facility.cell_revisions.clone();
@@ -289,6 +294,7 @@ pub(super) fn setup_runtime(
         results_delay_frames: 0,
         networked,
         resync_attempts: 0,
+        ascent,
     });
     commands.insert_resource(HexWfcIntent::default());
     commands.insert_resource(replay);
@@ -309,8 +315,10 @@ pub(super) fn finish_runtime(
     if runtime.results_delay_frames < 90 {
         return;
     }
-    let result =
-        crate::flow::resolve_hex_wfc_for_player(&runtime.match_state, runtime.local_player);
+    let result = match &runtime.ascent {
+        Some(rules) => super::ascent::result_for(rules, &runtime.match_state, runtime.local_player),
+        None => crate::flow::resolve_hex_wfc_for_player(&runtime.match_state, runtime.local_player),
+    };
     if let Some(replay) = replay.as_deref_mut() {
         replay.result = Some(result.clone());
     }
@@ -489,7 +497,9 @@ pub(super) fn step_runtime(
         }
     }
     let previous_generation = runtime.match_state.facility.generation;
-    runtime.match_state.step(&frame);
+    if !super::ascent::step(&mut runtime, &frame) {
+        runtime.match_state.step(&frame);
+    }
     if let Some(replay) = replay.as_deref_mut() {
         replay.record_hex_wfc(&runtime.match_state);
     }

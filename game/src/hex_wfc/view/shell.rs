@@ -11,7 +11,8 @@ use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{HexCoord, HexWfcWorld};
 use observed_hex::hex_origin;
 use observed_match::hex_wfc::{
-    HexLightSource, HexStructurePiece, HexStructureRole, HexTrimPiece, derive_trim_for,
+    HexLightSource, HexStructurePiece, HexStructureRole, HexTrimPiece, HexWfcGeometrySnapshot,
+    derive_trim_for,
 };
 
 use super::assets::HexWfcVisualAssets;
@@ -44,9 +45,8 @@ pub(super) struct CellGeometryIndex {
 }
 
 impl HexGeometryCatalog {
-    pub(super) fn build(runtime: &HexWfcRuntime) -> Self {
-        let world = &runtime.match_state.facility;
-        let geometry = &runtime.match_state.geometry;
+    /// Index `geometry`, the projection of `world`: the facility's, or a prison maze's.
+    pub(super) fn build(world: &HexWfcWorld, geometry: &HexWfcGeometrySnapshot) -> Self {
         let mut cells = BTreeMap::<HexCoord, CellGeometryIndex>::new();
         let mut boundary_piece_indices = Vec::new();
         for (index, piece) in geometry.pieces.iter().enumerate() {
@@ -77,7 +77,7 @@ impl HexGeometryCatalog {
     }
 
     pub(super) fn rebuild(&mut self, runtime: &HexWfcRuntime) {
-        *self = Self::build(runtime);
+        *self = Self::build(&runtime.match_state.facility, &runtime.match_state.geometry);
     }
 
     pub(super) fn contains(&self, coord: HexCoord) -> bool {
@@ -156,18 +156,17 @@ pub(super) fn spawn_cells(
     commands: &mut Commands,
     assets: &mut HexWfcVisualAssets,
     meshes: &mut Assets<Mesh>,
-    runtime: &HexWfcRuntime,
+    (world, geometry): (&HexWfcWorld, &HexWfcGeometrySnapshot),
     catalog: &HexGeometryCatalog,
     requested: &BTreeSet<HexCoord>,
 ) -> Vec<SpawnedCell> {
-    let world = &runtime.match_state.facility;
     let fallback_arch = *world
         .architecture
         .get(&world.config.spawn())
         .unwrap_or(&ArchitectureRegister::ALL[0]);
     // Trim is derived only for the cells entering residency this frame. In particular,
     // off-screen relayout cells never pay a presentation rebuild cost.
-    let trim = derive_trim_for(&runtime.match_state.geometry, requested);
+    let trim = derive_trim_for(geometry, requested);
     let mut trim_by_cell = group_trim_by_cell(&trim);
     let mut spawned = Vec::with_capacity(requested.len());
     for &coord in requested {
@@ -177,12 +176,12 @@ pub(super) fn spawn_cells(
         let pieces = index
             .piece_indices
             .iter()
-            .filter_map(|&piece_index| runtime.match_state.geometry.pieces.get(piece_index))
+            .filter_map(|&piece_index| geometry.pieces.get(piece_index))
             .collect();
         let lights = index
             .light_indices
             .iter()
-            .filter_map(|&light_index| runtime.match_state.geometry.lights.get(light_index))
+            .filter_map(|&light_index| geometry.lights.get(light_index))
             .collect();
         spawned.push(spawn_cell(
             commands,

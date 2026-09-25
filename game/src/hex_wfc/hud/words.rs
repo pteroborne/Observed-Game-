@@ -53,6 +53,12 @@ pub(in crate::hex_wfc) struct ObjectiveFacts {
     pub station_done: bool,
     /// A team of one holds a station alone.
     pub solo: bool,
+    /// The match plays Architect Ascent: the summit, not the race's objectives.
+    pub ascent: bool,
+    /// The local body is in its team's prison maze.
+    pub jailed: bool,
+    /// Teammates in the prison maze, while the local body is free.
+    pub teammates_jailed: u8,
 }
 
 /// The objective panel, from the team's progress.
@@ -67,13 +73,31 @@ pub(in crate::hex_wfc) fn objective_view(facts: ObjectiveFacts) -> ObjectiveView
         required,
         station_done,
         solo,
+        ascent,
+        jailed,
+        teammates_jailed,
     } = facts;
-    let heading = format!(
-        "FLOOR {} / TEAM {}",
-        u16::from(floor) + 1,
-        u16::from(team) + 1
-    );
-    let (goal, pips) = if escaped {
+    let heading = if jailed {
+        format!("PRISON / TEAM {}", u16::from(team) + 1)
+    } else {
+        format!(
+            "FLOOR {} / TEAM {}",
+            u16::from(floor) + 1,
+            u16::from(team) + 1
+        )
+    };
+    let (goal, pips) = if jailed {
+        ("Find the way out of the maze".to_owned(), None)
+    } else if teammates_jailed > 0 {
+        let who = if teammates_jailed == 1 {
+            "a teammate".to_owned()
+        } else {
+            format!("{teammates_jailed} teammates")
+        };
+        (format!("Hold the prison lobby to free {who}"), None)
+    } else if ascent {
+        ("Climb to the summit".to_owned(), None)
+    } else if escaped {
         ("Escaped. Waiting for the team".to_owned(), None)
     } else if enabled && keystones < required {
         let goal = if required > MAX_PIPS {
@@ -201,7 +225,36 @@ mod tests {
             required,
             station_done,
             solo: false,
+            ascent: false,
+            jailed: false,
+            teammates_jailed: 0,
         }
+    }
+
+    #[test]
+    fn the_prison_comes_first_and_ascent_climbs() {
+        let jailed = objective_view(ObjectiveFacts {
+            jailed: true,
+            teammates_jailed: 1,
+            ..facts(1, 3, false, false)
+        });
+        assert_eq!(jailed.heading, "PRISON / TEAM 1");
+        assert_eq!(jailed.goal, "Find the way out of the maze");
+        let rescue = |teammates_jailed| {
+            objective_view(ObjectiveFacts {
+                teammates_jailed,
+                ascent: true,
+                ..facts(1, 3, false, false)
+            })
+            .goal
+        };
+        assert_eq!(rescue(1), "Hold the prison lobby to free a teammate");
+        assert_eq!(rescue(2), "Hold the prison lobby to free 2 teammates");
+        assert_eq!(
+            rescue(0),
+            "Climb to the summit",
+            "the race's keystones are not Ascent's"
+        );
     }
 
     #[test]

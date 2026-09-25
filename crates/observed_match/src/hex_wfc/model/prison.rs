@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use glam::{Vec2, Vec3};
 use observed_content::ArchitectureRegister;
 use observed_core::{PlayerId, TeamId};
-use observed_facility::hex_wfc::maze::braided_maze;
+use observed_facility::hex_wfc::maze::{braided_maze, maze_entry, maze_exit};
 use observed_facility::hex_wfc::{HexCoord, HexWfcWorld};
 use observed_hex::hex_origin;
 use observed_traversal::FpsBody;
@@ -64,13 +64,13 @@ impl HexPrisonMaze {
     /// Where a caught body wakes.
     #[must_use]
     pub const fn entry(&self) -> HexCoord {
-        self.world.config.spawn()
+        maze_entry(&self.world)
     }
 
     /// The hall that leads out to the lobby.
     #[must_use]
     pub const fn exit(&self) -> HexCoord {
-        self.world.config.exit()
+        maze_exit(&self.world)
     }
 }
 
@@ -141,7 +141,11 @@ impl HexWfcMatch {
     }
 
     /// Put a caught body in its team's maze, carving a fresh one if nobody is inside.
-    pub(crate) fn jail(&mut self, id: PlayerId) {
+    ///
+    /// A Guardian's catch does this. It is public so that evidence captures can stage a
+    /// jailing without first steering the Guardian's choice of target.
+    pub fn jail(&mut self, id: PlayerId) {
+        assert!(self.prison.is_some(), "only a match with a prison jails");
         let team = self.players[&id].team;
         let inside = self
             .players
@@ -347,13 +351,39 @@ mod tests {
 
     /// The compatibility corpus the other tests use is not what ships. Every maze must
     /// build from the committed catalogue, in the prison's own register.
+    /// Every maze builds from the committed catalogue, and is sealed: no wall of it comes
+    /// down onto the rock around it, and no railing stands on its edge. The facility's
+    /// open-air rules would open both onto a sky the prison does not have.
     #[test]
-    fn every_maze_builds_from_the_committed_catalogue() {
+    fn every_maze_builds_from_the_committed_catalogue_sealed() {
+        use crate::hex_wfc::HexPiecePart;
         let content = production_content();
         for seed in 0..24 {
             let world = braided_maze(seed, MAZE_COLS, MAZE_ROWS, MAZE_REGISTER);
-            HexWfcGeometrySnapshot::project_with_rooms(&world, content.cells(), content.rooms())
-                .unwrap_or_else(|error| panic!("seed {seed}: {error:?}"));
+            let geometry = HexWfcGeometrySnapshot::project_with_rooms(
+                &world,
+                content.cells(),
+                content.rooms(),
+            )
+            .unwrap_or_else(|error| panic!("seed {seed}: {error:?}"));
+            let open = geometry
+                .pieces
+                .iter()
+                .filter(|piece| {
+                    matches!(
+                        piece.part,
+                        HexPiecePart::Lip
+                            | HexPiecePart::Rail
+                            | HexPiecePart::Guard
+                            | HexPiecePart::Walkway
+                            | HexPiecePart::Truss
+                    )
+                })
+                .count();
+            assert_eq!(
+                open, 0,
+                "seed {seed}: {open} open-edge pieces in a sealed maze"
+            );
         }
     }
 

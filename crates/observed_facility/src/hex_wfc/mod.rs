@@ -506,6 +506,9 @@ pub struct HexWfcWorld {
     /// [`HexWfcWorld::mark_open_air`], and re-derived after every committed or
     /// reverted relayout while it is set.
     pub open_air: bool,
+    /// A world with no outside at all, like a prison maze: no wall of it opens onto the
+    /// cells around it and no railing stands on its edge. Every facility is unsealed.
+    pub sealed: bool,
 }
 
 impl HexWfcWorld {
@@ -698,6 +701,7 @@ impl HexWfcWorld {
                 route_corridors: profile.route_corridors,
                 carve_unrouted: profile.carve_unrouted,
                 open_air: false,
+                sealed: false,
             },
             attempts,
         ))

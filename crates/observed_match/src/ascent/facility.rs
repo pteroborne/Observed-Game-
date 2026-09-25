@@ -126,6 +126,10 @@ impl AscentRules {
                 .apply_directed_change(rewrites)
                 .expect("the rules rewrite only what the facility can build");
         }
+        // The rules decide the match; the physical match stops when they have.
+        if self.session.sim.outcome != MatchOutcome::Running {
+            physical.status = crate::hex_wfc::HexMatchStatus::Finished;
+        }
         Ok(refusals)
     }
 

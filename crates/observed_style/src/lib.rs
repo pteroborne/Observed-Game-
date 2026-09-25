@@ -275,6 +275,10 @@ pub enum MarkerRole {
     Rival,
     /// The facility director (the AI adversary).
     Director,
+    /// The prison: the lobby a jailed Observer comes out into, and the way out of its
+    /// maze. A cold, pale light, apart from every saturated hue, that the gate's cage
+    /// shape backs up.
+    Prison,
 }
 
 /// The durable state reported by an always-open full-WFC threshold frame.
@@ -420,7 +424,7 @@ impl OutlineRole {
 }
 
 impl MarkerRole {
-    pub const ALL: [MarkerRole; 8] = [
+    pub const ALL: [MarkerRole; 9] = [
         MarkerRole::NextRoom,
         MarkerRole::Exit,
         MarkerRole::Control,
@@ -429,6 +433,7 @@ impl MarkerRole {
         MarkerRole::Teammate,
         MarkerRole::Rival,
         MarkerRole::Director,
+        MarkerRole::Prison,
     ];
 
     pub fn label(self) -> &'static str {
@@ -441,6 +446,7 @@ impl MarkerRole {
             MarkerRole::Teammate => "teammate",
             MarkerRole::Rival => "rival",
             MarkerRole::Director => "director",
+            MarkerRole::Prison => "prison",
         }
     }
 }
@@ -622,6 +628,7 @@ pub fn marker(role: MarkerRole) -> Treatment {
         MarkerRole::Teammate => (Color::srgb(0.3, 0.6, 1.0), LinearRgba::rgb(0.8, 2.5, 8.0)),
         MarkerRole::Rival => (Color::srgb(1.0, 0.5, 0.15), LinearRgba::rgb(8.0, 2.6, 0.4)),
         MarkerRole::Director => (Color::srgb(1.0, 0.2, 0.8), LinearRgba::rgb(7.0, 0.6, 5.0)),
+        MarkerRole::Prison => (Color::srgb(0.84, 0.8, 1.0), LinearRgba::rgb(5.2, 4.8, 7.6)),
     };
     Treatment {
         base_color: base,

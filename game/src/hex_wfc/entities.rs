@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use observed_authoring::RoomSocketKind;
 use observed_core::PlayerId;
 use observed_hex::hex_origin;
+use observed_match::hex_wfc::HexBodyPlace;
 use observed_style::{MarkerRole, OutlineRole};
 
 use super::objective_models::{ObjectiveModels, SYNC_COLUMN, SyncColumn, sync_fill};
@@ -208,8 +209,9 @@ pub(super) fn sync(
 ) {
     for (visual, mut transform, mut visibility) in &mut actors {
         let player = &runtime.match_state.players[&visual.0];
-        transform.translation = player.position;
-        *visibility = if player.escaped {
+        transform.translation = super::ascent::presented_position(player);
+        // A body lost to the void has left play.
+        *visibility = if player.escaped || player.place == HexBodyPlace::Void {
             Visibility::Hidden
         } else {
             Visibility::Visible

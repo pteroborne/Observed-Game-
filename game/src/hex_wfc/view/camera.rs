@@ -116,7 +116,7 @@ pub(in crate::hex_wfc) fn sync_camera(
         (iso.translation, iso.rotation, response())
     } else {
         let forward = Vec3::new(player.yaw.sin(), 0.0, -player.yaw.cos());
-        let eye = player.position + Vec3::Y * EYE_OFFSET;
+        let eye = crate::hex_wfc::ascent::presented_position(player) + Vec3::Y * EYE_OFFSET;
         (
             eye + Vec3::Y * CHASE_RISE - forward * CHASE_BACK,
             Quat::from_rotation_y(-player.yaw) * Quat::from_rotation_x(CHASE_PITCH),
@@ -183,7 +183,7 @@ pub(in crate::hex_wfc) fn sync_projection(
 pub(in crate::hex_wfc::view) fn player_eye_pose(
     player: &observed_match::hex_wfc::HexPlayerState,
 ) -> (Vec3, Quat) {
-    let eye = player.position + Vec3::Y * EYE_OFFSET;
+    let eye = crate::hex_wfc::ascent::presented_position(player) + Vec3::Y * EYE_OFFSET;
     let rotation = Quat::from_rotation_y(-player.yaw) * Quat::from_rotation_x(player.pitch);
     (eye, rotation)
 }

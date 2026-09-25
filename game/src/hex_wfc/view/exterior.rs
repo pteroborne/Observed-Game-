@@ -514,6 +514,7 @@ mod tests {
             route_corridors: false,
             carve_unrouted: false,
             open_air: false,
+            sealed: false,
         }
     }
 

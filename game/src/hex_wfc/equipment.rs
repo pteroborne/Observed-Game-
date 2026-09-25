@@ -126,7 +126,8 @@ pub(super) fn held_transform(
     hand: &Hand,
 ) -> Transform {
     let eye = Quat::from_rotation_y(-player.yaw) * Quat::from_rotation_x(player.pitch);
-    Transform::from_translation(player.position + Vec3::Y * EYE_OFFSET + eye * (hand.offset + sway))
+    let at = super::ascent::presented_position(player);
+    Transform::from_translation(at + Vec3::Y * EYE_OFFSET + eye * (hand.offset + sway))
         .with_rotation(eye * Quat::from_rotation_z(hand.roll) * Quat::from_rotation_x(hand.tip))
         .with_scale(Vec3::splat(hand.scale))
 }

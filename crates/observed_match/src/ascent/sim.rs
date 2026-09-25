@@ -237,6 +237,8 @@ pub struct ArchitectLab {
     /// tell us whether the objective is reachable.
     pub darkness: StateHold,
     pub outcome: MatchOutcome,
+    /// The team that brought every loyal Observer to the summit, once one has.
+    pub summit_team: Option<TeamId>,
     pub traces: BTreeMap<String, BehaviorTrace>,
     pub command_log: Vec<(u64, ArchitectCommand)>,
     pub economy: EconomyState,
@@ -333,6 +335,7 @@ impl ArchitectLab {
             active_observers: 0,
             darkness: StateHold::new(DARKNESS_BEATS),
             outcome: MatchOutcome::Running,
+            summit_team: None,
             traces: BTreeMap::new(),
             command_log: Vec::new(),
             economy,
@@ -916,6 +919,7 @@ impl ArchitectLab {
                     .count();
                 if summit_count == loyal_count {
                     self.outcome = MatchOutcome::LoyalVictory;
+                    self.summit_team = Some(team);
                     return;
                 }
             }
