@@ -6,15 +6,18 @@
 //! facility is the one the bodies walk in, so the rules' writes to it must be ones the
 //! authored corpus can build, and they are kept for the host to commit physically.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use observed_facility::hex_wfc::{HexPlacement, HexWfcWorld};
 use observed_hex::{HexCoord, HexFace, PortClass};
 
 use super::{
-    ArchitectLab, ArchitectMode, Deck, EconomyState, Observer, ObserverId, ObserverState, Parts,
-    TeamId, TileShape,
+    ArchitectLab, ArchitectMode, Deck, EconomyState, LabEventKind, Observer, ObserverId,
+    ObserverState, Parts, TeamId, TileShape,
 };
+
+/// Where an embodied Observer's body is: the first-person match's own answer.
+pub type Place = crate::hex_wfc::HexBodyPlace;
 
 /// One Observer's body, as the rules first see it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -31,9 +34,16 @@ impl ArchitectLab {
     /// No Guardian is placed: the physical match's Guardian hunts, and its catch reaching
     /// the rules is the prison's work. The mode is a lab scenario label and means nothing
     /// here; nothing in the rules reads it.
+    /// `lobby` is the prison lobby's cells and the cell a released body appears in: the
+    /// rules' prison core, which no card rewrites.
     #[must_use]
-    pub fn over_facility(world: HexWfcWorld, seed: u64, bodies: &[Embodiment]) -> Self {
-        let prison = crate::ascent::prison::PrisonState::new(world.config, &world);
+    pub fn over_facility(
+        world: HexWfcWorld,
+        seed: u64,
+        bodies: &[Embodiment],
+        lobby: (BTreeSet<HexCoord>, HexCoord),
+    ) -> Self {
+        let prison = crate::ascent::prison::PrisonState::lobby(lobby.0, lobby.1);
         let prison_core = prison.cells.clone();
         let observers: BTreeMap<_, _> = bodies
             .iter()
@@ -139,15 +149,48 @@ impl ArchitectLab {
             || vertical(grid.neighbor(cell, HexFace::Up), HexFace::Down)
     }
 
-    /// Put an Observer where its body is. A corrupted Observer has left play and no
-    /// longer has a body the rules follow.
-    pub(crate) fn embody(&mut self, id: ObserverId, cell: HexCoord, facing: HexFace) {
-        if let Some(observer) = self.observers.get_mut(&id)
-            && observer.state != ObserverState::Corrupted
-        {
-            observer.cell = cell;
-            observer.facing = facing;
+    /// Put an Observer where its body is, in the state its body's place implies.
+    ///
+    /// A jailed body is in the prison, which the rules see as the lobby it will come out
+    /// of; its maze cell means nothing here. A lost body fell into true void and has
+    /// corrupted, which is permanent: a corrupted Observer has left play and no longer
+    /// has a body the rules follow.
+    pub(crate) fn embody(&mut self, id: ObserverId, cell: HexCoord, facing: HexFace, place: Place) {
+        let lobby = self.prison.lowest_cell;
+        let Some(observer) = self.observers.get_mut(&id) else {
+            return;
+        };
+        let before = observer.state;
+        if before == ObserverState::Corrupted {
+            return;
         }
+        observer.facing = facing;
+        (observer.state, observer.cell) = match place {
+            Place::Facility => (ObserverState::Active, cell),
+            Place::Prison => (ObserverState::Jailed, lobby),
+            Place::Void => (ObserverState::Corrupted, cell),
+        };
+        let after = observer.state;
+        let at = observer.cell;
+        let message = match (before, after) {
+            (ObserverState::Active, ObserverState::Jailed) => {
+                format!("Observer {} was caught and wakes in the prison.", id.0)
+            }
+            (ObserverState::Jailed, ObserverState::Active) => {
+                format!("Observer {} is out of the prison.", id.0)
+            }
+            (_, ObserverState::Corrupted) => format!(
+                "Observer {} fell into true void and corrupted into Rogue AI.",
+                id.0
+            ),
+            _ => return,
+        };
+        let kind = match after {
+            ObserverState::Jailed => LabEventKind::Captured,
+            ObserverState::Corrupted => LabEventKind::Corrupted,
+            ObserverState::Active => LabEventKind::Released,
+        };
+        self.record_event(kind, Some(at), &message);
     }
 
     /// In a built facility a hall's open edges and a room's windows are drawn from its

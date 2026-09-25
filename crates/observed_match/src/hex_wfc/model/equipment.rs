@@ -208,7 +208,7 @@ impl HexWfcMatch {
     #[must_use]
     pub fn deployable_threshold(&self, player: PlayerId) -> Option<HexAnchorSite> {
         let state = self.players.get(&player)?;
-        if state.escaped || self.lanterns.inventory(player) == 0 {
+        if !state.in_facility() || self.lanterns.inventory(player) == 0 {
             return None;
         }
         let threshold = self.looked_at_threshold(state)?;
@@ -227,7 +227,7 @@ impl HexWfcMatch {
     }
 
     pub(super) fn step_lantern_actions(&mut self, player: PlayerId, actions: HexActionButtons) {
-        if self.players[&player].escaped {
+        if !self.players[&player].in_facility() {
             return;
         }
         let cell = self.players[&player].cell;

@@ -28,6 +28,7 @@ mod equipment;
 mod guardian;
 mod interaction;
 mod knowledge;
+pub mod prison;
 pub use interaction::{HexInteraction, HexInteractionAction};
 mod movement;
 mod mutation;
@@ -147,6 +148,15 @@ pub enum HexMatchEventKind {
     /// A body stood on one plate and was moved to its team's other plate.
     PadTraversed,
     GuardianCatch,
+    /// A caught body woke in its team's prison maze.
+    PlayerJailed,
+    /// A jailed body walked out of the maze into the prison lobby.
+    PlayerReleased,
+    /// A teammate held the prison lobby and brought this jailed body out into it. One
+    /// event for each body freed.
+    Jailbreak,
+    /// A body fell out of the facility into true void and has left first-person play.
+    PlayerLost,
     MatchFinished,
 }
 
@@ -167,6 +177,30 @@ pub struct HexPlayerState {
     pub yaw: f32,
     pub pitch: f32,
     pub escaped: bool,
+    /// Which space the body is in. Outside the facility, `cell` and `position` are in
+    /// that space's own lattice.
+    pub place: HexBodyPlace,
+}
+
+impl HexPlayerState {
+    /// Whether the body is walking the facility: not escaped, jailed or lost. Everything
+    /// that sees, is seen, collects, deploys or is hunted asks this.
+    #[must_use]
+    pub fn in_facility(&self) -> bool {
+        !self.escaped && self.place == HexBodyPlace::Facility
+    }
+}
+
+/// Where a body is. Only a match that sends catches to prison
+/// ([`HexWfcMatch::send_catches_to_prison`]) ever has a body anywhere but the facility.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum HexBodyPlace {
+    #[default]
+    Facility,
+    /// In its team's prison maze (`prison::HexPrisonMaze`).
+    Prison,
+    /// Fell out of the facility into true void. It does not come back.
+    Void,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -313,6 +347,8 @@ pub struct HexWfcMatch {
     /// The facility changes only when told to (`apply_directed_change`), never on the
     /// director's schedule. Set before tick zero by an Architect-driven match.
     pub(super) directed: bool,
+    /// The prison a catch sends a body to, when this match has one.
+    pub prison: Option<prison::HexPrison>,
     /// Route cost from spawn to exit, the denominator [`Self::lantern_proximity`]
     /// normalises against.
     ///
@@ -451,6 +487,7 @@ impl HexWfcMatch {
                     yaw: spawn_yaw,
                     pitch: 0.0,
                     escaped: false,
+                    place: HexBodyPlace::Facility,
                 },
             );
             bodies.insert(id, FpsBody::spawned(position, spawn_yaw));
@@ -498,6 +535,7 @@ impl HexWfcMatch {
             pending_relayout: None,
             next_mutation_tick: mutation::scheduled_mutation_tick(seed, 0),
             directed: false,
+            prison: None,
             spawn_to_exit_cost: 1,
         };
         game.objectives = HexObjectiveState::new(&game);
@@ -558,8 +596,10 @@ impl HexWfcMatch {
                 &self.lanterns,
                 &mut self.players,
                 &mut self.recent_events,
+                self.prison.as_ref(),
             );
         }
+        self.step_prison();
         self.sync_teleports_to_bodies();
         self.update_map_knowledge();
         self.resolve_escapes();
@@ -574,7 +614,7 @@ impl HexWfcMatch {
     #[must_use]
     pub fn build_observation(&self) -> HexObservationFrame {
         let mut frame = HexObservationFrame::default();
-        for player in self.players.values().filter(|player| !player.escaped) {
+        for player in self.players.values().filter(|player| player.in_facility()) {
             frame.visible_cells.insert(player.cell);
             frame.occupied_cells.insert(player.id, player.cell);
             if let Some(key) = self.looked_at_threshold(player) {
@@ -732,10 +772,9 @@ impl HexWfcMatch {
             .filter_map(|(&team, state)| {
                 (!state.escaped
                     && self.team_authorized_for_exit(team)
-                    && state
-                        .members
-                        .iter()
-                        .all(|player| self.players[player].cell == exit))
+                    && state.members.iter().all(|player| {
+                        self.players[player].in_facility() && self.players[player].cell == exit
+                    }))
                 .then_some(team)
             })
             .collect::<Vec<_>>();

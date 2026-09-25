@@ -91,6 +91,18 @@ impl HexBotDriver {
     /// domain data, so same-tick consumers receive the same command.
     #[must_use]
     pub fn command(&mut self, game: &HexWfcMatch, id: PlayerId) -> HexPlayerCommand {
+        if game
+            .players
+            .get(&id)
+            .is_some_and(|player| player.place == super::super::HexBodyPlace::Prison)
+        {
+            // A facility route means nothing in the maze, and will be stale on release.
+            self.clear_player(id);
+            return HexPlayerCommand {
+                intent: game.maze_bot_intent(id),
+                ..HexPlayerCommand::default()
+            };
+        }
         let target = game.objective_target(id);
         self.invalidate_from_match(game, id, target);
         let actions = game.bot_action_buttons_for_target(id, target);
@@ -113,9 +125,14 @@ impl HexBotDriver {
                     HexMatchEventKind::PlayerRecovered
                         | HexMatchEventKind::GuardianCatch
                         | HexMatchEventKind::PlayerEscaped
+                        | HexMatchEventKind::PlayerReleased
+                        | HexMatchEventKind::Jailbreak
                 )
         });
-        let absent_or_escaped = game.players.get(&id).is_none_or(|player| player.escaped);
+        let absent_or_escaped = game
+            .players
+            .get(&id)
+            .is_none_or(|player| !player.in_facility());
         if was_displaced || absent_or_escaped {
             self.clear_player(id);
             return;

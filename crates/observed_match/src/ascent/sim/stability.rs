@@ -19,6 +19,8 @@ pub enum LabEventKind {
     Retracted,
     Repaired,
     Captured,
+    /// A jailed Observer is out of the prison.
+    Released,
     FloorClosed,
     Requisition,
     Fell,

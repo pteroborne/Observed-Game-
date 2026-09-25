@@ -17,10 +17,15 @@ const BODY: PlayerId = PlayerId(0);
 const TEAM: TeamId = TeamId(0);
 
 fn game(seed: u64) -> AscentMatch {
+    game_with(seed, 1, false)
+}
+
+/// One team of `members` bodies and its Architect, on a two-level facility.
+fn game_with(seed: u64, members: u8, guardian: bool) -> AscentMatch {
     let config = HexMatchConfig {
         teams: 1,
-        members_per_team: 1,
-        guardian: false,
+        members_per_team: members,
+        guardian,
         wfc: HexWfcConfig {
             levels: 2,
             ..HexWfcConfig::default()
@@ -43,7 +48,7 @@ fn game(seed: u64) -> AscentMatch {
             },
         )]),
     )
-    .expect("one body and its Architect")
+    .expect("a team and its Architect")
 }
 
 /// How the body moves this tick.
@@ -57,21 +62,36 @@ enum Body {
 
 /// One tick: the body moves, and the Architect sends `command`.
 fn step(game: &mut AscentMatch, body: Body, command: SeatCommand) -> BTreeMap<PlayerId, Refusal> {
+    step_bodies(game, &[(BODY, body)], command)
+}
+
+/// One tick: each listed body moves, and the Architect sends `command`.
+fn step_bodies(
+    game: &mut AscentMatch,
+    moves: &[(PlayerId, Body)],
+    command: SeatCommand,
+) -> BTreeMap<PlayerId, Refusal> {
     let tick = game.rules().tick + 1;
-    let intent = match body {
-        Body::Turn(rate) => HexPlayerCommand {
-            intent: PlayerIntent {
-                look: Vec2::new(rate, 0.0),
-                ..PlayerIntent::default()
-            },
-            ..HexPlayerCommand::default()
-        },
-        Body::Explore => game.physical().bot_player_command(BODY),
-    };
+    let commands = moves
+        .iter()
+        .map(|&(player, body)| {
+            let intent = match body {
+                Body::Turn(rate) => HexPlayerCommand {
+                    intent: PlayerIntent {
+                        look: Vec2::new(rate, 0.0),
+                        ..PlayerIntent::default()
+                    },
+                    ..HexPlayerCommand::default()
+                },
+                Body::Explore => game.physical().bot_player_command(player),
+            };
+            (player, intent)
+        })
+        .collect();
     let bodies = HexInputFrame {
         version: HEX_INPUT_VERSION,
         tick,
-        commands: BTreeMap::from([(BODY, intent)]),
+        commands,
     };
     let seats = InputFrame {
         version: ASCENT_INPUT_VERSION,
@@ -477,3 +497,5 @@ fn a_retraction_cannot_open_a_window_beside_a_watched_room() {
     }
     panic!("the body never stood where a neighbour's retraction would redraw it");
 }
+
+mod prison;

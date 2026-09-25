@@ -354,6 +354,7 @@ mod tests {
             yaw: 0.7,
             pitch: -0.2,
             escaped: false,
+            place: observed_match::hex_wfc::HexBodyPlace::Facility,
         };
         let mut camera = Transform::default();
         prime_camera(&mut camera, &player);

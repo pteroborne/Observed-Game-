@@ -73,6 +73,7 @@ impl HexGuardianState {
         lanterns: &HexLanternState,
         players: &mut BTreeMap<PlayerId, HexPlayerState>,
         events: &mut Vec<HexMatchEvent>,
+        prison: Option<&super::prison::HexPrison>,
     ) {
         let observed = players
             .values()
@@ -89,7 +90,9 @@ impl HexGuardianState {
             return;
         }
 
-        let Some(target_id) = leading_player(world, players) else {
+        // Where a catch means prison, even a lone runner is hunted: the prison is how the
+        // Rogue wins. Elsewhere a lone runner's route is the whole challenge.
+        let Some(target_id) = leading_player(world, players, prison.is_some()) else {
             self.target = None;
             return;
         };
@@ -122,6 +125,8 @@ impl HexGuardianState {
         } else if tick.is_multiple_of(MOVE_PERIOD_TICKS)
             && let Some(route) = world.route_between_cells(self.cell, target_cell)
             && let Some(&next) = route.cells.get(1)
+            // The prison lobby is sanctuary: a Guardian waits at its door, never inside.
+            && prison.is_none_or(|prison| !prison.lobby.contains(&next))
         {
             self.cell = next;
             self.position = Vec3::from_array(hex_origin(next)) + Vec3::Y * 0.9;
@@ -141,17 +146,21 @@ fn guardian_home(world: &HexWfcWorld) -> HexCoord {
 fn leading_player(
     world: &HexWfcWorld,
     players: &BTreeMap<PlayerId, HexPlayerState>,
+    hunt_alone: bool,
 ) -> Option<PlayerId> {
-    let active = players.values().filter(|player| !player.escaped).count();
+    let active = players
+        .values()
+        .filter(|player| player.in_facility())
+        .count();
     // The Guardian is competitive pressure, not a single-player traversal
     // blocker. Once only one runner remains (including one-player labs), the
     // route itself is the remaining challenge.
-    if active <= 1 {
+    if active == 0 || (active == 1 && !hunt_alone) {
         return None;
     }
     players
         .values()
-        .filter(|player| !player.escaped)
+        .filter(|player| player.in_facility())
         .min_by_key(|player| {
             (
                 // Target selection runs every fixed tick. Exact A* here made the
@@ -187,7 +196,7 @@ fn player_sees_guardian(
     player: &HexPlayerState,
     guardian: &HexGuardianState,
 ) -> bool {
-    if player.escaped {
+    if !player.in_facility() {
         return false;
     }
     // Guard order is load-bearing, not stylistic. Every conjunct is pure, so the result
@@ -255,6 +264,7 @@ mod tests {
             yaw,
             pitch: 0.0,
             escaped: false,
+            place: crate::hex_wfc::model::HexBodyPlace::Facility,
         }
     }
 
@@ -273,7 +283,7 @@ mod tests {
         let mut players =
             BTreeMap::from([(id, player(id, cell, guardian.position + Vec3::Z * 5.0, 0.0))]);
         let lanterns = HexLanternState::new([id], &world);
-        guardian.step(120, &world, &lanterns, &mut players, &mut Vec::new());
+        guardian.step(120, &world, &lanterns, &mut players, &mut Vec::new(), None);
         assert_eq!(guardian.status, HexGuardianStatus::FrozenByPlayer);
         assert_eq!(guardian.position, before);
     }
@@ -305,7 +315,7 @@ mod tests {
             id,
             player(id, far, Vec3::from_array(hex_origin(far)) + Vec3::Y, 0.0),
         )]);
-        guardian.step(120, &world, &lanterns, &mut players, &mut Vec::new());
+        guardian.step(120, &world, &lanterns, &mut players, &mut Vec::new(), None);
         assert_eq!(guardian.status, HexGuardianStatus::FrozenByAnchor);
     }
 
@@ -338,7 +348,7 @@ mod tests {
         ]);
         let lanterns = HexLanternState::new([id, rival_id], &world);
         let mut events = Vec::new();
-        guardian.step(1, &world, &lanterns, &mut players, &mut events);
+        guardian.step(1, &world, &lanterns, &mut players, &mut events, None);
         assert_ne!(players[&id].cell, cell);
         assert_eq!(guardian.cell, guardian_home(&world));
         assert_eq!(guardian.target, None);

@@ -19,15 +19,18 @@ pub use geometry::{
 };
 #[cfg(test)]
 pub(crate) use model::MAX_MUTATION_TICKS;
+pub use model::prison::{
+    HexPrison, HexPrisonMaze, LOBBY_HOLD_TICKS, MAZE_COLS, MAZE_REGISTER, MAZE_ROWS,
+};
 pub use model::{
-    DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION, HexActionButtons, HexAnchorSite, HexBotDriver,
-    HexDeployedLantern, HexDeployedPad, HexDirectedError, HexDoorState, HexGuardianState,
-    HexGuardianStatus, HexInputFrame, HexInteraction, HexInteractionAction, HexLanternCache,
-    HexLanternState, HexMapCellKnowledge, HexMapCellSnapshot, HexMapDiscovery, HexMatchConfig,
-    HexMatchError, HexMatchEvent, HexMatchEventKind, HexMatchSnapshot, HexMatchStatus, HexPadState,
-    HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot, HexPlayerState,
-    HexTeamObjectiveState, HexTeamSnapshot, HexTeamState, HexWfcMatch, KEYSTONES_REQUIRED,
-    MAX_ROSTER, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER,
+    DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION, HexActionButtons, HexAnchorSite, HexBodyPlace,
+    HexBotDriver, HexDeployedLantern, HexDeployedPad, HexDirectedError, HexDoorState,
+    HexGuardianState, HexGuardianStatus, HexInputFrame, HexInteraction, HexInteractionAction,
+    HexLanternCache, HexLanternState, HexMapCellKnowledge, HexMapCellSnapshot, HexMapDiscovery,
+    HexMatchConfig, HexMatchError, HexMatchEvent, HexMatchEventKind, HexMatchSnapshot,
+    HexMatchStatus, HexPadState, HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot,
+    HexPlayerState, HexTeamObjectiveState, HexTeamSnapshot, HexTeamState, HexWfcMatch,
+    KEYSTONES_REQUIRED, MAX_ROSTER, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER,
 };
 pub use trim::{HexTrimKind, HexTrimPiece, derive_thresholds, derive_trim, derive_trim_for};
 

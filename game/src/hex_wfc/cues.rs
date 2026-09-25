@@ -41,7 +41,7 @@ pub(super) struct CueDefinition {
 }
 
 #[cfg(test)]
-pub(super) const ALL_EVENTS: [HexMatchEventKind; 18] = [
+pub(super) const ALL_EVENTS: [HexMatchEventKind; 22] = [
     HexMatchEventKind::MutationWarning,
     HexMatchEventKind::MutationCommitted,
     HexMatchEventKind::MutationNoChange,
@@ -59,6 +59,10 @@ pub(super) const ALL_EVENTS: [HexMatchEventKind; 18] = [
     HexMatchEventKind::PadDeployed,
     HexMatchEventKind::PadTraversed,
     HexMatchEventKind::GuardianCatch,
+    HexMatchEventKind::PlayerJailed,
+    HexMatchEventKind::PlayerReleased,
+    HexMatchEventKind::Jailbreak,
+    HexMatchEventKind::PlayerLost,
     HexMatchEventKind::MatchFinished,
 ];
 
@@ -131,6 +135,18 @@ pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
             MarkerRole::Collapse,
             HexWfcSound::Guardian,
         ),
+        // The prison (Architect Ascent): a catch lands in the maze, and the lobby is
+        // where a body comes back into the facility.
+        HexMatchEventKind::PlayerJailed => {
+            cue("PRISON", MarkerRole::Collapse, HexWfcSound::Guardian)
+        }
+        HexMatchEventKind::PlayerReleased => {
+            cue("PRISON EXIT", MarkerRole::Control, HexWfcSound::Recover)
+        }
+        HexMatchEventKind::Jailbreak => cue("JAILBREAK", MarkerRole::Control, HexWfcSound::Recover),
+        HexMatchEventKind::PlayerLost => {
+            cue("LOST TO THE VOID", MarkerRole::Collapse, HexWfcSound::Hold)
+        }
         HexMatchEventKind::MatchFinished => {
             cue("MATCH COMPLETE", MarkerRole::Exit, HexWfcSound::Complete)
         }

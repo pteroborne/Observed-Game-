@@ -29,6 +29,21 @@ pub struct PrisonState {
 }
 
 impl PrisonState {
+    /// A first-person facility's prison: its core is the lobby room, and the maze is a
+    /// space of its own that the physical match keeps (`hex_wfc::model::prison`), so the
+    /// rules hold no graph of it.
+    #[must_use]
+    pub fn lobby(cells: BTreeSet<HexCoord>, anchor: HexCoord) -> Self {
+        Self {
+            cells,
+            lowest_cell: anchor,
+            exit_threshold: anchor,
+            facility_exit: anchor,
+            graph: BTreeMap::new(),
+            escape_routes: BTreeMap::new(),
+        }
+    }
+
     /// Builds the deterministic prison core maze at the facility's horizontal center.
     pub fn new(config: HexWfcConfig, world: &HexWfcWorld) -> Self {
         let cq = config.cols / 2;

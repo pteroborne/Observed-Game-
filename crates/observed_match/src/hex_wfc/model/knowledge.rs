@@ -53,7 +53,7 @@ impl HexPlayerMapKnowledge {
         }
         for player in players
             .into_iter()
-            .filter(|player| player.team == team && !player.escaped)
+            .filter(|player| player.team == team && player.in_facility())
         {
             self.record(world, player.cell, HexMapDiscovery::Traversed, false, true);
             let placement = &world.placements[&player.cell];
@@ -152,6 +152,7 @@ mod tests {
             yaw: 0.0,
             pitch: 0.0,
             escaped: false,
+            place: crate::hex_wfc::model::HexBodyPlace::Facility,
         };
         let lanterns = HexLanternState::new([player.id], &world);
         let mut map = HexPlayerMapKnowledge::default();

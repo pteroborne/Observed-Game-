@@ -34,6 +34,8 @@ const STUCK_ENTER_TICKS: u16 = 45;
 const STUCK_SWEEP_TICKS: u16 = 24;
 const UNSTICK_STRAFE: f32 = 0.9;
 const UNSTICK_FORWARD: f32 = 0.45;
+/// How near a maze doorway a jailed bot comes before it aims through it, in metres.
+const MAZE_DOOR_APPROACH: f32 = 2.0;
 
 /// What a bot is trying to do this tick.
 ///
@@ -143,6 +145,39 @@ impl HexWfcMatch {
             }
             None => PlayerIntent::default(),
         }
+    }
+
+    /// A jailed bot walks its maze's shortest way out: to the doorway it must leave by,
+    /// then on to the next hall's centre once it stands before the door. Aiming at the next
+    /// centre from wherever it entered a hall would run it into the wall beside the door.
+    pub(super) fn maze_bot_intent(&self, id: PlayerId) -> PlayerIntent {
+        let player = &self.players[&id];
+        let Some(maze) = self
+            .prison
+            .as_ref()
+            .and_then(|prison| prison.mazes.get(&player.team))
+        else {
+            return PlayerIntent::default();
+        };
+        let Some(&next) = maze
+            .world
+            .route_between(player.cell, maze.exit())
+            .and_then(|route| route.get(1).copied())
+            .as_ref()
+        else {
+            return PlayerIntent::default();
+        };
+        let here = Vec3::from_array(hex_origin(player.cell));
+        let there = Vec3::from_array(hex_origin(next));
+        let door = (here + there) * 0.5;
+        let plan = |at: Vec3| Vec2::new(at.x - player.position.x, at.z - player.position.z);
+        let aim = if plan(door).length() > MAZE_DOOR_APPROACH {
+            door
+        } else {
+            there
+        };
+        let target = Vec3::new(aim.x, player.position.y, aim.z);
+        self.apply_unstick(id, steer_toward(player.yaw, player.position, target))
     }
 
     fn apply_unstick(&self, id: PlayerId, mut intent: PlayerIntent) -> PlayerIntent {

@@ -49,6 +49,7 @@ impl AscentMatch {
             return Err(Refusal::Roster);
         }
         physical.hand_mutation_to_architects();
+        physical.send_catches_to_prison();
         let mut bodies = BTreeMap::new();
         let mut embodiments = Vec::new();
         for (&player, state) in &physical.players {
@@ -64,7 +65,12 @@ impl AscentMatch {
             });
             bodies.insert(player, id);
         }
-        let sim = ArchitectLab::over_facility(physical.facility.clone(), seed, &embodiments);
+        let prison = physical
+            .prison
+            .as_ref()
+            .expect("just sent catches to prison");
+        let lobby = (prison.lobby.clone(), prison.lobby_anchor);
+        let sim = ArchitectLab::over_facility(physical.facility.clone(), seed, &embodiments, lobby);
         let mut roster = seats;
         for (&player, &id) in &bodies {
             roster.insert(
@@ -117,13 +123,16 @@ impl AscentMatch {
         Ok(refusals)
     }
 
-    /// Give the rules the bodies' cells and facings. What an Observer sees and wards
+    /// Give the rules the bodies' cells, facings and places: in the facility, jailed, or
+    /// lost to the void. What an Observer sees and wards
     /// is still the rules' cell sight along that facing: the physical match has no
     /// field of view of its own to give them yet.
     fn observe(&mut self) {
         for (&player, &id) in &self.bodies {
-            if let Some((cell, facing)) = self.physical.body_cell_and_facing(player) {
-                self.session.sim.embody(id, cell, facing);
+            if let Some((cell, facing)) = self.physical.body_cell_and_facing(player)
+                && let Some(place) = self.physical.body_place(player)
+            {
+                self.session.sim.embody(id, cell, facing, place);
             }
         }
         self.session.sim.refresh_observation();

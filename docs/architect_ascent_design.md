@@ -3,6 +3,8 @@
 **Status:** canonical north star, recorded 2026-09-07. Amended 2026-09-14 with
 disturbance waves, minor Guardians, floor power, the kinetic tool, and the emergency
 requisition; those additions are canon on the same footing as the original text.
+Amended 2026-09-25: the prison is a lobby in the facility and a maze in a space of its
+own (section 3), replacing the central vertical maze.
 
 **Supersedes:** earlier gameplay plans wherever they describe a precomposed race as
 the final game. Their implementation and playtest records remain valid evidence.
@@ -169,16 +171,29 @@ hazards threaten return routes without violating observation safety.
 An ordinary fall lands on lower surviving structure when geometry permits. Only a
 fall through the whole surviving stack into true void causes corruption.
 
-### The prison core
+### The prison
 
-The jail is a vertical, non-collapsing maze at the facility's horizontal center. A
-Guardian catch sends its target to the lowest prison level. A jailed Observer remains
-embodied and loyal, and may navigate the difficult internal route back out.
+The prison is two places. Its **lobby** is a tile on the facility's ground floor, as
+near its horizontal centre as the facility allows (the whole room, if that tile is part
+of one). Its **maze** is a sealed space of its
+own, outside the facility: a prison dimension.
 
-A teammate can create an easier rescue only after physically reaching a prison-core
-boundary. A door card may then open a local exit, or a physically deployed team
-portal may connect the prison to another endpoint. Teleport pads and station rooms
-never provide unexplored endpoints: both sides must first be reached in person.
+A Guardian catch sends its target into their team's maze. A jailed Observer remains
+embodied and loyal, walks the maze, and its way out leads into the lobby, on the ground
+floor: a catch costs a team the height it had climbed. Each team has one maze. It is
+carved fresh when a catch finds the team's prison empty, so it cannot be memorised, and a
+teammate caught while it is occupied joins whoever is already inside. A lone escape is
+meant to take a minute or so.
+
+A teammate who physically reaches the lobby can break the team out: holding it for a few
+seconds brings every jailed teammate out into it at once. The hold is short, but it can
+be seen, contested and interrupted, which gives the Rogue a moment to aim at. The
+Architect cannot walk the maze, but can see its map and guide a jailed teammate through
+it.
+
+The lobby is the prison core. It never collapses and no card rewrites it, and Guardians
+do not enter it: a Guardian waits at its door, so the way out cannot be camped. Nothing
+a jailed Observer passes in the maze becomes knowledge of the facility.
 
 ## 4. Observation, anchors, doors, and Guardians
 

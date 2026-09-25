@@ -13,6 +13,7 @@ mod constraints;
 mod context;
 mod directed;
 pub mod exposure;
+pub mod maze;
 pub mod neighborhood;
 #[cfg(test)]
 mod neighborhood_tests;

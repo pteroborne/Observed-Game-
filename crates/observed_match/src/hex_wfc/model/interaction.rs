@@ -25,7 +25,7 @@ impl HexWfcMatch {
     /// labeled room prop into a button when no command implements that prop.
     pub fn interaction(&self, id: PlayerId) -> Option<HexInteraction> {
         let player = self.players.get(&id)?;
-        if player.escaped {
+        if !player.in_facility() {
             return None;
         }
         let objective = &self.teams.get(&player.team)?.objectives;
@@ -73,7 +73,7 @@ impl HexWfcMatch {
                                 if self.teams[&player.team]
                                     .members
                                     .iter()
-                                    .filter(|id| !self.players[id].escaped)
+                                    .filter(|id| self.players[id].in_facility())
                                     .count()
                                     <= 1
                                 {

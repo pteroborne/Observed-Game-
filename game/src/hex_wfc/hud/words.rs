@@ -160,6 +160,12 @@ pub(in crate::hex_wfc) const fn notice_for(
             Tone::Against,
         ),
         HexMatchEventKind::GuardianCatch => ("The Guardian caught you. Regroup", Tone::Against),
+        HexMatchEventKind::PlayerJailed => {
+            ("Caught. Find the way out of the prison", Tone::Against)
+        }
+        HexMatchEventKind::PlayerReleased => ("Out of the prison", Tone::Good),
+        HexMatchEventKind::Jailbreak => ("Your team broke you out", Tone::Good),
+        HexMatchEventKind::PlayerLost => ("Lost to the void", Tone::Against),
         _ => return None,
     })
 }

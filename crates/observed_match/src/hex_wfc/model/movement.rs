@@ -48,8 +48,17 @@ const LEVEL_DEPART_MARGIN: f32 = 1.2;
 impl HexWfcMatch {
     /// Advance one player by one fixed physical step.
     pub(super) fn move_player(&mut self, id: PlayerId, intent: PlayerIntent) {
-        if self.players[&id].escaped {
+        let player = &self.players[&id];
+        if player.escaped {
             return;
+        }
+        match player.place {
+            super::HexBodyPlace::Facility => {}
+            super::HexBodyPlace::Prison => {
+                self.move_jailed(id, intent);
+                return;
+            }
+            super::HexBodyPlace::Void => return,
         }
         let profile = self.content.traversal_profile();
         let config = profile.controller();
@@ -132,8 +141,10 @@ impl HexWfcMatch {
             .capsule_half_height;
         let tick = self.tick;
         let mut recovered = Vec::new();
+        let mut lost = Vec::new();
         for player in self.players.values() {
-            if player.escaped {
+            // A jailed body is kept in its maze by `move_jailed`; a lost one is gone.
+            if !player.in_facility() {
                 continue;
             }
             let body = self.bodies[&player.id];
@@ -142,9 +153,17 @@ impl HexWfcMatch {
                 body.grounded && !self.stands_in_built_cell(body.position - Vec3::Y * half_height);
             let ticks = self.stranded_ticks.entry(player.id).or_insert(0);
             *ticks = if stranded { ticks.saturating_add(1) } else { 0 };
-            if out_of_world || *ticks >= STRANDED_RECOVERY_TICKS {
+            // Where catches go to prison, a fall through the whole facility is true void:
+            // the body does not come back. A roof you cannot climb down from is still only
+            // a fall, and is still recovered.
+            if out_of_world && self.prison.is_some() {
+                lost.push(player.id);
+            } else if out_of_world || *ticks >= STRANDED_RECOVERY_TICKS {
                 recovered.push((player.id, player.cell));
             }
+        }
+        for id in lost {
+            self.lose(id);
         }
         for (id, cell) in recovered {
             self.stranded_ticks.insert(id, 0);
@@ -181,7 +200,7 @@ impl HexWfcMatch {
         for id in self.players.keys().copied().collect::<Vec<_>>() {
             let player = &self.players[&id];
             let position = player.position;
-            if player.escaped {
+            if !player.in_facility() {
                 self.progress_anchor.insert(id, position);
                 self.stuck_ticks.insert(id, 0);
                 continue;

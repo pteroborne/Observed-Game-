@@ -186,7 +186,7 @@ fn horizontal_distance_squared(a: Vec3, b: Vec3) -> f32 {
 impl HexWfcMatch {
     /// Placement. Runs with the rest of a player's action buttons.
     pub(super) fn step_pad_actions(&mut self, player: PlayerId, actions: HexActionButtons) {
-        if !actions.deploy_pad || self.players[&player].escaped {
+        if !actions.deploy_pad || !self.players[&player].in_facility() {
             return;
         }
         let (cell, position, team) = {
@@ -233,7 +233,7 @@ impl HexWfcMatch {
         let candidates = self
             .players
             .values()
-            .filter(|player| !player.escaped)
+            .filter(|player| player.in_facility())
             .map(|player| (player.id, player.team, player.cell, player.position))
             .collect::<Vec<_>>();
         for (id, team, cell, position) in candidates {

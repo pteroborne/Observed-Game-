@@ -25,7 +25,7 @@ mod objective;
 pub use objective::{DARKNESS_BEATS, RogueObjective, StateHold};
 mod embodied;
 mod util;
-pub use embodied::Embodiment;
+pub use embodied::{Embodiment, Place};
 use util::{
     Prng, command_key, face_between, face_toward, key_face_from, lateral_face, threshold_touches,
 };
@@ -1181,11 +1181,12 @@ impl ArchitectLab {
             // Team-local sight determines both structural freshness and actor visibility.
             // Global warding is a mutation constraint, not permission to see rivals.
             let mut team_observed = BTreeSet::new();
-            for observer in self
-                .observers
-                .values()
-                .filter(|o| o.team == team && o.state != ObserverState::Corrupted)
-            {
+            // A jailed body is in a space of its own and sees nothing of the facility.
+            for observer in self.observers.values().filter(|o| {
+                o.team == team
+                    && o.state != ObserverState::Corrupted
+                    && !(o.state == ObserverState::Jailed && self.embodied.contains(&o.id))
+            }) {
                 team_observed.insert(observer.cell);
                 if self.economy.is_powered(observer.cell.level) {
                     team_observed.extend(self.sight_along(observer.cell, observer.facing));

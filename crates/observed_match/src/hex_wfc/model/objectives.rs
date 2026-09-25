@@ -64,7 +64,9 @@ impl HexWfcMatch {
             return;
         }
         for (&player, command) in &frame.commands {
-            if !command.actions.interact || self.players.get(&player).is_none_or(|p| p.escaped) {
+            if !command.actions.interact
+                || self.players.get(&player).is_none_or(|p| !p.in_facility())
+            {
                 continue;
             }
             self.try_collect_keystone(player);
@@ -158,7 +160,7 @@ impl HexWfcMatch {
             let active = members
                 .iter()
                 .copied()
-                .filter(|member| !self.players[member].escaped)
+                .filter(|member| self.players[member].in_facility())
                 .collect::<Vec<_>>();
             let synchronized = stations.iter().find_map(|(&room, &(a, b))| {
                 let (Some((a, a_cell)), Some((b, b_cell))) = (a, b) else {
@@ -346,7 +348,7 @@ impl HexWfcMatch {
                 let total_cost = team
                     .members
                     .iter()
-                    .filter(|member| !self.players[member].escaped)
+                    .filter(|member| self.players[member].in_facility())
                     .map(|member| u64::from(travel_distance(self.players[member].cell, cell)))
                     .sum::<u64>();
                 Some((total_cost, room))

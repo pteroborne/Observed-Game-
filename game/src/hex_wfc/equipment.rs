@@ -397,6 +397,7 @@ mod tests {
                         yaw,
                         pitch,
                         escaped: false,
+                        place: observed_match::hex_wfc::HexBodyPlace::Facility,
                     };
                     let held = super::held_transform(&player, Vec3::ZERO, hand);
                     for &corner in &corners {
