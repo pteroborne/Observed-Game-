@@ -138,6 +138,8 @@ pub const fn refusal_tally(refusal: CommandRefusal) -> &'static str {
         CommandRefusal::NoLocalAttachment => "would not connect",
         CommandRefusal::InvalidThreshold => "no open edge",
         CommandRefusal::DoorAlreadyPresent => "already doored",
+        CommandRefusal::FixedStructure => "room or stair",
+        CommandRefusal::Unbuildable => "no such tile",
     }
 }
 

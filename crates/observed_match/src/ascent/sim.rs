@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use observed_facility::hex_wfc::{HexSpace, HexWfcError, HexWfcWorld};
+use observed_facility::hex_wfc::{HexPlacement, HexSpace, HexWfcError, HexWfcWorld};
 use observed_hex::{HexCoord, HexFace, ports_compatible, travel_distance};
 
 mod control;
@@ -23,7 +23,9 @@ mod mode;
 pub use mode::ArchitectMode;
 mod objective;
 pub use objective::{DARKNESS_BEATS, RogueObjective, StateHold};
+mod embodied;
 mod util;
+pub use embodied::Embodiment;
 use util::{
     Prng, command_key, face_between, face_toward, key_face_from, lateral_face, threshold_touches,
 };
@@ -251,10 +253,97 @@ pub struct ArchitectLab {
     /// of a clock that is not running. One hand's worth, once per match: enough to build
     /// an opening, not enough to author the facility for free.
     pub setup_placements_left: u32,
+    /// These rules run over a first-person facility built from authored tiles, not over
+    /// a lab board. A tile play must then be one the corpus can build, and a stamped
+    /// room or a vertical link cannot be rewritten or retracted one cell at a time.
+    /// Set only by `over_facility`: a lab board switched over midway would hold rewrites
+    /// no host ever builds.
+    pub(crate) authored: bool,
+    /// Placements rewritten since the host last took them. Only an authored match keeps
+    /// them: its host commits them to the physical facility (`ascent::facility`).
+    pub(crate) rewrites: BTreeMap<HexCoord, HexPlacement>,
+    /// Observers whose cell and facing come from a first-person body. The body is the
+    /// authority: no beat moves them, and a body falls physically rather than by rule.
+    pub(crate) embodied: BTreeSet<ObserverId>,
+}
+
+/// Everything that differs between one match's rules and another's at tick zero.
+pub(crate) struct Parts {
+    pub mode: ArchitectMode,
+    pub seed: u64,
+    pub world: HexWfcWorld,
+    pub deck: Deck,
+    pub known: BTreeSet<HexCoord>,
+    pub prison_core: BTreeSet<HexCoord>,
+    pub prison: crate::ascent::prison::PrisonState,
+    pub loyal_team_size: usize,
+    pub observers: BTreeMap<ObserverId, Observer>,
+    pub guardians: BTreeMap<GuardianId, Guardian>,
+    pub economy: EconomyState,
 }
 
 impl ArchitectLab {
     pub const DEFAULT_LOYAL_TEAM_SIZE: usize = 2;
+
+    /// The rules at tick zero, before observation has been refreshed.
+    pub(crate) fn assemble(parts: Parts) -> Self {
+        let Parts {
+            mode,
+            seed,
+            world,
+            deck,
+            known,
+            prison_core,
+            prison,
+            loyal_team_size,
+            observers,
+            guardians,
+            economy,
+        } = parts;
+        Self {
+            mode,
+            tick: 0,
+            world,
+            deck,
+            cooldown: 0,
+            bot_architect: false,
+            known,
+            observed: BTreeSet::new(),
+            seen: BTreeSet::new(),
+            anchored: BTreeSet::new(),
+            prison_core,
+            prison,
+            doors: BTreeMap::new(),
+            contradictions: BTreeSet::new(),
+            retracted: BTreeSet::new(),
+            collapsed_floors: BTreeSet::new(),
+            next_retraction_tick: None,
+            condemned: None,
+            instability_origin: None,
+            events: VecDeque::new(),
+            loyal_team_size,
+            team_knowledge: BTreeMap::new(),
+            observers,
+            guardians,
+            guardian_visits: BTreeMap::new(),
+            rogue_directive: None,
+            objective: RogueObjective::default(),
+            lit_sightlines: 0,
+            active_observers: 0,
+            darkness: StateHold::new(DARKNESS_BEATS),
+            outcome: MatchOutcome::Running,
+            traces: BTreeMap::new(),
+            command_log: Vec::new(),
+            economy,
+            requisition: crate::ascent::requisition::RequisitionState::new(seed),
+            power_policy: PowerPolicy::default(),
+            planning: false,
+            setup_placements_left: HAND_SIZE as u32,
+            authored: false,
+            rewrites: BTreeMap::new(),
+            embodied: BTreeSet::new(),
+        }
+    }
 
     pub fn new(seed: u64) -> Result<Self, HexWfcError> {
         Self::generate_with_team_size(
@@ -378,46 +467,19 @@ impl ArchitectLab {
         prison.ensure_placements(&mut world);
         known.extend(&prison_core);
 
-        let mut lab = Self {
+        let mut lab = Self::assemble(Parts {
             mode,
-            tick: 0,
+            seed,
             world,
             deck: Deck::for_levels(seed, config.levels),
-            cooldown: 0,
-            bot_architect: false,
             known,
-            observed: BTreeSet::new(),
-            seen: BTreeSet::new(),
-            anchored: BTreeSet::new(),
             prison_core,
             prison,
-            doors: BTreeMap::new(),
-            contradictions: BTreeSet::new(),
-            retracted: BTreeSet::new(),
-            collapsed_floors: BTreeSet::new(),
-            next_retraction_tick: None,
-            condemned: None,
-            instability_origin: None,
-            events: VecDeque::new(),
             loyal_team_size,
-            team_knowledge: BTreeMap::new(),
             observers,
             guardians,
-            guardian_visits: BTreeMap::new(),
-            rogue_directive: None,
-            objective: RogueObjective::default(),
-            lit_sightlines: 0,
-            active_observers: 0,
-            darkness: StateHold::new(DARKNESS_BEATS),
-            outcome: MatchOutcome::Running,
-            traces: BTreeMap::new(),
-            command_log: Vec::new(),
             economy,
-            requisition: crate::ascent::requisition::RequisitionState::new(seed),
-            power_policy: PowerPolicy::default(),
-            planning: false,
-            setup_placements_left: HAND_SIZE as u32,
-        };
+        });
         lab.refresh_observation();
         // Damage a solved facility at separated lateral handoffs. These are
         // explicit scenario conditions; repair still uses the ordinary deck.
@@ -567,7 +629,15 @@ impl ArchitectLab {
                 if card.district != Some(District::for_level(target.level)) {
                     return Some(CommandRefusal::WrongDistrict);
                 }
+                if self.fixed_structure(target) {
+                    return Some(CommandRefusal::FixedStructure);
+                }
                 let doors = shape.doors(rotation);
+                if self.authored
+                    && observed_facility::hex_wfc::authored_hall(target, doors).is_none()
+                {
+                    return Some(CommandRefusal::Unbuildable);
+                }
                 if placement.space.built() && placement.doors == doors {
                     return Some(CommandRefusal::NoChange);
                 }
@@ -652,18 +722,22 @@ impl ArchitectLab {
                     .expect("legality proved the card is held");
                 match held.kind {
                     CardKind::Tile(shape) => {
-                        let placement = self
-                            .world
-                            .placements
-                            .get_mut(&target)
-                            .expect("legality proved the target exists");
-                        placement.space = HexSpace::Hall;
-                        placement.archetype = shape.archetype();
-                        placement.doors = shape.doors(rotation);
-                        placement.up = observed_hex::PortClass::Sealed;
-                        placement.down = observed_hex::PortClass::Sealed;
+                        let doors = shape.doors(rotation);
+                        let placement = if self.authored {
+                            observed_facility::hex_wfc::authored_hall(target, doors)
+                                .expect("legality proved the corpus builds this tile")
+                        } else {
+                            HexPlacement {
+                                coord: target,
+                                space: HexSpace::Hall,
+                                archetype: shape.archetype(),
+                                doors,
+                                up: observed_hex::PortClass::Sealed,
+                                down: observed_hex::PortClass::Sealed,
+                            }
+                        };
+                        self.rewrite(placement);
                         self.retracted.remove(&target);
-                        *self.world.cell_revisions.entry(target).or_default() += 1;
                         self.doors
                             .retain(|key, _| !threshold_touches(*key, target, &self.world));
                     }
@@ -1082,6 +1156,7 @@ impl ArchitectLab {
         }
         self.active_observers = active;
         self.lit_sightlines = lit;
+        self.ward_what_would_redraw();
         self.update_team_knowledge();
     }
 

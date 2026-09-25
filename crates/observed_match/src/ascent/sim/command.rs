@@ -43,6 +43,11 @@ pub enum CommandRefusal {
     NoLocalAttachment,
     InvalidThreshold,
     DoorAlreadyPresent,
+    /// A stamped room or a vertical link: in a first-person facility these are built
+    /// whole, and one cell of them cannot be rewritten alone.
+    FixedStructure,
+    /// The authored tile corpus has no tile of this shape.
+    Unbuildable,
 }
 
 impl CommandRefusal {
@@ -66,6 +71,8 @@ impl CommandRefusal {
             Self::NoLocalAttachment => "the tile does not fit any selected boundary",
             Self::InvalidThreshold => "that face is not an open threshold",
             Self::DoorAlreadyPresent => "a deployable door already owns that threshold",
+            Self::FixedStructure => "rooms and stairs are built whole and cannot be rewritten",
+            Self::Unbuildable => "no authored tile has that shape",
         }
     }
 }

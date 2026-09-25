@@ -22,6 +22,8 @@ use player_input::PlayerIntent;
 use super::geometry::{HexGeometryError, HexWfcGeometrySnapshot};
 
 mod bot;
+mod directed;
+pub use directed::HexDirectedError;
 mod equipment;
 mod guardian;
 mod interaction;
@@ -69,7 +71,7 @@ pub const MAX_ROSTER: u8 = 16;
 pub(super) const MUTATION_WARNING_TICKS: u64 = 120;
 /// Deterministic local-breath interval range (8--12 seconds at 60 Hz).
 pub(super) const MIN_MUTATION_TICKS: u64 = 480;
-pub(super) const MAX_MUTATION_TICKS: u64 = 720;
+pub(crate) const MAX_MUTATION_TICKS: u64 = 720;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct HexActionButtons {
@@ -308,6 +310,9 @@ pub struct HexWfcMatch {
     /// The deterministic tick at which the next relayout commits. The paired
     /// warning fires [`MUTATION_WARNING_TICKS`] earlier.
     pub(super) next_mutation_tick: u64,
+    /// The facility changes only when told to (`apply_directed_change`), never on the
+    /// director's schedule. Set before tick zero by an Architect-driven match.
+    pub(super) directed: bool,
     /// Route cost from spawn to exit, the denominator [`Self::lantern_proximity`]
     /// normalises against.
     ///
@@ -492,6 +497,7 @@ impl HexWfcMatch {
             content,
             pending_relayout: None,
             next_mutation_tick: mutation::scheduled_mutation_tick(seed, 0),
+            directed: false,
             spawn_to_exit_cost: 1,
         };
         game.objectives = HexObjectiveState::new(&game);

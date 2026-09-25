@@ -1,7 +1,9 @@
 # Architect Ascent integration
 
 **Partial implementation. The main Play runtime remains `HexWfcMatch`; it does
-not yet run the shared Ascent session.**
+not yet run the shared Ascent session.** The session now runs headless over the real
+first-person facility (`observed_match::ascent::facility`); see
+[The rules on the real facility](#the-rules-on-the-real-facility).
 
 ## Baseline
 
@@ -67,6 +69,69 @@ this work does not silently change its objective-generation policy.
 - [Keystone prompt, 1280x800](evidence/ascent-polish/interaction-1280x800.png)
 - [Station, 125% text, 1280x800](evidence/ascent-polish/station-large-text-1280x800.png)
 
+## The rules on the real facility
+
+`AscentMatch` joins the two simulations without a second world. The first-person
+`HexWfcMatch` owns bodies, physics and geometry; the Ascent session owns cards,
+cooldowns, contradictions, retraction, power, sight and outcomes. Each tick:
+
+1. The bodies move (`HexWfcMatch::step`).
+2. Every Observer is put where its body is: its cell, and the lateral face it is turned
+   toward. The rules never step, fall or bot-drive an embodied Observer.
+3. The seats' commands apply and the rules tick (`AscentSession::advance`).
+4. Everything the rules rewrote that tick, card plays and retractions alike, is committed
+   to the physical match as one directed change: the same logical, geometry and collider
+   deltas a relayout produces, so presentation cannot tell them apart.
+
+The rules are the only writer. They keep the facility they reason about and the physical
+match keeps the one it builds, and every rewrite goes through one choke point
+(`ArchitectLab::rewrite`) that reaches both. The tests assert the two hold identical
+placements after every tick, and that the physical geometry and colliders are exactly
+what a fresh projection of the facility would build.
+
+The director's scheduled relayout is switched off in such a match
+(`HexWfcMatch::hand_mutation_to_architects`): the facility changes because an Architect
+played a card or a contradiction retracted, and for no other reason.
+
+A directed commit (`HexWfcWorld::commit_directed_delta`) differs from a relayout commit in
+one way, on purpose: it does not refuse a boundary that does not match or a route that
+breaks, because a locally valid contradiction is play (design section 3).
+
+### Decisions this made
+
+- **Sight is still the rules' cell sight.** The physical match has no field of view: its
+  observation frame is where players stand, which room door they face, and their torches.
+  So an embodied Observer sees and wards by the rules' existing model, four cells along the
+  way its body faces and one warded step ahead, now driven by the real body. Real
+  field-of-view sampling is its own piece of work.
+- **What would redraw is warded too.** In a built facility a hall's open edges and a room's
+  windows are drawn from its neighbours, so retracting the cell beside a watched room would
+  open a window in front of whoever is in it. Those neighbours are warded. A lab board draws
+  nothing and is unchanged.
+- **Rooms and stairs are built whole.** A stamped room, and any cell a stair or ramp links
+  vertically, is refused as `FixedStructure` and never retracted. One cell of a room cannot
+  be rewritten alone.
+- **No dead ends are dealt.** The authored corpus has no one-door flat hall, so a
+  first-person deck is corridors, turns, junctions and halls (`TileShape::AUTHORED`), and
+  every tile play is one the corpus is required to build (`authored_hall`, tested against
+  `geometry_demands`). The lab's deck is unchanged.
+- **Districts stay the rules' two.** A card's district is still level 0 Institutional and
+  above LiminalGrid; a rewritten cell keeps its facility's architecture register, which
+  the coverage gate guarantees every tile in.
+
+### Not yet joined
+
+- The physical Guardian still hunts under the main game's rules, and the rules place no
+  Guardian of their own. A catch sending a body to the prison is the next slice.
+- A team's map knowledge exists twice: the rules' (what the Architect targets) and the
+  physical match's (what the in-play map shows). They are fed by different sight models.
+- Doors, anchors and torches are rule state and physical state respectively, not one
+  thing.
+- A body that falls is caught by the main game's recovery, not corrupted.
+- The prison core is reserved at the facility's centre and refuses card plays, as the
+  rules require, but nothing is built there yet: the cells are whatever the facility
+  solved.
+
 ## Remaining integration
 
 1. Reserve and generate a physically connected prison core in the authored
@@ -74,10 +139,11 @@ this work does not silently change its objective-generation policy.
    An experiment could project internally stamped maze cells, but that alone
    proved neither reciprocal exterior passages nor room-footprint safety; it
    was not retained as a production adapter.
-2. Connect continuous Observer bodies, observation, physical falls, jail/rescue,
-   and corruption to the one authoritative Ascent world. Do not run a second
-   race simulation beside the rules or convert cell steps into teleporting FPS
-   movement. Lab actors still advance on their original beat cadence.
+2. Connect physical falls, jail/rescue, corruption and the Guardian's catch to the one
+   authoritative Ascent world. Bodies and card plays are connected
+   ([above](#the-rules-on-the-real-facility)); do not run a second race simulation beside
+   the rules or convert cell steps into teleporting FPS movement. Replace the rules' cell
+   sight with real field of view for embodied Observers.
 3. Add the dedicated Architect role, mixed ascent/station hand, map placement
    UX, team request UI, power/tool HUD, role transitions, summit/results, and
    controller navigation in the main game. Architect bot seats are not driven

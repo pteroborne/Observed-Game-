@@ -97,8 +97,11 @@ pub fn resolve_falls(lab: &mut ArchitectLab) -> Vec<FallEvent> {
     let unsupported: Vec<(ObserverId, HexCoord)> = lab
         .observers
         .iter()
-        .filter(|(_, observer)| {
-            observer.state == ObserverState::Active && !is_supporting(lab, observer.cell)
+        .filter(|(id, observer)| {
+            // A body falls physically; its cell follows it rather than a rule moving it.
+            observer.state == ObserverState::Active
+                && !lab.embodied.contains(id)
+                && !is_supporting(lab, observer.cell)
         })
         .map(|(&id, observer)| (id, observer.cell))
         .collect();

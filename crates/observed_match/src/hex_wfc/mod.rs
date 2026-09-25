@@ -17,12 +17,14 @@ pub use geometry::{
     HexTileSupply, HexTraversalCursor, HexTraversalLease, HexWfcGeometrySnapshot, ProjectedPort,
     ProjectedTraversalGraph, ProjectedTraversalGuide, project_hypothetical_cell,
 };
+#[cfg(test)]
+pub(crate) use model::MAX_MUTATION_TICKS;
 pub use model::{
     DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION, HexActionButtons, HexAnchorSite, HexBotDriver,
-    HexDeployedLantern, HexDeployedPad, HexDoorState, HexGuardianState, HexGuardianStatus,
-    HexInputFrame, HexInteraction, HexInteractionAction, HexLanternCache, HexLanternState,
-    HexMapCellKnowledge, HexMapCellSnapshot, HexMapDiscovery, HexMatchConfig, HexMatchError,
-    HexMatchEvent, HexMatchEventKind, HexMatchSnapshot, HexMatchStatus, HexPadState,
+    HexDeployedLantern, HexDeployedPad, HexDirectedError, HexDoorState, HexGuardianState,
+    HexGuardianStatus, HexInputFrame, HexInteraction, HexInteractionAction, HexLanternCache,
+    HexLanternState, HexMapCellKnowledge, HexMapCellSnapshot, HexMapDiscovery, HexMatchConfig,
+    HexMatchError, HexMatchEvent, HexMatchEventKind, HexMatchSnapshot, HexMatchStatus, HexPadState,
     HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot, HexPlayerState,
     HexTeamObjectiveState, HexTeamSnapshot, HexTeamState, HexWfcMatch, KEYSTONES_REQUIRED,
     MAX_ROSTER, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER,
@@ -37,7 +39,7 @@ pub use trim::{HexTrimKind, HexTrimPiece, derive_thresholds, derive_trim, derive
 /// but those cells no longer include any `stair_tower`, so the strict tower
 /// family must come from the committed catalog.
 #[cfg(test)]
-fn test_catalog() -> &'static observed_authoring::RuntimeHexCatalog {
+pub(crate) fn test_catalog() -> &'static observed_authoring::RuntimeHexCatalog {
     static CATALOG: std::sync::OnceLock<observed_authoring::RuntimeHexCatalog> =
         std::sync::OnceLock::new();
     CATALOG.get_or_init(|| {
@@ -55,7 +57,7 @@ fn test_catalog() -> &'static observed_authoring::RuntimeHexCatalog {
 }
 
 #[cfg(test)]
-fn compatibility_test_content() -> &'static std::sync::Arc<HexMatchContent> {
+pub(crate) fn compatibility_test_content() -> &'static std::sync::Arc<HexMatchContent> {
     static CONTENT: std::sync::OnceLock<std::sync::Arc<HexMatchContent>> =
         std::sync::OnceLock::new();
     CONTENT.get_or_init(|| {

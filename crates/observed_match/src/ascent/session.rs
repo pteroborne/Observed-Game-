@@ -164,10 +164,8 @@ impl AscentSession {
                 (
                     team,
                     LoyalHand {
-                        deck: Deck::for_levels(
-                            seed ^ (u64::from(team.0) + 1).wrapping_mul(0x9E37_79B9),
-                            sim.world.config.levels,
-                        ),
+                        deck: sim
+                            .new_deck(seed ^ (u64::from(team.0) + 1).wrapping_mul(0x9E37_79B9)),
                         cooldown: 0,
                     },
                 )

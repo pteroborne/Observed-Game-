@@ -59,6 +59,7 @@ impl ArchitectLab {
     /// consequential path, and it warns first.
     pub fn retraction_protected(&self, cell: HexCoord) -> bool {
         self.prison_core.contains(&cell)
+            || self.fixed_structure(cell)
             || self.observed.contains(&cell)
             || self.anchored.contains(&cell)
             || self.doors.iter().any(|(&key, &state)| {
@@ -145,18 +146,15 @@ impl ArchitectLab {
         }
         self.condemned = None;
         {
-            let tile = self
-                .world
-                .placements
-                .get_mut(&cell)
-                .expect("contradiction is a tile");
-            tile.space = HexSpace::Void;
-            tile.archetype = observed_facility::hex_wfc::HexArchetype::Void;
-            tile.up = observed_hex::PortClass::Sealed;
-            tile.down = observed_hex::PortClass::Sealed;
-            tile.doors = 0;
+            self.rewrite(observed_facility::hex_wfc::HexPlacement {
+                coord: cell,
+                space: HexSpace::Void,
+                archetype: observed_facility::hex_wfc::HexArchetype::Void,
+                doors: 0,
+                up: observed_hex::PortClass::Sealed,
+                down: observed_hex::PortClass::Sealed,
+            });
             self.retracted.insert(cell);
-            *self.world.cell_revisions.entry(cell).or_default() += 1;
             self.doors
                 .retain(|&key, _| !threshold_touches(key, cell, &self.world));
             self.economy.on_retraction_committed(cell.level);

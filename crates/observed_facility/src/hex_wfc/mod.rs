@@ -11,6 +11,7 @@ pub mod blueprint;
 mod collapse;
 mod constraints;
 mod context;
+mod directed;
 pub mod exposure;
 pub mod neighborhood;
 #[cfg(test)]
@@ -40,6 +41,7 @@ pub use blueprint::{
     RoomBlueprint, StampedBlueprint, blueprint_cell_archetype, blueprint_for_role,
 };
 pub use context::{HexInfluenceField, PROFILE_MAX, PROFILE_MIN};
+pub use directed::authored_hall;
 pub use neighborhood::{
     FaceDomain, NeighborCandidate, Neighborhood, NeighborhoodError, neighborhood,
 };

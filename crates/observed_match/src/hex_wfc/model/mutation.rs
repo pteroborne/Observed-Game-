@@ -13,6 +13,9 @@ impl HexWfcMatch {
     /// Advance at most one seeded collapse attempt this tick, then atomically
     /// apply the bounded logical/geometry/physics delta at the scheduled tick.
     pub(super) fn step_mutation(&mut self) {
+        if self.directed {
+            return;
+        }
         let warning_tick = self
             .next_mutation_tick
             .saturating_sub(MUTATION_WARNING_TICKS);

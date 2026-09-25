@@ -59,6 +59,10 @@ impl TileShape {
         Self::Hall,
     ];
 
+    /// The shapes the authored corpus builds as a flat hall. It has no one-door hall, so a
+    /// first-person facility deals no dead end.
+    pub const AUTHORED: [Self; 4] = [Self::Corridor, Self::Bend, Self::Junction, Self::Hall];
+
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -140,13 +144,19 @@ impl Deck {
 
     #[must_use]
     pub fn for_levels(seed: u64, levels: u8) -> Self {
+        Self::with_shapes(seed, levels, &TileShape::ALL)
+    }
+
+    /// Two of each of `shapes` per district, and four doors.
+    #[must_use]
+    pub fn with_shapes(seed: u64, levels: u8, shapes: &[TileShape]) -> Self {
         let mut cards = Vec::new();
         let mut next_id = 0;
         for district in [District::Institutional, District::LiminalGrid]
             .into_iter()
             .take(usize::from(levels).min(2))
         {
-            for shape in TileShape::ALL {
+            for &shape in shapes {
                 for _ in 0..2 {
                     cards.push(Card {
                         id: CardId(next_id),
