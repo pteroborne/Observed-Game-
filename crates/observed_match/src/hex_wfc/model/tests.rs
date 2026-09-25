@@ -1727,3 +1727,231 @@ fn a_body_stranded_on_a_roof_is_returned_to_the_last_cell_it_stood_in() {
         "back on the floor of {last:?}, feet at {feet}"
     );
 }
+
+/// Windows follow a relayout exactly. After every committed mutation, the geometry the
+/// match patched in place is the geometry a fresh projection of the same facility
+/// draws: windows opened and closed beside the change, and no stale piece left behind.
+///
+/// Relayouts seldom build or clear a cell beside a room (none of 31 across these
+/// seeds), so this is the general check; `clearing_a_cell_beside_a_room_opens_a_window`
+/// makes that change by hand.
+#[test]
+fn relayouts_leave_every_window_where_a_fresh_projection_puts_it() {
+    use crate::hex_wfc::{HexPiecePart, HexStructurePiece};
+    let content = crate::hex_wfc::compatibility_test_content();
+    let by_id = |pieces: &[HexStructurePiece]| {
+        pieces
+            .iter()
+            .map(|piece| (piece.id, piece.clone()))
+            .collect::<BTreeMap<_, _>>()
+    };
+    let colliders = |snapshot: &HexWfcGeometrySnapshot| {
+        snapshot
+            .arena
+            .colliders
+            .iter()
+            .map(|collider| (collider.id, collider.clone()))
+            .collect::<BTreeMap<_, _>>()
+    };
+    let mut committed = 0;
+    for seed in SEEDS {
+        let mut game =
+            HexWfcMatch::new_with_content(seed, HexMatchConfig::default(), content.clone())
+                .expect("match");
+        assert!(
+            game.geometry
+                .pieces
+                .iter()
+                .any(|piece| piece.part == HexPiecePart::Window),
+            "seed {seed}: no room looks out"
+        );
+        let mut driver = HexBotDriver::new();
+        for tick in 0..6_000u64 {
+            let commands = game
+                .players
+                .keys()
+                .copied()
+                .filter(|id| !game.players[id].escaped)
+                .map(|id| (id, bot_player_command(&mut driver, &game, id)))
+                .collect();
+            let events = game
+                .step(&HexInputFrame {
+                    version: HEX_INPUT_VERSION,
+                    tick,
+                    commands,
+                })
+                .to_vec();
+            if events
+                .iter()
+                .any(|event| event.kind == HexMatchEventKind::MutationCommitted)
+            {
+                committed += 1;
+                let fresh = HexWfcGeometrySnapshot::project_with_rooms(
+                    &game.facility,
+                    content.cells(),
+                    content.rooms(),
+                )
+                .expect("fresh projection");
+                assert_eq!(
+                    by_id(&game.geometry.pieces),
+                    by_id(&fresh.pieces),
+                    "seed {seed} tick {tick}: patched pieces differ from a fresh projection"
+                );
+                assert_eq!(colliders(&game.geometry), colliders(&fresh), "seed {seed}");
+            }
+            if game.status == HexMatchStatus::Finished {
+                break;
+            }
+        }
+    }
+    assert!(committed >= 10, "only {committed} relayouts committed");
+}
+
+const SEEDS: [u64; 3] = [44, 45, 46];
+
+/// Clearing a cell beside a room opens a window in the room's wall on that side, and
+/// building it again closes the window. Both ways, the patched geometry is exactly a
+/// fresh projection's, and not one of the room's colliders changes.
+///
+/// Touches a multi-cell room at a cell other than its anchor: the room's pieces all
+/// belong to the anchor's ID range, so the delta has to reach the whole room from any
+/// one cell of it, or the pieces of a closed window are left standing.
+#[test]
+fn clearing_a_cell_beside_a_room_opens_a_window_and_building_it_closes_one() {
+    use observed_facility::hex_wfc::{
+        HexArchetype, HexMutationRegion, HexPlacement, HexRelayoutDelta, HexSpace,
+    };
+
+    use crate::hex_wfc::{HexPiecePart, HexStructurePiece};
+
+    fn one<T>(cell: HexCoord, value: T) -> BTreeMap<HexCoord, T> {
+        [(cell, value)].into_iter().collect()
+    }
+    /// `from` with `beside` set to `placement`, and the delta that says so.
+    fn change(
+        from: &HexWfcWorld,
+        beside: HexCoord,
+        placement: HexPlacement,
+    ) -> (HexWfcWorld, HexRelayoutDelta) {
+        let mut to = from.clone();
+        to.placements.insert(beside, placement);
+        to.generation += 1;
+        let revision = from.cell_revisions.get(&beside).copied().unwrap_or(0);
+        to.cell_revisions.insert(beside, revision + 1);
+        let architecture = from.architecture[&beside];
+        let delta = HexRelayoutDelta {
+            previous_generation: from.generation,
+            generation: to.generation,
+            previous_attempts: from.last_attempts,
+            region: HexMutationRegion {
+                cells: [beside].into(),
+                boundary_cells: std::collections::BTreeSet::new(),
+                protected_cells: std::collections::BTreeSet::new(),
+            },
+            changed_cells: [beside].into(),
+            placements: one(beside, placement),
+            architecture: one(beside, architecture),
+            cell_revisions: one(beside, revision + 1),
+            previous_placements: one(beside, from.placements[&beside]),
+            previous_architecture: one(beside, architecture),
+            previous_cell_revisions: one(beside, revision),
+            previous_blueprints: from.blueprints.clone(),
+            removed_blueprints: Vec::new(),
+            upserted_blueprints: Vec::new(),
+        };
+        (to, delta)
+    }
+
+    let content = crate::hex_wfc::compatibility_test_content();
+    let project = |world: &HexWfcWorld| {
+        HexWfcGeometrySnapshot::project_with_rooms(world, content.cells(), content.rooms())
+            .expect("projection")
+    };
+    let by_id = |pieces: &[HexStructurePiece]| {
+        pieces
+            .iter()
+            .map(|piece| (piece.id, piece.clone()))
+            .collect::<BTreeMap<_, _>>()
+    };
+    let game = HexWfcMatch::new_with_content(44, HexMatchConfig::default(), content.clone())
+        .expect("match");
+    let world = &game.facility;
+    let grid = world.config.grid();
+    let in_a_room = |cell: HexCoord| world.blueprints.iter().any(|b| b.cells.contains(&cell));
+    // A hall outside every room, across a wall (not a door) from a room cell that is
+    // not the room's anchor.
+    let (anchor, beside) = world
+        .blueprints
+        .iter()
+        .flat_map(|room| {
+            room.cells
+                .iter()
+                .filter(move |&&cell| cell != room.anchor)
+                .map(move |&cell| (room.anchor, cell))
+        })
+        .find_map(|(anchor, cell)| {
+            HexFace::LATERAL.into_iter().find_map(|face| {
+                let next = grid.neighbor(cell, face)?;
+                (!world.placements[&cell].is_open(face)
+                    && world.placements[&next].space == HexSpace::Hall
+                    && !in_a_room(next))
+                .then_some((anchor, next))
+            })
+        })
+        .expect("a hall beside a multi-cell room, away from its anchor");
+    let windows = |pieces: &[HexStructurePiece]| {
+        pieces
+            .iter()
+            .filter(|piece| piece.source_cell == anchor && piece.part == HexPiecePart::Window)
+            .count()
+    };
+    let room_ids: Vec<_> = game
+        .geometry
+        .pieces
+        .iter()
+        .filter(|piece| piece.source_cell == anchor)
+        .map(|piece| piece.id)
+        .collect();
+    let cleared = HexPlacement {
+        coord: beside,
+        space: HexSpace::Void,
+        archetype: HexArchetype::Void,
+        doors: 0,
+        up: PortClass::Sealed,
+        down: PortClass::Sealed,
+    };
+    let (open, opening) = change(world, beside, cleared);
+    let (closed, closing) = change(&open, beside, world.placements[&beside]);
+    let mut patched = game.geometry.clone();
+    for (label, to, logical) in [("opening", &open, &opening), ("closing", &closed, &closing)] {
+        let before = windows(&patched.pieces);
+        let delta = patched
+            .project_delta_with_rooms(to, logical, content.cells(), content.rooms())
+            .expect("delta");
+        assert!(
+            delta
+                .upserted_pieces
+                .iter()
+                .all(|piece| delta.changed_cells.contains(&piece.source_cell)),
+            "{label}: a piece upserted outside the changed cells"
+        );
+        patched.apply_delta(&delta).expect("apply");
+        let fresh = project(to);
+        assert_eq!(by_id(&patched.pieces), by_id(&fresh.pieces), "{label}");
+        let after = windows(&patched.pieces);
+        match label {
+            "opening" => assert!(after > before, "no window opened toward {beside:?}"),
+            _ => assert!(after < before, "the window toward {beside:?} stayed open"),
+        }
+        assert!(
+            delta
+                .colliders
+                .upserted
+                .iter()
+                .map(|collider| collider.id)
+                .chain(delta.colliders.removed.iter().copied())
+                .all(|id| !room_ids.contains(&id)),
+            "{label}: a window changed one of the room's colliders"
+        );
+    }
+}

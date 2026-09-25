@@ -106,6 +106,15 @@ pub fn can_open(placement: &HexPlacement) -> bool {
         )
 }
 
+/// Whether a cell's geometry follows its lateral neighbours: a corridor hall's walls
+/// come down where it meets the outside, and a room's walls take windows there. Such
+/// a cell changes when a neighbour is built or cleared, so a relayout holds a watched
+/// one's neighbours, and a geometry delta re-projects one beside a change.
+#[must_use]
+pub fn follows_neighbours(placement: &HexPlacement) -> bool {
+    can_open(placement) || placement.space == HexSpace::Room
+}
+
 /// Whether the cell behind `face` is open air. Outside the lattice counts: that is
 /// exactly how `mark_open_air` seeds the sky.
 #[must_use]

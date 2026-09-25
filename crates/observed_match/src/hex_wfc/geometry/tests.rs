@@ -754,11 +754,14 @@ fn bounded_delta_matches_full_projection_and_preserves_pinned_pieces() {
             .iter()
             .all(|piece| delta.changed_cells.contains(&piece.source_cell))
     );
-    // The only cells re-projected beyond the logical change are halls beside it,
-    // whose open edges may have moved with it.
+    // The only cells re-projected beyond the logical change are halls and rooms beside
+    // it, whose open edges and windows may have moved with it.
     let grid = world.config.grid();
     for cell in delta.changed_cells.difference(&logical.changed_cells) {
-        assert!(open_edge::can_open(&world.placements[cell]), "{cell:?}");
+        assert!(
+            observed_facility::hex_wfc::exposure::follows_neighbours(&world.placements[cell]),
+            "{cell:?}"
+        );
         assert!(
             HexFace::LATERAL.into_iter().any(|face| grid
                 .neighbor(*cell, face)

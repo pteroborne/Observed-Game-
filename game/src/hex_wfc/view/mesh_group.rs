@@ -36,12 +36,13 @@ pub(in crate::hex_wfc) enum MeshGroupKey {
 impl MeshGroupKey {
     pub(in crate::hex_wfc) fn for_piece(piece: &HexStructurePiece) -> Self {
         match piece.part {
-            HexPiecePart::Authored => {}
+            // A window's frame is the wall it was cut from, drawn as that wall.
+            HexPiecePart::Authored | HexPiecePart::Window => {}
             HexPiecePart::Lip => return Self::Lip,
             HexPiecePart::Rail => return Self::Rail,
             HexPiecePart::Walkway => return Self::Walkway,
             HexPiecePart::Truss => return Self::Truss,
-            HexPiecePart::Guard => return Self::Hidden,
+            HexPiecePart::Guard | HexPiecePart::Glazing => return Self::Hidden,
         }
         match piece.role {
             HexStructureRole::Ramp => Self::Ramp,

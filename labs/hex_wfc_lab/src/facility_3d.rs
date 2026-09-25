@@ -522,7 +522,9 @@ mod tests {
         state.rebuild(&second.world);
         assert_eq!(state.snapshot.generation, second.world.generation);
         assert_eq!(state.body.position, state.body.spawn);
-        assert_eq!(state.scene.collider_count(), state.snapshot.pieces.len());
+        // Every piece that collides, and no other: a window's frame is drawn only.
+        let colliding = state.snapshot.pieces.iter().filter(|p| p.part.collides());
+        assert_eq!(state.scene.collider_count(), colliding.count());
     }
 
     #[test]

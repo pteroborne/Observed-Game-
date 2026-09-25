@@ -48,6 +48,27 @@ pub enum HexPiecePart {
     Walkway,
     /// The slender structure under a walkway.
     Truss,
+    /// A room wall with a window cut in it, kept whole as its collider: the glass, in
+    /// effect. Solid to a body and never drawn (see `window`).
+    Glazing,
+    /// What is drawn of a wall with a window cut in it: below the sill, above the
+    /// lintel, the jambs and the mullions. Drawn and never collided, since the
+    /// [`Self::Glazing`] behind it already is.
+    Window,
+}
+
+impl HexPiecePart {
+    /// Whether this piece is in the collider scene.
+    #[must_use]
+    pub const fn collides(self) -> bool {
+        !matches!(self, Self::Window)
+    }
+
+    /// Whether this piece is drawn.
+    #[must_use]
+    pub const fn drawn(self) -> bool {
+        !matches!(self, Self::Guard | Self::Glazing)
+    }
 }
 
 /// One render/collision primitive from an authored prefab or an open edge.
@@ -426,18 +447,24 @@ impl HexWfcGeometrySnapshot {
         let catalogue = HexTileCatalogue::new(prototypes);
         let room_catalogue = RoomCatalogue::new(room_prototypes);
         let mut changed_cells = logical.changed_cells.clone();
-        for stamped in &world.blueprints {
-            if stamped
-                .cells
-                .iter()
-                .any(|cell| changed_cells.contains(cell))
-                && room_for(world, stamped, &room_catalogue).is_some()
-            {
-                changed_cells.extend(stamped.cells.iter().copied());
+        // A room is projected whole, from its anchor's ID range, so touching any of its
+        // cells touches all of them.
+        let whole_rooms = |changed_cells: &mut BTreeSet<HexCoord>| {
+            for stamped in &world.blueprints {
+                if stamped
+                    .cells
+                    .iter()
+                    .any(|cell| changed_cells.contains(cell))
+                    && room_for(world, stamped, &room_catalogue).is_some()
+                {
+                    changed_cells.extend(stamped.cells.iter().copied());
+                }
             }
-        }
+        };
+        whole_rooms(&mut changed_cells);
         // A cell that became built or unbuilt opens or closes its neighbours' walls
-        // (`open_edge`). The observation halo keeps those neighbours unwatched, so they
+        // (`open_edge`) and windows (`window`). The observation halo keeps those
+        // neighbours unwatched, so they
         // are re-projected here; any whose edges did not move re-project identically
         // and drop out of the collider delta below.
         let grid = world.config.grid();
@@ -450,10 +477,15 @@ impl HexWfcGeometrySnapshot {
             })
             .filter(|cell| {
                 !changed_cells.contains(cell)
-                    && world.placements.get(cell).is_some_and(open_edge::can_open)
+                    && world
+                        .placements
+                        .get(cell)
+                        .is_some_and(observed_facility::hex_wfc::exposure::follows_neighbours)
             })
             .collect();
         changed_cells.extend(neighbours);
+        // A room beside the change is windowed by it, and re-projected whole.
+        whole_rooms(&mut changed_cells);
         let mut upserted = ProjectedCells::default();
         let mut projected_rooms = BTreeSet::new();
         for &coord in &changed_cells {
@@ -471,16 +503,21 @@ impl HexWfcGeometrySnapshot {
             project_cell(world, coord, &catalogue, &mut upserted)?;
         }
         let mut old_colliders = BTreeMap::new();
+        let mut removed_piece_ids = BTreeSet::new();
         for &coord in &changed_cells {
             for id in collider_ids_for_cell(world, coord) {
                 if let Some(&index) = self.piece_indices.get(&id) {
                     let piece = &self.pieces[index];
                     debug_assert_eq!(piece.source_cell, coord);
-                    old_colliders.insert(id, piece.collider());
+                    // Every old piece is replaced; only those that collide were ever
+                    // in the collider scene.
+                    removed_piece_ids.insert(id);
+                    if piece.part.collides() {
+                        old_colliders.insert(id, piece.collider());
+                    }
                 }
             }
         }
-        let removed_piece_ids = old_colliders.keys().copied().collect::<BTreeSet<_>>();
         let ProjectedCells {
             pieces: upserted_pieces,
             lights: upserted_lights,
@@ -489,6 +526,7 @@ impl HexWfcGeometrySnapshot {
         } = upserted;
         let new_colliders = upserted_pieces
             .iter()
+            .filter(|piece| piece.part.collides())
             .map(|piece| (piece.id, piece.collider()))
             .collect::<BTreeMap<_, _>>();
         // Registers often select byte-identical structural hulls. Presentation
@@ -1596,23 +1634,6 @@ fn push_room(
             yaw_degrees: socket.yaw_degrees,
         }
     }));
-    for (index, hull) in room.hulls.iter().enumerate() {
-        out.pieces.push(HexStructurePiece {
-            id: StableColliderId(
-                u32::try_from(base + index as u64).expect("validated collider ID capacity"),
-            ),
-            anchor: stamped.anchor,
-            source_cell: stamped.anchor,
-            role: HexStructureRole::Room,
-            part: HexPiecePart::Authored,
-            tile: Some(room.key.clone()),
-            center,
-            rotation: [0.0, 0.0, 0.0, 1.0],
-            shape: ColliderShape::ConvexHull {
-                points: hull.clone(),
-            },
-        });
-    }
     // The room's rim faces, if it stands on the edge of the lattice (`rim_pieces`).
     let rim: Vec<open_edge::EdgePiece> = stamped
         .cells
@@ -1625,6 +1646,35 @@ fn push_room(
             hulls: room.hulls.len() + rim.len(),
         });
     }
+    // Windows where the room looks out (`window`). A room with more wall to cut than
+    // its ID range holds keeps its walls whole rather than failing to project.
+    let mut windows = room_windows(world, stamped, room);
+    let spare = COLLIDER_STRIDE - room.hulls.len() - rim.len();
+    if windows.values().map(Vec::len).sum::<usize>() > spare {
+        windows.clear();
+    }
+    for (index, hull) in room.hulls.iter().enumerate() {
+        out.pieces.push(HexStructurePiece {
+            id: StableColliderId(
+                u32::try_from(base + index as u64).expect("validated collider ID capacity"),
+            ),
+            anchor: stamped.anchor,
+            source_cell: stamped.anchor,
+            role: HexStructureRole::Room,
+            part: if windows.contains_key(&index) {
+                HexPiecePart::Glazing
+            } else {
+                HexPiecePart::Authored
+            },
+            tile: Some(room.key.clone()),
+            center,
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            shape: ColliderShape::ConvexHull {
+                points: hull.clone(),
+            },
+        });
+    }
+    let first = room.hulls.len() + rim.len();
     for (offset, piece) in rim.into_iter().enumerate() {
         out.pieces.push(HexStructurePiece {
             id: StableColliderId(
@@ -1643,7 +1693,86 @@ fn push_room(
             },
         });
     }
+    for (offset, points) in windows.into_values().flatten().enumerate() {
+        out.pieces.push(HexStructurePiece {
+            id: StableColliderId(
+                u32::try_from(base + (first + offset) as u64)
+                    .expect("validated collider ID capacity"),
+            ),
+            anchor: stamped.anchor,
+            source_cell: stamped.anchor,
+            role: HexStructureRole::Room,
+            part: HexPiecePart::Window,
+            tile: Some(room.key.clone()),
+            center,
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            shape: ColliderShape::ConvexHull { points },
+        });
+    }
     Ok(())
+}
+
+/// The drawn pieces of each room hull a window is cut through, by hull index, in the
+/// room's anchor-local frame.
+///
+/// A room's hulls are authored around its anchor, and a multi-cell room's walls stand
+/// in several cells: each hull is taken to the cell holding its centroid (its storey,
+/// then the nearest footprint cell in plan) and cut in that cell's frame.
+fn room_windows(
+    world: &HexWfcWorld,
+    stamped: &StampedBlueprint,
+    room: &RoomPrototype,
+) -> BTreeMap<usize, Vec<Vec<Vec3>>> {
+    windows_for(&room.hulls, stamped.anchor, &stamped.cells, |cell, face| {
+        window::looks_out(world, &stamped.cells, cell, face)
+    })
+}
+
+/// [`room_windows`] for any footprint and any rule for where it looks out.
+fn windows_for(
+    hulls: &[Vec<Vec3>],
+    anchor: HexCoord,
+    cells: &[HexCoord],
+    looks_out: impl Fn(HexCoord, HexFace) -> bool,
+) -> BTreeMap<usize, Vec<Vec<Vec3>>> {
+    let anchor = Vec3::from_array(hex_origin(anchor));
+    let offsets: Vec<(HexCoord, Vec3)> = cells
+        .iter()
+        .map(|&cell| (cell, Vec3::from_array(hex_origin(cell)) - anchor))
+        .collect();
+    let mut windows = BTreeMap::new();
+    for (index, hull) in hulls.iter().enumerate() {
+        if hull.is_empty() {
+            continue;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        let centroid = hull.iter().copied().sum::<Vec3>() / hull.len() as f32;
+        let Some(&(cell, offset)) = offsets.iter().min_by(|a, b| {
+            let storey = |offset: Vec3| ((centroid.y - offset.y) / TILE_LEVEL_HEIGHT).floor().abs();
+            let plan =
+                |offset: Vec3| Vec2::new(centroid.x - offset.x, centroid.z - offset.z).length();
+            storey(a.1)
+                .total_cmp(&storey(b.1))
+                .then(plan(a.1).total_cmp(&plan(b.1)))
+        }) else {
+            continue;
+        };
+        let local: Vec<Vec3> = hull.iter().map(|&p| p - offset).collect();
+        let pieces = HexFace::LATERAL
+            .into_iter()
+            .filter(|&face| looks_out(cell, face))
+            .find_map(|face| window::cut(&local, face));
+        if let Some(pieces) = pieces {
+            windows.insert(
+                index,
+                pieces
+                    .into_iter()
+                    .map(|piece| piece.into_iter().map(|p| p + offset).collect())
+                    .collect(),
+            );
+        }
+    }
+    windows
 }
 
 /// Convex outline of the rhombic axial domain including the canonical hex footprint.
@@ -1710,7 +1839,11 @@ fn arena_for(world: &HexWfcWorld, pieces: &[HexStructurePiece]) -> ArenaSpec {
         .unwrap_or(Vec2::ZERO);
     let height = f32::from(world.config.levels) * TILE_LEVEL_HEIGHT;
     ArenaSpec {
-        colliders: pieces.iter().map(HexStructurePiece::collider).collect(),
+        colliders: pieces
+            .iter()
+            .filter(|piece| piece.part.collides())
+            .map(HexStructurePiece::collider)
+            .collect(),
         floor_y: 0.0,
         safety_center: Vec3::new((min.x + max.x) * 0.5, height * 0.5, (min.y + max.y) * 0.5),
         safety_half: Vec3::new((max.x - min.x) * 0.55, height, (max.y - min.y) * 0.55),
@@ -1718,6 +1851,7 @@ fn arena_for(world: &HexWfcWorld, pieces: &[HexStructurePiece]) -> ArenaSpec {
 }
 
 pub(super) mod open_edge;
+pub(super) mod window;
 use open_edge::OpenEdges;
 #[cfg(test)]
 mod tests;

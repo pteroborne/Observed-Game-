@@ -166,7 +166,7 @@ pub fn rim_pieces(world: &HexWfcWorld, at: HexCoord) -> Vec<EdgePiece> {
 
 /// The inward unit normal of a face in plan, and the distance from the cell centre
 /// to that face.
-fn face_frame(face: HexFace) -> (Vec2, f32) {
+pub(super) fn face_frame(face: HexFace) -> (Vec2, f32) {
     let [a, b] = face_edge(face);
     #[allow(clippy::cast_precision_loss)]
     let mid = Vec2::new((a.0 + b.0) as f32, (a.1 + b.1) as f32) * 0.5;
@@ -176,7 +176,7 @@ fn face_frame(face: HexFace) -> (Vec2, f32) {
 /// The face a cell-local hull stands against: the one whose sector (the triangle from
 /// the cell centre to that edge) holds its plan centroid. `None` for a hull standing
 /// in the middle of the cell, which belongs to no face.
-fn sector_of(hull: &[Vec3]) -> Option<HexFace> {
+pub(super) fn sector_of(hull: &[Vec3]) -> Option<HexFace> {
     #[allow(clippy::cast_precision_loss)]
     let centroid = hull
         .iter()

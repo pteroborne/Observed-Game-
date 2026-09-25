@@ -43,7 +43,7 @@ pub(super) fn rebuild_geometry(
         .iter()
         .filter(|piece| landmarks::piece_visible(&state, piece.source_cell))
         // A railing's guard is collision only; drawn, it reads as a wall.
-        .filter(|piece| piece.part != observed_match::hex_wfc::HexPiecePart::Guard)
+        .filter(|piece| piece.part.drawn())
         .cloned()
         .collect::<Vec<_>>();
     for piece in &pieces {

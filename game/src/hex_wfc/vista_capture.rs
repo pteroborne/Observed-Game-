@@ -7,8 +7,8 @@
 //! solved facility — a railed loggia, a bare one above the unsafe height, a walkway if
 //! the solve made one, and the highest open edge of all — each chosen for the deepest
 //! drop beyond its open face, and facing through it, and each is held long enough for streaming and the atmosphere to settle
-//! before the still is taken. The last pose is a sealed room, the evidence that the
-//! moonlight stays outside.
+//! before the still is taken. The last two are inside: a sealed room, the evidence that
+//! the moonlight stays out of it, and a room whose window faces the moon.
 use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
@@ -224,6 +224,33 @@ pub(super) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
             })
             .unwrap_or(HexFace::LATERAL[0]);
         poses.push(pose("sealed_room", at, face, 6.9, 0.1));
+    }
+    // Inside, windowed: the room wall that looks out most toward the moon, seen from
+    // across the room, with the floor in frame where the moonlight lands.
+    let looks_out = |room: &[HexCoord], at: HexCoord, face: HexFace| {
+        grid.neighbor(at, face)
+            .is_none_or(|next| !room.contains(&next) && !built(Some(next)))
+    };
+    if let Some((at, face)) = world
+        .blueprints
+        .iter()
+        .flat_map(|room| {
+            room.cells.iter().flat_map(move |&at| {
+                HexFace::LATERAL
+                    .into_iter()
+                    .filter(move |&face| looks_out(&room.cells, at, face))
+                    .map(move |face| (at, face))
+            })
+        })
+        .max_by(|a, b| {
+            face_dir(a.1)
+                .dot(moon_plan)
+                .total_cmp(&face_dir(b.1).dot(moon_plan))
+                .then(a.0.level.cmp(&b.0.level))
+                .then(b.0.cmp(&a.0))
+        })
+    {
+        poses.push(pose("moonlit_room", at, face, 6.0, -0.22));
     }
     poses
 }

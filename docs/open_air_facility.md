@@ -49,6 +49,21 @@ lateral neighbours, so a protected hall holds those neighbours out of the relayo
 pocket. The pocket shrinks around watched halls instead of committing a change that
 would alter one. Pinned pieces still never change.
 
+**Rooms take windows where they look out.** A room face whose neighbour is outside the
+room and unbuilt, or off the lattice, gets a tall window, 1.0 to 4.4 m above the floor,
+stopping 1.1 m short of each corner, with mullions no more than 1.7 m apart. The wall
+standing there is cut by planes into what stays below the sill, above the lintel, at
+each end and between the panes. A window is glazed, not opened: the wall keeps its
+collider ID and its exact hull, as a `Glazing` piece that is never drawn, and the cut
+pieces are `Window` pieces that are drawn and never collided. So nothing walks, falls
+or is pushed through a window. Light passes, because only drawn pieces cast shadows.
+(`observed_match::hex_wfc::geometry::window`)
+
+A room's windows follow its lateral neighbours, as a hall's open edges do. So a
+watched room holds its neighbours out of the relayout pocket too
+(`exposure::follows_neighbours`), and a geometry delta re-projects any room beside a
+change, whole, from its anchor.
+
 **A fall is a setback, not a softlock.** A body can step off a bare edge onto the
 roof of a lower hall, and the railed loggias around that roof keep it out. After three
 seconds on a roof, the body goes back to the last cell it stood in.
@@ -130,6 +145,13 @@ differs by (mean absolute error):
 The sealed room, a room with building on every side and above, changes no more than
 the still that is all sky.
 
+**Windows, across the corpus**: 710 room faces in the committed catalog have wall
+standing across their middle, and every one of them is cut clear there when it looks
+out (`every_room_face_that_looks_out_is_cut_clear_across_the_corpus`). Each has
+exactly one wall hull to cut. On the arc gate, windows add 160 µs to the median frame
+and 1.5 ms to the worst mutation frame (14.7 ms, against 33 ms), and every relayout
+commits on the tick it did without them.
+
 ## Evidence
 
 ```powershell
@@ -137,14 +159,16 @@ $env:OBSERVED2_CAPTURE_HEX_WFC_VISTA = "docs/evidence/open_air_facility"; cargo 
 ```
 
 The capture stands the runner in open edges of the production facility, chosen for the
-deepest drop beyond them, and takes one still at each. It ends in a sealed room, as
-evidence that the moonlight stays outside.
+deepest drop beyond them, and takes one still at each. It ends inside, in a sealed room
+as evidence that the moonlight stays out of it, and in the room whose window looks
+most toward the moon.
 
 | | |
 | --- | --- |
 | ![Railed loggia over the cloud sea](evidence/open_air_facility/vista_01_railed_loggia.png) | ![A bare edge above the unsafe height](evidence/open_air_facility/vista_02_bare_edge.png) |
 | ![A railed walkway across the void](evidence/open_air_facility/vista_03_walkway.png) | ![The moon over the cloud sea](evidence/open_air_facility/vista_04_moon.png) |
 | ![The summit: a skyline under the stars](evidence/open_air_facility/vista_05_summit.png) | ![A sealed room, which the moonlight does not reach](evidence/open_air_facility/vista_06_sealed_room.png) |
+| ![A room with its window toward the moon](evidence/open_air_facility/vista_07_moonlit_room.png) | |
 
 ## More void: the composition
 
@@ -228,9 +252,13 @@ without air classified, and requires the same solve.
 
 ## Still thin
 
-- **No moonlit interiors yet.** The moonlight reaches only what is open to the sky,
-  because the facility has no windows: a room that faces air has a solid wall there.
-  Windows cut by rule into walls that face air are the next step.
+- **Windowed rooms are lit by their district first.** Moonlight comes through a
+  window and casts shadows across the floor, but the district key light that follows
+  the player is far brighter, so a windowed room does not yet read as moonlit. Dimming
+  the key in a room that looks out is an art-direction call, not yet made.
+- **Only rooms take windows.** Ramps and shafts keep blank walls where they face air:
+  their hulls include sloped decks and climbs, which a band cut at a fixed height
+  would hole.
 - **Observer sight does not cross open edges, by decision for now.** Observation in the
   match still follows ports, so tiles seen across air can change in plain sight (see
   *Decisions*). Freezing them, as `architect_lab` models, remains available if watching
