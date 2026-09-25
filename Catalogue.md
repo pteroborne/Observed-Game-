@@ -57,7 +57,7 @@ These crates represent the stable core of the game's simulation layer. They cont
 10. **`observed_progression`** — [README](crates/observed_progression/README.md)
    - *Purpose:* Cosmetic profile unlocks, matchmaking queue status, lobby formation, reconnect logic, and session lifecycles.
 11. **`observed_style`** — [README](crates/observed_style/README.md)
-    - *Purpose:* The semantic visual design system (neon-noir district palettes, emissive intensities, signaling tiers, Outline overlay rules, and accessibility legend mappings).
+    - *Purpose:* The semantic visual design system (neon-noir district palettes, emissive intensities, signaling tiers, Outline overlay rules, and accessibility legend mappings). `equipment` holds the hand devices' hardware finishes and their held-signal budget; see [docs/hand_equipment.md](docs/hand_equipment.md).
 12. **`observed_traversal`** — [README](crates/observed_traversal/README.md)
     - *Purpose:* Fixed-timestep traversal behind a pure `ArenaSpec`/`TraversalWorld` boundary, plus the canonical runtime profile, shared local follower, and deterministic module-local graph/cursor vocabulary. The assembled game uses the deterministic raw-Rapier KCC exclusively; the legacy backend tag remains only for replay/network compatibility fixtures.
 13. **`observed_assets`** — [README](crates/observed_assets/README.md)

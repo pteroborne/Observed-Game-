@@ -32,6 +32,22 @@ pub(super) struct VistaPose {
     pub(super) feet: Vec3,
     pub(super) yaw: f32,
     pub(super) pitch: f32,
+    pub(super) stage: Stage,
+}
+
+/// What the equipment capture puts in the runner's hands and on the floor for a pose,
+/// held there every frame of it. Vista poses stage nothing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Stage {
+    Nothing,
+    /// A lantern and two plates in hand.
+    InHand,
+    /// And a linked pair of the runner's plates on the floor ahead.
+    LinkedPads,
+    /// And one of the runner's plates alone, beside a rival team's.
+    LoneAndRival,
+    /// And a lantern cache standing in the middle of the cell, with a linked pair.
+    SetDown,
 }
 
 fn face_dir(face: HexFace) -> Vec2 {
@@ -52,6 +68,114 @@ fn pose(name: &'static str, cell: HexCoord, face: HexFace, back: f32, pitch: f32
         feet: o + Vec3::new(dir.x * from_centre, FLOOR_SLAB_TOP, dir.y * from_centre),
         yaw: dir.x.atan2(-dir.y),
         pitch,
+        stage: Stage::Nothing,
+    }
+}
+
+/// `OBSERVED2_CAPTURE_HEX_WFC_EQUIPMENT`: the carried and placed equipment, staged in
+/// the vista's railed loggia under the moon and in its moonlit room.
+#[must_use]
+pub(super) fn equipment_poses(world: &HexWfcWorld) -> Vec<VistaPose> {
+    let vistas = poses(world);
+    let find = |name: &str| vistas.iter().find(|pose| pose.name == name).cloned();
+    let mut out = Vec::new();
+    if let Some(loggia) = find("railed_loggia") {
+        let staged = |name, stage, back: f32, pitch: f32, inward: bool| {
+            let dir = Vec2::new(loggia.yaw.sin(), -loggia.yaw.cos());
+            let o = Vec3::from_array(hex_origin(loggia.cell));
+            let from_centre = 6.9 - back;
+            VistaPose {
+                name,
+                cell: loggia.cell,
+                feet: o + Vec3::new(dir.x * from_centre, FLOOR_SLAB_TOP, dir.y * from_centre),
+                yaw: if inward {
+                    loggia.yaw + std::f32::consts::PI
+                } else {
+                    loggia.yaw
+                },
+                pitch,
+                stage,
+            }
+        };
+        out.push(staged("in_hand", Stage::InHand, 1.4, -0.08, false));
+        out.push(staged("linked_pads", Stage::LinkedPads, 5.2, -0.42, false));
+        out.push(staged(
+            "lone_and_rival",
+            Stage::LoneAndRival,
+            5.2,
+            -0.42,
+            false,
+        ));
+        out.push(staged("set_down", Stage::SetDown, 1.0, -0.3, true));
+    }
+    if let Some(room) = find("moonlit_room") {
+        out.push(VistaPose {
+            name: "in_hand_indoors",
+            stage: Stage::InHand,
+            ..room
+        });
+    }
+    out
+}
+
+/// Hold `pose`'s staging in the simulation: what the runner carries, and which plates
+/// and lantern caches lie where. Evidence only, like the pose itself.
+fn stage(runtime: &mut HexWfcRuntime, pose: &VistaPose) {
+    use observed_core::{EquipmentId, TeamId};
+    use observed_match::hex_wfc::HexDeployedPad;
+    if pose.stage == Stage::Nothing {
+        return;
+    }
+    let id = runtime.local_player;
+    let state = &mut runtime.match_state;
+    let team = state.players[&id].team;
+    state.pads.carried.insert(id, 2);
+    state.lanterns.carried.insert(id, 1);
+    state.pads.deployed.clear();
+    state.lanterns.caches.clear();
+    let ahead = Vec3::new(pose.yaw.sin(), 0.0, -pose.yaw.cos());
+    let right = Vec3::new(-ahead.z, 0.0, ahead.x);
+    let mut pad = |n: u32, team: TeamId, at: Vec3| {
+        state.pads.deployed.insert(
+            EquipmentId(9_000 + n),
+            HexDeployedPad {
+                id: EquipmentId(9_000 + n),
+                owner: id,
+                team,
+                cell: pose.cell,
+                position: at,
+            },
+        );
+    };
+    let floor = pose.feet;
+    match pose.stage {
+        Stage::Nothing | Stage::InHand => {}
+        Stage::LinkedPads => {
+            pad(0, team, floor + ahead * 2.6 - right * 1.0);
+            pad(1, team, floor + ahead * 3.4 + right * 1.2);
+        }
+        Stage::LoneAndRival => {
+            pad(0, team, floor + ahead * 2.6 - right * 1.0);
+            pad(
+                1,
+                TeamId(team.0.wrapping_add(1)),
+                floor + ahead * 3.4 + right * 1.2,
+            );
+        }
+        Stage::SetDown => {
+            let centre = Vec3::from_array(hex_origin(pose.cell)) + Vec3::Y * FLOOR_SLAB_TOP;
+            pad(0, team, centre - right * 2.2 - ahead * 1.2);
+            pad(1, team, centre + right * 2.0 + ahead * 1.0);
+            state.lanterns.caches.insert(
+                EquipmentId(9_100),
+                observed_match::hex_wfc::HexLanternCache {
+                    id: EquipmentId(9_100),
+                    cell: pose.cell,
+                    amount: 1,
+                    collected: false,
+                },
+            );
+        }
     }
 }
 
@@ -261,6 +385,7 @@ pub(super) fn progress(
     path: &str,
     runtime: Option<&mut HexWfcRuntime>,
     poses: &mut Option<Vec<VistaPose>>,
+    which: fn(&HexWfcWorld) -> Vec<VistaPose>,
     commands: &mut Commands,
     exit: &mut MessageWriter<AppExit>,
 ) {
@@ -272,7 +397,7 @@ pub(super) fn progress(
         // inside, the runner is placed rather than driven, so the bot steps aside.
         commands.remove_resource::<crate::sim::state::SpectatorBot>();
     }
-    let poses = poses.get_or_insert_with(|| poses_for(runtime));
+    let poses = poses.get_or_insert_with(|| poses_for(runtime, which));
     if frame < WARM_UP {
         return;
     }
@@ -284,6 +409,9 @@ pub(super) fn progress(
     };
     let id = runtime.local_player;
     // Held every frame of the pose, so nothing walks or falls away from it.
+    if within < SETTLE {
+        stage(runtime, pose);
+    }
     if within < SETTLE
         && let Some(player) = runtime.match_state.players.get_mut(&id)
     {
@@ -301,8 +429,8 @@ pub(super) fn progress(
     }
 }
 
-fn poses_for(runtime: &HexWfcRuntime) -> Vec<VistaPose> {
-    let found = poses(&runtime.match_state.facility);
+fn poses_for(runtime: &HexWfcRuntime, which: fn(&HexWfcWorld) -> Vec<VistaPose>) -> Vec<VistaPose> {
+    let found = which(&runtime.match_state.facility);
     for pose in &found {
         println!(
             "hex vista capture: {} at q{} r{} L{}",

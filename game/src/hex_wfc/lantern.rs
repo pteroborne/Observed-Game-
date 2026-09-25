@@ -1,7 +1,13 @@
-//! Presentation for the caged anchor lantern and physical Guardian. The lantern
-//! uses the authored drop-in mesh when present and a procedural cage otherwise.
-//! Every material comes from `observed_style`; geometry communicates state in
-//! addition to colour (cage, core, deployed threshold lock, tall threat body).
+//! Presentation for the caged anchor lantern and physical Guardian.
+//!
+//! The lantern is an observation torch: a knurled grip, a hexagonal cage and glass
+//! chamber, and inside it the guide core the player reads the exit from, circled by
+//! a slow gyro in the anchor's purple. The core brightens as the exit nears and
+//! stutters as the Guardian closes, with the light it casts. A drop-in authored body
+//! ([`observed_assets::LANTERN`]) replaces the procedural hardware when an author
+//! supplies one; the core and gyro ride inside either. Every material comes from
+//! `observed_style`; geometry communicates state in addition to colour (cage, core,
+//! deployed threshold lock, tall threat body).
 
 use std::collections::BTreeMap;
 
@@ -10,8 +16,16 @@ use observed_core::{EquipmentId, PlayerId};
 use observed_hex::{HexCoord, hex_origin};
 use observed_style::MarkerRole;
 
-use super::sim::{EYE_OFFSET, HexWfcRuntime};
+use observed_style::equipment::{Hardware, finish, held};
+
+use super::equipment::{HeldSway, hex_prism, hex_ring};
+use super::sim::HexWfcRuntime;
 use crate::GameState;
+
+pub(super) mod torch;
+
+pub(super) use torch::sync_core_glow;
+use torch::{PLACED_SCALE, POMMEL, core_glow, held_pose, spawn_caged_lantern};
 
 #[derive(Component)]
 pub(super) enum LanternVisual {
@@ -21,7 +35,11 @@ pub(super) enum LanternVisual {
 }
 
 #[derive(Component)]
-pub(super) struct LanternCoreLight(PlayerId);
+pub(super) struct LanternCoreLight {
+    owner: PlayerId,
+    /// How brightly the core glows this frame, as a share of its full signal.
+    glow: f32,
+}
 
 /// The bead marking where a lantern would hang if the player pressed deploy.
 ///
@@ -51,12 +69,22 @@ pub(super) struct LanternSignalSample {
 
 #[derive(Resource)]
 pub(super) struct LanternVisualAssets {
-    lantern_mesh: Option<Handle<Mesh>>,
+    authored: Option<Handle<WorldAsset>>,
+    /// The torch's hardware, each part with its finish; origin at the core.
+    hardware: Vec<(Handle<Mesh>, Hardware, Transform)>,
+    /// A stand for a lantern set down, under its pommel.
+    plinth: Handle<Mesh>,
     core: Handle<Mesh>,
-    cage_bar: Handle<Mesh>,
+    gyro: Handle<Mesh>,
+    accent: Handle<Mesh>,
+    ghost: Handle<Mesh>,
     cage_ring: Handle<Mesh>,
     guardian_body: Handle<Mesh>,
+    finishes: BTreeMap<Hardware, Handle<StandardMaterial>>,
+    glass: Handle<StandardMaterial>,
     guide: Handle<StandardMaterial>,
+    /// The local player's own core, whose emission follows the light it casts.
+    held_core: Handle<StandardMaterial>,
     cage: Handle<StandardMaterial>,
     held_cage: Handle<StandardMaterial>,
     threat: Handle<StandardMaterial>,
@@ -73,32 +101,39 @@ pub(super) fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // The upstream GLB is an Import Replacer sample: its full scene contains
-    // Godot-only helper and collision nodes. Loading just the authored torch
-    // primitive keeps those helpers out of Bevy and lets the shared semantic
-    // material remain the source of colour/emission.
-    let lantern_mesh =
-        crate::view::assets::asset_present(observed_assets::LANTERN.path).then(|| {
-            asset_server.load(
-                GltfAssetLabel::Primitive {
-                    mesh: 1,
-                    primitive: 0,
-                }
-                .from_asset(observed_assets::LANTERN.path),
-            )
-        });
+    let authored = crate::view::assets::asset_present(observed_assets::LANTERN.path).then(|| {
+        asset_server.load(GltfAssetLabel::Scene(0).from_asset(observed_assets::LANTERN.path))
+    });
+    let hardware = torch::hardware(&mut meshes);
+    let finishes = torch::finishes(&mut materials);
+    let glass = finish(Hardware::Glass);
     let assets = LanternVisualAssets {
-        lantern_mesh,
-        core: meshes.add(Sphere::new(0.18)),
-        cage_bar: meshes.add(Cylinder::new(0.025, 0.62)),
+        authored,
+        hardware,
+        plinth: meshes.add(hex_prism(0.085, 0.060, -0.03, 0.0)),
+        core: meshes.add(Sphere::new(0.024).mesh().uv(24, 16)),
+        gyro: meshes.add(Torus::new(0.033, 0.039).mesh().build()),
+        accent: meshes.add(hex_ring(0.0665, 0.0605, -0.0745, -0.0705)),
+        ghost: meshes.add(Sphere::new(0.18)),
         cage_ring: meshes.add(Torus::new(0.20, 0.235)),
         guardian_body: meshes.add(Capsule3d::new(0.52, 1.6)),
+        finishes,
+        glass: materials.add(StandardMaterial {
+            base_color: glass.base_color,
+            metallic: glass.metallic,
+            perceptual_roughness: glass.roughness,
+            // Clear enough that the core, not the glass, is what the eye finds.
+            reflectance: 0.3,
+            alpha_mode: AlphaMode::Blend,
+            ..default()
+        }),
         guide: signal_material(&mut materials, MarkerRole::NextRoom),
+        held_core: signal_material(&mut materials, MarkerRole::NextRoom),
         cage: signal_material(&mut materials, MarkerRole::Control),
-        // A carried cage sits inside the first-person exposure budget; its
-        // objective core remains signal-tier while the metal does not bloom to
-        // white. Deployed/cache cages keep the full control-device treatment.
-        held_cage: scaled_signal_material(&mut materials, MarkerRole::Control, 0.35),
+        // A carried lantern's anchor trim sits inside the first-person exposure
+        // budget; its guide core stays signal-tier while the purple does not bloom
+        // to white. A lantern set down keeps the full control-device treatment.
+        held_cage: scaled_signal_material(&mut materials, MarkerRole::Control, held),
         threat: signal_material(&mut materials, MarkerRole::Collapse),
     };
     // One persistent marker, moved and hidden rather than respawned: it changes
@@ -107,7 +142,7 @@ pub(super) fn setup(
     commands.spawn((
         AnchorGhost,
         DespawnOnExit(GameState::HexWfc),
-        Mesh3d(assets.core.clone()),
+        Mesh3d(assets.ghost.clone()),
         MeshMaterial3d(assets.held_cage.clone()),
         Transform::from_scale(Vec3::splat(0.55)),
         Visibility::Hidden,
@@ -125,6 +160,7 @@ pub(super) fn cleanup(mut commands: Commands) {
 pub(super) fn sync_projection(
     mut commands: Commands,
     runtime: Res<HexWfcRuntime>,
+    sway: Res<HeldSway>,
     assets: Res<LanternVisualAssets>,
     mut projection: ResMut<LanternProjection>,
     existing: Query<Entity, With<LanternVisual>>,
@@ -148,8 +184,8 @@ pub(super) fn sync_projection(
                 &mut commands,
                 &assets,
                 LanternVisual::Held(player.id),
-                held_pose(player),
-                Some(player.id),
+                held_pose(&runtime, &sway, player),
+                Some((player.id, player.id == runtime.local_player)),
             );
         }
     }
@@ -158,7 +194,16 @@ pub(super) fn sync_projection(
             &mut commands,
             &assets,
             LanternVisual::Deployed(lantern.id),
-            Transform::from_translation(lantern.position + Vec3::Y * 0.36),
+            // Stood on its plinth on the threshold's floor: the anchor site is the
+            // doorway's middle, well above the deck.
+            Transform::from_translation(Vec3::new(
+                lantern.position.x,
+                hex_origin(lantern.cell)[1]
+                    + observed_hex::FLOOR_SLAB_TOP
+                    + (POMMEL + 0.03) * PLACED_SCALE,
+                lantern.position.z,
+            ))
+            .with_scale(Vec3::splat(PLACED_SCALE)),
             None,
         );
     }
@@ -174,9 +219,13 @@ pub(super) fn sync_projection(
             &mut commands,
             &assets,
             LanternVisual::Cache(cache.id),
-            Transform::from_translation(origin + Vec3::Y * 0.42).with_scale(Vec3::splat(
-                1.0 + f32::from(cache.amount.saturating_sub(1)) * 0.12,
-            )),
+            {
+                let scale = PLACED_SCALE * (1.0 + f32::from(cache.amount.saturating_sub(1)) * 0.12);
+                Transform::from_translation(
+                    origin + Vec3::Y * (observed_hex::FLOOR_SLAB_TOP + (POMMEL + 0.03) * scale),
+                )
+                .with_scale(Vec3::splat(scale))
+            },
             None,
         );
     }
@@ -243,15 +292,16 @@ pub(super) fn sync_anchor_ghost(
 
 pub(super) fn sync_dynamic(
     runtime: Res<HexWfcRuntime>,
+    sway: Res<HeldSway>,
     mut lanterns: Query<(&LanternVisual, &mut Transform)>,
-    mut core_lights: Query<(&LanternCoreLight, &mut PointLight)>,
+    mut core_lights: Query<(&mut LanternCoreLight, &mut PointLight)>,
     mut guardian: Query<&mut Transform, (With<HexGuardianVisual>, Without<LanternVisual>)>,
     mut signal_cache: Local<BTreeMap<PlayerId, LanternSignalSample>>,
 ) {
     for (visual, mut transform) in &mut lanterns {
         match visual {
             LanternVisual::Held(player) => {
-                *transform = held_pose(&runtime.match_state.players[player]);
+                *transform = held_pose(&runtime, &sway, &runtime.match_state.players[player]);
             }
             LanternVisual::Deployed(id) | LanternVisual::Cache(id) => {
                 // Keep the stable domain ID present and observed by the projection;
@@ -260,13 +310,13 @@ pub(super) fn sync_dynamic(
             }
         }
     }
-    for (owner, mut light) in &mut core_lights {
-        let player = &runtime.match_state.players[&owner.0];
-        let inventory = runtime.match_state.lanterns.inventory(owner.0);
+    for (mut owner, mut light) in &mut core_lights {
+        let player = &runtime.match_state.players[&owner.owner];
+        let inventory = runtime.match_state.lanterns.inventory(owner.owner);
         let seed = runtime.match_state.seed;
         let generation = runtime.match_state.facility.generation;
         let guardian_cell = runtime.match_state.guardian.cell;
-        let stale = signal_cache.get(&owner.0).is_none_or(|sample| {
+        let stale = signal_cache.get(&owner.owner).is_none_or(|sample| {
             sample.seed != seed
                 || sample.generation != generation
                 || sample.player_cell != player.cell
@@ -275,24 +325,24 @@ pub(super) fn sync_dynamic(
         });
         if stale {
             signal_cache.insert(
-                owner.0,
+                owner.owner,
                 LanternSignalSample {
                     seed,
                     generation,
                     player_cell: player.cell,
                     guardian_cell,
                     inventory,
-                    guide: runtime.match_state.lantern_proximity(owner.0),
-                    pressure: runtime.match_state.guardian_pressure(owner.0),
+                    guide: runtime.match_state.lantern_proximity(owner.owner),
+                    pressure: runtime.match_state.guardian_pressure(owner.owner),
                 },
             );
         }
-        let sample = signal_cache[&owner.0];
+        let sample = signal_cache[&owner.owner];
         let pressure = if player.cell == guardian_cell {
             // Same-cell pressure includes physical distance, not just topology, so it
             // remains live while the two bodies close on one another. This branch does
             // no graph search.
-            runtime.match_state.guardian_pressure(owner.0)
+            runtime.match_state.guardian_pressure(owner.owner)
         } else {
             sample.pressure
         };
@@ -300,116 +350,11 @@ pub(super) fn sync_dynamic(
         let (intensity, range) = carried_light_budget(sample.guide, pulse);
         light.intensity = intensity;
         light.range = range;
+        owner.glow = core_glow(sample.guide, pulse);
     }
     if let Ok(mut transform) = guardian.single_mut() {
         transform.translation = runtime.match_state.guardian.position;
     }
-}
-
-fn spawn_caged_lantern(
-    commands: &mut Commands,
-    assets: &LanternVisualAssets,
-    visual: LanternVisual,
-    transform: Transform,
-    held_owner: Option<PlayerId>,
-) {
-    let cage_material = if matches!(&visual, LanternVisual::Held(_)) {
-        assets.held_cage.clone()
-    } else {
-        assets.cage.clone()
-    };
-    commands
-        .spawn((
-            visual,
-            DespawnOnExit(GameState::HexWfc),
-            transform,
-            Visibility::Visible,
-            Name::new("Caged anchor lantern"),
-        ))
-        .with_children(|root| {
-            let authored_mesh = assets.lantern_mesh.is_some();
-            let core_transform = if authored_mesh {
-                // The source mesh is a slim torch rather than the wide procedural
-                // cage. Seat a smaller guide core at its head so the authored
-                // handle remains readable instead of disappearing inside a globe.
-                Transform::from_translation(Vec3::Y * 0.24).with_scale(Vec3::splat(0.30))
-            } else {
-                Transform::IDENTITY
-            };
-            root.spawn((
-                Mesh3d(assets.core.clone()),
-                MeshMaterial3d(assets.guide.clone()),
-                Visibility::Inherited,
-                core_transform,
-            ));
-            if let Some(ref mesh) = assets.lantern_mesh {
-                root.spawn((
-                    Mesh3d(mesh.clone()),
-                    MeshMaterial3d(cage_material.clone()),
-                    Visibility::Inherited,
-                    Transform::from_translation(Vec3::ZERO).with_scale(Vec3::splat(0.85)),
-                ));
-            } else {
-                for angle in [
-                    0.0,
-                    std::f32::consts::FRAC_PI_2,
-                    std::f32::consts::PI,
-                    4.712_389,
-                ] {
-                    root.spawn((
-                        Mesh3d(assets.cage_bar.clone()),
-                        MeshMaterial3d(cage_material.clone()),
-                        Visibility::Inherited,
-                        Transform::from_translation(Vec3::new(
-                            angle.cos() * 0.23,
-                            0.0,
-                            angle.sin() * 0.23,
-                        )),
-                    ));
-                }
-                for y in [-0.31, 0.31] {
-                    root.spawn((
-                        Mesh3d(assets.cage_ring.clone()),
-                        MeshMaterial3d(cage_material.clone()),
-                        Visibility::Inherited,
-                        Transform::from_translation(Vec3::Y * y),
-                    ));
-                }
-            }
-            if let Some(owner) = held_owner {
-                root.spawn((
-                    LanternCoreLight(owner),
-                    PointLight {
-                        color: observed_style::marker(MarkerRole::NextRoom).base_color,
-                        intensity: 35.0,
-                        range: 3.2,
-                        shadow_maps_enabled: false,
-                        ..default()
-                    },
-                    Transform::from_translation(core_transform.translation),
-                ));
-            } else {
-                root.spawn((
-                    PointLight {
-                        color: observed_style::marker(MarkerRole::Control).base_color,
-                        intensity: 180.0,
-                        range: 5.0,
-                        shadow_maps_enabled: false,
-                        ..default()
-                    },
-                    Transform::from_translation(core_transform.translation),
-                ));
-            }
-        });
-}
-
-fn held_pose(player: &observed_match::hex_wfc::HexPlayerState) -> Transform {
-    let rotation = Quat::from_rotation_y(-player.yaw) * Quat::from_rotation_x(player.pitch);
-    Transform::from_translation(
-        player.position + Vec3::Y * EYE_OFFSET + rotation * Vec3::new(0.28, -0.24, -0.82),
-    )
-    .with_rotation(rotation)
-    .with_scale(Vec3::splat(0.42))
 }
 
 fn carried_light_budget(guide: f32, pulse: f32) -> (f32, f32) {
@@ -469,12 +414,12 @@ fn signal_material(
 fn scaled_signal_material(
     materials: &mut Assets<StandardMaterial>,
     role: MarkerRole,
-    emissive_scale: f32,
+    emissive: impl Fn(MarkerRole) -> LinearRgba,
 ) -> Handle<StandardMaterial> {
     let treatment = observed_style::marker(role);
     materials.add(StandardMaterial {
         base_color: treatment.base_color,
-        emissive: treatment.emissive * emissive_scale,
+        emissive: emissive(role),
         metallic: 0.55,
         perceptual_roughness: 0.38,
         ..default()

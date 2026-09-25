@@ -6,6 +6,7 @@
 mod audio;
 mod cues;
 mod entities;
+mod equipment;
 mod feedback;
 mod hud;
 mod input;
@@ -67,6 +68,7 @@ impl Plugin for HexWfcPlugin {
                     feedback::setup,
                     audio::setup,
                     entities::setup,
+                    equipment::setup,
                     lantern::setup,
                     pad::setup,
                     input::grab_cursor,
@@ -133,11 +135,18 @@ impl Plugin for HexWfcPlugin {
                     feedback::animate,
                     audio::sync,
                     entities::sync,
-                    lantern::sync_projection,
-                    lantern::sync_dynamic,
-                    lantern::sync_anchor_ghost,
-                    pad::sync_projection,
-                    pad::sync_dynamic,
+                    // Grouped: hand equipment, posed after the hands have swayed.
+                    (
+                        equipment::sway,
+                        lantern::sync_projection,
+                        lantern::sync_dynamic,
+                        lantern::sync_core_glow,
+                        lantern::sync_anchor_ghost,
+                        pad::sync_projection,
+                        pad::sync_dynamic,
+                        equipment::spin,
+                    )
+                        .chain(),
                     sim::finish_runtime,
                 )
                     .chain()
@@ -155,12 +164,17 @@ impl Plugin for HexWfcPlugin {
                     entities::cleanup,
                     lantern::cleanup,
                     pad::cleanup,
+                    equipment::cleanup,
                     sim::cleanup_runtime,
                 )
                     .chain(),
             );
         let capture = std::env::var("OBSERVED2_CAPTURE_HEX_WFC_VISTA")
             .map(|path| (path, HexWfcCaptureMode::Vista))
+            .or_else(|_| {
+                std::env::var("OBSERVED2_CAPTURE_HEX_WFC_EQUIPMENT")
+                    .map(|path| (path, HexWfcCaptureMode::Equipment))
+            })
             .or_else(|_| {
                 std::env::var("OBSERVED2_CAPTURE_HEX_WFC_STYLE")
                     .map(|path| (path, HexWfcCaptureMode::Style))
@@ -188,6 +202,7 @@ impl Plugin for HexWfcPlugin {
                     | HexWfcCaptureMode::Relayout
                     | HexWfcCaptureMode::Traversal
                     | HexWfcCaptureMode::Vista
+                    | HexWfcCaptureMode::Equipment
             ) {
                 std::fs::create_dir_all(&path)
                     .expect("hex-WFC directory-style capture directory must be creatable");
@@ -242,6 +257,9 @@ pub(super) enum HexWfcCaptureMode {
     Traversal,
     /// Stand in the production facility's open edges and look out (`vista_capture`).
     Vista,
+    /// The carried and placed equipment, staged in the vista's loggia and moonlit room
+    /// (`vista_capture::equipment_poses`).
+    Equipment,
 }
 
 /// How many screenshots the style montage takes before exiting; matched to a spectated
@@ -310,7 +328,12 @@ fn capture_progress(
                 exit.write(AppExit::Success);
             }
         }
-        HexWfcCaptureMode::Vista => {
+        HexWfcCaptureMode::Vista | HexWfcCaptureMode::Equipment => {
+            let which = if request.mode == HexWfcCaptureMode::Vista {
+                vista_capture::poses
+            } else {
+                vista_capture::equipment_poses
+            };
             let HexWfcCapture {
                 frame, path, vista, ..
             } = &mut *request;
@@ -319,6 +342,7 @@ fn capture_progress(
                 path,
                 runtime.as_deref_mut(),
                 vista,
+                which,
                 &mut commands,
                 &mut exit,
             );
