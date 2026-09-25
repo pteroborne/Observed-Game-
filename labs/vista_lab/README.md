@@ -131,7 +131,8 @@ downstream of placement is borrowed from the real facility:
    production renderer could draw one without a new tile.
 6. **The production facility is dense, walled in, and half of it touches the sky.**
    Solved exactly as a match solves it (the 24 × 17 × 8 arc lattice, the
-   committed composition profile, six seeds; `production_tests.rs`):
+   composition profile as it then was, void share 300; six seeds;
+   `production_tests.rs`):
 
    | | per facility |
    | --- | --- |
@@ -146,6 +147,9 @@ downstream of placement is borrowed from the real facility:
    opens onto it and every face that borders it is a tile wall. **From inside the
    facility the game plays, nobody can see out.** Bringing this lab's vista into
    the game is therefore not only a renderer: something has to open onto the air.
+
+   Both halves have since happened: open edges, and a composition with more void
+   (share 2,000, 56% air). See [docs/open_air_facility.md](../../docs/open_air_facility.md).
 
 ## What this lab deliberately is not
 

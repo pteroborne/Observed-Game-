@@ -319,20 +319,23 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     // Curation retires 96 alternatives from the production catalogue. Re-pin content;
     // placement counts and the unchanged stair-tower family remain exact gates.
     let catalog = crate::hex_wfc::test_catalog();
+    // Re-pinned when the committed profile moved to the open-air composition (void
+    // share 300 -> 2,000): the same seeds build about half as many cells, because more
+    // of the lattice is air. The table above records the facility before that.
     let cases = [
         (
             1u64,
-            293usize,
-            0xce2e_7acb_d1e9_2610u64,
-            45usize,
-            0x95e0_1b87_e452_104cu64,
+            143usize,
+            0xae2f_b54d_2389_fab0u64,
+            29usize,
+            0x4e20_864f_7371_20a9u64,
         ),
         (
             10_000_031u64,
-            238usize,
-            0x62bd_49e7_751c_d215u64,
-            29usize,
-            0xe5db_a473_4a53_b1a3u64,
+            101usize,
+            0xb6bc_c0a1_f832_dd74u64,
+            18usize,
+            0xd4b0_ff69_90ab_03d0u64,
         ),
     ];
     let mut actual = Vec::new();

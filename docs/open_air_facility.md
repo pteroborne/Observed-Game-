@@ -77,8 +77,9 @@ seconds on a roof, the body goes back to the last cell it stood in.
 
 ## Measured
 
-On the production facility (24 × 17 × 8, the committed composition profile, six
-seeds):
+On the production facility as it was when open edges landed (24 × 17 × 8, the
+committed profile at its old void share of 300, six seeds; see *More void* below for
+what the profile asks for now):
 
 | | per facility |
 | --- | --- |
@@ -111,15 +112,69 @@ deepest drop beyond them, and takes one still at each.
 | ![Railed loggia over the cloud sea](evidence/open_air_facility/vista_01_railed_loggia.png) | ![A bare edge above the unsafe height](evidence/open_air_facility/vista_02_bare_edge.png) |
 | ![A walkway, railed, at level 1](evidence/open_air_facility/vista_03_walkway.png) | ![The summit court](evidence/open_air_facility/vista_04_summit.png) |
 
+## More void: the composition
+
+At 300 the production facility is 76% built, so most open edges overlooked the roof of
+the storey below. The committed composition profile now asks for a void share of
+**2,000**, relabelled `open air`.
+
+**What it does to the shape** (`vista_lab`'s `sweep_void_share`, six seeds, arc lattice):
+
+| void share | air | open halls | walkways | deep drops off the rim | deep drops between towers | floating cells | solved, exit reachable |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 300 (was) | 21% | 903 | 9 | 368 | 294 | 137 | 6/6, 6/6 |
+| 1,000 | 43% | 785 | 18 | 191 | 551 | 212 | 6/6, 6/6 |
+| **2,000** | **56%** | 671 | 29 | 131 | **674** | 244 | 6/6, 6/6 |
+| 4,000 | 69% | 485 | 32 | 72 | 612 | 255 | 6/6, 6/6 |
+
+Solve time is flat at about 0.4 s throughout. Drops between towers, the vista's look,
+peak near 2,000; beyond it the building thins and they fall away.
+
+**What it does to a match** (`survey_void_share_playability`, a solo spectator runner
+on the arc lattice, ten seeds):
+
+| void share | finished | median completion tick | recoveries |
+| --- | --- | --- | --- |
+| 300 (was) | 10/10 | 20,633 | 0 |
+| 1,500 | 9/10 | 20,589 | 0 |
+| **2,000** | **10/10** | **18,457** | 0 |
+
+At 1,500 one runner stalled while seeking, standing on a level-4 hall; it was not a
+fall. Two thousand finished every run and ran about 10% faster at the median.
+
+To try another share in the game without committing it:
+
+```powershell
+$env:OBSERVED2_HEX_VOID_SHARE = "4000"; cargo dev-run -p observed_game
+```
+
+The share is folded into the simulation content hash, so a LAN peer on a different
+composition refuses the match.
+
+## Two bugs the gate could not see
+
+Both were found by the production survey after open edges merged, and both are fixed
+with tests that fail without the fix.
+
+- **Holed floors.** Most corridor halls are narrower than their cell, and the solid
+  masses either side of the corridor carry its floor as well as its wall. Removing a
+  mass to open a face holed the floor. Each removed mass now leaves its footprint as
+  floor.
+- **A walkway kept the hall's path.** A span kept the full-width hall's authored deck
+  guide, which weaves across floor the span no longer has. It walked the runner off an
+  unrailed level-7 walkway, onto the roof below and back, for the rest of the match. A
+  span now carries no authored guide.
+
+The gate missed both because its hex fixtures are compact four-level facilities built
+from the compatibility tiles. Bare edges only start at level 5, and the committed
+corpus is richer. `production_runner_crosses_unrailed_open_edges_without_falling` now
+runs the seed that looped, on the arc lattice, in the gate.
+
 ## Still thin
 
-- **The production facility is dense.** It is 76% built, so most open edges overlook
-  the roof of the storey below. The deep drops are at the rim, where the view is the
-  cloud sea, not the building. For the vista's towers and floating islands to appear in
-  play, the composition profile needs more void between structures. That is a
-  composition question, not a rendering one.
-- **The far skin reads dark.** It is correct at the edge of the fog, but without a real
-  moon the distant building is mostly silhouette and window light.
+- **The far skin is only a stand-in.** It reads well at 2,000, but without a real moon
+  the distant building is lit by its baked shading and window light, not by anything
+  in the scene.
 - **Observer sight does not yet cross open edges.** Observation in the match still
   follows ports. Seeing across air (which `architect_lab` already models) is the next
   gameplay step, and it touches the observation contract, so it is a design decision.

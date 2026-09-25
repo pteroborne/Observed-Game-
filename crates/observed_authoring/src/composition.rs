@@ -427,16 +427,23 @@ mod tests {
         load_profile(&committed_tiles()).expect("committed composition profile loads");
     }
 
-    /// Slice 0 ships the substrate, not a composition change. If this starts
-    /// failing, someone authored a real profile — which is fine, but it means
-    /// the shipped facility changed and the layout evidence needs recapturing.
+    /// The committed profile is the open-air composition: the baseline in every
+    /// control but one, a void share of 2,000 in place of 300, chosen on measurement
+    /// (`docs/open_air_facility.md`). If this starts failing, someone authored a
+    /// further change - which is fine, but the shipped facility changed again and
+    /// the layout evidence needs recapturing.
     #[test]
-    fn the_committed_profile_is_still_the_baseline() {
+    fn the_committed_profile_is_the_open_air_composition() {
         let build = load_profile(&committed_tiles()).expect("loads");
+        let mut profile = build.profile;
+        assert_eq!(profile.label, "open air");
+        assert!((profile.space_mix.void - 2_000.0).abs() < f64::EPSILON);
+        let baseline = observed_facility::hex_wfc::HexCompositionProfile::baseline();
+        profile.space_mix.void = baseline.space_mix.void;
+        profile.label.clone_from(&baseline.label);
         assert!(
-            build.profile.is_baseline(),
-            "the committed profile is no longer the baseline: {:?}",
-            build.profile.label
+            profile.is_baseline(),
+            "the committed profile differs from the baseline in more than its void share"
         );
     }
 
@@ -778,13 +785,14 @@ mod tests {
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
             "d966523c08b29fd378b097abe6c21749b6517784a0723e8fbae08498d16dcae4";
+        // The open-air composition (void share 2,000), 2026-09-24.
         const PROFILE_HASH: &str =
-            "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
+            "bb9b542142f32c11b9dbfbba01cebb1e6903db4ba0f30c10b6c0b087fcd95ea3";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "ef15b076a02b2312ff732172fc6b931b441f2c60b7fa4c67f1b4981d1dcc8624";
+            "d166d150e5614160e4473769e5dc9730e053a374ca9a8d9e6d5b0586e62061ab";
 
         let root = committed_tiles();
         let compiled_text =

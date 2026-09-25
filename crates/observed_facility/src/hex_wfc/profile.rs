@@ -217,6 +217,15 @@ impl SpaceMix {
     /// Room's share only decides anything inside a stamped blueprint, where
     /// room variants are the only legal space, so it is kept near its old
     /// proportion and does no work.
+    ///
+    /// **The sweep above predates corridor routing, and understates the lever.**
+    /// Re-measured on 2026-09-24 on the 24x17x8 arc lattice with routed corridors and
+    /// the committed catalog, six seeds (`vista_lab`'s `sweep_void_share`), the share
+    /// took the facility from 21% air at 300 to 43% at 1,000, 56% at 2,000 and 79% at
+    /// 10,000, with every seed solving in the same ~0.4 s and the exit always reachable.
+    /// Deep drops between towers peak near 2,000. The committed composition profile
+    /// now asks for 2,000 (see `docs/open_air_facility.md`); this in-code baseline
+    /// stays at 300, because it is what the compact regression fixtures are pinned to.
     #[must_use]
     pub const fn baseline() -> Self {
         Self {

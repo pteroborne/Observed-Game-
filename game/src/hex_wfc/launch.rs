@@ -254,13 +254,15 @@ mod tests {
     /// The corpus's composition profile must reach the solve, not merely be
     /// loaded and hashed. Without this, authoring a profile would change the
     /// simulation content hash — locking peers out — while building the exact
-    /// same facility, which is the worst of both outcomes.
+    /// same facility, which is the worst of both outcomes. The committed profile
+    /// is authored (the open-air void share), so it must build something the
+    /// baseline does not.
     #[test]
     fn the_corpus_composition_profile_reaches_the_prepared_facility() {
         let content = load_current_content().expect("committed authoring corpus loads");
         assert!(
-            content.composition().is_baseline(),
-            "the committed profile is authored; update this test's expectation"
+            !content.composition().is_baseline(),
+            "the committed profile is the baseline again; update this test's expectation"
         );
         let spec = HexLaunchSpec {
             requested_seed: 0xF011_FAC1_1177,
@@ -268,28 +270,19 @@ mod tests {
             seed_policy: HexSeedPolicy::Nearby,
         };
 
-        let baseline = prepare_with_content(spec, &content).expect("baseline prepares");
-
-        // Bias the lottery hard enough that the layout cannot plausibly match,
-        // while staying inside the validated band so solvability is untouched.
-        let mut authored_catalog = RuntimeHexCatalog {
+        let committed = prepare_with_content(spec, &content).expect("committed prepares");
+        let baseline_catalog = RuntimeHexCatalog {
             cells: content.cells().to_vec(),
             rooms: content.rooms().to_vec(),
-            composition: content.composition().clone(),
+            composition: observed_facility::hex_wfc::HexCompositionProfile::baseline(),
             simulation_content_hash: content.simulation_content_hash(),
         };
-        authored_catalog.composition.archetype_bias = authored_catalog
-            .composition
-            .archetype_bias
-            .with(observed_facility::hex_wfc::HexArchetype::Junction, 4.0)
-            .with(observed_facility::hex_wfc::HexArchetype::Corner, 0.25);
-        assert_eq!(authored_catalog.composition.validate(), Ok(()));
-        let authored = Arc::new(HexMatchContent::from_runtime_catalog(authored_catalog));
-        let steered = prepare_with_content(spec, &authored).expect("authored profile still solves");
+        let baseline = Arc::new(HexMatchContent::from_runtime_catalog(baseline_catalog));
+        let unprofiled = prepare_with_content(spec, &baseline).expect("baseline still solves");
 
         assert_ne!(
-            baseline.match_state.facility.placements, steered.match_state.facility.placements,
-            "an authored composition profile must change what the solver builds"
+            committed.match_state.facility.placements, unprofiled.match_state.facility.placements,
+            "the committed composition profile must change what the solver builds"
         );
     }
 
@@ -303,11 +296,13 @@ mod tests {
         };
         let (mut former_match, former_offset) = (0..NEARBY_SEED_ATTEMPTS)
             .find_map(|seed_offset| {
-                HexWfcMatch::new_with_rooms(
+                // Through the committed content, composition and all: the room-list
+                // constructor solves under the baseline profile, and agreed with the
+                // launch only while the committed profile was the baseline.
+                HexWfcMatch::new_with_content(
                     spec.requested_seed.wrapping_add(seed_offset),
                     spec.config,
-                    content.cells(),
-                    content.rooms(),
+                    content.clone(),
                 )
                 .ok()
                 .map(|match_state| (match_state, seed_offset))

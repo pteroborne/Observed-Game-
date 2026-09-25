@@ -382,7 +382,7 @@ fn spectator_stall_diagnostic_names_the_traversal_state() {
 /// completion tick, and how many recoveries (falls out of the world or off a roof
 /// onto one the runner cannot leave) the bot needed on the way.
 #[test]
-#[ignore = "composition playability survey: 3 void shares x 4 production matches, minutes; prints"]
+#[ignore = "composition playability survey: void shares x production matches, ~50 s each; prints"]
 fn survey_void_share_playability() {
     use observed_facility::hex_wfc::HexWfcConfig;
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/tiles");
@@ -390,15 +390,28 @@ fn survey_void_share_playability() {
         .map(observed_content::ArchitectureRegister::slug);
     let catalog =
         observed_authoring::RuntimeHexCatalog::load(&root, &slugs).expect("committed catalog");
+    // `OBSERVED2_VOID_SURVEY=300,2000` and `OBSERVED2_VOID_SURVEY_SEEDS=10` widen it.
+    let voids: Vec<f64> = std::env::var("OBSERVED2_VOID_SURVEY")
+        .ok()
+        .map(|list| {
+            list.split(',')
+                .filter_map(|v| v.trim().parse().ok())
+                .collect()
+        })
+        .unwrap_or_else(|| vec![300.0, 1_000.0, 2_000.0]);
+    let seeds: u64 = std::env::var("OBSERVED2_VOID_SURVEY_SEEDS")
+        .ok()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(4);
     eprintln!("void  finished  median tick  recoveries  (per seed: tick/recoveries)");
-    for void in [300.0, 1_000.0, 2_000.0] {
+    for void in voids {
         let mut catalog = catalog.clone();
         catalog.composition.space_mix.void = void;
         let content = std::sync::Arc::new(
             observed_match::hex_wfc::HexMatchContent::from_runtime_catalog(catalog),
         );
         let (mut ticks, mut recoveries, mut rows) = (Vec::new(), 0, Vec::new());
-        for index in 0..4u64 {
+        for index in 0..seeds {
             let seed = crate::flow::MATCH_SEED.wrapping_add(index.wrapping_mul(1_000_003));
             let config = HexMatchConfig {
                 teams: 1,
@@ -428,13 +441,18 @@ fn survey_void_share_playability() {
                 ticks.push(game.tick);
                 rows.push(format!("{}/{recovered}", game.tick));
             } else {
-                rows.push(format!("stalled/{recovered}"));
+                let runner = game.players.values().next().expect("runner");
+                rows.push(format!(
+                    "stalled/{recovered}[{:?} {:?}]",
+                    runner.cell,
+                    game.bot_behaviour(runner.id)
+                ));
             }
         }
         ticks.sort_unstable();
         let median = ticks.get(ticks.len() / 2).copied().unwrap_or(0);
         eprintln!(
-            "{void:5}  {}/4       {median:11}  {recoveries:10}  {}",
+            "{void:5}  {}/{seeds}      {median:11}  {recoveries:10}  {}",
             ticks.len(),
             rows.join("  ")
         );
