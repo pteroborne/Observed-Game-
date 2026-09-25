@@ -7,7 +7,8 @@
 //! solved facility — a railed loggia, a bare one above the unsafe height, a walkway if
 //! the solve made one, and the highest open edge of all — each chosen for the deepest
 //! drop beyond its open face, and facing through it, and each is held long enough for streaming and the atmosphere to settle
-//! before the still is taken.
+//! before the still is taken. The last pose is a sealed room, the evidence that the
+//! moonlight stays outside.
 use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
@@ -193,6 +194,36 @@ pub(super) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
         && let Some(face) = inward_face(world, at, &edges)
     {
         poses.push(pose("summit", at, face, 3.0, -0.3));
+    }
+    // Inside, sealed: a room with building on every side and above, facing the moon.
+    // The moonlight must not reach it; the still is the evidence that walls keep it out.
+    let grid = world.config.grid();
+    let built = |cell: Option<HexCoord>| {
+        cell.and_then(|cell| world.placements.get(&cell))
+            .is_some_and(|placement| placement.space.built())
+    };
+    if let Some(at) = world
+        .placements
+        .values()
+        .filter(|placement| placement.space == observed_facility::hex_wfc::HexSpace::Room)
+        .map(|placement| placement.coord)
+        .filter(|&at| at.level >= 2 && open_edges(world, at).is_none())
+        .find(|&at| {
+            built(grid.neighbor(at, HexFace::Up))
+                && HexFace::LATERAL
+                    .into_iter()
+                    .all(|face| built(grid.neighbor(at, face)))
+        })
+    {
+        let face = HexFace::LATERAL
+            .into_iter()
+            .max_by(|&a, &b| {
+                face_dir(a)
+                    .dot(moon_plan)
+                    .total_cmp(&face_dir(b).dot(moon_plan))
+            })
+            .unwrap_or(HexFace::LATERAL[0]);
+        poses.push(pose("sealed_room", at, face, 6.9, 0.1));
     }
     poses
 }

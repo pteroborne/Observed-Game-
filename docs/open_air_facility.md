@@ -65,9 +65,13 @@ seconds on a roof, the body goes back to the last cell it stood in.
 - **The moon and the stars**: a large moon, nearly twenty degrees across because the
   megastructure stands so high, hanging low in the west-south-west with a soft halo,
   and eighteen hundred stars thinning toward the horizon haze. The moon's direction is
-  one constant (`open_air::toward_moon`), shared by the disc in the sky, the shading
-  baked into the far skin, and the vista lab's moonlight. It is HDR and blooms, but it
-  stays under the signal floor, so no gameplay cue competes with it.
+  one constant (`open_air::toward_moon`), shared by the disc in the sky, the light it
+  casts, the shading baked into the far skin, and the vista lab's moonlight. It is HDR
+  and blooms, but it stays under the signal floor, so no gameplay cue competes with it.
+- **Moonlight**: the one directional light in the facility, 8,000 lux of the moon's
+  cool neutral, with shadows in three cascades out to 70 m. Walls and ceilings keep it
+  out, so it reaches loggia floors, walkways and the overhangs above them, and nothing
+  sealed. `OBSERVED2_HEX_MOONLIGHT=off` removes it, for measuring against.
 - **Outdoors atmosphere**: when the player's cell has open edges, the palette becomes
   `open_air(palette)`. Fog reaches about 300 m and fades into the horizon instead of
   black, and the fill light is the moon's cool neutral.
@@ -79,8 +83,9 @@ seconds on a roof, the body goes back to the last cell it stood in.
   - slab and ceiling bands with a distant lit line where a cell opens;
   - roofs, and a keel under whatever hangs over true void.
 
-  A cell's skin is hidden while its detailed geometry is resident. The moon's angle is
-  baked into vertex colour, since the facility carries no directional light.
+  A cell's skin is hidden while its detailed geometry is resident. It is unlit and
+  casts nothing. The moon's angle is baked into its vertex colour, because the
+  moonlight's cascades stop at the resident cells.
 
 ## Measured
 
@@ -106,6 +111,25 @@ the pocket committed 22 relayouts where the old rule committed 21. The bot's rou
 tick for tick the same. (Measured while relayouts beside air were failing over to the
 fallback; see *Three bugs the gate could not see*.)
 
+**The moonlight's cost**, on the Phase 101 arc gate, uncapped, with and without it:
+
+| | median frame | p95 frame | worst mutation frame |
+| --- | --- | --- | --- |
+| moonlight off | 9,346 µs | 13,292 µs | 13,023 µs |
+| moonlight on | 9,484 µs | 13,387 µs | 13,160 µs |
+
+That is about 1.5%, so it is on for everyone, with no quality setting.
+
+**Where it reaches**: each vista still, taken with the moonlight off and at 6,000 lux,
+differs by (mean absolute error):
+
+| railed loggia | walkway | summit | bare edge | the moon | sealed room |
+| --- | --- | --- | --- | --- | --- |
+| 2.5% | 1.2% | 0.37% | 0.10% | 0.02% | 0.03% |
+
+The sealed room, a room with building on every side and above, changes no more than
+the still that is all sky.
+
 ## Evidence
 
 ```powershell
@@ -113,13 +137,14 @@ $env:OBSERVED2_CAPTURE_HEX_WFC_VISTA = "docs/evidence/open_air_facility"; cargo 
 ```
 
 The capture stands the runner in open edges of the production facility, chosen for the
-deepest drop beyond them, and takes one still at each.
+deepest drop beyond them, and takes one still at each. It ends in a sealed room, as
+evidence that the moonlight stays outside.
 
 | | |
 | --- | --- |
 | ![Railed loggia over the cloud sea](evidence/open_air_facility/vista_01_railed_loggia.png) | ![A bare edge above the unsafe height](evidence/open_air_facility/vista_02_bare_edge.png) |
 | ![A railed walkway across the void](evidence/open_air_facility/vista_03_walkway.png) | ![The moon over the cloud sea](evidence/open_air_facility/vista_04_moon.png) |
-| ![The summit: a skyline under the stars](evidence/open_air_facility/vista_05_summit.png) | |
+| ![The summit: a skyline under the stars](evidence/open_air_facility/vista_05_summit.png) | ![A sealed room, which the moonlight does not reach](evidence/open_air_facility/vista_06_sealed_room.png) |
 
 ## More void: the composition
 
@@ -150,6 +175,12 @@ on the arc lattice, ten seeds):
 
 At 1,500 one runner stalled while seeking, standing on a level-4 hall; it was not a
 fall. Two thousand finished every run and ran about 10% faster at the median.
+
+These runs were made while relayouts beside air were failing (see *Three bugs the gate
+could not see*), so 300 and 2,000 were run again after the fix. Every one of the twenty
+matches finished on the same tick. The fix changes which relayouts commit: in one
+2,000 match, real solves committed 15 changes and left 12 pockets as they were, where
+the fallback had committed 26. None of those changes crossed the runner's route.
 
 To try another share in the game without committing it:
 
@@ -197,10 +228,9 @@ without air classified, and requires the same solve.
 
 ## Still thin
 
-- **The far skin is lit by its bake.** The moon now hangs in the sky where the bake says
-  it is, but nothing in the scene casts its light: the facility still carries no
-  directional light, because one without shadows would light every interior through
-  its walls, and one with them has a cost at this scale that has not been measured.
+- **No moonlit interiors yet.** The moonlight reaches only what is open to the sky,
+  because the facility has no windows: a room that faces air has a solid wall there.
+  Windows cut by rule into walls that face air are the next step.
 - **Observer sight does not cross open edges, by decision for now.** Observation in the
   match still follows ports, so tiles seen across air can change in plain sight (see
   *Decisions*). Freezing them, as `architect_lab` models, remains available if watching

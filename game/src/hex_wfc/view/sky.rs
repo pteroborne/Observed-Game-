@@ -33,6 +33,54 @@ const LAYERS: [(f32, f32, f32, Vec2); 2] = [
 #[derive(Component)]
 pub(in crate::hex_wfc) struct SkyDome;
 
+/// The moon's light: the one directional light in the facility.
+#[derive(Component)]
+pub(in crate::hex_wfc) struct HexMoon;
+
+/// Moonlight, lux. Chosen from vista stills bracketed at 1,500, 6,000 and 10,000: at
+/// 1,500 the district keys drown it entirely; from 6,000 a loggia floor takes a cool
+/// patch with the railing's shadow across it and the overhangs rake into light, and
+/// the lit signals still own the frame.
+const MOONLIGHT_LUX: f32 = 8_000.0;
+
+/// `OBSERVED2_HEX_MOONLIGHT=off` leaves the moon in the sky and its light out of the
+/// scene: the switch the moonlight's cost is measured against.
+const MOONLIGHT_ENV: &str = "OBSERVED2_HEX_MOONLIGHT";
+
+/// Light from where the moon hangs, shadowed, so that walls and ceilings keep it out:
+/// it reaches a loggia's floor and a walkway, and nothing sealed (the vista capture's
+/// `sealed_room` still is the same with it and without it). Cascades cover the
+/// resident cells and stop there, because the far skin carries the moon's light baked
+/// in and casts nothing.
+///
+/// Measured on the Phase 101 arc gate, uncapped: +140 us median frame, +95 us p95.
+pub(super) fn spawn_moonlight(commands: &mut Commands) {
+    if std::env::var(MOONLIGHT_ENV).is_ok_and(|value| value.eq_ignore_ascii_case("off")) {
+        return;
+    }
+    commands.spawn((
+        HexMoon,
+        DirectionalLight {
+            color: observed_style::open_air::moon(),
+            illuminance: MOONLIGHT_LUX,
+            shadow_maps_enabled: true,
+            ..default()
+        },
+        bevy::light::CascadeShadowConfigBuilder {
+            num_cascades: 3,
+            minimum_distance: 0.3,
+            first_cascade_far_bound: 12.0,
+            maximum_distance: 70.0,
+            overlap_proportion: 0.2,
+        }
+        .build(),
+        Transform::from_translation(Vec3::from_array(toward_moon()))
+            .looking_at(Vec3::ZERO, Vec3::Y),
+        DespawnOnExit(GameState::HexWfc),
+        Name::new("Moonlight"),
+    ));
+}
+
 #[derive(Component)]
 pub(in crate::hex_wfc) struct CloudLayer {
     material: Handle<StandardMaterial>,
@@ -263,5 +311,35 @@ pub(in crate::hex_wfc) fn drift_clouds(
                 (layer.drift * t).fract(),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::ecs::world::CommandQueue;
+
+    use super::*;
+
+    /// The light comes from where the disc hangs. They are placed by the same
+    /// constant, but a light points along its forward axis and a quad faces back at
+    /// the eye, so one sign error would put the shadows on the moon's side.
+    #[test]
+    fn the_moonlight_shines_from_the_moon_and_casts_shadows() {
+        let mut world = World::new();
+        let mut queue = CommandQueue::default();
+        spawn_moonlight(&mut Commands::new(&mut queue, &world));
+        queue.apply(&mut world);
+        let mut lights = world.query::<(&DirectionalLight, &Transform)>();
+        let (light, transform) = lights.single(&world).expect("one moonlight");
+        assert!(
+            light.shadow_maps_enabled,
+            "unshadowed, it lights every room"
+        );
+        let travels = transform.forward().as_vec3();
+        let from_moon = -Vec3::from_array(toward_moon());
+        assert!(
+            travels.dot(from_moon) > 0.999_9,
+            "light travels {travels}, but the moon shines along {from_moon}"
+        );
     }
 }

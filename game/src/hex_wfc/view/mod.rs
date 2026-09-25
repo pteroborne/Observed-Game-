@@ -222,6 +222,7 @@ pub(super) fn setup_view(
         &mut images,
         Vec3::new(far[0] * 0.5, 0.0, far[2] * 0.5),
     );
+    sky::spawn_moonlight(&mut commands);
     let skin = exterior::spawn_all(&mut commands, &mut meshes, &assets, facility);
     commands.insert_resource(skin);
     thresholds::spawn_thresholds(&mut commands, &mut assets, &mut meshes, &runtime);
