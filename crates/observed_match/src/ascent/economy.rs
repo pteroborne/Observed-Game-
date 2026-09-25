@@ -808,7 +808,7 @@ impl ArchitectLab {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::{
+    use crate::ascent::sim::{
         ArchitectLab, ArchitectMode, Guardian, GuardianId, GuardianIntent, ObserverId,
     };
 
@@ -1128,7 +1128,7 @@ mod tests {
             },
         );
 
-        lab.tick = crate::sim::RETRACTION_TICKS;
+        lab.tick = crate::ascent::sim::RETRACTION_TICKS;
         lab.advance_retraction();
 
         assert!(
@@ -1626,75 +1626,6 @@ mod tests {
     }
 
     #[test]
-    fn power_policy_enforcement_and_reset_invariance() {
-        // 1. AlwaysOn policy: cut_floor_power is ignored and toggle_generator refuses to cut power
-        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket)
-            .expect("pocket solves")
-            .with_power_policy(PowerPolicy::AlwaysOn);
-        let obs_id = *lab.observers.keys().next().expect("observer exists");
-        let gen_cell = lab.economy.generators[&0];
-        lab.observers.get_mut(&obs_id).unwrap().cell = gen_cell;
-        assert!(!lab.cut_floor_power(0));
-        assert!(lab.economy.is_powered(0));
-        assert!(lab.toggle_generator(obs_id).is_err());
-        assert!(lab.economy.is_powered(0));
-
-        // 2. OneWay policy: power can be cut, but toggle_generator cannot restore it
-        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket)
-            .expect("pocket solves")
-            .with_power_policy(PowerPolicy::OneWay);
-        lab.observers.get_mut(&obs_id).unwrap().cell = gen_cell;
-        assert!(lab.cut_floor_power(0));
-        assert!(!lab.economy.is_powered(0));
-        assert!(lab.toggle_generator(obs_id).is_err());
-        assert!(!lab.economy.is_powered(0));
-        let (intent, trace) = lab.observer_intent(obs_id);
-        assert_ne!(intent, crate::sim::ObserverIntent::ToggleGenerator);
-        assert_ne!(trace.selected, Some("restore floor power at generator"));
-
-        // 3. Restorable policy: power can be cut and restored
-        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket)
-            .expect("pocket solves")
-            .with_power_policy(PowerPolicy::Restorable);
-        lab.observers.get_mut(&obs_id).unwrap().cell = gen_cell;
-        assert!(lab.cut_floor_power(0));
-        assert!(!lab.economy.is_powered(0));
-        lab.guardians.clear();
-        let (intent, trace) = lab.observer_intent(obs_id);
-        assert_eq!(intent, crate::sim::ObserverIntent::ToggleGenerator);
-        assert_eq!(trace.selected, Some("restore floor power at generator"));
-        assert!(lab.toggle_generator(obs_id).is_ok());
-        assert!(lab.economy.is_powered(0));
-
-        // Reset Path 1: desktop.rs (LabSession::reset and cycle_mode)
-        #[cfg(feature = "desktop")]
-        {
-            let mut session = crate::desktop::LabSession::default();
-            session.set_power_policy(PowerPolicy::OneWay);
-            session.reset();
-            assert_eq!(session.sim.power_policy, PowerPolicy::OneWay);
-        }
-
-        // Reset Path 2: view.rs (MapCameraState::reset_for_mode)
-        #[cfg(feature = "desktop")]
-        {
-            let mut camera = crate::view::MapCameraState::default();
-            camera.zoom = 2.5;
-            camera.reset_for_mode(ArchitectMode::Pocket);
-            assert!((camera.zoom - crate::view::DEFAULT_ZOOM).abs() < f32::EPSILON);
-        }
-
-        // Reset Path 3: web.rs (RogueGame::reset)
-        #[cfg(feature = "web")]
-        {
-            let mut game = crate::web::RogueGame::new(0).unwrap();
-            game.set_power_policy("one_way").unwrap();
-            game.reset(0).unwrap();
-            assert_eq!(game.power_policy(), "One-Way");
-        }
-    }
-
-    #[test]
     fn disturbance_rises_with_uneven_contributions_dominated_by_contradictions_and_retractions() {
         let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
         let floor = 0;
@@ -1884,7 +1815,7 @@ mod tests {
         let (intent, trace) = lab.observer_intent(id);
         assert_eq!(
             intent,
-            crate::sim::ObserverIntent::Shove(minor_id),
+            crate::ascent::sim::ObserverIntent::Shove(minor_id),
             "Bot observer must choose shove intent when adjacent to Minor Guardian"
         );
         assert_eq!(trace.selected, Some("shove adjacent Minor Guardian"));
@@ -1921,7 +1852,7 @@ mod tests {
             Some("seek recharge station"),
             "Observer with depleted charge routes to powered station"
         );
-        let crate::sim::ObserverIntent::Step(next_step) = intent else {
+        let crate::ascent::sim::ObserverIntent::Step(next_step) = intent else {
             panic!("Expected Step intent toward station, got {intent:?}");
         };
         assert_eq!(next_step, station, "Step should lead toward station");
@@ -1929,7 +1860,7 @@ mod tests {
         // Move to station and verify Hold to recharge
         lab.observers.get_mut(&id).unwrap().cell = station;
         let (intent_at_station, trace_at_station) = lab.observer_intent(id);
-        assert_eq!(intent_at_station, crate::sim::ObserverIntent::Hold);
+        assert_eq!(intent_at_station, crate::ascent::sim::ObserverIntent::Hold);
         assert_eq!(trace_at_station.selected, Some("recharge at station"));
 
         // Step beat to recharge
@@ -1976,7 +1907,7 @@ mod tests {
             Some("seek generator to restore power"),
             "Observer seeks generator when floor is unpowered"
         );
-        let crate::sim::ObserverIntent::Step(step) = intent else {
+        let crate::ascent::sim::ObserverIntent::Step(step) = intent else {
             panic!("Expected step toward generator, got {intent:?}");
         };
         assert_eq!(step, next_hop);
@@ -1984,7 +1915,10 @@ mod tests {
         // Stand at generator
         lab.observers.get_mut(&id).unwrap().cell = gen_cell;
         let (intent_at_gen, trace_at_gen) = lab.observer_intent(id);
-        assert_eq!(intent_at_gen, crate::sim::ObserverIntent::ToggleGenerator);
+        assert_eq!(
+            intent_at_gen,
+            crate::ascent::sim::ObserverIntent::ToggleGenerator
+        );
         assert_eq!(
             trace_at_gen.selected,
             Some("restore floor power at generator")
@@ -2043,9 +1977,9 @@ mod tests {
 
         // Put a door card in hand
         lab.deck.hand.clear();
-        lab.deck.hand.push(crate::sim::Card {
-            id: crate::sim::CardId(999),
-            kind: crate::sim::CardKind::Door,
+        lab.deck.hand.push(crate::ascent::sim::Card {
+            id: crate::ascent::sim::CardId(999),
+            kind: crate::ascent::sim::CardKind::Door,
             district: None,
         });
 
@@ -2054,7 +1988,7 @@ mod tests {
             .legal_commands()
             .into_iter()
             .find_map(|cmd| match cmd {
-                crate::sim::ArchitectCommand::Play { target, .. } => Some(target),
+                crate::ascent::sim::ArchitectCommand::Play { target, .. } => Some(target),
                 _ => None,
             })
             .expect("must have at least one legal door placement");
@@ -2064,7 +1998,7 @@ mod tests {
 
         let (cmd, trace) = lab.architect_intent();
         let cmd = cmd.expect("architect produces a command contesting generator");
-        let crate::sim::ArchitectCommand::Play { target, .. } = cmd else {
+        let crate::ascent::sim::ArchitectCommand::Play { target, .. } = cmd else {
             panic!("expected Play command, got {cmd:?}");
         };
         assert!(

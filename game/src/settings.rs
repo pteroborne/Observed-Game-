@@ -244,6 +244,10 @@ pub struct UserPreferences {
     /// Legend-backed accessibility mode: widens outlines / boosts marker emphasis via
     /// `observed_style`'s contrast floor rather than inventing new ad-hoc colours.
     pub high_contrast: bool,
+    /// Scale contextual gameplay text without changing world-space labels or FOV.
+    pub gameplay_text_scale: f32,
+    /// Remove decorative motion of first-person held equipment.
+    pub reduced_hand_motion: bool,
     /// Latest onboarding revision the player completed or skipped. Missing in older
     /// saves by design; serde supplies zero and [`Self::normalized`] migrates the
     /// legacy `first_run` value without surprising established players.
@@ -272,6 +276,8 @@ impl Default for UserPreferences {
             fov_degrees: 60.0,
             bindings: KeyBindings::default(),
             high_contrast: false,
+            gameplay_text_scale: 1.0,
+            reduced_hand_motion: false,
             completed_onboarding_version: 0,
             first_run: true,
         }
@@ -301,6 +307,7 @@ impl UserPreferences {
             0.6,
             defaults.mouse_sensitivity,
         );
+        self.gameplay_text_scale = finite_clamp(self.gameplay_text_scale, 0.9, 1.25, 1.0);
         self.fov_degrees = finite_clamp(self.fov_degrees, 50.0, 80.0, defaults.fov_degrees);
         if self.completed_onboarding_version == 0 && !self.first_run {
             self.completed_onboarding_version = CURRENT_ONBOARDING_VERSION;
@@ -541,6 +548,8 @@ mod tests {
             mouse_sensitivity: 0.35,
             master_volume: 0.6,
             high_contrast: true,
+            gameplay_text_scale: 1.25,
+            reduced_hand_motion: true,
             first_run: false,
             ..Default::default()
         };
@@ -602,6 +611,7 @@ mod tests {
             music_volume: f32::NAN,
             mouse_sensitivity: f32::INFINITY,
             fov_degrees: 140.0,
+            gameplay_text_scale: f32::NAN,
             ..Default::default()
         }
         .normalized();
@@ -610,6 +620,18 @@ mod tests {
         assert_eq!(settings.music_volume, 1.0);
         assert_eq!(settings.mouse_sensitivity, DEFAULT_MOUSE_SENSITIVITY);
         assert_eq!(settings.fov_degrees, 80.0);
+        assert_eq!(settings.gameplay_text_scale, 1.0);
+        for (value, expected) in [(-1.0, 0.9), (2.0, 1.25)] {
+            assert_eq!(
+                UserPreferences {
+                    gameplay_text_scale: value,
+                    ..Default::default()
+                }
+                .normalized()
+                .gameplay_text_scale,
+                expected
+            );
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! A read-only survey of where the selected card can go, and why not elsewhere.
 //!
-//! Both interfaces show this. Legality stays in [`crate::sim`]: this module only asks
+//! Both interfaces show this. Legality stays in [`crate::ascent::sim`]: this module only asks
 //! [`ArchitectLab::refusal`] about every known cell and every rotation, and decides
 //! which of its answers to show a player when a cell has more than one.
 
@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 
 use observed_hex::HexCoord;
 
-use crate::sim::{ArchitectLab, CommandRefusal};
+use crate::ascent::sim::{ArchitectLab, CommandRefusal};
 
 /// What the selected card can do at one known cell.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -144,7 +144,7 @@ pub const fn refusal_tally(refusal: CommandRefusal) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::ArchitectMode;
+    use crate::ascent::sim::ArchitectMode;
 
     #[test]
     fn the_survey_agrees_with_the_simulation_about_every_cell() {
@@ -168,7 +168,7 @@ mod tests {
                     .legal_commands()
                     .into_iter()
                     .filter(|command| {
-                        matches!(command, crate::sim::ArchitectCommand::Play { card: id, .. }
+                        matches!(command, crate::ascent::sim::ArchitectCommand::Play { card: id, .. }
                             if *id == sim.deck.hand[card].id)
                     })
                     .count();

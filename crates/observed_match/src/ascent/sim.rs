@@ -9,6 +9,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use observed_facility::hex_wfc::{HexSpace, HexWfcError, HexWfcWorld};
 use observed_hex::{HexCoord, HexFace, ports_compatible, travel_distance};
 
+mod control;
+pub use control::{ObserverAction, ObserverCommand, ObserverRefusal};
 mod stability;
 pub use stability::{LabEvent, LabEventKind, RETRACTION_TICKS};
 mod cards;
@@ -26,7 +28,7 @@ use util::{
     Prng, command_key, face_between, face_toward, key_face_from, lateral_face, threshold_touches,
 };
 
-pub use crate::economy::{EconomyState, GuardianKind};
+pub use crate::ascent::economy::{EconomyState, GuardianKind};
 
 pub const FIXED_HZ: u32 = 60;
 pub const ACTOR_BEAT_TICKS: u32 = FIXED_HZ;
@@ -108,10 +110,21 @@ pub enum MatchOutcome {
 /// §10: "Loyal knowledge never leaks undiscovered structure or actors."
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TeamKnowledge {
+    /// Last seen geometry, never a live lookup into hidden world state.
+    pub cells: BTreeMap<HexCoord, KnownCell>,
+    /// Cells visible to this team at this tick; absent cells are remembered.
+    pub visible_cells: BTreeSet<HexCoord>,
     pub team: TeamId,
     pub discovered_cells: BTreeSet<HexCoord>,
     pub known_observers: BTreeMap<ObserverId, HexCoord>,
     pub visible_guardians: BTreeSet<GuardianId>,
+}
+
+/// A structural observation stored at the time it was made.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KnownCell {
+    pub placement: observed_facility::hex_wfc::HexPlacement,
+    pub seen_at: u64,
 }
 
 /// Structure and actor knowledge scoped to the Rogue AI faction.
@@ -189,7 +202,7 @@ pub struct ArchitectLab {
     pub seen: BTreeSet<HexCoord>,
     pub anchored: BTreeSet<HexCoord>,
     pub prison_core: BTreeSet<HexCoord>,
-    pub prison: crate::prison::PrisonState,
+    pub prison: crate::ascent::prison::PrisonState,
     pub doors: BTreeMap<ThresholdKey, DoorState>,
     pub contradictions: BTreeSet<HexCoord>,
     pub retracted: BTreeSet<HexCoord>,
@@ -224,7 +237,7 @@ pub struct ArchitectLab {
     pub traces: BTreeMap<String, BehaviorTrace>,
     pub command_log: Vec<(u64, ArchitectCommand)>,
     pub economy: EconomyState,
-    pub requisition: crate::requisition::RequisitionState,
+    pub requisition: crate::ascent::requisition::RequisitionState,
     pub power_policy: PowerPolicy,
     /// The match is held in planning: the shell is showing the board with time stopped.
     ///
@@ -302,7 +315,7 @@ impl ArchitectLab {
         let idx_c = route_len / 3;
         let observer_c = route[idx_c];
 
-        let prison = crate::prison::PrisonState::new(config, &world);
+        let prison = crate::ascent::prison::PrisonState::new(config, &world);
         let prison_core = prison.cells.clone();
 
         let mut known: BTreeSet<HexCoord> = world.placements.keys().copied().collect();
@@ -400,7 +413,7 @@ impl ArchitectLab {
             traces: BTreeMap::new(),
             command_log: Vec::new(),
             economy,
-            requisition: crate::requisition::RequisitionState::new(seed),
+            requisition: crate::ascent::requisition::RequisitionState::new(seed),
             power_policy: PowerPolicy::default(),
             planning: false,
             setup_placements_left: HAND_SIZE as u32,
@@ -491,6 +504,16 @@ impl ArchitectLab {
 
     #[must_use]
     pub fn refusal(&self, command: ArchitectCommand) -> Option<CommandRefusal> {
+        self.refusal_in_context(command, &self.deck, self.cooldown, &self.known)
+    }
+
+    pub(crate) fn refusal_in_context(
+        &self,
+        command: ArchitectCommand,
+        deck: &Deck,
+        cooldown: u32,
+        known: &BTreeSet<HexCoord>,
+    ) -> Option<CommandRefusal> {
         if self.outcome != MatchOutcome::Running {
             return Some(CommandRefusal::MatchFinished);
         }
@@ -502,17 +525,17 @@ impl ArchitectLab {
             } => {
                 // A held match never ticks, so the cooldown never drains. The setup
                 // allowance is what makes planning a phase rather than a single move.
-                if self.cooldown > 0 && !self.has_setup_allowance() {
+                if cooldown > 0 && !self.has_setup_allowance() {
                     return Some(CommandRefusal::Cooldown);
                 }
                 (card, target, rotation)
             }
             ArchitectCommand::Requisition => return None,
         };
-        let Some(card) = self.deck.hand.iter().find(|held| held.id == card).copied() else {
+        let Some(card) = deck.hand.iter().find(|held| held.id == card).copied() else {
             return Some(CommandRefusal::CardNotInHand);
         };
-        if !self.known.contains(&target) {
+        if !known.contains(&target) {
             return Some(CommandRefusal::UnknownTarget);
         }
         let Some(placement) = self.world.placements.get(&target) else {
@@ -601,6 +624,16 @@ impl ArchitectLab {
     }
 
     pub fn submit(&mut self, command: ArchitectCommand) -> Result<(), CommandRefusal> {
+        self.submit_for_faction(command, None)
+    }
+
+    /// Loyal callers must supply their own hand and knowledge context. `None`
+    /// denotes the shared Rogue faction, independent of human/bot input source.
+    pub(crate) fn submit_for_faction(
+        &mut self,
+        command: ArchitectCommand,
+        team: Option<TeamId>,
+    ) -> Result<(), CommandRefusal> {
         if let Some(refusal) = self.refusal(command) {
             return Err(refusal);
         }
@@ -667,7 +700,7 @@ impl ArchitectLab {
                     );
                 }
                 self.economy
-                    .on_card_played(target.level, is_contradiction, self.bot_architect);
+                    .on_card_played(target.level, is_contradiction, team.is_none());
                 self.resolve_disturbance_waves(target.level);
                 self.record_event(
                     LabEventKind::Played,
@@ -676,17 +709,41 @@ impl ArchitectLab {
                 );
             }
             ArchitectCommand::Requisition => {
-                crate::requisition::apply_requisition(self);
+                let floor = team.and_then(|team| {
+                    self.observers
+                        .values()
+                        .filter(|o| o.team == team && o.state != ObserverState::Corrupted)
+                        .min_by_key(|o| (o.state != ObserverState::Active, o.id))
+                        .map(|o| o.cell.level)
+                });
+                if let Some(floor) = floor {
+                    crate::ascent::requisition::apply_requisition_on_floor(self, floor);
+                } else {
+                    crate::ascent::requisition::apply_requisition(self);
+                }
             }
         }
         Ok(())
     }
 
     pub fn tick(&mut self) {
+        self.tick_with_observers(&BTreeMap::new());
+    }
+
+    /// Advance the shared clock. Listed Observers are controlled externally;
+    /// an explicit neutral command holds their pose instead of handing them to AI.
+    /// Commands are applied each fixed tick; unlisted bots retain their beat cadence.
+    pub fn tick_with_observers(&mut self, commands: &BTreeMap<ObserverId, ObserverCommand>) {
         if self.outcome != MatchOutcome::Running {
             return;
         }
         self.tick += 1;
+        for (&id, &command) in commands {
+            let _ = self.submit_observer(id, command);
+        }
+        if !commands.is_empty() {
+            self.refresh_observation();
+        }
         self.cooldown = self.cooldown.saturating_sub(1);
         self.advance_retraction();
         self.resolve_falls();
@@ -707,6 +764,9 @@ impl ArchitectLab {
 
         let observer_ids: Vec<_> = self.observers.keys().copied().collect();
         for id in observer_ids {
+            if commands.contains_key(&id) {
+                continue;
+            }
             let (intent, trace) = self.observer_intent(id);
             self.traces.insert(format!("Observer {}", id.0), trace);
             self.apply_observer_intent(id, intent);
@@ -776,8 +836,8 @@ impl ArchitectLab {
         }
     }
 
-    pub fn resolve_falls(&mut self) -> Vec<crate::falls::FallEvent> {
-        crate::falls::resolve_falls(self)
+    pub fn resolve_falls(&mut self) -> Vec<crate::ascent::falls::FallEvent> {
+        crate::ascent::falls::resolve_falls(self)
     }
 
     pub fn step_beat(&mut self) {
@@ -1043,40 +1103,25 @@ impl ArchitectLab {
     pub fn update_team_knowledge(&mut self) {
         let teams: BTreeSet<TeamId> = self.observers.values().map(|o| o.team).collect();
         for team in teams {
-            // 1. Structure: discover cells currently observed by active observers on this team
-            let mut newly_observed = Vec::new();
+            // Team-local sight determines both structural freshness and actor visibility.
+            // Global warding is a mutation constraint, not permission to see rivals.
+            let mut team_observed = BTreeSet::new();
             for observer in self
                 .observers
                 .values()
-                .filter(|o| o.team == team && o.state == ObserverState::Active)
+                .filter(|o| o.team == team && o.state != ObserverState::Corrupted)
             {
-                newly_observed.push(observer.cell);
-                if self.economy.is_powered(observer.cell.level)
-                    && let Some(next) = self.step_through(observer.cell, observer.facing)
-                {
-                    newly_observed.push(next);
+                team_observed.insert(observer.cell);
+                if self.economy.is_powered(observer.cell.level) {
+                    team_observed.extend(self.sight_along(observer.cell, observer.facing));
                 }
             }
-
-            let team_observed: BTreeSet<HexCoord> = newly_observed.iter().copied().collect();
-
-            // 2. Actors: team members know each other's positions; rivals only if observed
-            let mut known_obs = BTreeMap::new();
-            let prior_discovered = self
-                .team_knowledge
-                .get(&team)
-                .map(|k| k.discovered_cells.clone())
-                .unwrap_or_default();
-
-            for observer in self.observers.values() {
-                let is_known = observer.team == team
-                    || ((prior_discovered.contains(&observer.cell)
-                        || team_observed.contains(&observer.cell))
-                        && self.observed.contains(&observer.cell));
-                if is_known {
-                    known_obs.insert(observer.id, observer.cell);
-                }
-            }
+            let known_obs = self
+                .observers
+                .values()
+                .filter(|observer| observer.team == team || team_observed.contains(&observer.cell))
+                .map(|observer| (observer.id, observer.cell))
+                .collect();
 
             // 3. Actors: guardians are visible only if on a cell currently observed by this team
             let visible_guardians: BTreeSet<GuardianId> = self
@@ -1093,7 +1138,19 @@ impl ArchitectLab {
                     team,
                     ..Default::default()
                 });
-            tk.discovered_cells.extend(newly_observed);
+            for cell in &team_observed {
+                if let Some(placement) = self.world.placements.get(cell) {
+                    tk.cells.insert(
+                        *cell,
+                        KnownCell {
+                            placement: *placement,
+                            seen_at: self.tick,
+                        },
+                    );
+                }
+            }
+            tk.discovered_cells.extend(team_observed.iter().copied());
+            tk.visible_cells = team_observed;
             tk.known_observers = known_obs;
             tk.visible_guardians = visible_guardians;
         }

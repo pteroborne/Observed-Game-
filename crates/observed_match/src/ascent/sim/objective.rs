@@ -191,7 +191,7 @@ mod tests {
 #[cfg(test)]
 mod darkness_tests {
     use super::*;
-    use crate::sim::{ArchitectLab, ArchitectMode, MatchOutcome, ObserverState};
+    use crate::ascent::sim::{ArchitectLab, ArchitectMode, MatchOutcome, ObserverState};
 
     /// The clause that keeps Darkness from being a second name for a match already won.
     /// Remove `active_observers > 0` from `facility_is_dark` and this fails.
@@ -274,42 +274,6 @@ mod darkness_tests {
             dark_tick, completed,
             "a Rogue given Darkness wins on the tick the hold completes"
         );
-    }
-
-    #[test]
-    fn reset_paths_clear_the_darkness_hold_without_leaks() {
-        // Path 1: desktop.rs (LabSession::reset)
-        #[cfg(feature = "desktop")]
-        {
-            use crate::desktop::{ArchitectAction, LabSession};
-            let mut session = LabSession::default();
-            session.sim.darkness.streak = 9;
-            session.sim.darkness.longest = 9;
-            session.sim.darkness.total_held = 40;
-            session.sim.darkness.completed_at = Some(600);
-            session.sim.lit_sightlines = 7;
-            session.apply_action(ArchitectAction::Reset);
-            assert_eq!(session.sim.darkness.streak, 0);
-            assert_eq!(session.sim.darkness.longest, 0);
-            assert_eq!(session.sim.darkness.total_held, 0);
-            assert_eq!(session.sim.darkness.completed_at, None);
-            assert_eq!(session.sim.darkness.required, DARKNESS_BEATS);
-        }
-
-        // Path 2: view.rs (MapCameraState::reset_for_mode) holds no simulation state; the
-        // lab it draws is rebuilt through path 1 or 3.
-
-        // Path 3: web.rs (RogueGame::reset)
-        #[cfg(feature = "web")]
-        {
-            use crate::web::RogueGame;
-            let mut game = RogueGame::new(0).unwrap();
-            game.sim.darkness.streak = 4;
-            game.sim.darkness.completed_at = Some(120);
-            game.reset(0).expect("web reset succeeds");
-            assert_eq!(game.sim.darkness.streak, 0);
-            assert_eq!(game.sim.darkness.completed_at, None);
-        }
     }
 
     /// §10: seed plus ordered commands reproduce everything exactly, the new state

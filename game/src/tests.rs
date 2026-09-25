@@ -4011,8 +4011,16 @@ fn pause_settings_rebind_flow_works_correctly() {
         app.world_mut().resource_mut::<MatchPaused>().0 = true;
         app.world_mut().resource_mut::<PauseSettingsOpen>().0 = true;
 
-        // BindingSlot::MoveLeft is at row index 6
-        app.world_mut().resource_mut::<PauseSettingsCursor>().0 = 6;
+        // Find the binding semantically; adding a preference must not retarget this test.
+        app.world_mut().resource_mut::<PauseSettingsCursor>().0 =
+            crate::screens::settings::SettingsRow::all()
+                .iter()
+                .position(|row| {
+                    *row == crate::screens::settings::SettingsRow::Binding(
+                        crate::settings::BindingSlot::MoveLeft,
+                    )
+                })
+                .unwrap();
 
         let tap_update_clean = |app: &mut App, key: KeyCode| {
             {

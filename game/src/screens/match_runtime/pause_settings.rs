@@ -221,6 +221,9 @@ pub(crate) fn pause_settings_adjust(
                 .clamp(FOV_MIN_DEGREES, FOV_MAX_DEGREES);
         }
         SettingsRow::HighContrast => settings.high_contrast = !settings.high_contrast,
+        SettingsRow::GameplayTextScale | SettingsRow::ReducedHandMotion => {
+            crate::screens::settings::adjust_row(row, sign, &mut settings);
+        }
         SettingsRow::Binding(_) | SettingsRow::Back => return, // inert rows do not play click
     }
     crate::screens::audio::play_ui_sound(

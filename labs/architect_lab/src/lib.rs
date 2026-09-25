@@ -1,10 +1,8 @@
 //! One deterministic Rogue pressure simulation, with desktop and browser views.
-pub mod economy;
-pub mod falls;
-pub mod placement;
-pub mod prison;
-pub mod requisition;
-pub mod sim;
+pub use observed_match::ascent::{economy, falls, placement, prison, requisition, sim};
+
+#[cfg(all(test, any(feature = "desktop", feature = "web")))]
+mod lifecycle_tests;
 pub use sim::PowerPolicy;
 
 #[cfg(feature = "desktop")]

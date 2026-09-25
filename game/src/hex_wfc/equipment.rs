@@ -26,8 +26,16 @@ pub(super) struct Spin {
     pub(super) rest: Quat,
 }
 
-pub(super) fn spin(time: Res<Time>, mut parts: Query<(&Spin, &mut Transform)>) {
-    let t = time.elapsed_secs();
+pub(super) fn spin(
+    time: Res<Time>,
+    settings: Res<crate::settings::Settings>,
+    mut parts: Query<(&Spin, &mut Transform)>,
+) {
+    let t = if settings.reduced_hand_motion {
+        0.0
+    } else {
+        time.elapsed_secs()
+    };
     for (spin, mut transform) in &mut parts {
         transform.rotation = Quat::from_axis_angle(spin.axis, spin.rate * t) * spin.rest;
     }
@@ -59,7 +67,19 @@ const BOB: Vec2 = Vec2::new(0.006, 0.009);
 /// The walking speed at which the sway is full.
 const WALK: f32 = 4.0;
 
-pub(super) fn sway(time: Res<Time>, runtime: Res<HexWfcRuntime>, mut sway: ResMut<HeldSway>) {
+pub(super) fn sway(
+    time: Res<Time>,
+    runtime: Res<HexWfcRuntime>,
+    settings: Res<crate::settings::Settings>,
+    mut sway: ResMut<HeldSway>,
+) {
+    if settings.reduced_hand_motion {
+        *sway = HeldSway {
+            last: Some(runtime.local().position),
+            ..Default::default()
+        };
+        return;
+    }
     let dt = time.delta_secs();
     let at = runtime.local().position;
     // Capped, so a teleport is not a thousand steps.

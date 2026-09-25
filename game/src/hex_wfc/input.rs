@@ -74,6 +74,7 @@ pub(super) fn map_input(context: HexInputContext) {
         gamepad_intent.jump_pressed |= command.jump_pressed;
         gamepad_intent.sprint_held |= command.sprint_held;
         gamepad_intent.interact_held |= command.interact_held;
+        gamepad_intent.interact_pressed |= command.interact_pressed;
         gamepad_deploy |= items.torch_action;
         // `items.pad_action` was already produced by the shared reader and
         // dropped on the floor here; a pad fires on contact, so `activate_pad`
@@ -328,5 +329,42 @@ mod tests {
             .clear();
         app.update();
         assert!(!app.world().resource::<UiInputCapture>().is_active());
+    }
+}
+
+#[cfg(test)]
+mod interaction_tests {
+    use super::*;
+
+    #[test]
+    fn controller_interact_reaches_the_canonical_action_frame() {
+        let mut app = App::new();
+        app.insert_resource(ButtonInput::<KeyCode>::default())
+            .insert_resource(crate::settings::Settings::default())
+            .init_resource::<MatchOverlayState>()
+            .init_resource::<UiInputCapture>()
+            .init_resource::<HexWfcIntent>()
+            .add_systems(Update, map_input);
+        let mut gamepad = Gamepad::default();
+        gamepad.digital_mut().press(GamepadButton::West);
+        app.world_mut().spawn(gamepad);
+        app.update();
+        let intent = app.world().resource::<HexWfcIntent>();
+        assert!(
+            intent.actions.interact,
+            "X must collect and operate, as E does"
+        );
+        assert!(
+            intent.intent.interact_held,
+            "holding X must also synchronize stations"
+        );
+        *app.world_mut().resource_mut::<MatchOverlayState>() = MatchOverlayState::SurvivorMap;
+        app.update();
+        let intent = app.world().resource::<HexWfcIntent>();
+        assert!(
+            !intent.actions.interact,
+            "map focus must consume gameplay actions"
+        );
+        assert!(!intent.intent.interact_held);
     }
 }

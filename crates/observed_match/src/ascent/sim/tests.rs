@@ -227,7 +227,7 @@ fn unreachable_minor_guardian_does_not_softlock_observer() {
 
 #[test]
 fn shove_resolves_against_minor_guardian_and_displaces_or_destroys() {
-    use crate::economy::{SHOVE_COST, ShoveOutcome};
+    use crate::ascent::economy::{SHOVE_COST, ShoveOutcome};
 
     let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
     lab.guardians.clear();
@@ -317,7 +317,7 @@ fn emergency_requisition_is_reachable_under_duress() {
     assert_eq!(intent, Some(ArchitectCommand::Requisition));
     assert_eq!(trace.selected, Some("emergency requisition"));
 
-    let target_floor = crate::requisition::target_floor(&lab.observers);
+    let target_floor = crate::ascent::requisition::target_floor(&lab.observers);
     let majors_before = lab
         .guardians
         .values()
@@ -726,4 +726,45 @@ fn a_live_hunt_still_charges_the_cooldown() {
         first_play(&lab).is_none(),
         "a second placement must wait out the five seconds"
     );
+}
+
+#[test]
+fn rival_observation_does_not_refresh_a_teams_stale_map_or_actors() {
+    let mut sim = lab();
+    sim.guardians.clear();
+    let viewer = ObserverId(0);
+    let rival = ObserverId(1);
+    let target = sim.observers[&viewer].cell;
+    sim.observers.get_mut(&rival).unwrap().team = TeamId(1);
+    sim.refresh_observation();
+    let before = sim.team_knowledge(TeamId(0)).cells[&target].clone();
+    let far = sim
+        .world
+        .placements
+        .keys()
+        .copied()
+        .find(|&at| travel_distance(at, target) > 4 && sim.world.placements[&at].space.built())
+        .unwrap();
+    sim.observers.get_mut(&viewer).unwrap().cell = far;
+    sim.observers.get_mut(&rival).unwrap().cell = target;
+    sim.world.placements.get_mut(&target).unwrap().doors ^= 1;
+    sim.tick += 1;
+    sim.refresh_observation();
+    let knowledge = sim.team_knowledge(TeamId(0));
+    assert!(!knowledge.visible_cells.contains(&target));
+    assert!(!knowledge.known_observers.contains_key(&rival));
+    assert_eq!(knowledge.cells[&target], before);
+    assert!(
+        sim.observed.contains(&target),
+        "the rival still wards their own cell"
+    );
+    sim.observers.get_mut(&viewer).unwrap().cell = target;
+    sim.refresh_observation();
+    let refreshed = sim.team_knowledge(TeamId(0));
+    assert_eq!(
+        refreshed.cells[&target].placement,
+        sim.world.placements[&target]
+    );
+    assert_eq!(refreshed.cells[&target].seen_at, sim.tick);
+    assert!(refreshed.known_observers.contains_key(&rival));
 }

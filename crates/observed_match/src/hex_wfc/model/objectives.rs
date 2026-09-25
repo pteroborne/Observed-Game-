@@ -11,7 +11,7 @@ use super::{HexActionButtons, HexInputFrame, HexMatchEvent, HexMatchEventKind, H
 
 pub const KEYSTONES_REQUIRED: u8 = 2;
 pub const DUAL_STATION_HOLD_TICKS: u16 = 120;
-const INTERACTION_RADIUS: f32 = 2.2;
+pub(super) const INTERACTION_RADIUS: f32 = 2.2;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HexObjectiveState {

@@ -52,7 +52,7 @@ impl CommandRefusal {
             Self::MatchFinished => "the match has ended",
             Self::Cooldown => "Architect cooldown is active",
             Self::CardNotInHand => "that card is not in hand",
-            Self::UnknownTarget => "the Rogue AI has not mapped that cell",
+            Self::UnknownTarget => "that cell has not been mapped",
             Self::CollapsedFloor => "this floor has permanently collapsed",
             Self::NoChange => {
                 "this would leave the same connections; rotate or choose another tile"

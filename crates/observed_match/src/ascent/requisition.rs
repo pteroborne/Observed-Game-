@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use observed_facility::hex_wfc::{HexCoord, HexWfcWorld};
 
-use crate::sim::{
+use crate::ascent::sim::{
     ArchitectCommand, ArchitectLab, Guardian, GuardianId, GuardianKind, LabEventKind, Observer,
     ObserverId, ObserverState,
 };
@@ -126,11 +126,13 @@ pub fn choose_spawn_cell(
 /// - Pushes the event to the public match event stream (visible to every faction).
 /// - Leaves the placement cooldown completely untouched.
 pub fn apply_requisition(lab: &mut ArchitectLab) {
-    // 1. Refill hand to exactly five.
-    lab.deck.emergency_refill();
-
-    // 2. Select target floor and spawn cell for exactly one major Guardian.
     let floor = target_floor(&lab.observers);
+    apply_requisition_on_floor(lab, floor);
+}
+
+/// Apply the price on the acting faction's Observer floor, selected by authority.
+pub(crate) fn apply_requisition_on_floor(lab: &mut ArchitectLab, floor: u8) {
+    lab.deck.emergency_refill();
     let occupied = lab.occupied();
     let spawn_cell = choose_spawn_cell(
         &lab.world,
@@ -176,7 +178,7 @@ pub fn apply_requisition(lab: &mut ArchitectLab) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::{ArchitectMode, HAND_SIZE};
+    use crate::ascent::sim::{ArchitectMode, HAND_SIZE};
 
     fn lab() -> ArchitectLab {
         ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket mode solves")
@@ -381,73 +383,5 @@ mod tests {
         assert_eq!(sim_a.command_log, sim_b.command_log);
         assert_eq!(sim_a.cooldown, sim_b.cooldown);
         assert_eq!(sim_a.events, sim_b.events);
-    }
-
-    #[cfg(feature = "desktop")]
-    #[test]
-    fn test_reset_paths_clear_all_requisition_spawned_state() {
-        use crate::desktop::{ArchitectAction, LabSession};
-        use crate::view::MapCameraState;
-
-        // Path 1: desktop.rs:143 (LabSession::reset)
-        let mut session = LabSession::default();
-        session
-            .sim
-            .submit(ArchitectCommand::Requisition)
-            .expect("requisition in session succeeds");
-        assert_eq!(session.sim.guardians.len(), 2);
-        assert_eq!(session.sim.requisition.count, 1);
-
-        session.apply_action(ArchitectAction::Reset);
-        assert_eq!(
-            session.sim.guardians.len(),
-            1,
-            "desktop reset must remove all requisition-spawned guardians"
-        );
-        assert_eq!(
-            session.sim.requisition.count, 0,
-            "desktop reset must reset requisition count"
-        );
-        assert_eq!(
-            session.sim.deck.hand.len(),
-            HAND_SIZE,
-            "desktop reset restores pristine 5-card hand"
-        );
-
-        // Path 2: view.rs:65 (MapCameraState::reset_for_mode)
-        let mut camera_state = MapCameraState::default();
-        camera_state.zoom = 2.5;
-        camera_state.reset_for_mode(ArchitectMode::Pocket);
-        assert!((camera_state.zoom - crate::view::DEFAULT_ZOOM).abs() < f32::EPSILON);
-    }
-
-    #[cfg(feature = "web")]
-    #[test]
-    fn test_web_reset_clears_all_requisition_state() {
-        use crate::web::RogueGame;
-
-        // Path 3: web.rs:24 (RogueGame::reset)
-        let mut game = RogueGame::new(0).expect("web pocket initializes");
-        game.sim
-            .submit(ArchitectCommand::Requisition)
-            .expect("requisition succeeds");
-        assert_eq!(game.sim.guardians.len(), 2);
-        assert_eq!(game.sim.requisition.count, 1);
-
-        game.reset(0).expect("web reset succeeds");
-        assert_eq!(
-            game.sim.guardians.len(),
-            1,
-            "web reset restores 1 initial guardian"
-        );
-        assert_eq!(
-            game.sim.requisition.count, 0,
-            "web reset resets requisition state"
-        );
-        assert_eq!(
-            game.sim.deck.hand.len(),
-            HAND_SIZE,
-            "web reset restores 5-card hand"
-        );
     }
 }

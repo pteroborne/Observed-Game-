@@ -64,6 +64,7 @@ impl Plugin for HexWfcPlugin {
                     overlay::reset,
                     view::setup_view,
                     hud::setup,
+                    hud::play::setup,
                     view::map::setup,
                     feedback::setup,
                     audio::setup,
@@ -80,6 +81,7 @@ impl Plugin for HexWfcPlugin {
                 (
                     perf::begin_fixed,
                     drive_traversal_capture,
+                    hud::capture::drive,
                     sim::step_runtime,
                     perf::end_fixed,
                 )
@@ -129,7 +131,7 @@ impl Plugin for HexWfcPlugin {
                         .chain(),
                     view::sync_projection,
                     view::sync_lighting_and_atmosphere,
-                    hud::sync,
+                    (hud::sync, hud::play::sync),
                     view::map::sync,
                     feedback::sync,
                     feedback::animate,
@@ -165,12 +167,17 @@ impl Plugin for HexWfcPlugin {
                     lantern::cleanup,
                     pad::cleanup,
                     equipment::cleanup,
+                    hud::play::cleanup,
                     sim::cleanup_runtime,
                 )
                     .chain(),
             );
-        let capture = std::env::var("OBSERVED2_CAPTURE_HEX_WFC_VISTA")
-            .map(|path| (path, HexWfcCaptureMode::Vista))
+        let capture = std::env::var("OBSERVED2_CAPTURE_HEX_WFC_HUD")
+            .map(|path| (path, HexWfcCaptureMode::Hud))
+            .or_else(|_| {
+                std::env::var("OBSERVED2_CAPTURE_HEX_WFC_VISTA")
+                    .map(|path| (path, HexWfcCaptureMode::Vista))
+            })
             .or_else(|_| {
                 std::env::var("OBSERVED2_CAPTURE_HEX_WFC_EQUIPMENT")
                     .map(|path| (path, HexWfcCaptureMode::Equipment))
@@ -199,6 +206,7 @@ impl Plugin for HexWfcPlugin {
             if matches!(
                 mode,
                 HexWfcCaptureMode::Style
+                    | HexWfcCaptureMode::Hud
                     | HexWfcCaptureMode::Relayout
                     | HexWfcCaptureMode::Traversal
                     | HexWfcCaptureMode::Vista
@@ -243,6 +251,8 @@ pub(super) struct HexWfcCapture {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum HexWfcCaptureMode {
     Gameplay,
+    /// Context prompts and text scaling at the Steam Deck viewport.
+    Hud,
     Map,
     Style,
     /// The arc headline: a mid-match observation-safe relayout captured before, during
@@ -278,7 +288,24 @@ fn autostart_capture(
     mut commands: Commands,
     capture: Res<HexWfcCapture>,
     mut next: ResMut<NextState<GameState>>,
+    play_setup: Res<crate::play_setup::PlaySetupDraft>,
+    mut sequence: ResMut<loading::HexLaunchRequestSequence>,
 ) {
+    if capture.mode == HexWfcCaptureMode::Hud {
+        commands.insert_resource(sequence.issue(
+            crate::play_setup::LaunchContext::Local,
+            sim::LOCAL_PLAYER,
+            false,
+            false,
+            launch::HexLaunchSpec {
+                requested_seed: crate::flow::MATCH_SEED,
+                config: sim::runtime_config_for(&play_setup),
+                seed_policy: launch::HexSeedPolicy::Nearby,
+            },
+        ));
+        next.set(GameState::Loading);
+        return;
+    }
     // The relayout capture must reproduce the pinned deterministic timeline, so it pins
     // the seed; `sim::runtime_config` pairs it with the showcase config when this env is
     // set. Other modes keep the default production seed + 28×20×10 facility.
@@ -343,6 +370,14 @@ fn capture_progress(
                 runtime.as_deref_mut(),
                 vista,
                 which,
+                &mut commands,
+                &mut exit,
+            );
+        }
+        HexWfcCaptureMode::Hud => {
+            hud::capture::advance(
+                &mut request,
+                runtime.as_deref_mut(),
                 &mut commands,
                 &mut exit,
             );

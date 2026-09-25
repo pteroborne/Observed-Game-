@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use super::*;
-use crate::economy::{ShoveError, ShoveOutcome};
+use crate::ascent::economy::{ShoveError, ShoveOutcome};
 
 #[derive(Debug, Default)]
 pub struct ShoveDiagnostic {

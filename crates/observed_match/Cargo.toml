@@ -12,6 +12,7 @@ default = ["bevy"]
 bevy = ["dep:bevy"]
 
 [dependencies]
+observed_content = { path = "../observed_content" }
 observed_core = { path = "../observed_core" }
 observed_authoring = { path = "../observed_authoring" }
 observed_observation = { path = "../observed_observation", default-features = false }
@@ -21,6 +22,3 @@ observed_traversal = { path = "../observed_traversal", default-features = false 
 player_input = { path = "../player_input", default-features = false }
 glam = "0.32"
 bevy = { version = "0.19", default-features = false, optional = true }
-
-[dev-dependencies]
-observed_content = { path = "../observed_content" }

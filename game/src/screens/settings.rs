@@ -40,13 +40,15 @@ const BINDING_BUTTON_WIDTH: f32 = (BINDING_GRID_WIDTH
     - BINDING_COLUMN_GAP * (BINDING_COLUMNS as f32 - 1.0))
     / BINDING_COLUMNS as f32;
 
-const PREFERENCE_ROWS: [SettingsRow; 6] = [
+const PREFERENCE_ROWS: [SettingsRow; 8] = [
     SettingsRow::MasterVolume,
     SettingsRow::SfxVolume,
     SettingsRow::MusicVolume,
     SettingsRow::MouseSensitivity,
     SettingsRow::FieldOfView,
     SettingsRow::HighContrast,
+    SettingsRow::GameplayTextScale,
+    SettingsRow::ReducedHandMotion,
 ];
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -57,6 +59,8 @@ pub(crate) enum SettingsRow {
     MouseSensitivity,
     FieldOfView,
     HighContrast,
+    GameplayTextScale,
+    ReducedHandMotion,
     Binding(BindingSlot),
     Back,
 }
@@ -70,6 +74,8 @@ impl SettingsRow {
             Self::MouseSensitivity,
             Self::FieldOfView,
             Self::HighContrast,
+            Self::GameplayTextScale,
+            Self::ReducedHandMotion,
         ];
         rows.extend(BindingSlot::ALL.into_iter().map(Self::Binding));
         rows.push(Self::Back);
@@ -93,6 +99,18 @@ impl SettingsRow {
                 "High-contrast legend: {}",
                 if settings.high_contrast { "ON" } else { "off" }
             ),
+            Self::GameplayTextScale => format!(
+                "Gameplay text: {:.0}%",
+                settings.gameplay_text_scale * 100.0
+            ),
+            Self::ReducedHandMotion => format!(
+                "Reduce hand motion: {}",
+                if settings.reduced_hand_motion {
+                    "ON"
+                } else {
+                    "off"
+                }
+            ),
             Self::Binding(slot) => format!(
                 "{}: {}",
                 slot.label(),
@@ -110,6 +128,8 @@ impl SettingsRow {
             Self::MouseSensitivity => 3,
             Self::FieldOfView => 4,
             Self::HighContrast => 5,
+            Self::GameplayTextScale => 6,
+            Self::ReducedHandMotion => 7,
             Self::Binding(slot) => 10 + binding_key(slot),
             Self::Back => 100,
         };
@@ -540,6 +560,13 @@ pub(crate) fn adjust_row(row: SettingsRow, direction: f32, settings: &mut Settin
                 .clamp(FOV_MIN_DEGREES, FOV_MAX_DEGREES);
         }
         SettingsRow::HighContrast => settings.high_contrast = !settings.high_contrast,
+        SettingsRow::GameplayTextScale => {
+            settings.gameplay_text_scale =
+                (settings.gameplay_text_scale + direction * 0.05).clamp(0.9, 1.25)
+        }
+        SettingsRow::ReducedHandMotion => {
+            settings.reduced_hand_motion = !settings.reduced_hand_motion
+        }
         SettingsRow::Binding(_) | SettingsRow::Back => return false,
     }
     true
@@ -553,7 +580,10 @@ mod tests {
     fn every_row_has_a_unique_stable_id_and_label() {
         let settings = Settings::default();
         let rows = SettingsRow::all();
-        assert_eq!(rows.len(), 6 + BindingSlot::ALL.len() + 1);
+        assert_eq!(
+            rows.len(),
+            PREFERENCE_ROWS.len() + BindingSlot::ALL.len() + 1
+        );
         let ids = rows
             .iter()
             .map(|row| row.widget_id())
@@ -588,7 +618,11 @@ mod tests {
         const BINDING_ROW_HEIGHT: f32 = 44.0 + 2.0 * 3.0 + 2.0;
 
         let preference_targets = PREFERENCE_ROWS.len() + 2;
-        assert_eq!(preference_targets, 8);
+        let preference_height = PAGE_CHROME + (preference_targets - 1) as f32 * BINDING_ROW_HEIGHT;
+        assert!(
+            preference_height <= BASELINE_HEIGHT,
+            "Preferences need {preference_height}px; split the page before adding more rows"
+        );
 
         let binding_rows = BindingSlot::ALL.len().div_ceil(BINDING_COLUMNS);
         let needed = PAGE_CHROME + binding_rows as f32 * BINDING_ROW_HEIGHT;

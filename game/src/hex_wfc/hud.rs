@@ -1,5 +1,8 @@
 //! First-person HUD for the hex facility race.
 
+pub(super) mod capture;
+pub(super) mod play;
+
 use bevy::prelude::*;
 
 use super::sim::HexWfcRuntime;
@@ -13,9 +16,8 @@ pub(super) fn setup(
     spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
 ) {
     let is_spectator = spectator_bot.is_some();
-    // Phase 50 immersion ruling: normal play is diegetic/HUD-free. The status
-    // readout and the controls/goal instructions are debug-only overlays; only the
-    // aiming crosshair is a permanent gameplay aid.
+    // Detailed simulation diagnostics stay opt-in. The companion `play` module
+    // owns the restrained, contextual player-facing readout.
     let debug_hud = crate::evidence::debug_hud_enabled();
     commands
         .spawn((

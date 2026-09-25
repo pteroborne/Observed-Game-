@@ -8,7 +8,7 @@
 
 use observed_hex::{HexCoord, HexFace};
 
-use crate::sim::{ArchitectLab, LabEventKind, MatchOutcome, ObserverId, ObserverState};
+use crate::ascent::sim::{ArchitectLab, LabEventKind, MatchOutcome, ObserverId, ObserverState};
 
 /// The outcome of an Observer falling when their tile ceases to support them.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -160,7 +160,7 @@ pub fn resolve_falls(lab: &mut ArchitectLab) -> Vec<FallEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::ArchitectMode;
+    use crate::ascent::sim::ArchitectMode;
 
     #[test]
     fn fall_lands_on_lower_surviving_structure_without_corrupting() {
@@ -471,57 +471,6 @@ mod tests {
         assert_eq!(sim_a.observers, sim_b.observers);
         assert_eq!(sim_a.outcome, sim_b.outcome);
         assert_eq!(sim_a.events, sim_b.events);
-    }
-
-    #[test]
-    fn reset_paths_clear_corruption_without_leaks() {
-        // Path 1: desktop.rs:143 (LabSession::reset)
-        #[cfg(feature = "desktop")]
-        {
-            use crate::desktop::{ArchitectAction, LabSession};
-            let mut session = LabSession::default();
-            session.sim.observers.get_mut(&ObserverId(0)).unwrap().state = ObserverState::Corrupted;
-            session.sim.outcome = MatchOutcome::RogueVictory;
-
-            session.apply_action(ArchitectAction::Reset);
-            assert!(
-                session
-                    .sim
-                    .observers
-                    .values()
-                    .all(|o| o.state == ObserverState::Active),
-                "desktop reset must un-corrupt all observers"
-            );
-            assert_eq!(session.sim.outcome, MatchOutcome::Running);
-        }
-
-        // Path 2: view.rs:65 (MapCameraState::reset_for_mode)
-        #[cfg(feature = "desktop")]
-        {
-            use crate::view::MapCameraState;
-            let mut camera = MapCameraState::default();
-            camera.zoom = 2.5;
-            camera.reset_for_mode(ArchitectMode::Pocket);
-            assert!((camera.zoom - crate::view::DEFAULT_ZOOM).abs() < f32::EPSILON);
-        }
-
-        // Path 3: web.rs:24 (RogueGame::reset)
-        #[cfg(feature = "web")]
-        {
-            use crate::web::RogueGame;
-            let mut game = RogueGame::new(0).unwrap();
-            game.sim.observers.get_mut(&ObserverId(0)).unwrap().state = ObserverState::Corrupted;
-            game.sim.outcome = MatchOutcome::RogueVictory;
-
-            game.reset(0).expect("web reset succeeds");
-            assert!(
-                game.sim
-                    .observers
-                    .values()
-                    .all(|o| o.state == ObserverState::Active),
-                "web reset must un-corrupt all observers"
-            );
-        }
     }
 
     #[test]

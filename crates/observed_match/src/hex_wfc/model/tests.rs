@@ -1955,3 +1955,39 @@ fn clearing_a_cell_beside_a_room_opens_a_window_and_building_it_closes_one() {
         );
     }
 }
+
+#[test]
+fn interaction_read_matches_keystone_range_and_completion() {
+    let mut game = showcase_match(44, 2, 2);
+    let id = PlayerId(0);
+    let socket = game
+        .geometry
+        .sockets
+        .iter()
+        .find(|s| s.kind == RoomSocketKind::Keystone)
+        .unwrap()
+        .clone();
+    game.objectives.enabled = true;
+    game.lanterns.caches.clear();
+    game.lanterns.carried.insert(id, 0);
+    game.players.get_mut(&id).unwrap().cell = socket.cell;
+    game.players.get_mut(&id).unwrap().position = socket.position;
+    let read = game.interaction(id).unwrap();
+    assert_eq!(read.title, "Collect keystone");
+    assert_eq!(read.action, HexInteractionAction::Interact);
+    game.players.get_mut(&id).unwrap().position += Vec3::Y * 3.0;
+    assert!(
+        game.interaction(id).is_none(),
+        "outside the simulation interaction radius"
+    );
+    game.players.get_mut(&id).unwrap().position = socket.position;
+    game.objectives
+        .available_keystones
+        .remove(&socket.room_generation_key);
+    assert_ne!(
+        game.interaction(id).map(|r| r.title),
+        Some("Collect keystone")
+    );
+    game.players.get_mut(&id).unwrap().escaped = true;
+    assert!(game.interaction(id).is_none());
+}

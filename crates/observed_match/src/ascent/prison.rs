@@ -393,7 +393,7 @@ fn find_shortest_escape_path(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::ArchitectMode;
+    use crate::ascent::sim::ArchitectMode;
 
     #[test]
     fn prison_state_constructs_for_all_modes() {
@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn catch_sends_target_to_the_lowest_prison_level() {
-        use crate::sim::{ArchitectLab, ObserverId, ObserverState};
+        use crate::ascent::sim::{ArchitectLab, ObserverId, ObserverState};
 
         let mut lab =
             ArchitectLab::for_mode(ArchitectMode::FullAscent).expect("full ascent solves");
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn jailed_observer_remains_embodied_and_loyal() {
-        use crate::sim::{ArchitectLab, ObserverId, ObserverState};
+        use crate::ascent::sim::{ArchitectLab, ObserverId, ObserverState};
 
         let mut lab =
             ArchitectLab::for_mode(ArchitectMode::FullAscent).expect("full ascent solves");
@@ -531,7 +531,9 @@ mod tests {
 
     #[test]
     fn bot_observer_tree_navigates_prison_maze_and_self_escapes_back_to_active() {
-        use crate::sim::{ArchitectLab, MatchOutcome, ObserverId, ObserverIntent, ObserverState};
+        use crate::ascent::sim::{
+            ArchitectLab, MatchOutcome, ObserverId, ObserverIntent, ObserverState,
+        };
 
         let mut lab =
             ArchitectLab::for_mode(ArchitectMode::FullAscent).expect("full ascent solves");
@@ -600,7 +602,7 @@ mod tests {
 
     #[test]
     fn all_jailed_triggers_rogue_victory_while_single_jailed_permits_escape() {
-        use crate::sim::{ArchitectLab, MatchOutcome, ObserverId, ObserverState};
+        use crate::ascent::sim::{ArchitectLab, MatchOutcome, ObserverId, ObserverState};
 
         // 1. Single jailed observer does not cause rogue victory
         let mut lab =
@@ -633,7 +635,7 @@ mod tests {
 
     #[test]
     fn floor_collapse_never_removes_or_rewrites_the_prison_core() {
-        use crate::sim::ArchitectLab;
+        use crate::ascent::sim::ArchitectLab;
         use observed_facility::hex_wfc::HexSpace;
 
         let mut lab =
@@ -661,8 +663,8 @@ mod tests {
             level: 0,
         };
         lab.contradictions = BTreeSet::from([target]);
-        lab.next_retraction_tick = Some(crate::sim::RETRACTION_TICKS);
-        lab.tick = crate::sim::RETRACTION_TICKS;
+        lab.next_retraction_tick = Some(crate::ascent::sim::RETRACTION_TICKS);
+        lab.tick = crate::ascent::sim::RETRACTION_TICKS;
         lab.advance_retraction();
 
         // Floor 0 collapsed:
@@ -699,7 +701,7 @@ mod tests {
 
     #[test]
     fn identical_snapshot_reproduces_identical_tree_intent_and_trace_for_jailed_observer() {
-        use crate::sim::{ArchitectLab, ObserverId};
+        use crate::ascent::sim::{ArchitectLab, ObserverId};
 
         let mut lab =
             ArchitectLab::for_mode(ArchitectMode::FullAscent).expect("full ascent solves");
@@ -716,7 +718,7 @@ mod tests {
 
     #[test]
     fn escape_simulation_is_deterministic_from_seed_and_ordered_commands() {
-        use crate::sim::{ArchitectLab, ObserverId};
+        use crate::ascent::sim::{ArchitectLab, ObserverId};
 
         let mut lab1 =
             ArchitectLab::for_mode(ArchitectMode::FullAscent).expect("full ascent solves");
@@ -748,60 +750,6 @@ mod tests {
                 obs1.state, obs2.state,
                 "observer state matches deterministically"
             );
-        }
-    }
-
-    #[test]
-    fn all_three_reset_paths_clear_and_recreate_prison_state_without_leaking() {
-        use crate::desktop::LabSession;
-        use crate::sim::{ArchitectLab, ObserverId, ObserverState};
-
-        // 1. Sim direct reset / recreation
-        let mut sim = ArchitectLab::for_mode(ArchitectMode::FullAscent).expect("sim boots");
-        sim.jail(ObserverId(0));
-        assert_eq!(sim.observers[&ObserverId(0)].state, ObserverState::Jailed);
-
-        sim = ArchitectLab::for_mode(ArchitectMode::FullAscent).expect("sim resets");
-        assert_eq!(
-            sim.observers[&ObserverId(0)].state,
-            ObserverState::Active,
-            "reset restored fresh ObserverState"
-        );
-        assert_eq!(sim.prison_core.len(), 11);
-
-        // 2. Desktop session reset
-        let mut desktop = LabSession::default();
-        desktop.sim.jail(ObserverId(0));
-        assert_eq!(
-            desktop.sim.observers[&ObserverId(0)].state,
-            ObserverState::Jailed
-        );
-
-        desktop.reset();
-        assert_eq!(
-            desktop.sim.observers[&ObserverId(0)].state,
-            ObserverState::Active,
-            "desktop reset restored active observers"
-        );
-        assert!(!desktop.sim.prison_core.is_empty());
-
-        // 3. Web session reset (gated by web feature if present)
-        #[cfg(feature = "web")]
-        {
-            let mut web = crate::web::RogueGame::new(2).expect("web boots");
-            web.sim.jail(ObserverId(0));
-            assert_eq!(
-                web.sim.observers[&ObserverId(0)].state,
-                ObserverState::Jailed
-            );
-
-            web.reset(2).expect("web reset");
-            assert_eq!(
-                web.sim.observers[&ObserverId(0)].state,
-                ObserverState::Active,
-                "web reset restored active observers"
-            );
-            assert_eq!(web.sim.prison_core.len(), 11);
         }
     }
 }

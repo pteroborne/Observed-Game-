@@ -22,6 +22,7 @@
 //! `observed_facility`, and `observed_traversal` crates. The optional, default-on `bevy`
 //! feature derives `Resource` on the world types for the labs/game.
 
+pub mod ascent;
 pub mod competition;
 pub mod director;
 pub mod elimination;

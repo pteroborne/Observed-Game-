@@ -7,7 +7,7 @@ mod tests {
     use super::super::{CONTROL_ROOM, HybridMatch, HybridTape, LOCAL_TEAM, LocalAction};
     use crate::facility::{EXIT_CAPACITY, START_ROOM, TEAM_COUNT};
     use crate::maze::{GRID_H, GRID_W, Tile};
-    use bevy::math::Vec3;
+    use glam::Vec3;
     use observed_core::RoomId;
     use observed_traversal::FpsConfig;
     use player_input::PlayerIntent;

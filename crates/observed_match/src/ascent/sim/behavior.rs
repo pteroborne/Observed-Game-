@@ -3,7 +3,7 @@
 
 use observed_hex::{HexCoord, travel_distance};
 
-use crate::economy::{MAX_CHARGE, SHOVE_COST};
+use crate::ascent::economy::{MAX_CHARGE, SHOVE_COST};
 
 use super::{
     ArchitectCommand, ArchitectLab, BehaviorTrace, DoorState, GuardianId, GuardianKind, ObserverId,
@@ -28,7 +28,7 @@ pub enum GuardianIntent {
 }
 
 impl ArchitectLab {
-    pub(crate) fn observer_intent(&self, id: ObserverId) -> (ObserverIntent, BehaviorTrace) {
+    pub fn observer_intent(&self, id: ObserverId) -> (ObserverIntent, BehaviorTrace) {
         self.observer_intent_internal(id, true)
     }
 
@@ -456,7 +456,7 @@ impl ArchitectLab {
         }
     }
 
-    pub(crate) fn jail(&mut self, observer: ObserverId) {
+    pub fn jail(&mut self, observer: ObserverId) {
         let prison = self.prison.lowest_cell;
         let observer = self.observers.get_mut(&observer).expect("known Observer");
         observer.cell = prison;
@@ -590,7 +590,7 @@ impl ArchitectLab {
 
         // Emergency Requisition: taken when the hand cannot answer the board
         let can_requisition = commands.contains(&ArchitectCommand::Requisition);
-        let target_fl = crate::requisition::target_floor(&self.observers);
+        let target_fl = crate::ascent::requisition::target_floor(&self.observers);
         let majors_on_target_floor = self
             .guardians
             .values()
