@@ -634,11 +634,7 @@ impl HexWfcWorld {
 /// A placement with air folded back into rock, for comparing across a re-collapse.
 fn unclassified(placement: Option<&HexPlacement>) -> Option<HexPlacement> {
     placement.map(|&placement| HexPlacement {
-        space: if placement.space == HexSpace::Air {
-            HexSpace::Void
-        } else {
-            placement.space
-        },
+        space: placement.space.as_drawn(),
         ..placement
     })
 }

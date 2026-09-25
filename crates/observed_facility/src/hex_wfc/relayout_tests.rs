@@ -797,3 +797,39 @@ fn air_stays_derived_across_committed_and_reverted_relayouts() {
     assert!(committed >= 4, "only {committed} relayouts committed");
     assert!(air_in_regions > 0, "no relayout region ever touched air");
 }
+
+/// Classifying air must not change what a relayout solves. The catalogue has no air
+/// variant, so a pocket that kept an air cell's exact placement found no variant for it:
+/// every attempt died, the whole retry budget was spent a tick at a time, and the
+/// fallback committed instead. At production size that was two seconds of 22 ms ticks
+/// before every mutation, and no real relayout ever.
+#[test]
+fn classifying_air_leaves_the_relayout_solve_unchanged() {
+    let frame = HexObservationFrame::default();
+    let mut compared_with_air = 0;
+    for seed in 0xA1A0_0100..0xA1A0_0110 {
+        let rock = HexWfcWorld::generate(seed, config()).expect("world");
+        let mut air = rock.clone();
+        let _ = air.mark_open_air();
+        let (from_rock, from_air) = (candidate(&rock, &frame), candidate(&air, &frame));
+        assert_eq!(from_air.region, from_rock.region, "seed {seed:#x}");
+        let touches_air = from_air.region.cells.iter().any(|at| {
+            HexFace::ALL.into_iter().any(|face| {
+                air.config
+                    .grid()
+                    .neighbor(*at, face)
+                    .into_iter()
+                    .chain(std::iter::once(*at))
+                    .any(|cell| air.placements[&cell].space == HexSpace::Air)
+            })
+        });
+        compared_with_air += usize::from(touches_air);
+        assert_eq!(
+            (from_air.attempts, from_air.used_fallback),
+            (from_rock.attempts, from_rock.used_fallback),
+            "seed {seed:#x}: air changed how the pocket solved"
+        );
+        assert_eq!(from_air.placements, from_rock.placements, "seed {seed:#x}");
+    }
+    assert!(compared_with_air > 0, "no pocket ever bordered air");
+}

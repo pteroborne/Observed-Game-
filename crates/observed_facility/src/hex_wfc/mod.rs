@@ -114,6 +114,18 @@ impl HexSpace {
     pub const fn opaque(self) -> bool {
         !matches!(self, Self::Air)
     }
+
+    /// The space as the collapse drew it. The collapse never draws air: a cell classified
+    /// as air was drawn as `Void`, and that is the catalogue variant it corresponds to.
+    /// Anything that matches a placement against the catalogue compares this, or an air
+    /// cell matches no variant at all.
+    #[must_use]
+    pub const fn as_drawn(self) -> Self {
+        match self {
+            Self::Air => Self::Void,
+            other => other,
+        }
+    }
 }
 
 /// Traversal grammar of a collapsed cell (Phase 88 lateral subset).

@@ -489,7 +489,7 @@ pub(super) fn variant_index(tables: &SolverTables, placement: HexPlacement) -> O
 
 pub(super) fn placement_variant(placement: HexPlacement) -> HexVariant {
     HexVariant {
-        space: placement.space,
+        space: placement.space.as_drawn(),
         archetype: placement.archetype,
         doors: placement.doors,
         up: placement.up,
@@ -569,7 +569,7 @@ pub(super) fn replay_constraints(
 }
 
 pub(super) fn variant_matches(variant: HexVariant, placement: HexPlacement) -> bool {
-    variant.space == placement.space
+    variant.space == placement.space.as_drawn()
         && variant.archetype == placement.archetype
         && variant.doors == placement.doors
         && variant.up == placement.up

@@ -103,7 +103,8 @@ Across the whole tile corpus (13,572 faces):
 
 In the deterministic gate bot's match, holding a protected hall's neighbours out of
 the pocket committed 22 relayouts where the old rule committed 21. The bot's route was
-tick for tick the same.
+tick for tick the same. (Measured while relayouts beside air were failing over to the
+fallback; see *Three bugs the gate could not see*.)
 
 ## Evidence
 
@@ -159,10 +160,10 @@ $env:OBSERVED2_HEX_VOID_SHARE = "4000"; cargo dev-run -p observed_game
 The share is folded into the simulation content hash, so a LAN peer on a different
 composition refuses the match.
 
-## Two bugs the gate could not see
+## Three bugs the gate could not see
 
-Both were found by the production survey after open edges merged, and both are fixed
-with tests that fail without the fix.
+All three are fixed with tests that fail without the fix. The first two were found by
+the production survey after open edges merged.
 
 - **Holed floors.** Most corridor halls are narrower than their cell, and the solid
   masses either side of the corridor carry its floor as well as its wall. Removing a
@@ -177,6 +178,22 @@ The gate missed both because its hex fixtures are compact four-level facilities 
 from the compatibility tiles. Bare edges only start at level 5, and the committed
 corpus is richer. `production_runner_crosses_unrailed_open_edges_without_falling` now
 runs the seed that looped, on the arc lattice, in the gate.
+
+- **No relayout ever solved beside air.** Found while measuring the moonlight's cost.
+  A pocket keeps the exact catalogue variant of each cell outside its core. An air
+  cell matched none, because the collapse draws air as rock and classifies it
+  afterwards. Every attempt failed, the retry budget of 100 went one attempt a tick,
+  and the fallback committed. At production size an attempt costs about 22 ms, so
+  every mutation came after two seconds of ticks over budget. Frames climbed to Bevy's
+  250 ms clamp, and the Phase 101 arc gate failed at a 120 ms mutation frame. Now
+  `HexSpace::as_drawn` folds air back into rock wherever a placement is matched
+  against the catalogue. The gate's worst mutation frame is back to 13.0 ms, as it
+  was before open air, and every relayout solves first time.
+
+This one was invisible because a fallback still commits: the match went on mutating,
+and only the frame times and the attempt count knew.
+`classifying_air_leaves_the_relayout_solve_unchanged` relays out sixteen seeds with and
+without air classified, and requires the same solve.
 
 ## Still thin
 
