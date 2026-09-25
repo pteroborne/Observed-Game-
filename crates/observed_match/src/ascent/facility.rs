@@ -21,22 +21,27 @@ use super::session::{ASCENT_INPUT_VERSION, AscentSession, InputFrame, Refusal, R
 use super::sim::{ArchitectLab, Embodiment, MatchOutcome, ObserverId, TeamId};
 use crate::hex_wfc::{HexInputFrame, HexWfcMatch};
 
+/// The Ascent rules for one physical match: its seats, and which body each Observer is.
+///
+/// Kept beside the [`HexWfcMatch`] it rules rather than around it, so a host that already
+/// holds a first-person match (the game) keeps holding it, and every reader of that match
+/// keeps working. [`AscentMatch`] bundles the two for callers that hold neither.
 #[derive(Clone, Debug)]
-pub struct AscentMatch {
-    physical: HexWfcMatch,
+pub struct AscentRules {
     session: AscentSession,
     /// Which body each Observer is.
     bodies: BTreeMap<PlayerId, ObserverId>,
 }
 
-impl AscentMatch {
+impl AscentRules {
     /// Every player of `physical` is an embodied Observer on the team the physical match
     /// gave them. `seats` names everyone without a body: one Architect for each of those
     /// teams, and any Rogue operators.
     ///
-    /// `physical` must not have stepped: a match is directed from tick zero or never.
+    /// Directs `physical` and gives it a prison, so it must not have stepped: a match is
+    /// directed from tick zero or never.
     pub fn new(
-        mut physical: HexWfcMatch,
+        physical: &mut HexWfcMatch,
         seed: u64,
         seats: BTreeMap<PlayerId, Seat>,
     ) -> Result<Self, Refusal> {
@@ -81,22 +86,23 @@ impl AscentMatch {
                 },
             );
         }
-        let mut game = Self {
-            physical,
+        let mut rules = Self {
             session: AscentSession::new(sim, seed, roster)?,
             bodies,
         };
-        game.observe();
-        Ok(game)
+        rules.observe(physical);
+        Ok(rules)
     }
 
-    /// Advance one fixed tick: `bodies` moves the Observers, `seats` carries every
-    /// Architect's and Rogue's command. Returns the commands the rules refused.
+    /// Advance `physical` and the rules one fixed tick together: `bodies` moves the
+    /// Observers, `seats` carries every Architect's and Rogue's command. Returns the
+    /// commands the rules refused.
     ///
     /// A frame the rules would refuse whole is refused before any body moves, so the
     /// physical clock and the rules' clock never part.
     pub fn step(
         &mut self,
+        physical: &mut HexWfcMatch,
         bodies: &HexInputFrame,
         seats: &InputFrame,
     ) -> Result<BTreeMap<PlayerId, Refusal>, Refusal> {
@@ -109,14 +115,14 @@ impl AscentMatch {
         if self.session.sim.outcome != MatchOutcome::Running {
             return Err(Refusal::MatchFinished);
         }
-        self.physical.step(bodies);
-        self.observe();
+        physical.step(bodies);
+        self.observe(physical);
         let refusals = self.session.advance(seats)?;
         let rewrites = self.session.sim.take_rewrites();
         if !rewrites.is_empty() {
             // Legality admits only tiles the authored corpus builds, and never a room or a
             // stair, so a rewrite the physical match cannot build is a broken invariant.
-            self.physical
+            physical
                 .apply_directed_change(rewrites)
                 .expect("the rules rewrite only what the facility can build");
         }
@@ -124,24 +130,18 @@ impl AscentMatch {
     }
 
     /// Give the rules the bodies' cells, facings and places: in the facility, jailed, or
-    /// lost to the void. What an Observer sees and wards
-    /// is still the rules' cell sight along that facing: the physical match has no
-    /// field of view of its own to give them yet.
-    fn observe(&mut self) {
+    /// lost to the void. What an Observer sees and wards is still the rules' cell sight
+    /// along that facing: the physical match has no field of view of its own to give them
+    /// yet.
+    fn observe(&mut self, physical: &HexWfcMatch) {
         for (&player, &id) in &self.bodies {
-            if let Some((cell, facing)) = self.physical.body_cell_and_facing(player)
-                && let Some(place) = self.physical.body_place(player)
+            if let Some((cell, facing)) = physical.body_cell_and_facing(player)
+                && let Some(place) = physical.body_place(player)
             {
                 self.session.sim.embody(id, cell, facing, place);
             }
         }
         self.session.sim.refresh_observation();
-    }
-
-    /// The first-person match: bodies, geometry, colliders, the Guardian.
-    #[must_use]
-    pub const fn physical(&self) -> &HexWfcMatch {
-        &self.physical
     }
 
     /// The seats and their rules.
@@ -160,6 +160,58 @@ impl AscentMatch {
     #[must_use]
     pub fn observer_for(&self, player: PlayerId) -> Option<ObserverId> {
         self.bodies.get(&player).copied()
+    }
+}
+
+/// A first-person match and its Ascent rules, held together.
+#[derive(Clone, Debug)]
+pub struct AscentMatch {
+    physical: HexWfcMatch,
+    ascent: AscentRules,
+}
+
+impl AscentMatch {
+    /// See [`AscentRules::new`].
+    pub fn new(
+        mut physical: HexWfcMatch,
+        seed: u64,
+        seats: BTreeMap<PlayerId, Seat>,
+    ) -> Result<Self, Refusal> {
+        let ascent = AscentRules::new(&mut physical, seed, seats)?;
+        Ok(Self { physical, ascent })
+    }
+
+    /// See [`AscentRules::step`].
+    pub fn step(
+        &mut self,
+        bodies: &HexInputFrame,
+        seats: &InputFrame,
+    ) -> Result<BTreeMap<PlayerId, Refusal>, Refusal> {
+        self.ascent.step(&mut self.physical, bodies, seats)
+    }
+
+    /// The first-person match: bodies, geometry, colliders, the Guardian.
+    #[must_use]
+    pub const fn physical(&self) -> &HexWfcMatch {
+        &self.physical
+    }
+
+    /// The seats and their rules.
+    #[must_use]
+    pub const fn session(&self) -> &AscentSession {
+        self.ascent.session()
+    }
+
+    /// The rules, which a card preview inspects without advancing time.
+    #[must_use]
+    pub const fn rules(&self) -> &ArchitectLab {
+        self.ascent.rules()
+    }
+
+    /// The Observer a body is.
+    #[must_use]
+    pub fn observer_for(&self, player: PlayerId) -> Option<ObserverId> {
+        self.ascent.observer_for(player)
     }
 }
 

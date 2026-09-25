@@ -19,6 +19,8 @@ pub use snapshot::{CellRead, GuardianRead, ObserverRead, SeatSnapshot};
 
 pub const ASCENT_INPUT_VERSION: u16 = 1;
 pub const REQUEST_LIFETIME_TICKS: u64 = 900;
+/// How many ticks apart bot Architects of consecutive teams decide within a beat.
+const BOT_STAGGER_TICKS: u64 = 13;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Role {
@@ -246,6 +248,7 @@ impl AscentSession {
                 }
             }
         }
+        self.run_bot_architects();
         for hand in self.hands.values_mut() {
             hand.cooldown = hand.cooldown.saturating_sub(1);
         }
@@ -348,18 +351,63 @@ impl AscentSession {
     }
 
     fn submit_loyal(&mut self, team: TeamId, command: ArchitectCommand) -> Result<(), Refusal> {
-        let hand = self.hands.get_mut(&team).ok_or(Refusal::WrongRole)?;
-        // Swap only the acting faction's command context; there is still exactly one
-        // facility, economy, Guardian population, and authoritative mutation path.
+        self.in_team_context(team, |sim| sim.submit_for_faction(command, Some(team)))
+            .ok_or(Refusal::WrongRole)?
+            .map_err(Refusal::Architect)
+    }
+
+    /// Run `act` with `team`'s hand, cooldown and knowledge swapped in. There is still
+    /// exactly one facility, economy, Guardian population and authoritative mutation
+    /// path; only the acting faction's command context changes.
+    fn in_team_context<R>(
+        &mut self,
+        team: TeamId,
+        act: impl FnOnce(&mut ArchitectLab) -> R,
+    ) -> Option<R> {
+        let hand = self.hands.get_mut(&team)?;
         std::mem::swap(&mut self.sim.deck, &mut hand.deck);
         std::mem::swap(&mut self.sim.cooldown, &mut hand.cooldown);
         let known = self.sim.team_knowledge(team).discovered_cells;
         let rogue_known = std::mem::replace(&mut self.sim.known, known);
-        let result = self.sim.submit_for_faction(command, Some(team));
+        let result = act(&mut self.sim);
         self.sim.known = rogue_known;
         std::mem::swap(&mut self.sim.deck, &mut hand.deck);
         std::mem::swap(&mut self.sim.cooldown, &mut hand.cooldown);
-        result.map_err(Refusal::Architect)
+        Some(result)
+    }
+
+    /// Bot Architects decide once a beat, in their team's context, and play through the
+    /// same submission a human's play takes. A Rogue seat held by a bot drives the
+    /// rules' own Rogue tree.
+    fn run_bot_architects(&mut self) {
+        self.sim.bot_architect = self
+            .seats
+            .values()
+            .any(|seat| seat.bot && seat.role == Role::Rogue);
+        // Once a beat each, on different ticks, so no one frame pays for two decisions.
+        let beat = u64::from(super::sim::ACTOR_BEAT_TICKS);
+        let phase = (self.sim.tick + 1) % beat;
+        let teams: Vec<TeamId> = self
+            .seats
+            .values()
+            .filter(|seat| seat.bot)
+            .filter_map(|seat| match seat.role {
+                Role::Architect(team) => Some(team),
+                _ => None,
+            })
+            .filter(|team| u64::from(team.0) * BOT_STAGGER_TICKS % beat == phase)
+            .collect();
+        for team in teams {
+            let decided = self.in_team_context(team, |sim| {
+                let (command, trace) = sim.loyal_intent(team);
+                sim.traces.insert(format!("Architect {}", team.0), trace);
+                command.map(|command| sim.submit_for_faction(command, Some(team)))
+            });
+            debug_assert!(
+                !matches!(decided, Some(Some(Err(_)))),
+                "a bot plays only what its own legality query admitted"
+            );
+        }
     }
 }
 

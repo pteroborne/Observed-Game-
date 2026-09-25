@@ -22,6 +22,11 @@ fn game(seed: u64) -> AscentMatch {
 
 /// One team of `members` bodies and its Architect, on a two-level facility.
 fn game_with(seed: u64, members: u8, guardian: bool) -> AscentMatch {
+    game_seated(seed, members, guardian, false)
+}
+
+/// As [`game_with`], with the Architect's seat held by a bot when `bot` is set.
+fn game_seated(seed: u64, members: u8, guardian: bool, bot: bool) -> AscentMatch {
     let config = HexMatchConfig {
         teams: 1,
         members_per_team: members,
@@ -44,7 +49,7 @@ fn game_with(seed: u64, members: u8, guardian: bool) -> AscentMatch {
             ARCHITECT,
             Seat {
                 role: Role::Architect(TEAM),
-                bot: false,
+                bot,
             },
         )]),
     )
@@ -499,3 +504,205 @@ fn a_retraction_cannot_open_a_window_beside_a_watched_room() {
 }
 
 mod prison;
+
+#[test]
+fn a_bot_architect_repairs_what_the_rogue_breaks_through_the_human_path() {
+    const ROGUE: PlayerId = PlayerId(41);
+    let config = HexMatchConfig {
+        teams: 1,
+        members_per_team: 1,
+        guardian: false,
+        wfc: HexWfcConfig {
+            levels: 2,
+            ..HexWfcConfig::default()
+        },
+    };
+    let physical = HexWfcMatch::new_with_content(
+        7,
+        config,
+        crate::hex_wfc::compatibility_test_content().clone(),
+    )
+    .expect("a two-level facility solves");
+    let seats = BTreeMap::from([
+        (
+            ARCHITECT,
+            Seat {
+                role: Role::Architect(TEAM),
+                bot: true,
+            },
+        ),
+        (
+            ROGUE,
+            Seat {
+                role: Role::Rogue,
+                bot: false,
+            },
+        ),
+    ]);
+    let mut game = AscentMatch::new(physical, 7, seats).expect("a bot Architect and a Rogue");
+    for _ in 0..600 {
+        step(&mut game, Body::Explore, SeatCommand::None);
+    }
+    // The Rogue plays a contradiction near the body, somewhere it is not looking but its
+    // team has mapped: an Architect can repair only what the team knows is there.
+    let body = game.rules().observers[&ObserverId(BODY.0)].cell;
+    let mapped = game.rules().team_knowledge[&TEAM].discovered_cells.clone();
+    let sabotage = game
+        .rules()
+        .deck
+        .hand
+        .iter()
+        .flat_map(|card| {
+            game.rules()
+                .mutable_targets()
+                .into_iter()
+                .flat_map(move |target| {
+                    (0..6).map(move |rotation| ArchitectCommand::Play {
+                        card: card.id,
+                        target,
+                        rotation,
+                    })
+                })
+        })
+        .filter(|command| {
+            let ArchitectCommand::Play { target, .. } = *command else {
+                return false;
+            };
+            observed_hex::travel_distance(target, body) <= 2
+                && mapped.contains(&target)
+                && game.session().architect_refusal(ROGUE, *command).is_none()
+        })
+        .find(|&command| {
+            let mut probe = game.rules().clone();
+            probe.submit(command).is_ok() && !probe.contradictions.is_empty()
+        })
+        .expect("the Rogue has a contradiction to play near the body");
+    let seats = InputFrame {
+        version: ASCENT_INPUT_VERSION,
+        tick: game.rules().tick + 1,
+        commands: BTreeMap::from([(ROGUE, SeatCommand::Architect(sabotage))]),
+    };
+    let bodies = HexInputFrame {
+        version: HEX_INPUT_VERSION,
+        tick: game.rules().tick + 1,
+        commands: BTreeMap::new(),
+    };
+    assert!(game.step(&bodies, &seats).expect("well formed").is_empty());
+    assert!(!game.rules().contradictions.is_empty());
+
+    let mut repaired = false;
+    let mut slowest = std::time::Duration::ZERO;
+    for _ in 0..600 {
+        let started = std::time::Instant::now();
+        step(&mut game, Body::Turn(0.0), SeatCommand::None);
+        slowest = slowest.max(started.elapsed());
+        repaired |= game
+            .rules()
+            .traces
+            .get("Architect 0")
+            .and_then(|trace| trace.selected)
+            == Some("repair a contradiction");
+        if repaired && game.rules().contradictions.is_empty() {
+            break;
+        }
+    }
+    eprintln!("slowest tick with a bot Architect deciding: {slowest:?}");
+    assert!(repaired, "the bot never repaired the Rogue's contradiction");
+    assert_geometry_is_fresh(&game);
+}
+
+/// Evidence, not regression cover: a production facility with two bot Architects,
+/// printing tick times. Measured 2026-09-25: median about 0.1 ms, a bot's decision beat
+/// about 3 ms, and a Guardian catch about 35-40 ms, which is the new maze's geometry
+/// (17 ms) and colliders (17 ms) built on the tick of the catch.
+#[test]
+#[ignore = "two minutes of production play (about 10 s); prints timings, asserts nothing"]
+fn production_ascent_tick_times() {
+    let content = std::sync::Arc::new(crate::hex_wfc::HexMatchContent::from_runtime_catalog(
+        crate::hex_wfc::test_catalog().clone(),
+    ));
+    let config = HexMatchConfig {
+        teams: 2,
+        members_per_team: 2,
+        guardian: true,
+        wfc: HexWfcConfig::arc_default(),
+    };
+    let physical = HexWfcMatch::new_with_content(1, config, content).unwrap();
+    let seats = BTreeMap::from([
+        (
+            PlayerId(40),
+            Seat {
+                role: Role::Architect(TeamId(0)),
+                bot: true,
+            },
+        ),
+        (
+            PlayerId(41),
+            Seat {
+                role: Role::Architect(TeamId(1)),
+                bot: true,
+            },
+        ),
+    ]);
+    let started = std::time::Instant::now();
+    let mut game = AscentMatch::new(physical, 1, seats).unwrap();
+    eprintln!("construct {:?}", started.elapsed());
+    let mut times = Vec::new();
+    for _ in 0..7_200 {
+        let tick = game.rules().tick + 1;
+        let commands = game
+            .physical()
+            .players
+            .keys()
+            .map(|&p| (p, game.physical().bot_player_command(p)))
+            .collect();
+        let bodies = HexInputFrame {
+            version: HEX_INPUT_VERSION,
+            tick,
+            commands,
+        };
+        let seats = InputFrame {
+            version: ASCENT_INPUT_VERSION,
+            tick,
+            commands: BTreeMap::new(),
+        };
+        let started = std::time::Instant::now();
+        game.step(&bodies, &seats).unwrap();
+        times.push(started.elapsed());
+        if started.elapsed() > std::time::Duration::from_millis(8) {
+            eprintln!(
+                "slow tick {} {:?}: {:?}",
+                tick,
+                started.elapsed(),
+                game.physical()
+                    .recent_events
+                    .iter()
+                    .map(|e| e.kind)
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+    let mut sorted = times.clone();
+    sorted.sort();
+    let plays = game.rules().command_log.len();
+    let traces: Vec<_> = game
+        .rules()
+        .traces
+        .iter()
+        .filter(|(k, _)| k.starts_with("Architect"))
+        .map(|(k, t)| (k.clone(), t.selected))
+        .collect();
+    eprintln!(
+        "median {:?} p95 {:?} max {:?} plays {plays} traces {traces:?}",
+        sorted[sorted.len() / 2],
+        sorted[sorted.len() * 95 / 100],
+        sorted.last().unwrap()
+    );
+    let beats: Vec<_> = times
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| (i + 1) % 60 == 0)
+        .map(|(_, t)| *t)
+        .collect();
+    eprintln!("beat ticks: max {:?}", beats.iter().max());
+}

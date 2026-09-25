@@ -24,6 +24,7 @@ pub use mode::ArchitectMode;
 mod objective;
 pub use objective::{DARKNESS_BEATS, RogueObjective, StateHold};
 mod embodied;
+mod loyal;
 mod util;
 pub use embodied::{Embodiment, Place};
 use util::{
@@ -693,6 +694,31 @@ impl ArchitectLab {
         }
     }
 
+    /// The cell a tile play of `shape` builds at `target`. Legality has already refused a
+    /// shape an authored facility cannot build.
+    #[must_use]
+    pub fn played_placement(
+        &self,
+        shape: TileShape,
+        target: HexCoord,
+        rotation: u8,
+    ) -> HexPlacement {
+        let doors = shape.doors(rotation);
+        if self.authored {
+            observed_facility::hex_wfc::authored_hall(target, doors)
+                .expect("legality proved the corpus builds this tile")
+        } else {
+            HexPlacement {
+                coord: target,
+                space: HexSpace::Hall,
+                archetype: shape.archetype(),
+                doors,
+                up: observed_hex::PortClass::Sealed,
+                down: observed_hex::PortClass::Sealed,
+            }
+        }
+    }
+
     pub fn submit(&mut self, command: ArchitectCommand) -> Result<(), CommandRefusal> {
         self.submit_for_faction(command, None)
     }
@@ -722,21 +748,7 @@ impl ArchitectLab {
                     .expect("legality proved the card is held");
                 match held.kind {
                     CardKind::Tile(shape) => {
-                        let doors = shape.doors(rotation);
-                        let placement = if self.authored {
-                            observed_facility::hex_wfc::authored_hall(target, doors)
-                                .expect("legality proved the corpus builds this tile")
-                        } else {
-                            HexPlacement {
-                                coord: target,
-                                space: HexSpace::Hall,
-                                archetype: shape.archetype(),
-                                doors,
-                                up: observed_hex::PortClass::Sealed,
-                                down: observed_hex::PortClass::Sealed,
-                            }
-                        };
-                        self.rewrite(placement);
+                        self.rewrite(self.played_placement(shape, target, rotation));
                         self.retracted.remove(&target);
                         self.doors
                             .retain(|key, _| !threshold_touches(*key, target, &self.world));
