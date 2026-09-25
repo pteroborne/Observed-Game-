@@ -165,6 +165,7 @@ pub(super) fn spawn_caged_lantern(
                     axis: Vec3::new(0.35, 1.0, 0.2).normalize(),
                     rate: 0.9,
                     rest,
+                    in_hand: held_by.is_some(),
                 },
                 bevy::light::NotShadowCaster,
             ));

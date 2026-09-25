@@ -1,4 +1,5 @@
-//! Stable-domain presentation of the rival runners and the exit beacon.
+//! Stable-domain presentation of the rival runners, the objectives and the exit beacon.
+//! The objectives' bodies are built in `objective_models`.
 
 use bevy::prelude::*;
 use observed_authoring::RoomSocketKind;
@@ -6,6 +7,7 @@ use observed_core::PlayerId;
 use observed_hex::hex_origin;
 use observed_style::{MarkerRole, OutlineRole};
 
+use super::objective_models::{ObjectiveModels, SYNC_COLUMN, SyncColumn, sync_fill};
 use super::sim::HexWfcRuntime;
 use crate::GameState;
 
@@ -24,9 +26,6 @@ pub(super) struct ObjectiveLabel;
 #[derive(Resource)]
 pub(super) struct EntityVisualAssets {
     runner: Handle<Mesh>,
-    beacon: Handle<Mesh>,
-    pickup: Handle<Mesh>,
-    console: Handle<Mesh>,
     local: Handle<StandardMaterial>,
     teammate: Handle<StandardMaterial>,
     rival: Handle<StandardMaterial>,
@@ -60,9 +59,6 @@ pub(super) fn setup(
         // begin close together, and a full-height opaque capsule at arm's
         // length obscures the architecture players must read.
         runner: meshes.add(Capsule3d::new(0.25, 0.8)),
-        beacon: meshes.add(Cuboid::new(1.1, 3.6, 1.1)),
-        pickup: meshes.add(Sphere::new(0.55)),
-        console: meshes.add(Cuboid::new(0.8, 1.2, 0.55)),
         local: signal_material(&mut materials, MarkerRole::You),
         teammate: signal_material(&mut materials, MarkerRole::Teammate),
         rival: signal_material(&mut materials, MarkerRole::Rival),
@@ -96,14 +92,23 @@ pub(super) fn setup(
             Name::new(format!("runner {} domain visual", player.id.0)),
         ));
     }
+    let models = ObjectiveModels::new(
+        &mut meshes,
+        &mut materials,
+        assets.pickup_material.clone(),
+        assets.interactable_material.clone(),
+        assets.exit.clone(),
+    );
     let exit_origin = Vec3::from_array(hex_origin(runtime.match_state.facility.config.exit()));
-    commands.spawn((
-        DespawnOnExit(GameState::HexWfc),
-        Mesh3d(assets.beacon.clone()),
-        MeshMaterial3d(assets.exit.clone()),
-        Transform::from_translation(exit_origin + Vec3::Y * 1.8),
-        Name::new("hex exit beacon"),
-    ));
+    let exit_floor = exit_origin + Vec3::Y * observed_hex::FLOOR_SLAB_TOP;
+    commands
+        .spawn((
+            DespawnOnExit(GameState::HexWfc),
+            Transform::from_translation(exit_floor),
+            Visibility::Visible,
+            Name::new("hex exit beacon"),
+        ))
+        .with_children(|root| models.spawn_parts(root, RoomSocketKind::Exit, 0));
     commands.spawn((
         DespawnOnExit(GameState::HexWfc),
         PointLight {
@@ -117,16 +122,14 @@ pub(super) fn setup(
         Name::new("hex exit beacon light"),
     ));
     for socket in &runtime.match_state.geometry.sockets {
-        let (mesh, material) = match socket.kind {
-            RoomSocketKind::Keystone => (assets.pickup.clone(), assets.pickup_material.clone()),
-            RoomSocketKind::StationA
+        match socket.kind {
+            RoomSocketKind::Keystone
+            | RoomSocketKind::StationA
             | RoomSocketKind::StationB
             | RoomSocketKind::Monitor
             | RoomSocketKind::GuardianControl
             | RoomSocketKind::Recovery
-            | RoomSocketKind::LanternCache => {
-                (assets.console.clone(), assets.interactable_material.clone())
-            }
+            | RoomSocketKind::LanternCache => {}
             RoomSocketKind::Exit => {
                 commands.spawn((
                     ObjectiveVisual {
@@ -151,15 +154,18 @@ pub(super) fn setup(
             room_generation_key: socket.room_generation_key,
             kind: socket.kind,
         };
-        commands.spawn((
-            visual,
-            DespawnOnExit(GameState::HexWfc),
-            Mesh3d(mesh),
-            MeshMaterial3d(material),
-            Transform::from_translation(socket.position + Vec3::Y * 0.55)
-                .with_rotation(Quat::from_rotation_y(socket.yaw_degrees.to_radians())),
-            Name::new(format!("{} mechanism", socket_glyph(socket.kind))),
-        ));
+        commands
+            .spawn((
+                visual,
+                DespawnOnExit(GameState::HexWfc),
+                Transform::from_translation(socket.position)
+                    .with_rotation(Quat::from_rotation_y(socket.yaw_degrees.to_radians())),
+                Visibility::Visible,
+                Name::new(format!("{} mechanism", socket_glyph(socket.kind))),
+            ))
+            .with_children(|root| {
+                models.spawn_parts(root, socket.kind, socket.room_generation_key);
+            });
         commands.spawn((
             ObjectiveVisual {
                 room_generation_key: socket.room_generation_key,
@@ -178,10 +184,24 @@ pub(super) fn setup(
         ));
     }
     commands.insert_resource(assets);
+    commands.insert_resource(models);
 }
+
+/// Station sync columns, which fill with the team's progress.
+type SyncColumns<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static SyncColumn,
+        &'static mut Transform,
+        &'static mut Visibility,
+    ),
+    (Without<ActorVisual>, Without<ObjectiveVisual>),
+>;
 
 pub(super) fn sync(
     runtime: Res<HexWfcRuntime>,
+    mut columns: SyncColumns,
     mut actors: Query<(&ActorVisual, &mut Transform, &mut Visibility)>,
     camera: Query<&GlobalTransform, With<crate::view::components::GameCam>>,
     mut objectives: ObjectiveVisualQuery,
@@ -197,6 +217,20 @@ pub(super) fn sync(
     }
     let camera_rotation = camera.single().ok().map(GlobalTransform::rotation);
     let local_objectives = runtime.match_state.teams[&runtime.local().team].objectives;
+    for (column, mut transform, mut visibility) in &mut columns {
+        let fill = sync_fill(
+            column.room_generation_key,
+            local_objectives.dual_station_room,
+            local_objectives.dual_station_ticks,
+            local_objectives.dual_station_complete,
+        );
+        transform.scale = Vec3::new(1.0, (fill * SYNC_COLUMN).max(0.01), 1.0);
+        *visibility = if fill > 0.0 {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+    }
     for (visual, mut visibility, transform, label, text) in &mut objectives {
         let visible = visual.kind != RoomSocketKind::Keystone
             || runtime

@@ -17,13 +17,16 @@ use bevy::prelude::*;
 use super::sim::{EYE_OFFSET, HexWfcRuntime};
 
 /// A part that turns slowly about a local axis: a live plate's inner ring, the
-/// lantern's gyro. Presentation only, keyed to wall-clock time.
+/// lantern's gyro, a keystone's crystal. Presentation only, keyed to wall-clock time.
 #[derive(Component)]
 pub(super) struct Spin {
     pub(super) axis: Vec3,
     /// Radians per second.
     pub(super) rate: f32,
     pub(super) rest: Quat,
+    /// Held in a hand. "Reduced hand motion" stills these, and only these: it is not a
+    /// setting for the world's own animation.
+    pub(super) in_hand: bool,
 }
 
 pub(super) fn spin(
@@ -31,12 +34,12 @@ pub(super) fn spin(
     settings: Res<crate::settings::Settings>,
     mut parts: Query<(&Spin, &mut Transform)>,
 ) {
-    let t = if settings.reduced_hand_motion {
-        0.0
-    } else {
-        time.elapsed_secs()
-    };
     for (spin, mut transform) in &mut parts {
+        let t = if settings.reduced_hand_motion && spin.in_hand {
+            0.0
+        } else {
+            time.elapsed_secs()
+        };
         transform.rotation = Quat::from_axis_angle(spin.axis, spin.rate * t) * spin.rest;
     }
 }
@@ -407,6 +410,44 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// "Reduced hand motion" stills what is held and leaves the world turning: a
+    /// keystone or a plate on the floor keeps its spin.
+    #[test]
+    fn reduced_hand_motion_stills_only_what_is_held() {
+        use bevy::ecs::system::RunSystemOnce;
+        let mut world = World::new();
+        let mut time = Time::<()>::default();
+        time.advance_by(std::time::Duration::from_secs(2));
+        world.insert_resource(time);
+        world.insert_resource(crate::settings::Settings {
+            reduced_hand_motion: true,
+            ..Default::default()
+        });
+        let part = |in_hand| {
+            (
+                super::Spin {
+                    axis: Vec3::Y,
+                    rate: 0.7,
+                    rest: Quat::IDENTITY,
+                    in_hand,
+                },
+                Transform::IDENTITY,
+            )
+        };
+        let held = world.spawn(part(true)).id();
+        let floor = world.spawn(part(false)).id();
+        world.run_system_once(super::spin).expect("spin runs");
+        let angle = |entity| world.get::<Transform>(entity).expect("transform").rotation;
+        assert!(
+            angle(held).angle_between(Quat::IDENTITY) < 1e-6,
+            "held part turned"
+        );
+        assert!(
+            angle(floor).angle_between(Quat::IDENTITY) > 1.0,
+            "world part stilled"
+        );
     }
 
     /// The hexagons line up with the lattice's, corner for corner, so a plate's flats

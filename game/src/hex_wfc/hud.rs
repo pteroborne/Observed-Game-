@@ -2,6 +2,7 @@
 
 pub(super) mod capture;
 pub(super) mod play;
+pub(super) mod words;
 
 use bevy::prelude::*;
 

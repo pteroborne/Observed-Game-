@@ -292,6 +292,8 @@ fn spawn_plate(
                         axis: Vec3::Y,
                         rate: 0.6,
                         rest: Quat::IDENTITY,
+                        // Only a plate on the floor turns: it is the world's.
+                        in_hand: false,
                     });
                     root.spawn((
                         Mesh3d(assets.column.clone()),

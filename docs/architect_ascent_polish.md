@@ -32,7 +32,20 @@ moonlight, and open-air work is included.
   Keyboard rebinding is reflected in prompt labels; controller actions have text
   equivalents alongside keyboard labels.
 - Added persisted gameplay text scaling (90–125%) and reduced hand motion. The
-  latter removes hand sway/spin, not world animation.
+  latter removes hand sway/spin, not world animation: `Spin` parts carry whether they
+  are held, so a keystone or a plate on the floor keeps turning.
+- Polished the in-play HUD into the menus' language (`game/src/hex_wfc/hud/play.rs`).
+  The objective panel sits top left, with the team's colour as its accent bar and the
+  keystones as pips. Equipment sits top right, out from over the held plate. The prompt
+  sits low centre, between and above the hands: keycaps for the key and the controller
+  button, the action, its detail, and a filling bar for a held action. Notices fade in
+  and out at top centre, amber when something went against you. Panels size to their
+  content, so text scaling wraps inside them.
+- Replaced the objectives' placeholder shapes (`game/src/hex_wfc/objective_models.rs`)
+  in the equipment's hexagonal language. A keystone is a crystal turning in a brass
+  halo over a lit plinth. A console is a dark plinth with a lit screen. A station also
+  has a column of light that fills with the team's sync progress and holds full once
+  synchronized. The exit is a green column over a lit ring.
 
 ## Visual evidence
 

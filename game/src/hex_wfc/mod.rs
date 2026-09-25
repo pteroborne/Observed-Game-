@@ -14,6 +14,7 @@ mod input;
 mod lantern;
 pub(crate) mod launch;
 pub(crate) mod loading;
+mod objective_models;
 pub(crate) mod overlay;
 mod pad;
 mod perf;
