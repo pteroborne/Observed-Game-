@@ -14,7 +14,7 @@
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
-use observed_match::ascent::sim::ArchitectCommand;
+use observed_match::ascent::sim::{ArchitectCommand, CardKind};
 
 use super::ArchitectDesk;
 use super::board::Board;
@@ -71,14 +71,17 @@ pub(in crate::hex_wfc) fn capture(
         }
         1 => {
             // Pick up the first card with a play the rules would take on a known cell,
-            // on any floor, and look at that floor.
+            // on any floor, and look at that floor: a tile if one can be played, so the
+            // still shows its ghost.
             let Some(knowledge) = ascent.rules().team_knowledge.get(&desk.team) else {
                 return;
             };
             let Some(hand) = ascent.session().hands.get(&desk.team) else {
                 return;
             };
-            let found = hand.deck.hand.iter().enumerate().find_map(|(index, card)| {
+            let mut cards: Vec<_> = hand.deck.hand.iter().enumerate().collect();
+            cards.sort_by_key(|(_, card)| !matches!(card.kind, CardKind::Tile(_)));
+            let found = cards.into_iter().find_map(|(index, card)| {
                 knowledge.cells.keys().find_map(|&target| {
                     (0..6).find_map(|rotation| {
                         let play = ArchitectCommand::Play {

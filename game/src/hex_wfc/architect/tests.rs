@@ -153,3 +153,34 @@ fn a_refused_play_comes_back_to_the_desk_with_its_reason() {
         Some(Refusal::Architect(CommandRefusal::UnknownTarget))
     );
 }
+
+#[test]
+fn the_architect_believes_what_they_built_until_the_team_sees_the_cell_again() {
+    use observed_match::ascent::sim::KnownCell;
+    let runtime = runtime();
+    let mut placements = runtime.match_state.facility.placements.iter();
+    let (&cell, &seen) = placements.next().expect("a cell");
+    let (_, &built) = placements
+        .find(|(_, other)| **other != seen)
+        .expect("two different cells");
+    let mut desk = desk();
+    let known = |seen_at| KnownCell {
+        placement: seen,
+        seen_at,
+    };
+    assert_eq!(desk.believed(cell, Some(&known(5))), Some(seen));
+    assert_eq!(desk.believed(cell, None), None);
+
+    desk.built.insert(cell, (built, 10));
+    assert_eq!(
+        desk.believed(cell, Some(&known(5))),
+        Some(built),
+        "the team last saw it before the build"
+    );
+    assert_eq!(desk.believed(cell, None), Some(built));
+    assert_eq!(
+        desk.believed(cell, Some(&known(12))),
+        Some(seen),
+        "the team has seen it since, and what it saw wins"
+    );
+}

@@ -197,16 +197,34 @@ Play's Rules row now cycles *Facility race*, *Architect Ascent, as an Observer* 
 *Architect Ascent, as the Architect*. As the Architect the local player has no body: the
 team's bodies are bots, and the player sits at the desk (`game/src/hex_wfc/architect/`).
 
-- **The board** is one floor of what the team knows, from above, drawn by its own camera
-  over the world. It frames what is known rather than the whole lattice, and glides as the
-  team maps more. A known cell is a slab in its district's colour, lit where the team is
-  looking now and dim where it is only remembered; every doorway is a white link. On it:
-  the team's Observers, the Guardians they can see, contradictions, the prison lobby, the
-  summit once found, and deployed doors - a bar across the doorway when closed, two posts
-  when open, so the state reads by shape first.
+- **The board** is the building itself, as the team remembers it, at the isometric
+  pitch `architect_lab` and the survivor map use, drawn by its own camera over the world
+  and lit like the lab (its key light, and its ambient on the camera, whatever the
+  facility's own light is doing). `architect/building.rs` draws each known room from its
+  real authored hulls, cut away the lab's way: ceilings dropped, the walls nearest the
+  camera removed and the rest capped low, cut wall tops dark, concrete in the lab's
+  district palette. **As remembered, never as it is:** a room the team saw exactly as it
+  stands is drawn from the live geometry, and one that has changed since is projected
+  from the placement the team remembers, so the board leaks nothing the team has not
+  seen. The one thing it adds is the Architect's own work: a tile the rules took from this
+  desk is drawn as built (`ArchitectDesk::built`, `believed`) until the team has seen that
+  cell since, when what it saw takes over - the Architect knows what they built, and a
+  rival may have rebuilt it. Rooms in view are lit; rooms only remembered are dimmed; the two floors below the
+  one in view stand under it as flat context silhouettes. The board frames what is known
+  of the floor in view and glides as the team maps more or the floor changes.
+
+  The whole board scene is built 20 km from the facility (`pick::BOARD_ORIGIN`): the
+  world's lamps and the Observers' torches light whatever is near them whichever layer it
+  is on, and at the building's true position they blew the board out.
+
+  On it, in the lab's unlit signal colours: the team's Observers as cyan eyes, the
+  Guardians they can see as red pyramids, contradictions as red rings, the prison lobby
+  violet, the summit green once found, deployed doors (a bar across the doorway closed,
+  two posts open), a chevron on a stair or ramp (green up, muted down), and a dark plate
+  on a known cell with nothing built.
 - **The climb** (`architect/stack.rs`) is every floor at once, in the panel: the board is
-  one floor, flat and exact, because a play needs a cell under the cursor with nothing in
-  front of it, and what that costs is the vertical picture. The stack gives it back - the
+  one floor with only the two below it as context, because a play needs a cell under the
+  cursor with nothing in front of it, and what that costs is the rest of the climb. The stack gives it back - the
   same reading the survivor map gives an Observer, from the same knowledge the board
   draws. Each floor is a plate of the whole lattice with the team's known cells standing
   on it, pulled apart far past a storey and seen head-on rather than corner-on, so no
@@ -217,8 +235,11 @@ team's bodies are bots, and the player sits at the desk (`game/src/hex_wfc/archi
 - **The hand** is five cards along the bottom. Each card's glyph is a hub with a spoke for
   each doorway the tile would have, turned to the rotation it would be played at.
 - **Playing:** pick a card (1-5, or click it), turn it (Q / E), point at a cell. Every cell
-  the rules would take the card on wears a ring, and the cell under the cursor wears the
-  tile's ghost, green or red. The side panel says why a cell is refused, in the rules' own
+  the rules would take the card on wears a green ring. The cell under the cursor wears an
+  amber ring if the rules would take the play and a red one if not, and a tile card shows
+  the lab's amber ghost of the actual tile - its real hulls, projected for that cell at that
+  rotation - standing where it would be built. Picking is exact at the angle: the cursor's
+  ray is traced onto the deck of the floor in view (`pick::ray`, `pick::on_deck`). The side panel says why a cell is refused, in the rules' own
   words. A click sends the play only if the rules' inspection would take it; the step hands
   it to the rules as the seat's command, and a refusal comes back to the desk. `[` / `]`
   change floor, R is the emergency requisition, right click puts the card down.

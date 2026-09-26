@@ -9,7 +9,9 @@
 
 use bevy::prelude::*;
 use observed_core::PlayerId;
-use observed_facility::hex_wfc::HexCoord;
+use std::collections::BTreeMap;
+
+use observed_facility::hex_wfc::{HexCoord, HexPlacement};
 use observed_match::ascent::session::Refusal;
 use observed_match::ascent::sim::{ArchitectCommand, TeamId};
 
@@ -31,9 +33,27 @@ pub(crate) struct ArchitectDesk {
     pub pending: Option<ArchitectCommand>,
     /// The rules' answer to the last play stepped, when they refused it.
     pub last_refusal: Option<Refusal>,
+    /// The tiles this Architect has built, and the tick each was built at. The team learns
+    /// a cell only by seeing it, but the Architect knows what they built: the board draws
+    /// these until the team has seen the cell since, when what it saw takes over.
+    pub built: BTreeMap<HexCoord, (HexPlacement, u64)>,
 }
 
 impl ArchitectDesk {
+    /// What this Architect believes stands at `cell`: what they built there, unless the
+    /// team has seen the cell since, and otherwise what the team saw.
+    pub(crate) fn believed(
+        &self,
+        cell: HexCoord,
+        known: Option<&observed_match::ascent::sim::KnownCell>,
+    ) -> Option<HexPlacement> {
+        match (self.built.get(&cell), known) {
+            (Some(&(built, at)), Some(known)) if known.seen_at < at => Some(built),
+            (Some(&(built, _)), None) => Some(built),
+            (_, known) => known.map(|known| known.placement),
+        }
+    }
+
     /// A desk for `team`'s Architect, looking at `floor`, where the team starts.
     pub(crate) fn new(seat: PlayerId, team: TeamId, floor: u8) -> Self {
         Self {
@@ -44,11 +64,13 @@ impl ArchitectDesk {
             hovered: None,
             floor,
             pending: None,
+            built: BTreeMap::new(),
             last_refusal: None,
         }
     }
 }
 mod board;
+mod building;
 pub(super) mod capture;
 mod desk;
 mod input;
@@ -59,14 +81,14 @@ mod words;
 /// The desk's systems, in order: build, read the player, frame, draw.
 pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleSystem, ()> {
     (
-        board::setup,
-        stack::setup,
-        desk::spawn,
+        (board::setup, stack::setup, desk::spawn, init_building),
         stack::click,
         input::input,
         board::frame,
         stack::frame,
-        board::draw_floor,
+        building::clear,
+        building::draw,
+        board::draw_marks,
         board::draw_play,
         stack::draw,
         desk::sync,
@@ -77,3 +99,9 @@ pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleS
 
 #[cfg(test)]
 mod tests;
+
+fn init_building(mut commands: Commands, building: Option<Res<building::Building>>) {
+    if building.is_none() {
+        commands.init_resource::<building::Building>();
+    }
+}

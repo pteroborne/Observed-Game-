@@ -87,11 +87,11 @@ pub(super) fn input(
     if over_a_card || over_the_desk {
         desk.hovered = None;
     } else if let (Some(pixel), Some((framing, size))) = (cursor, board.framing) {
-        desk.hovered = pick::cell_at(
-            runtime.match_state.facility.config,
-            pick::floor_point(framing, size, pixel),
-            desk.floor,
-        );
+        // Traced onto the floor in view, so the pick is exact at the isometric pitch.
+        let ray = pick::ray(board.camera, framing.metres_per_pixel, size, pixel);
+        desk.hovered = pick::on_deck(ray, desk.floor).and_then(|point| {
+            pick::cell_at(runtime.match_state.facility.config, point, desk.floor)
+        });
     }
 
     if buttons.just_pressed(MouseButton::Left)

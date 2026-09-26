@@ -1,17 +1,18 @@
-//! The Architect's board: one floor of what the team knows, seen from above.
+//! The Architect's board: the building as the team knows it, at the isometric pitch.
 //!
-//! Drawn by its own camera on its own render layer over the world, like the survivor map,
-//! and lit by its own key. Two layers of entities:
+//! Drawn by its own camera on its own render layer over the world, and lit by its own
+//! key and fill, the way `architect_lab` lights its board. The building itself - the
+//! real tiles, cut away, as remembered - is `building`'s; this module frames it and draws
+//! what sits on it:
 //!
-//! - **The floor as known** (`BoardCell`): a slab per known cell in its district's colour,
-//!   bright where the team is looking now and dim where it is only remembered; a spoke
-//!   per doorway; the team's Observers, the Guardians they can see, contradictions, the
-//!   prison's lobby and the summit. Rebuilt when what is known, the floor, or the
-//!   facility changes.
+//! - **The floor's marks** (`BoardMark`): the team's Observers as eyes and the Guardians
+//!   they can see as pyramids, contradictions, the prison lobby and the summit as rings on
+//!   the deck, deployed doors (a bar across the doorway closed, two posts open), and a
+//!   chevron on a stair or ramp, green up and dim down. Rebuilt when any of them change.
 //! - **The play being made** (`BoardOverlay`): a ring on every cell the picked card can be
-//!   played on at this rotation, and on the cell under the cursor a ghost of the doors the
-//!   card would give it, green if the rules would take it and red if not. Rebuilt when the
-//!   card, the rotation or the cell under the cursor changes.
+//!   played on at this rotation, and on the cell under the cursor an amber ghost of the
+//!   tile itself, turned as it would be played, with an amber ring if the rules would take
+//!   it and a red one if not. Rebuilt when the card, the rotation or the cell changes.
 //!
 //! Nothing here decides legality: the rings are the rules' own answers
 //! (`AscentSession::architect_refusal`) for this seat.
@@ -21,12 +22,14 @@ use std::hash::{Hash, Hasher};
 
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
-use observed_hex::{HexCoord, HexFace, TILE_LEVEL_HEIGHT, hex_origin};
+use observed_hex::{HexCoord, PortClass, hex_origin};
 use observed_match::ascent::sim::{ArchitectCommand, CardKind, DoorState, ObserverState};
-use observed_style::{MarkerRole, marker};
+use observed_match::hex_wfc::project_hypothetical_cell;
+use observed_style::architect::{Role, color};
 
 use super::ArchitectDesk;
-use super::pick::{self, CELL_RADIUS, Framing, Margins};
+use super::building;
+use super::pick::{self, BOARD_ORIGIN, CELL_RADIUS, Framing, Margins};
 use crate::GameState;
 use crate::hex_wfc::equipment::{hex_prism, hex_ring};
 use crate::hex_wfc::sim::HexWfcRuntime;
@@ -46,23 +49,26 @@ pub(super) const MARGINS: Margins = Margins {
 pub(super) struct BoardCamera;
 
 #[derive(Component)]
-pub(super) struct BoardCell;
+pub(super) struct BoardMark;
 
 #[derive(Component)]
 pub(super) struct BoardOverlay;
 
-/// Shared meshes and what was last drawn.
+/// Shared meshes, what was last drawn, and where the camera stands.
 #[derive(Resource)]
 pub(in crate::hex_wfc) struct Board {
-    slab: Handle<Mesh>,
     ring: Handle<Mesh>,
+    plate: Handle<Mesh>,
     thin_ring: Handle<Mesh>,
-    spoke: Handle<Mesh>,
-    disc: Handle<Mesh>,
-    floor_signature: u64,
+    bar: Handle<Mesh>,
+    eye: Handle<Mesh>,
+    pyramid: Handle<Mesh>,
+    marks_signature: u64,
     play_signature: u64,
-    /// The framing last used, for picking.
+    /// The framing and the window it was made for.
     pub framing: Option<(Framing, Vec2)>,
+    /// Where the camera stands for that framing, for picking.
+    pub camera: Transform,
 }
 
 pub(super) fn setup(
@@ -73,15 +79,23 @@ pub(super) fn setup(
     if board.is_some() {
         return;
     }
+    let pyramid = Mesh::from(Tetrahedron::new(
+        Vec3::new(0.0, 5.0, 0.0),
+        Vec3::new(-2.6, 0.0, -1.5),
+        Vec3::new(2.6, 0.0, -1.5),
+        Vec3::new(0.0, 0.0, 3.0),
+    ));
     commands.insert_resource(Board {
-        slab: meshes.add(hex_prism(CELL_RADIUS - 0.7, CELL_RADIUS - 0.7, 0.0, 0.4)),
-        ring: meshes.add(hex_ring(CELL_RADIUS - 0.4, CELL_RADIUS - 1.6, 0.5, 0.7)),
-        thin_ring: meshes.add(hex_ring(CELL_RADIUS - 0.5, CELL_RADIUS - 1.9, 0.8, 0.9)),
-        spoke: meshes.add(Cuboid::new(6.4, 0.3, 2.2)),
-        disc: meshes.add(Cylinder::new(3.0, 0.6)),
-        floor_signature: 0,
+        ring: meshes.add(hex_ring(CELL_RADIUS - 0.5, CELL_RADIUS - 1.5, 0.05, 0.35)),
+        plate: meshes.add(hex_prism(CELL_RADIUS - 0.6, CELL_RADIUS - 0.6, -0.4, 0.0)),
+        thin_ring: meshes.add(hex_ring(CELL_RADIUS - 0.6, CELL_RADIUS - 1.1, 0.02, 0.2)),
+        bar: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+        eye: meshes.add(Sphere::new(1.6)),
+        pyramid: meshes.add(pyramid),
+        marks_signature: 0,
         play_signature: 0,
         framing: None,
+        camera: Transform::default(),
     });
     commands.spawn((
         BoardCamera,
@@ -89,28 +103,36 @@ pub(super) fn setup(
         Camera3d::default(),
         Camera {
             order: BOARD_ORDER,
-            clear_color: Color::srgb(0.012, 0.016, 0.028).into(),
+            clear_color: color(Role::Background).into(),
             ..default()
         },
         Projection::Orthographic(OrthographicProjection::default_3d()),
+        // The lab's studio ambience, whatever the facility's own is doing.
+        AmbientLight {
+            color: color(Role::Text),
+            brightness: 360.0,
+            ..default()
+        },
         RenderLayers::layer(BOARD_LAYER),
         Transform::default(),
         Name::new("Architect board camera"),
     ));
+    // The lab's studio: a key from high over the camera's shoulder.
     commands.spawn((
         DespawnOnExit(GameState::HexWfc),
         DirectionalLight {
-            illuminance: 4_000.0,
-            shadow_maps_enabled: false,
+            illuminance: 6_500.0,
+            shadow_maps_enabled: true,
             ..default()
         },
         RenderLayers::layer(BOARD_LAYER),
-        Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, 0.6, -1.2, 0.0)),
+        Transform::from_xyz(40.0, 90.0, 20.0).looking_at(Vec3::ZERO, Vec3::Y),
         Name::new("Architect board key"),
     ));
 }
 
-/// Frame the floor in view and point the camera at it.
+/// Frame what the team knows of the floor in view, and ease the camera to it: over the
+/// map as the team explores, and up and down the climb as the floor changes.
 pub(super) fn frame(
     desk: Res<ArchitectDesk>,
     runtime: Res<HexWfcRuntime>,
@@ -124,8 +146,7 @@ pub(super) fn frame(
         return;
     };
     let size = Vec2::new(window.width(), window.height());
-    // What the team knows of the floor, and where its Observers are: the whole lattice
-    // is mostly unknown, and framing it all shrinks the known to a corner.
+    let config = runtime.match_state.facility.config;
     let known = runtime.ascent.as_ref().and_then(|ascent| {
         let rules = ascent.rules();
         let cells = rules.team_knowledge.get(&desk.team)?.cells.keys();
@@ -134,45 +155,61 @@ pub(super) fn frame(
             .values()
             .filter(|observer| observer.team == desk.team)
             .map(|observer| &observer.cell);
-        pick::frame_cells(
+        pick::frame(
             cells
                 .chain(observers)
                 .filter(|cell| cell.level == desk.floor)
                 .copied(),
-            pick::MIN_VIEW,
+            desk.floor,
             size,
             MARGINS,
         )
     });
-    let target = known
-        .unwrap_or_else(|| pick::frame_floor(runtime.match_state.facility.config, size, MARGINS));
+    // Nothing known on this floor yet: the whole of it.
+    let target = known.unwrap_or_else(|| {
+        let corners = [
+            (0, 0),
+            (config.cols - 1, 0),
+            (0, config.rows - 1),
+            (config.cols - 1, config.rows - 1),
+        ];
+        pick::frame(
+            corners.map(|(q, r)| HexCoord {
+                q,
+                r,
+                level: desk.floor,
+            }),
+            desk.floor,
+            size,
+            MARGINS,
+        )
+        .expect("a lattice has corners")
+    });
     let framing = match board.framing {
         Some((from, was)) if was == size => pick::ease(from, target, 4.0, time.delta_secs()),
         _ => target,
     };
     board.framing = Some((framing, size));
-    let height = f32::from(desk.floor) * TILE_LEVEL_HEIGHT;
-    *transform = Transform::from_xyz(framing.centre.x, height + 200.0, framing.centre.y)
-        .looking_at(
-            Vec3::new(framing.centre.x, height, framing.centre.y),
-            Vec3::NEG_Z,
-        );
+    board.camera = pick::camera(framing, MARGINS);
+    *transform = board
+        .camera
+        .with_translation(board.camera.translation + BOARD_ORIGIN);
     *projection = Projection::Orthographic(OrthographicProjection {
         scale: framing.metres_per_pixel,
         near: 1.0,
-        far: 400.0,
+        far: 3_000.0,
         ..OrthographicProjection::default_3d()
     });
 }
 
-/// Rebuild the floor as the team knows it, when that has changed.
-pub(super) fn draw_floor(
+/// Redraw the floor's marks, when they have changed.
+pub(super) fn draw_marks(
     mut commands: Commands,
     desk: Res<ArchitectDesk>,
     runtime: Res<HexWfcRuntime>,
     mut board: ResMut<Board>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    drawn: Query<Entity, With<BoardCell>>,
+    drawn: Query<Entity, With<BoardMark>>,
 ) {
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
@@ -184,14 +221,13 @@ pub(super) fn draw_floor(
     let floor = desk.floor;
     let mut hasher = std::hash::DefaultHasher::new();
     floor.hash(&mut hasher);
-    rules.world.generation.hash(&mut hasher);
-    for (cell, known) in knowledge
+    for (&cell, known) in knowledge
         .cells
         .iter()
         .filter(|(cell, _)| cell.level == floor)
     {
-        (cell, known.placement.doors, known.placement.space.built()).hash(&mut hasher);
-        knowledge.visible_cells.contains(cell).hash(&mut hasher);
+        let believed = desk.believed(cell, Some(known));
+        (cell, believed.map(|p| (p.up, p.down, p.space.built()))).hash(&mut hasher);
     }
     rules.contradictions.hash(&mut hasher);
     for observer in rules.observers.values() {
@@ -202,25 +238,19 @@ pub(super) fn draw_floor(
         (key.cell, key.face, *state == DoorState::Open).hash(&mut hasher);
     }
     let signature = hasher.finish();
-    if signature == board.floor_signature {
+    if signature == board.marks_signature {
         return;
     }
-    board.floor_signature = signature;
+    board.marks_signature = signature;
     for entity in &drawn {
         commands.entity(entity).despawn();
     }
 
     let layer = RenderLayers::layer(BOARD_LAYER);
-    let mut paint = |color: Color, emissive: LinearRgba| {
-        materials.add(StandardMaterial {
-            base_color: color,
-            emissive,
-            ..default()
-        })
-    };
+    let mut paint = |role: Role| materials.add(signal(role));
     let spawn = |commands: &mut Commands, mesh: &Handle<Mesh>, material, at: Transform| {
         commands.spawn((
-            BoardCell,
+            BoardMark,
             DespawnOnExit(GameState::HexWfc),
             Mesh3d(mesh.clone()),
             MeshMaterial3d(material),
@@ -228,90 +258,49 @@ pub(super) fn draw_floor(
             layer.clone(),
         ));
     };
-    // The way between floors: a chevron up where a stair or ramp climbs, green because it
-    // is the way to the summit, and a dim one down where it descends.
-    let climb = marker(MarkerRole::Exit);
-    let climb = paint(climb.base_color, climb.emissive);
-    let descend = paint(Color::srgb(0.6, 0.64, 0.7), LinearRgba::gray(0.5));
+    let on_deck = |cell: HexCoord, rise: f32| {
+        let at = hex_origin(cell);
+        BOARD_ORIGIN + Vec3::new(at[0], pick::deck(cell.level) + rise, at[2])
+    };
+
+    // A known cell with nothing built in it is a dark plate, so a play there has
+    // somewhere to land; stairs and ramps get a chevron up where the climb goes on, green
+    // because it is the way to the summit, and a muted one down.
+    let plate = paint(Role::Context);
+    let climb = paint(Role::Valid);
+    let descend = paint(Role::Muted);
     for (&cell, known) in knowledge
         .cells
         .iter()
         .filter(|(cell, _)| cell.level == floor)
     {
-        if !known.placement.space.built() {
+        let Some(placement) = desk.believed(cell, Some(known)) else {
+            continue;
+        };
+        if !placement.space.built() {
+            spawn(
+                &mut commands,
+                &board.plate,
+                plate.clone(),
+                Transform::from_translation(on_deck(cell, 0.0)),
+            );
             continue;
         }
-        let origin = Vec3::from_array(hex_origin(cell));
-        for (open, up, material) in [
-            (known.placement.up, true, &climb),
-            (known.placement.down, false, &descend),
+        for (port, up, material) in [
+            (placement.up, true, &climb),
+            (placement.down, false, &descend),
         ] {
-            if open != observed_hex::PortClass::Sealed {
-                for bar in chevron(origin, up) {
-                    spawn(&mut commands, &board.spoke, material.clone(), bar);
+            if port != PortClass::Sealed {
+                for bar in chevron(on_deck(cell, 3.2), up) {
+                    spawn(&mut commands, &board.bar, material.clone(), bar);
                 }
             }
         }
-        let register = rules
-            .world
-            .architecture
-            .get(&cell)
-            .copied()
-            .unwrap_or(observed_content::ArchitectureRegister::ALL[0]);
-        let accent = observed_style::architecture(register).accent;
-        // Seen now is lit; remembered is dim, and may no longer be true.
-        let gain = if knowledge.visible_cells.contains(&cell) {
-            1.0
-        } else {
-            0.45
-        };
-        let origin = Vec3::from_array(hex_origin(cell));
-        let slab = paint(
-            Color::LinearRgba(accent * (0.35 * gain)),
-            accent * (0.3 * gain),
-        );
-        spawn(
-            &mut commands,
-            &board.slab,
-            slab,
-            Transform::from_translation(origin),
-        );
-        let door = paint(
-            Color::WHITE,
-            accent * (2.4 * gain) + LinearRgba::gray(0.4 * gain),
-        );
-        for face in HexFace::LATERAL
-            .into_iter()
-            .filter(|&f| known.placement.is_open(f))
-        {
-            spawn(
-                &mut commands,
-                &board.spoke,
-                door.clone(),
-                spoke(origin, face, 0.45),
-            );
-        }
     }
-    // Marks, over the slabs.
-    let door = marker(MarkerRole::Control);
-    let door = paint(door.base_color, door.emissive);
-    let mut mark = |commands: &mut Commands, mesh: &Handle<Mesh>, role: MarkerRole, cell| {
-        let t = marker(role);
-        let material = paint(t.base_color, t.emissive);
-        spawn(
-            commands,
-            mesh,
-            material,
-            Transform::from_translation(Vec3::from_array(hex_origin(cell)) + Vec3::Y * 1.5),
-        );
-    };
-    for &cell in rules.contradictions.iter().filter(|c| c.level == floor) {
-        if knowledge.cells.contains_key(&cell) {
-            mark(&mut commands, &board.ring, MarkerRole::Collapse, cell);
-        }
-    }
-    // Deployed doors, on the doorways the team knows: closed is a bar across the doorway,
-    // open is its two posts either side, so the state reads by shape before colour.
+
+    // Deployed doors on doorways the team knows: closed is a bar across the doorway, open
+    // is its two posts either side, so the state reads by shape before colour.
+    let door = paint(Role::Fixture);
     for (key, state) in rules
         .doors
         .iter()
@@ -320,68 +309,94 @@ pub(super) fn draw_floor(
         if !knowledge.cells.contains_key(&key.cell) {
             continue;
         }
-        let origin = Vec3::from_array(hex_origin(key.cell));
         let angle = pick::face_angle(key.face);
-        let across =
-            Quat::from_rotation_y(-angle) * Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
-        let at = origin + Vec3::new(angle.cos(), 0.0, angle.sin()) * 6.9 + Vec3::Y * 1.2;
+        let outward = Vec3::new(angle.cos(), 0.0, angle.sin());
+        let across = Quat::from_rotation_y(-angle);
+        let at = on_deck(key.cell, 1.6) + outward * 6.9;
         match state {
-            DoorState::Closed => {
-                spawn(
-                    &mut commands,
-                    &board.spoke,
-                    door.clone(),
-                    Transform::from_translation(at)
-                        .with_rotation(across)
-                        .with_scale(Vec3::new(0.8, 2.0, 1.4)),
-                );
-            }
+            DoorState::Closed => spawn(
+                &mut commands,
+                &board.bar,
+                door.clone(),
+                Transform::from_translation(at)
+                    .with_rotation(across)
+                    .with_scale(Vec3::new(0.7, 3.2, 5.6)),
+            ),
             DoorState::Open => {
-                let side = across * Vec3::X * 2.6;
+                let side = across * Vec3::Z * 2.6;
                 for post in [at + side, at - side] {
                     spawn(
                         &mut commands,
-                        &board.spoke,
+                        &board.bar,
                         door.clone(),
                         Transform::from_translation(post)
                             .with_rotation(across)
-                            .with_scale(Vec3::new(0.18, 2.0, 1.4)),
+                            .with_scale(Vec3::new(0.7, 3.2, 0.7)),
                     );
                 }
             }
         }
     }
+
+    // The lab's legend: red is trouble, violet the prison, green the way up, cyan an eye
+    // and a red pyramid a Guardian.
+    let mut ring = |commands: &mut Commands, role: Role, cell: HexCoord| {
+        let material = paint(role);
+        spawn(
+            commands,
+            &board.ring,
+            material,
+            Transform::from_translation(on_deck(cell, 0.1)),
+        );
+    };
+    for &cell in rules.contradictions.iter().filter(|c| c.level == floor) {
+        if knowledge.cells.contains_key(&cell) {
+            ring(&mut commands, Role::Guardian, cell);
+        }
+    }
     for &cell in rules.prison.cells.iter().filter(|c| c.level == floor) {
-        mark(&mut commands, &board.ring, MarkerRole::Prison, cell);
+        ring(&mut commands, Role::Prison, cell);
     }
     let summit = rules.world.config.exit();
     if summit.level == floor && knowledge.cells.contains_key(&summit) {
-        mark(&mut commands, &board.ring, MarkerRole::Exit, summit);
+        ring(&mut commands, Role::Valid, summit);
     }
+    let eye = paint(Role::Observer);
     for observer in rules.observers.values() {
         if observer.team == desk.team
             && observer.state == ObserverState::Active
             && observer.cell.level == floor
         {
-            mark(
+            spawn(
                 &mut commands,
-                &board.disc,
-                MarkerRole::Teammate,
-                observer.cell,
+                &board.eye,
+                eye.clone(),
+                Transform::from_translation(on_deck(observer.cell, 2.2)),
             );
         }
     }
+    let hunter = paint(Role::Guardian);
     for id in &knowledge.visible_guardians {
         if let Some(guardian) = rules.guardians.get(id)
             && guardian.cell.level == floor
         {
-            mark(
+            spawn(
                 &mut commands,
-                &board.disc,
-                MarkerRole::Collapse,
-                guardian.cell,
+                &board.pyramid,
+                hunter.clone(),
+                Transform::from_translation(on_deck(guardian.cell, 0.2)),
             );
         }
+    }
+}
+
+/// The lab's signal material: the role's own colour, unlit, so it reads the same in
+/// light and shadow.
+fn signal(role: Role) -> StandardMaterial {
+    StandardMaterial {
+        base_color: color(role),
+        unlit: true,
+        ..default()
     }
 }
 
@@ -391,6 +406,7 @@ pub(super) fn draw_play(
     desk: Res<ArchitectDesk>,
     runtime: Res<HexWfcRuntime>,
     mut board: ResMut<Board>,
+    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     drawn: Query<Entity, With<BoardOverlay>>,
 ) {
@@ -399,7 +415,8 @@ pub(super) fn draw_play(
     };
     let mut hasher = std::hash::DefaultHasher::new();
     (desk.selected, desk.rotation, desk.hovered, desk.floor).hash(&mut hasher);
-    board.floor_signature.hash(&mut hasher);
+    board.marks_signature.hash(&mut hasher);
+    runtime.match_state.geometry.generation.hash(&mut hasher);
     let hand = ascent.session().hands.get(&desk.team);
     hand.map(|hand| (hand.cooldown == 0, hand.deck.hand.len()))
         .hash(&mut hasher);
@@ -423,13 +440,9 @@ pub(super) fn draw_play(
         return;
     };
     let layer = RenderLayers::layer(BOARD_LAYER);
-    let mut paint = |role: MarkerRole, gain: f32| {
-        let t = marker(role);
-        materials.add(StandardMaterial {
-            base_color: Color::LinearRgba(t.base_color.to_linear() * gain),
-            emissive: t.emissive * gain,
-            ..default()
-        })
+    let on_deck = |cell: HexCoord, rise: f32| {
+        let at = hex_origin(cell);
+        BOARD_ORIGIN + Vec3::new(at[0], pick::deck(cell.level) + rise, at[2])
     };
     let legal = legal_targets(
         ascent,
@@ -441,47 +454,64 @@ pub(super) fn draw_play(
             .copied()
             .filter(|cell| cell.level == desk.floor),
     );
-    let target = paint(MarkerRole::NextRoom, 0.9);
+    let valid = materials.add(signal(Role::Valid));
     for &cell in &legal {
         commands.spawn((
             BoardOverlay,
             DespawnOnExit(GameState::HexWfc),
             Mesh3d(board.thin_ring.clone()),
-            MeshMaterial3d(target.clone()),
-            Transform::from_translation(Vec3::from_array(hex_origin(cell))),
+            MeshMaterial3d(valid.clone()),
+            Transform::from_translation(on_deck(cell, 0.15)),
             layer.clone(),
         ));
     }
     let Some(hovered) = desk.hovered else {
         return;
     };
-    let origin = Vec3::from_array(hex_origin(hovered));
-    let verdict = if legal.contains(&hovered) {
-        MarkerRole::Exit
+    let takes_it = legal.contains(&hovered);
+    let edge = materials.add(signal(if takes_it {
+        Role::Selected
     } else {
-        MarkerRole::Collapse
-    };
-    let edge = paint(verdict, 1.0);
+        Role::Guardian
+    }));
     commands.spawn((
         BoardOverlay,
         DespawnOnExit(GameState::HexWfc),
         Mesh3d(board.ring.clone()),
-        MeshMaterial3d(edge.clone()),
-        Transform::from_translation(origin + Vec3::Y * 0.4),
+        MeshMaterial3d(edge),
+        Transform::from_translation(on_deck(hovered, 0.2)),
         layer.clone(),
     ));
-    if let CardKind::Tile(shape) = card.kind {
-        let doors = shape.doors(desk.rotation);
-        for face in HexFace::LATERAL
-            .into_iter()
-            .filter(|face| doors & (1 << face.index()) != 0)
-        {
+    // The tile itself, as it would be played: the lab's amber ghost of its real hulls,
+    // floors and walls, turned as the desk has it.
+    let CardKind::Tile(shape) = card.kind else {
+        return;
+    };
+    let placement = rules.played_placement(shape, hovered, desk.rotation);
+    let physical = &runtime.match_state;
+    let Ok(pieces) = project_hypothetical_cell(
+        &physical.facility,
+        hovered,
+        placement,
+        physical.content().cells(),
+    ) else {
+        return;
+    };
+    let ghost = materials.add(StandardMaterial {
+        base_color: color(Role::Selected).with_alpha(0.45),
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        ..default()
+    });
+    for floors in [true, false] {
+        if let Some(mesh) = building::cutaway_mesh(&pieces, floors, building::bearing()) {
             commands.spawn((
                 BoardOverlay,
                 DespawnOnExit(GameState::HexWfc),
-                Mesh3d(board.spoke.clone()),
-                MeshMaterial3d(edge.clone()),
-                spoke(origin, face, 1.2),
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(ghost.clone()),
+                // Just proud of whatever stands there now, so it is seen over it.
+                Transform::from_translation(BOARD_ORIGIN + Vec3::Y * 0.08),
                 layer.clone(),
             ));
         }
@@ -512,23 +542,13 @@ fn legal_targets(
         .collect()
 }
 
-/// The two bars of a chevron over a cell, pointing up the screen (`up`) or down it. Screen
-/// up is world -Z, so a chevron in the upper half of the cell points toward it.
-fn chevron(origin: Vec3, up: bool) -> [Transform; 2] {
-    let (side, lean) = if up { (-2.4, 1.0) } else { (2.4, -1.0) };
-    let bar = |x: f32, turn: f32| {
-        Transform::from_translation(origin + Vec3::new(x, 1.3, side))
-            .with_rotation(Quat::from_rotation_y(turn))
-            .with_scale(Vec3::new(0.5, 1.0, 0.55))
+/// The two bars of a chevron standing over a cell, pointing up (`up`) or down.
+fn chevron(at: Vec3, up: bool) -> [Transform; 2] {
+    let tilt = if up { 0.75 } else { -0.75 };
+    let bar = |x: f32, lean: f32| {
+        Transform::from_translation(at + Vec3::new(x, 0.0, 0.0))
+            .with_rotation(Quat::from_rotation_z(lean))
+            .with_scale(Vec3::new(3.4, 0.9, 0.9))
     };
-    let quarter = std::f32::consts::FRAC_PI_4 * lean;
-    [bar(-1.0, quarter), bar(1.0, -quarter)]
-}
-
-/// A spoke from a cell's centre out toward `face`, `rise` above the slab.
-fn spoke(origin: Vec3, face: HexFace, rise: f32) -> Transform {
-    let angle = pick::face_angle(face);
-    let reach = 3.4;
-    Transform::from_translation(origin + Vec3::new(angle.cos() * reach, rise, angle.sin() * reach))
-        .with_rotation(Quat::from_rotation_y(-angle))
+    [bar(-1.1, tilt), bar(1.1, -tilt)]
 }

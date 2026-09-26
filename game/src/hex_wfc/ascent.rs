@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use observed_core::{PlayerId, TeamId};
 use observed_match::ascent::facility::AscentRules;
 use observed_match::ascent::session::{ASCENT_INPUT_VERSION, InputFrame, Role, Seat, SeatCommand};
-use observed_match::ascent::sim::{MatchOutcome, TeamId as AscentTeam};
+use observed_match::ascent::sim::{ArchitectCommand, MatchOutcome, TeamId as AscentTeam};
 use observed_match::hex_wfc::{HexBodyPlace, HexInputFrame, HexPlayerState, HexWfcMatch};
 
 use super::architect::ArchitectDesk;
@@ -72,10 +72,12 @@ pub(super) fn step(
     };
     let mut commands = BTreeMap::new();
     let mut desk = desk;
+    let mut played = None;
     if let Some(desk) = desk.as_deref_mut()
         && let Some(play) = desk.pending.take()
     {
         commands.insert(desk.seat, SeatCommand::Architect(play));
+        played = Some(play);
     }
     let seats = InputFrame {
         version: ASCENT_INPUT_VERSION,
@@ -89,6 +91,22 @@ pub(super) fn step(
         && !seats.commands.is_empty()
     {
         desk.last_refusal = refusals.get(&desk.seat).copied();
+        // A tile the rules took is one the Architect knows stands, seen or not.
+        if desk.last_refusal.is_none()
+            && let Some(ArchitectCommand::Play { target, .. }) = played
+            && let Some(&placement) = rules.rules().world.placements.get(&target)
+        {
+            // A door leaves the cell's placement as the team knows it.
+            let known = rules
+                .rules()
+                .team_knowledge
+                .get(&desk.team)
+                .and_then(|knowledge| knowledge.cells.get(&target))
+                .map(|known| known.placement);
+            if known != Some(placement) {
+                desk.built.insert(target, (placement, rules.rules().tick));
+            }
+        }
     }
     true
 }
