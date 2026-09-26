@@ -222,6 +222,7 @@ pub(super) fn sync_cursor(
     capture: Res<UiInputCapture>,
     onboarding: Option<Res<crate::screens::onboarding::OnboardingState>>,
     spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
+    architect: Option<Res<super::architect::ArchitectDesk>>,
     mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
 ) {
     let Ok(mut cursor) = cursors.single_mut() else {
@@ -230,7 +231,9 @@ pub(super) fn sync_cursor(
     let grab = *overlay == MatchOverlayState::Playing
         && !capture.is_active()
         && onboarding.is_none()
-        && spectator_bot.is_none();
+        && spectator_bot.is_none()
+        // An Architect points at a board.
+        && architect.is_none();
     cursor.grab_mode = if grab {
         CursorGrabMode::Locked
     } else {

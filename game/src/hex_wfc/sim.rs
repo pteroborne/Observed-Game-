@@ -263,9 +263,20 @@ pub(super) fn setup_runtime(
     ));
     let seed_offset = prepared.seed_offset;
     let mut match_state = prepared.match_state;
+    let local_team = match_state.players[&local_player].team;
+    let architect = play_setup.seat == crate::play_setup::PlaySeat::Architect;
     let ascent = (!networked && play_setup.rules == crate::play_setup::PlayRules::Ascent)
-        .then(|| super::ascent::rules_for(&mut match_state))
+        .then(|| super::ascent::rules_for(&mut match_state, architect.then_some(local_team)))
         .flatten();
+    if ascent.is_some() && architect {
+        commands.insert_resource(super::architect::ArchitectDesk::new(
+            super::ascent::architect_seat(local_team),
+            observed_match::ascent::sim::TeamId(local_team.0),
+            match_state.players[&local_player].cell.level,
+        ));
+    } else {
+        commands.remove_resource::<super::architect::ArchitectDesk>();
+    }
     let replay = crate::sim::replay::ReplayTape::new_hex_wfc_for_player(&match_state, local_player);
     let map_level = match_state.players[&local_player].cell.level;
     let presented_revisions = match_state.facility.cell_revisions.clone();
@@ -336,12 +347,13 @@ pub(super) fn cleanup_runtime(mut commands: Commands) {
 pub(super) struct SimulationControl<'w> {
     overlay: Res<'w, MatchOverlayState>,
     onboarding: Res<'w, HexOnboardingGate>,
+    desk: Option<ResMut<'w, super::architect::ArchitectDesk>>,
 }
 
 pub(super) fn step_runtime(
     mut intent: ResMut<HexWfcIntent>,
     mut runtime: ResMut<HexWfcRuntime>,
-    control: SimulationControl,
+    mut control: SimulationControl,
     mut replay: Option<ResMut<crate::sim::replay::ReplayTape>>,
     spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
     mut lan: ResMut<crate::lan::LanRuntime>,
@@ -373,7 +385,8 @@ pub(super) fn step_runtime(
     let local_command = if policy.sends_neutral_input() {
         runtime.bot_driver.clear_player(local_player);
         HexPlayerCommand::default()
-    } else if spectator_bot.is_some() {
+    } else if spectator_bot.is_some() || control.desk.is_some() {
+        // A spectator watches a bot, and an Architect has no body: the team's is a bot.
         let runtime = &mut *runtime;
         runtime
             .bot_driver
@@ -497,7 +510,7 @@ pub(super) fn step_runtime(
         }
     }
     let previous_generation = runtime.match_state.facility.generation;
-    if !super::ascent::step(&mut runtime, &frame) {
+    if !super::ascent::step(&mut runtime, &frame, control.desk.as_deref_mut()) {
         runtime.match_state.step(&frame);
     }
     if let Some(replay) = replay.as_deref_mut() {

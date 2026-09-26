@@ -3,6 +3,7 @@
 //! feedback, replay, and screen lifecycle integration. It parallels `full_wfc/` in
 //! structure and fidelity, driven by [`observed_match::hex_wfc::HexWfcMatch`].
 
+mod architect;
 mod ascent;
 mod ascent_capture;
 mod audio;
@@ -93,6 +94,12 @@ impl Plugin for HexWfcPlugin {
                     sim::step_runtime,
                     perf::end_fixed,
                 )
+                    .chain()
+                    .run_if(in_state(GameState::HexWfc)),
+            )
+            .add_systems(
+                Update,
+                (architect::systems(), architect::capture::capture)
                     .chain()
                     .run_if(in_state(GameState::HexWfc)),
             )
@@ -191,6 +198,10 @@ impl Plugin for HexWfcPlugin {
                     .map(|path| (path, HexWfcCaptureMode::Prison))
             })
             .or_else(|_| {
+                std::env::var("OBSERVED2_CAPTURE_HEX_WFC_ARCHITECT")
+                    .map(|path| (path, HexWfcCaptureMode::Architect))
+            })
+            .or_else(|_| {
                 std::env::var("OBSERVED2_CAPTURE_HEX_WFC_VISTA")
                     .map(|path| (path, HexWfcCaptureMode::Vista))
             })
@@ -228,6 +239,7 @@ impl Plugin for HexWfcPlugin {
                 HexWfcCaptureMode::Style
                     | HexWfcCaptureMode::Hud
                     | HexWfcCaptureMode::Prison
+                    | HexWfcCaptureMode::Architect
                     | HexWfcCaptureMode::Relayout
                     | HexWfcCaptureMode::Traversal
                     | HexWfcCaptureMode::Vista
@@ -277,6 +289,8 @@ pub(super) enum HexWfcCaptureMode {
     Hud,
     /// Architect Ascent's prison: a real catch, the maze, and the lobby (`ascent_capture`).
     Prison,
+    /// The Architect's seat: the board, a play, and what it built (`architect::capture`).
+    Architect,
     Map,
     Style,
     /// The arc headline: a mid-match observation-safe relayout captured before, during
@@ -318,16 +332,24 @@ fn autostart_capture(
     mut play_setup: ResMut<crate::play_setup::PlaySetupDraft>,
     mut sequence: ResMut<loading::HexLaunchRequestSequence>,
 ) {
-    if capture.mode == HexWfcCaptureMode::Prison {
+    if matches!(
+        capture.mode,
+        HexWfcCaptureMode::Prison | HexWfcCaptureMode::Architect
+    ) {
         // A teammate, so one catch is not every loyal Observer jailed at once.
         *play_setup = crate::play_setup::PlaySetupDraft {
             rules: crate::play_setup::PlayRules::Ascent,
+            seat: if capture.mode == HexWfcCaptureMode::Architect {
+                crate::play_setup::PlaySeat::Architect
+            } else {
+                crate::play_setup::PlaySeat::Observer
+            },
             ..crate::play_setup::PlaySetupDraft::for_preset(crate::play_setup::PlayPreset::TeamRace)
         };
     }
     if matches!(
         capture.mode,
-        HexWfcCaptureMode::Hud | HexWfcCaptureMode::Prison
+        HexWfcCaptureMode::Hud | HexWfcCaptureMode::Prison | HexWfcCaptureMode::Architect
     ) {
         commands.insert_resource(sequence.issue(
             crate::play_setup::LaunchContext::Local,
@@ -411,6 +433,7 @@ fn capture_progress(
                 &mut exit,
             );
         }
+        HexWfcCaptureMode::Architect => {}
         HexWfcCaptureMode::Prison => {
             ascent_capture::advance(
                 &mut request,

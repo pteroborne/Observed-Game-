@@ -74,13 +74,25 @@ impl PlayRules {
             Self::Ascent => "Architect Ascent",
         }
     }
+}
 
-    #[must_use]
-    pub const fn next(self) -> Self {
-        match self {
-            Self::Race => Self::Ascent,
-            Self::Ascent => Self::Race,
-        }
+/// Which seat the local player takes in Architect Ascent: a body, or the team's
+/// Architect, who has no body and plays the facility's cards from a map.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaySeat {
+    #[default]
+    Observer,
+    Architect,
+}
+
+/// The Rules row cycles these: the race, then Ascent from each seat.
+#[must_use]
+pub const fn next_rules(rules: PlayRules, seat: PlaySeat) -> (PlayRules, PlaySeat) {
+    match (rules, seat) {
+        (PlayRules::Race, _) => (PlayRules::Ascent, PlaySeat::Observer),
+        (PlayRules::Ascent, PlaySeat::Observer) => (PlayRules::Ascent, PlaySeat::Architect),
+        (PlayRules::Ascent, PlaySeat::Architect) => (PlayRules::Race, PlaySeat::Observer),
     }
 }
 
@@ -94,6 +106,7 @@ pub struct PlaySetupDraft {
     pub fill_empty_seats: bool,
     pub guardian: bool,
     pub rules: PlayRules,
+    pub seat: PlaySeat,
 }
 
 impl Default for PlaySetupDraft {
@@ -113,6 +126,7 @@ impl PlaySetupDraft {
                 fill_empty_seats: false,
                 guardian: true,
                 rules: PlayRules::Race,
+                seat: PlaySeat::Observer,
             },
             PlayPreset::CoOp => Self {
                 preset,
@@ -121,6 +135,7 @@ impl PlaySetupDraft {
                 fill_empty_seats: true,
                 guardian: true,
                 rules: PlayRules::Race,
+                seat: PlaySeat::Observer,
             },
             PlayPreset::TeamRace => Self {
                 preset,
@@ -129,6 +144,7 @@ impl PlaySetupDraft {
                 fill_empty_seats: true,
                 guardian: true,
                 rules: PlayRules::Race,
+                seat: PlaySeat::Observer,
             },
             PlayPreset::Spectate => Self {
                 preset,
@@ -137,6 +153,7 @@ impl PlaySetupDraft {
                 fill_empty_seats: true,
                 guardian: true,
                 rules: PlayRules::Race,
+                seat: PlaySeat::Observer,
             },
             PlayPreset::Custom => Self {
                 preset,
@@ -145,6 +162,7 @@ impl PlaySetupDraft {
                 fill_empty_seats: true,
                 guardian: true,
                 rules: PlayRules::Race,
+                seat: PlaySeat::Observer,
             },
         }
     }
@@ -155,6 +173,7 @@ impl PlaySetupDraft {
         } else {
             *self = Self {
                 rules: self.rules,
+                seat: self.seat,
                 ..Self::for_preset(preset)
             };
         }
@@ -169,6 +188,7 @@ impl PlaySetupDraft {
         } else {
             Self {
                 rules: self.rules,
+                seat: self.seat,
                 ..Self::for_preset(self.preset)
             }
         }
@@ -478,6 +498,7 @@ mod tests {
             fill_empty_seats: true,
             guardian: false,
             rules: PlayRules::Race,
+            seat: PlaySeat::Observer,
         };
         assert_eq!(valid.validate().expect("4x4 is valid").seats(), 16);
 
@@ -500,6 +521,7 @@ mod tests {
             fill_empty_seats: false,
             guardian: false,
             rules: PlayRules::Race,
+            seat: PlaySeat::Observer,
         }
         .validate()
         .expect("draft validates");
@@ -527,6 +549,7 @@ mod tests {
             fill_empty_seats: true,
             guardian: true,
             rules: PlayRules::Race,
+            seat: PlaySeat::Observer,
         }
         .normalized_after_load();
         assert_eq!(draft.teams, MAX_ROSTER);

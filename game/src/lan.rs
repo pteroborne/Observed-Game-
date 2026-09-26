@@ -178,6 +178,7 @@ mod tests {
             fill_empty_seats: true,
             guardian: false,
             rules: crate::play_setup::PlayRules::Race,
+            seat: crate::play_setup::PlaySeat::Observer,
         }
         .validate()
         .expect("4x4 is a valid LAN roster");
@@ -196,6 +197,7 @@ mod tests {
             fill_empty_seats: false,
             guardian: true,
             rules: crate::play_setup::PlayRules::Race,
+            seat: crate::play_setup::PlaySeat::Observer,
         }
         .validate()
         .expect("2x3 is a valid LAN roster");

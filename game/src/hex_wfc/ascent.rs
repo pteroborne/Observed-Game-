@@ -10,10 +10,11 @@ use std::collections::BTreeMap;
 use bevy::prelude::*;
 use observed_core::{PlayerId, TeamId};
 use observed_match::ascent::facility::AscentRules;
-use observed_match::ascent::session::{ASCENT_INPUT_VERSION, InputFrame, Role, Seat};
+use observed_match::ascent::session::{ASCENT_INPUT_VERSION, InputFrame, Role, Seat, SeatCommand};
 use observed_match::ascent::sim::{MatchOutcome, TeamId as AscentTeam};
 use observed_match::hex_wfc::{HexBodyPlace, HexInputFrame, HexPlayerState, HexWfcMatch};
 
+use super::architect::ArchitectDesk;
 use super::sim::HexWfcRuntime;
 use crate::flow::MatchResult;
 
@@ -26,18 +27,28 @@ const ARCHITECT_SEATS: u16 = 200;
 const PRISON_DEPTH: f32 = 1_000.0;
 const PRISON_SPACING: f32 = 2_000.0;
 
-/// The rules for a fresh local match, with a bot Architect for every team. `None` when
-/// the facility cannot host them, which a solved facility always can.
-pub(super) fn rules_for(match_state: &mut HexWfcMatch) -> Option<AscentRules> {
+/// The seat team `team`'s Architect sits in.
+#[must_use]
+pub(super) fn architect_seat(team: TeamId) -> PlayerId {
+    PlayerId(ARCHITECT_SEATS + u16::from(team.0))
+}
+
+/// The rules for a fresh local match, with an Architect for every team: the local
+/// player in `human`'s seat, and a bot in every other. `None` when the facility cannot
+/// host them, which a solved facility always can.
+pub(super) fn rules_for(
+    match_state: &mut HexWfcMatch,
+    human: Option<TeamId>,
+) -> Option<AscentRules> {
     let seats = match_state
         .teams
         .keys()
-        .map(|team| {
+        .map(|&team| {
             (
-                PlayerId(ARCHITECT_SEATS + u16::from(team.0)),
+                architect_seat(team),
                 Seat {
                     role: Role::Architect(AscentTeam(team.0)),
-                    bot: true,
+                    bot: Some(team) != human,
                 },
             )
         })
@@ -48,20 +59,37 @@ pub(super) fn rules_for(match_state: &mut HexWfcMatch) -> Option<AscentRules> {
         .ok()
 }
 
-/// Step the match through its rules, if it has them. Returns whether it did.
-pub(super) fn step(runtime: &mut HexWfcRuntime, bodies: &HexInputFrame) -> bool {
+/// Step the match through its rules, if it has them, with the local Architect's play
+/// when there is one. Returns whether it did.
+pub(super) fn step(
+    runtime: &mut HexWfcRuntime,
+    bodies: &HexInputFrame,
+    desk: Option<&mut ArchitectDesk>,
+) -> bool {
     let runtime = &mut *runtime;
     let Some(rules) = runtime.ascent.as_mut() else {
         return false;
     };
+    let mut commands = BTreeMap::new();
+    let mut desk = desk;
+    if let Some(desk) = desk.as_deref_mut()
+        && let Some(play) = desk.pending.take()
+    {
+        commands.insert(desk.seat, SeatCommand::Architect(play));
+    }
     let seats = InputFrame {
         version: ASCENT_INPUT_VERSION,
         tick: rules.rules().tick + 1,
-        commands: BTreeMap::new(),
+        commands,
     };
     // A refused frame is one the rules would refuse whole: the match has already been
     // decided, and the physical match has stopped with it.
-    let _ = rules.step(&mut runtime.match_state, bodies, &seats);
+    if let Ok(refusals) = rules.step(&mut runtime.match_state, bodies, &seats)
+        && let Some(desk) = desk
+        && !seats.commands.is_empty()
+    {
+        desk.last_refusal = refusals.get(&desk.seat).copied();
+    }
     true
 }
 

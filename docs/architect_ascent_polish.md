@@ -191,6 +191,37 @@ about 3 ms, and a Guardian's catch 35-40 ms, which is the new maze's geometry (1
 colliders (17 ms) built on the tick of the catch. Spreading that build over several ticks,
 as a relayout is spread, is the fix when it matters.
 
+### The Architect's seat
+
+Play's Rules row now cycles *Facility race*, *Architect Ascent, as an Observer* and
+*Architect Ascent, as the Architect*. As the Architect the local player has no body: the
+team's bodies are bots, and the player sits at the desk (`game/src/hex_wfc/architect/`).
+
+- **The board** is one floor of what the team knows, from above, drawn by its own camera
+  over the world. It frames what is known rather than the whole lattice, and glides as the
+  team maps more. A known cell is a slab in its district's colour, lit where the team is
+  looking now and dim where it is only remembered; every doorway is a white link. On it:
+  the team's Observers, the Guardians they can see, contradictions, the prison lobby, the
+  summit once found, and deployed doors - a bar across the doorway when closed, two posts
+  when open, so the state reads by shape first.
+- **The hand** is five cards along the bottom. Each card's glyph is a hub with a spoke for
+  each doorway the tile would have, turned to the rotation it would be played at.
+- **Playing:** pick a card (1-5, or click it), turn it (Q / E), point at a cell. Every cell
+  the rules would take the card on wears a ring, and the cell under the cursor wears the
+  tile's ghost, green or red. The side panel says why a cell is refused, in the rules' own
+  words. A click sends the play only if the rules' inspection would take it; the step hands
+  it to the rules as the seat's command, and a refusal comes back to the desk. `[` / `]`
+  change floor, R is the emergency requisition, right click puts the card down.
+- Legality is never decided at the desk: every ring and verdict is
+  `AscentSession::architect_refusal` for the player's own seat, the question the play asks.
+
+Evidence (`OBSERVED2_CAPTURE_HEX_WFC_ARCHITECT=<dir> cargo dev-run -p observed_game`, a
+production facility after twenty seconds of the team's bots walking):
+
+- [The board](evidence/ascent-architect/architect-board-1280x800.png)
+- [A card picked up and pointed](evidence/ascent-architect/architect-play-1280x800.png)
+- [The play built, a door across its doorway, the hand recharging](evidence/ascent-architect/architect-built-1280x800.png)
+
 ### Not yet joined
 
 - The rules' own Guardians (the lab's cell-level hunters) are not placed; the physical
@@ -201,8 +232,8 @@ as a relayout is spread, is the fix when it matters.
   thing.
 - A match snapshot does not yet carry where each body is or the prison's mazes, so a
   replay or LAN peer of an Ascent match would not see them. That is part of the LAN slice.
-- A human cannot take an Architect's seat yet: every Architect is the bot. The
-  Architect's own screen (map, hand, placement) is the next part of this slice.
+- The Architect's desk has no controller navigation yet, no team requests, and cannot
+  look through an Observer's eyes.
 - A replay tape of an Ascent match samples jailed bodies at their maze coordinates.
 
 ## Remaining integration

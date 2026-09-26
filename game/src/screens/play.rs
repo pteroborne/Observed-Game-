@@ -10,7 +10,9 @@ use crate::hex_wfc::{
     launch::{HexLaunchSpec, HexSeedPolicy},
     loading::HexLaunchRequestSequence,
 };
-use crate::play_setup::{LaunchContext, PlayPreset, PlayRules, PlaySetupDraft, save_play_setup};
+use crate::play_setup::{
+    LaunchContext, PlayPreset, PlayRules, PlaySeat, PlaySetupDraft, save_play_setup,
+};
 use crate::view::theme::{ACCENT, DIM, TITLE, panel, screen_root, summary_panel, text};
 
 const HUB_SCOPE: FocusScopeId = FocusScopeId("play_hub");
@@ -183,7 +185,7 @@ pub(crate) fn activate_hub(
             save_play_setup(&setup);
         }
         PlayAction::CycleRules => {
-            setup.rules = setup.rules.next();
+            (setup.rules, setup.seat) = crate::play_setup::next_rules(setup.rules, setup.seat);
             save_play_setup(&setup);
         }
         PlayAction::Advanced => next.set(GameState::PlayAdvanced),
@@ -332,7 +334,15 @@ fn launch_label(setup: &PlaySetupDraft) -> String {
 }
 
 fn rules_label(setup: &PlaySetupDraft) -> String {
-    format!("Rules: {}", setup.rules.label())
+    match (setup.rules, setup.seat) {
+        (PlayRules::Race, _) => format!("Rules: {}", setup.rules.label()),
+        (PlayRules::Ascent, PlaySeat::Observer) => {
+            format!("Rules: {}, as an Observer", setup.rules.label())
+        }
+        (PlayRules::Ascent, PlaySeat::Architect) => {
+            format!("Rules: {}, as the Architect", setup.rules.label())
+        }
+    }
 }
 
 fn advanced_label(action: AdvancedAction, setup: &PlaySetupDraft) -> String {
@@ -364,11 +374,16 @@ fn play_summary(setup: &PlaySetupDraft) -> String {
     if !setup.fill_empty_seats && setup.teams.saturating_mul(setup.members_per_team) > 1 {
         summary.push_str("\nLocal: one controllable seat | LAN: remaining seats require humans");
     }
-    if setup.rules == PlayRules::Ascent {
-        summary.push_str(
+    match (setup.rules, setup.seat) {
+        (PlayRules::Ascent, PlaySeat::Observer) => summary.push_str(
             "\nEach team's Architect is a bot that builds and repairs with cards. A catch is \
              prison; LAN still plays the race.",
-        );
+        ),
+        (PlayRules::Ascent, PlaySeat::Architect) => summary.push_str(
+            "\nYou are your team's Architect: no body, a map, and a hand of cards. Your \
+             Observers are bots. LAN still plays the race.",
+        ),
+        (PlayRules::Race, _) => {}
     }
     summary
 }
@@ -389,6 +404,7 @@ mod tests {
                         fill_empty_seats: true,
                         guardian: true,
                         rules: crate::play_setup::PlayRules::Race,
+                        seat: crate::play_setup::PlaySeat::Observer,
                     };
                     assert!(draft.validate().is_ok());
                 }

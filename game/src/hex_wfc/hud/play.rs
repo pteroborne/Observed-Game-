@@ -330,6 +330,7 @@ pub(in crate::hex_wfc) struct HudContext<'w, 's> {
     overlay: Res<'w, MatchOverlayState>,
     onboarding: Res<'w, HexOnboardingGate>,
     spectator: Option<Res<'w, crate::sim::state::SpectatorBot>>,
+    architect: Option<Res<'w, crate::hex_wfc::architect::ArchitectDesk>>,
     notice: ResMut<'w, HudNotice>,
     fields: Fields<'w, 's>,
     panels: Panels<'w, 's>,
@@ -348,6 +349,7 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
         overlay,
         onboarding,
         spectator,
+        architect,
         mut notice,
         mut fields,
         mut panels,
@@ -359,7 +361,10 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
     let game = &runtime.match_state;
     let player = runtime.local();
     let team = &game.teams[&player.team];
-    let hidden = *overlay != MatchOverlayState::Playing || onboarding.active || spectator.is_some();
+    let hidden = *overlay != MatchOverlayState::Playing
+        || onboarding.active
+        || spectator.is_some()
+        || architect.is_some();
     let now = time.elapsed_secs_f64();
     if notice.tick != game.tick {
         notice.tick = game.tick;
