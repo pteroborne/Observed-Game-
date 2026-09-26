@@ -270,7 +270,6 @@ pub(super) fn setup_runtime(
     let mut match_state = prepared.match_state;
     // A LAN match plays the rules its launch names.
     let lan = networked.then(|| lan.client.as_ref().and_then(|client| client.launch));
-    let lan = lan.map(|launch| launch.is_some_and(|launch| launch.ascent));
     let ascent = super::ascent::seat(
         &mut commands,
         &mut match_state,
@@ -402,7 +401,14 @@ pub(super) fn step_runtime(
         }
     };
     if runtime.networked {
-        let leave = super::net::step(&mut runtime, &mut lan, replay.as_deref_mut(), local_command);
+        let seats = (control.desk.as_deref_mut(), control.ask.as_deref_mut());
+        let leave = super::net::step(
+            &mut runtime,
+            &mut lan,
+            replay.as_deref_mut(),
+            local_command,
+            seats,
+        );
         finish_input_tick(&mut intent, policy);
         if leave {
             lan.leave();

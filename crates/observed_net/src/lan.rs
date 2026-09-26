@@ -16,8 +16,10 @@ use crate::protocol::WireIntent;
 /// Version 3 adds the generation-scoped preparation barrier and an explicit empty
 /// seat. Older peers must reject it rather than simulate as soon as `Launch` lands.
 /// Version 4 says in `Launch` whether the match plays the Architect Ascent rules, which
-/// every peer must then step beside the match to stay in step with the server.
-pub const LAN_PROTOCOL_VERSION: u16 = 4;
+/// every peer must then step beside the match to stay in step with the server. Version 5
+/// carries a seat command with every body command (`WireSeatCommand`), lets a player claim
+/// their team's Architect desk in the lobby, and names the human Architects in `Launch`.
+pub const LAN_PROTOCOL_VERSION: u16 = 5;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;
@@ -29,6 +31,9 @@ pub const FRAME_WINDOW: usize = 16;
 /// re-checking that budget, not just this constant.
 pub const MAX_SEATS: usize = 16;
 const MAGIC: [u8; 4] = *b"O2LN";
+
+mod seat;
+pub use seat::WireSeatCommand;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WirePhase {
@@ -63,6 +68,8 @@ impl WirePhase {
 pub struct WireHexCommand {
     pub intent: WireIntent,
     pub actions: u8,
+    /// The seat's say in the Ascent rules this tick, if any.
+    pub seat: WireSeatCommand,
 }
 
 impl WireHexCommand {
@@ -94,7 +101,15 @@ impl WireHexCommand {
         Self {
             intent: WireIntent::from_player_intent(command.intent.sanitized()),
             actions,
+            seat: WireSeatCommand::None,
         }
+    }
+
+    /// This command with `seat` riding along.
+    #[must_use]
+    pub const fn with_seat(mut self, seat: WireSeatCommand) -> Self {
+        self.seat = seat;
+        self
     }
 
     #[must_use]
@@ -149,6 +164,8 @@ pub struct WireSeat {
     pub team: TeamId,
     pub occupant: WireSeatOccupant,
     pub ready: bool,
+    /// The seat's human has claimed the team's Architect desk.
+    pub architect: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -176,7 +193,17 @@ impl WireFrame {
         }
     }
 
-    /// Bytes this frame occupies inside a [`LanPacket::FrameBundle`].
+    /// Each seat's command to the Ascent rules this tick, by the player whose seat it is.
+    #[must_use]
+    pub fn seat_commands(&self) -> Vec<(PlayerId, observed_match::ascent::session::SeatCommand)> {
+        self.commands
+            .iter()
+            .enumerate()
+            .filter_map(|(index, command)| Some((PlayerId(index as u16), command.seat.to_seat()?)))
+            .collect()
+    }
+
+    /// Bytes this frame occupies inside a [`LanPacket::FrameBundle`], at most.
     #[must_use]
     pub fn wire_len(&self) -> usize {
         // tick + seat count + commands + digest.
@@ -184,8 +211,10 @@ impl WireFrame {
     }
 }
 
-/// Encoded size of one [`WireHexCommand`]: a [`WireIntent`] plus its action bits.
-const WIRE_COMMAND_BYTES: usize = 5 + 1;
+/// Encoded size of one [`WireHexCommand`] at most: a [`WireIntent`], its action bits, and
+/// the largest seat command. Budgeting by the largest keeps a bundle inside a datagram
+/// whatever the seats say that tick.
+const WIRE_COMMAND_BYTES: usize = 5 + 1 + WireSeatCommand::MAX_BYTES;
 
 /// How many frames of `seats` commands fit in one datagram alongside the header.
 ///
@@ -207,6 +236,8 @@ pub fn frames_per_bundle(seats: usize) -> usize {
 pub enum LobbyAction {
     Ready(bool),
     RequestTeam(TeamId),
+    /// Claim, or give up, the team's Architect desk.
+    ClaimArchitect(bool),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -254,6 +285,8 @@ pub enum LanPacket {
         config: HexMatchConfig,
         simulation_content_hash: [u8; 32],
         ascent: bool,
+        /// The seats whose humans sit at their team's Architect desk, one bit a seat.
+        architects: u16,
     },
     InputBundle {
         token: u64,
@@ -404,6 +437,10 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
                     out.push(1);
                     out.push(team.0);
                 }
+                LobbyAction::ClaimArchitect(claim) => {
+                    out.push(2);
+                    out.push(u8::from(*claim));
+                }
             }
             5
         }
@@ -426,6 +463,7 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
                 out.push(seat.team.0);
                 out.push(seat.occupant.encode());
                 out.push(u8::from(seat.ready));
+                out.push(u8::from(seat.architect));
             }
             6
         }
@@ -435,12 +473,14 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             config,
             simulation_content_hash,
             ascent,
+            architects,
         } => {
             put_u64(&mut out, *seed);
             put_u32(&mut out, *match_number);
             encode_config(&mut out, *config);
             out.extend_from_slice(simulation_content_hash);
             out.push(u8::from(*ascent));
+            put_u16(&mut out, *architects);
             7
         }
         LanPacket::InputBundle { token, commands } => {
@@ -539,6 +579,7 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
             let action = match cursor.u8()? {
                 0 => LobbyAction::Ready(cursor.bool()?),
                 1 => LobbyAction::RequestTeam(TeamId(cursor.u8()?)),
+                2 => LobbyAction::ClaimArchitect(cursor.bool()?),
                 _ => return Err(LanCodecError::InvalidValue),
             };
             LanPacket::LobbyCommand { token, action }
@@ -557,6 +598,7 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
                     team: TeamId(cursor.u8()?),
                     occupant: WireSeatOccupant::decode(cursor.u8()?)?,
                     ready: cursor.bool()?,
+                    architect: cursor.bool()?,
                 });
             }
             LanPacket::LobbySnapshot {
@@ -574,6 +616,7 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
             config: decode_config(&mut cursor)?,
             simulation_content_hash: cursor.array32()?,
             ascent: cursor.u8()? != 0,
+            architects: cursor.u16()?,
         },
         8 => {
             let token = cursor.u64()?;
@@ -647,6 +690,7 @@ fn encode_command(out: &mut Vec<u8>, command: WireHexCommand) {
     out.push(command.intent.look_y as u8);
     out.push(command.intent.flags);
     out.push(command.actions);
+    command.seat.encode(out);
 }
 
 fn decode_command(cursor: &mut Cursor<'_>) -> Result<WireHexCommand, LanCodecError> {
@@ -659,6 +703,7 @@ fn decode_command(cursor: &mut Cursor<'_>) -> Result<WireHexCommand, LanCodecErr
             flags: cursor.u8()?,
         },
         actions: cursor.u8()?,
+        seat: WireSeatCommand::decode(cursor)?,
     };
     if command.actions & !WireHexCommand::KNOWN_ACTIONS != 0 {
         return Err(LanCodecError::InvalidValue);
@@ -863,8 +908,19 @@ pub struct LanLaunch {
     pub match_number: u32,
     pub config: HexMatchConfig,
     pub simulation_content_hash: [u8; 32],
-    /// The match plays the Architect Ascent rules, with a bot Architect for every team.
+    /// The match plays the Architect Ascent rules, with a bot Architect for every team
+    /// but those of `architects`.
     pub ascent: bool,
+    /// The seats whose humans sit at their team's Architect desk, one bit a seat.
+    pub architects: u16,
+}
+
+impl LanLaunch {
+    /// Whether `player`'s human sits at their team's Architect desk.
+    #[must_use]
+    pub fn is_architect(&self, player: PlayerId) -> bool {
+        player.0 < 16 && self.architects & (1 << player.0) != 0
+    }
 }
 
 /// Latest authoritative lobby projection. The generation travels with the phase
@@ -1036,6 +1092,7 @@ impl LanClient {
                 config,
                 simulation_content_hash,
                 ascent,
+                architects,
             } => {
                 self.receive_launch(LanLaunch {
                     seed,
@@ -1043,6 +1100,7 @@ impl LanClient {
                     config,
                     simulation_content_hash,
                     ascent,
+                    architects,
                 });
             }
             LanPacket::LaunchStart { match_number } => {
@@ -1192,6 +1250,11 @@ impl LanClient {
     pub fn set_ready(&self, ready: bool) -> io::Result<()> {
         self.command(LobbyAction::Ready(ready))
     }
+    /// Claim, or give up, the team's Architect desk.
+    pub fn claim_architect(&self, claim: bool) -> io::Result<()> {
+        self.command(LobbyAction::ClaimArchitect(claim))
+    }
+
     pub fn request_team(&self, team: TeamId) -> io::Result<()> {
         self.command(LobbyAction::RequestTeam(team))
     }
@@ -1202,9 +1265,15 @@ impl LanClient {
         self.send(&LanPacket::LobbyCommand { token, action })
     }
 
-    pub fn queue_input(&mut self, tick: u64, command: HexPlayerCommand) -> io::Result<()> {
+    /// Send `command` for `tick`, with the seat's say in the Ascent rules riding along.
+    pub fn queue_input(
+        &mut self,
+        tick: u64,
+        command: HexPlayerCommand,
+        seat: WireSeatCommand,
+    ) -> io::Result<()> {
         self.input_outbox
-            .push_back((tick, WireHexCommand::from_command(command)));
+            .push_back((tick, WireHexCommand::from_command(command).with_seat(seat)));
         while self.input_outbox.len() > 8 {
             self.input_outbox.pop_front();
         }
@@ -1336,12 +1405,14 @@ mod tests {
                         team: TeamId(0),
                         occupant: WireSeatOccupant::Human,
                         ready: true,
+                        architect: true,
                     },
                     WireSeat {
                         player: PlayerId(1),
                         team: TeamId(0),
                         occupant: WireSeatOccupant::Empty,
                         ready: false,
+                        architect: false,
                     },
                 ],
             },
@@ -1351,6 +1422,7 @@ mod tests {
                 config: HexMatchConfig::default(),
                 simulation_content_hash: [4; 32],
                 ascent: true,
+                architects: 0b1010_0000_0000_0101,
             },
             LanPacket::InputBundle {
                 token: 9,
@@ -1483,6 +1555,16 @@ mod tests {
                         flags: 0b0001_1111,
                     },
                     actions: 0b0000_0111,
+                    // The largest seat command, on every seat: the budget is for the worst.
+                    seat: WireSeatCommand::Play {
+                        card: u32::MAX,
+                        target: observed_facility::hex_wfc::HexCoord {
+                            q: u16::MAX,
+                            r: u16::MAX,
+                            level: u8::MAX,
+                        },
+                        rotation: 5,
+                    },
                 };
                 seats
             ],
@@ -1566,6 +1648,7 @@ mod tests {
             config: HexMatchConfig::default(),
             simulation_content_hash: [4; 32],
             ascent: false,
+            architects: 0,
         }
     }
 
@@ -1576,6 +1659,7 @@ mod tests {
             config: launch.config,
             simulation_content_hash: launch.simulation_content_hash,
             ascent: launch.ascent,
+            architects: launch.architects,
         }
     }
 

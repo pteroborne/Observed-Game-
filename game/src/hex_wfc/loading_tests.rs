@@ -207,6 +207,7 @@ fn lan_descriptor_matching_rejects_stale_or_conflicting_generations() {
         config: request.spec.config,
         simulation_content_hash: [4; 32],
         ascent: false,
+        architects: 0,
     };
 
     assert!(launch_matches_request(Some(accepted), Some(&request), 8));
@@ -409,6 +410,7 @@ fn lan_barrier_surfaces_error_only_after_silence_window_exceeded() {
         config: request.spec.config,
         simulation_content_hash: [4; 32],
         ascent: false,
+        architects: 0,
     });
 
     let mut lan = crate::lan::LanRuntime::new();

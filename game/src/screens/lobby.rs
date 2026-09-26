@@ -23,6 +23,9 @@ use crate::view::theme::{ACCENT, BORDER, DIM, PANEL, TITLE, screen_root, text};
 
 const SCOPE: FocusScopeId = FocusScopeId("lan_lobby");
 const READY: WidgetId = WidgetId::named("lobby.ready");
+const ARCHITECT: WidgetId = WidgetId::named("lobby.architect");
+/// After the team choices in focus order.
+const ARCHITECT_ORDER: u16 = 50_000;
 const LEAVE: WidgetId = WidgetId::named("lobby.leave");
 const LEAVE_ORDER: u16 = 60_000;
 const LOBBY_BODY_WIDTH: f32 = 920.0;
@@ -34,12 +37,17 @@ const TEAM_BUTTON_HEIGHT: f32 = 36.0;
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum LobbyAction {
     ToggleReady,
+    /// Claim or give up the team's Architect desk (Architect Ascent).
+    ToggleArchitect,
     RequestTeam(TeamId),
     Leave,
 }
 
 #[derive(Component)]
 pub(crate) struct ReadyWidget;
+
+#[derive(Component)]
+pub(crate) struct ArchitectWidget;
 
 #[derive(Component, Default)]
 pub(crate) struct TeamActionsPanel {
@@ -76,7 +84,7 @@ pub(crate) fn setup_lobby(mut commands: Commands) {
                         text("Waiting for server roster...", 15.0, DIM),
                     ));
                     roster.spawn(text(
-                        "Seat legend: HUMAN | BOT | RESERVED | PREPARING | EMPTY",
+                        "Seat legend: HUMAN | BOT | RESERVED | PREPARING | EMPTY | ARCHITECT at the desk",
                         12.0,
                         ACCENT,
                     ));
@@ -96,6 +104,17 @@ pub(crate) fn setup_lobby(mut commands: Commands) {
                         WidgetSpec::disabled(READY, SCOPE, 0, "Ready | waiting for roster")
                             .with_size(320.0, 42.0),
                         (LobbyAction::ToggleReady, ReadyWidget),
+                    );
+                    widgets::spawn_button(
+                        actions,
+                        WidgetSpec::disabled(
+                            ARCHITECT,
+                            SCOPE,
+                            ARCHITECT_ORDER,
+                            "Architect | waiting for roster",
+                        )
+                        .with_size(320.0, 42.0),
+                        (LobbyAction::ToggleArchitect, ArchitectWidget),
                     );
                     actions.spawn((
                         Node {
@@ -161,6 +180,7 @@ pub(crate) fn activate(
     };
     let result = match *action {
         LobbyAction::ToggleReady => lan.toggle_ready(),
+        LobbyAction::ToggleArchitect => lan.toggle_architect(),
         LobbyAction::RequestTeam(team) => lan.request_team(team),
         LobbyAction::Leave => {
             commands.remove_resource::<crate::hex_wfc::loading::HexLaunchRequest>();
@@ -180,7 +200,10 @@ pub(crate) fn activate(
 pub(crate) fn lobby_update_labels(
     mut commands: Commands,
     lan: Res<crate::lan::LanRuntime>,
-    ready_widgets: Query<Entity, With<ReadyWidget>>,
+    (ready_widgets, architect_widgets): (
+        Query<Entity, With<ReadyWidget>>,
+        Query<Entity, With<ArchitectWidget>>,
+    ),
     mut team_panels: Query<(Entity, &mut TeamActionsPanel)>,
     action_widgets: Query<(Entity, &LobbyAction)>,
 ) {
@@ -195,6 +218,17 @@ pub(crate) fn lobby_update_labels(
             "Ready | waiting for roster".to_string()
         };
         set_widget_availability(&mut commands, entity, 0, connected, label);
+    }
+    if let Ok(entity) = architect_widgets.single() {
+        let label = if connected {
+            format!(
+                "Architect: {} (Ascent)",
+                if lan.architect { "ON" } else { "OFF" }
+            )
+        } else {
+            "Architect | waiting for roster".to_string()
+        };
+        set_widget_availability(&mut commands, entity, ARCHITECT_ORDER, connected, label);
     }
 
     let teams = lobby_teams(&lan);
@@ -280,7 +314,11 @@ fn format_roster(
                 ""
             };
             let ready = if seat.ready { " | READY" } else { "" };
-            entries.push(format!("{}{you}: {occupant}{ready}", seat.player.label()));
+            let desk = if seat.architect { " | ARCHITECT" } else { "" };
+            entries.push(format!(
+                "{}{you}: {occupant}{ready}{desk}",
+                seat.player.label()
+            ));
         }
         lines.push(format!(
             "{} | {} seats | {}",
@@ -342,6 +380,7 @@ mod tests {
                     WireSeatOccupant::Bot
                 },
                 ready: index % 4 == 0,
+                architect: false,
             })
             .collect()
     }
@@ -367,12 +406,14 @@ mod tests {
                 team: TeamId(3),
                 occupant: WireSeatOccupant::Bot,
                 ready: false,
+                architect: false,
             },
             WireSeat {
                 player: PlayerId(1),
                 team: TeamId(1),
                 occupant: WireSeatOccupant::Human,
                 ready: true,
+                architect: false,
             },
         ];
         let text = format_roster(WirePhase::Countdown, 120, &seats, None);
@@ -387,6 +428,7 @@ mod tests {
             team: TeamId(0),
             occupant: WireSeatOccupant::Empty,
             ready: false,
+            architect: false,
         }];
         let text = format_roster(WirePhase::Lobby, 0, &seats, None);
         assert!(text.contains(": EMPTY"));

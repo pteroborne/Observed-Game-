@@ -20,7 +20,7 @@ use observed_match::hex_wfc::{
 };
 use observed_net::lan::{
     LanPacket, LobbyAction, MAX_DATAGRAM, WireFrame, WireHexCommand, WirePhase, WireSeat,
-    WireSeatOccupant, frames_per_bundle,
+    WireSeatCommand, WireSeatOccupant, frames_per_bundle,
 };
 use observed_progression::session::lan::{
     LAN_DEFAULT_ROSTER, LAN_MAX_SEATS, LAN_RECONNECT_GRACE_TICKS, LanRoster,
@@ -180,6 +180,9 @@ pub struct AuthoritativeServer {
     match_state: Option<HexWfcMatch>,
     /// The Architect Ascent rules riding beside the match, when it plays them.
     ascent: Option<AscentRules>,
+    /// The seats whose humans sit at their team's Architect desk this match, one bit a
+    /// seat: their bodies walk by the bot, and their seat commands are the Architect's.
+    launch_architects: u16,
     bot_driver: HexBotDriver,
     launch_config: Option<HexMatchConfig>,
     launch_started: Option<u32>,
@@ -234,6 +237,7 @@ impl AuthoritativeServer {
             inputs: BTreeMap::new(),
             match_state: None,
             ascent: None,
+            launch_architects: 0,
             bot_driver: HexBotDriver::new(),
             launch_config: None,
             launch_started: None,
@@ -354,6 +358,9 @@ impl AuthoritativeServer {
                     match action {
                         LobbyAction::Ready(ready) => {
                             self.session.set_ready(account, ready);
+                        }
+                        LobbyAction::ClaimArchitect(claim) => {
+                            self.session.claim_architect(account, claim);
                         }
                         LobbyAction::RequestTeam(team) => {
                             if let Some(player) = self.session.request_team(account, team) {
@@ -528,10 +535,27 @@ impl AuthoritativeServer {
             })
             .ok_or("no solvable nearby server seed")?;
         self.config.base_seed = selected_seed.wrapping_sub(u64::from(self.session.match_number));
-        // Every peer builds the same rules from the same launch: a bot Architect a team.
+        // Every peer builds the same rules from the same launch: an Architect a team, a
+        // human's where a connected human claimed the desk, a bot's everywhere else.
         let mut game = game;
+        self.launch_architects = if self.config.ascent {
+            self.session
+                .seats
+                .iter()
+                .filter(|seat| seat.architect && seat.connected_human().is_some())
+                .filter(|seat| seat.player.0 < 16)
+                .fold(0, |mask, seat| mask | (1 << seat.player.0))
+        } else {
+            0
+        };
+        let architects = self.launch_architects;
+        let at_desk = |team: TeamId| {
+            self.session.seats.iter().any(|seat| {
+                seat.team == team && seat.player.0 < 16 && architects & (1 << seat.player.0) != 0
+            })
+        };
         self.ascent = if self.config.ascent {
-            let seats = observed_match::ascent::facility::architect_seats(&game, None);
+            let seats = observed_match::ascent::facility::architect_seats_where(&game, at_desk);
             Some(
                 AscentRules::new(&mut game, selected_seed, seats)
                     .map_err(|refusal| format!("Architect Ascent could not start: {refusal:?}"))?,
@@ -560,6 +584,7 @@ impl AuthoritativeServer {
             config,
             simulation_content_hash: self.content.simulation_content_hash(),
             ascent: self.ascent.is_some(),
+            architects: self.launch_architects,
         });
         Ok(())
     }
@@ -609,35 +634,46 @@ impl AuthoritativeServer {
         let tick = game.tick + 1;
         let mut wire = vec![WireHexCommand::default(); self.session.seats.len()];
         let mut commands = BTreeMap::new();
+        let mut seat_commands = BTreeMap::new();
+        let architects = self.launch_architects;
         for seat in &self.session.seats {
-            let command = if human_controls[seat.player.index()] {
+            let at_desk = seat.player.0 < 16 && architects & (1 << seat.player.0) != 0;
+            let input = human_controls[seat.player.index()]
+                .then(|| self.inputs.remove(&(seat.player, tick)))
+                .flatten();
+            // A human at the Architect's desk has no hand on the body: the bot walks it,
+            // and what they send is the desk's.
+            let body = if human_controls[seat.player.index()] && !at_desk {
                 self.bot_driver.clear_player(seat.player);
-                self.inputs
-                    .remove(&(seat.player, tick))
-                    .map_or_else(HexPlayerCommand::default, WireHexCommand::to_command)
+                input.map_or_else(HexPlayerCommand::default, WireHexCommand::to_command)
             } else {
                 self.bot_driver.command(game, seat.player)
             };
+            let said = input.map_or(WireSeatCommand::None, |input| input.seat);
             // The canonical command is the one on the wire. Encoding rounds a command
             // (its look, for one), and every client steps the decoded frame, so the
             // server must step exactly that or every client parts from it at once.
-            let wired = WireHexCommand::from_command(command);
+            let wired = WireHexCommand::from_command(body).with_seat(said);
             wire[seat.player.index()] = wired;
             commands.insert(seat.player, wired.to_command());
+            if let Some(command) = said.to_seat() {
+                let rules_seat =
+                    observed_match::ascent::facility::seat_for(game, seat.player, at_desk);
+                seat_commands.insert(rules_seat, command);
+            }
         }
         let frame = HexInputFrame {
             version: HEX_INPUT_VERSION,
             tick,
             commands,
         };
-        // Through the rules when the match plays them; no seat commands travel yet, so
-        // every Architect is a bot.
+        // Through the rules when the match plays them, with every seat's say.
         match self.ascent.as_mut() {
             Some(rules) => {
                 let seats = InputFrame {
                     version: ASCENT_INPUT_VERSION,
                     tick,
-                    commands: BTreeMap::new(),
+                    commands: seat_commands,
                 };
                 let _ = rules.step(game, &frame, &seats);
             }
@@ -688,6 +724,7 @@ impl AuthoritativeServer {
                 config,
                 simulation_content_hash: self.content.simulation_content_hash(),
                 ascent: self.ascent.is_some(),
+                architects: self.launch_architects,
             },
         );
     }
@@ -759,6 +796,7 @@ impl AuthoritativeServer {
             .map(|seat| WireSeat {
                 player: seat.player,
                 team: seat.team,
+                architect: seat.architect,
                 occupant: match seat.occupant {
                     LanSeatOccupant::Bot if self.config.fill_empty_seats => WireSeatOccupant::Bot,
                     LanSeatOccupant::Bot => WireSeatOccupant::Empty,
@@ -1087,7 +1125,11 @@ mod tests {
         assert!(server.session.seats[2].is_bot_controlled());
         let future_tick = server.match_state().expect("match").tick + 3;
         client
-            .queue_input(future_tick, HexPlayerCommand::default())
+            .queue_input(
+                future_tick,
+                HexPlayerCommand::default(),
+                WireSeatCommand::None,
+            )
             .expect("resume heartbeat");
         server.fixed_tick().expect("reconnect tick");
         assert_eq!(

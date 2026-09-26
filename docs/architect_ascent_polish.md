@@ -369,8 +369,9 @@ production facility after twenty seconds of the team's bots walking):
   physical match's (what the in-play map shows). They are fed by different sight models.
 - Doors, anchors and torches are rule state and physical state respectively, not one
   thing.
-- Ascent plays over LAN with a bot Architect for every team and every human a body
-  (`docs/lan_integration.md`); a human Architect and asks do not travel yet. A match
+- Ascent plays over LAN, a human at a team's Architect desk where one claims it in the
+  lobby and a bot everywhere else; plays, requisitions, asks and answers travel as seat
+  commands in the frames (`docs/lan_integration.md`). A match
   snapshot still does not carry where each body is or the prison's mazes, so a late
   joiner replays history from tick one, which rebuilds both.
 - A replay tape of an Ascent match samples jailed bodies at their maze coordinates.

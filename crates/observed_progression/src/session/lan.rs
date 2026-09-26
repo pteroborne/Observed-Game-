@@ -93,6 +93,9 @@ pub struct LanSeat {
     pub team: TeamId,
     pub occupant: LanSeatOccupant,
     pub ready: bool,
+    /// In Architect Ascent, this seat's human sits at the team's Architect desk, and a
+    /// bot walks the body. One a team, and only a connected human's.
+    pub architect: bool,
 }
 
 impl LanSeat {
@@ -140,6 +143,8 @@ pub struct LanLaunchSeat {
     pub player: PlayerId,
     pub team: TeamId,
     pub human: Option<AccountId>,
+    /// This seat's human is the team's Architect (`LanSeat::architect`).
+    pub architect: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -176,6 +181,7 @@ impl LanSession {
                 team: TeamId((raw / u16::from(roster.members_per_team)) as u8),
                 occupant: LanSeatOccupant::Bot,
                 ready: false,
+                architect: false,
             })
             .collect();
         Self {
@@ -256,10 +262,39 @@ impl LanSession {
         let ready = self.seats[from].ready;
         self.seats[from].occupant = LanSeatOccupant::Bot;
         self.seats[from].ready = false;
+        // A move to another team leaves its Architect desk behind.
+        self.seats[from].architect = false;
         self.seats[to].occupant = occupant;
         self.seats[to].ready = ready;
         self.cancel_countdown();
         Some(self.seats[to].player)
+    }
+
+    /// Claim (or give up) the team's Architect desk for `account`'s seat. Refused outside
+    /// the lobby, for a seat that is not a connected human's, and while another seat of
+    /// the team holds it.
+    pub fn claim_architect(&mut self, account: AccountId, claim: bool) -> bool {
+        if !matches!(self.phase, LanPhase::Lobby | LanPhase::Countdown { .. }) {
+            return false;
+        }
+        let Some(index) = self.account_seat(account) else {
+            return false;
+        };
+        if self.seats[index].connected_human().is_none() {
+            return false;
+        }
+        let team = self.seats[index].team;
+        if claim
+            && self
+                .seats
+                .iter()
+                .enumerate()
+                .any(|(other, seat)| other != index && seat.team == team && seat.architect)
+        {
+            return false;
+        }
+        self.seats[index].architect = claim;
+        true
     }
 
     pub fn set_ready(&mut self, account: AccountId, ready: bool) -> bool {
@@ -325,6 +360,7 @@ impl LanSession {
             ) {
                 seat.occupant = LanSeatOccupant::Bot;
                 seat.ready = false;
+                seat.architect = false;
             }
         }
     }
@@ -390,6 +426,7 @@ impl LanSession {
                         LanSeatOccupant::Human { account, .. } => Some(account),
                         LanSeatOccupant::Bot => None,
                     },
+                    architect: seat.architect && seat.connected_human().is_some(),
                 })
                 .collect(),
         }

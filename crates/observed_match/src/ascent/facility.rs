@@ -38,6 +38,16 @@ pub fn architect_seats(
     physical: &HexWfcMatch,
     human: Option<observed_core::TeamId>,
 ) -> BTreeMap<PlayerId, Seat> {
+    architect_seats_where(physical, |team| Some(team) == human)
+}
+
+/// An Architect seat for every team of `physical`, held by a player where `human` says so
+/// and by a bot everywhere else.
+#[must_use]
+pub fn architect_seats_where(
+    physical: &HexWfcMatch,
+    human: impl Fn(observed_core::TeamId) -> bool,
+) -> BTreeMap<PlayerId, Seat> {
     physical
         .teams
         .keys()
@@ -46,11 +56,22 @@ pub fn architect_seats(
                 architect_seat(team),
                 Seat {
                     role: Role::Architect(TeamId(team.0)),
-                    bot: Some(team) != human,
+                    bot: !human(team),
                 },
             )
         })
         .collect()
+}
+
+/// The rules seat `player`'s seat command belongs to: their team's Architect seat when
+/// they sit at its desk (`at_desk`), their own otherwise. Every peer of a LAN match maps a
+/// frame's seat commands this way.
+#[must_use]
+pub fn seat_for(physical: &HexWfcMatch, player: PlayerId, at_desk: bool) -> PlayerId {
+    match physical.players.get(&player) {
+        Some(state) if at_desk => architect_seat(state.team),
+        _ => player,
+    }
 }
 
 /// The Ascent rules for one physical match: its seats, and which body each Observer is.

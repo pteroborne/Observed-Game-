@@ -18,6 +18,8 @@ pub(crate) struct LanRuntime {
     pub direct_address: String,
     pub status: String,
     pub ready: bool,
+    /// The local seat holds its team's Architect desk, as the server's roster says.
+    pub architect: bool,
     pub consumed_match: Option<u32>,
     pub requested_team: Option<TeamId>,
     pub last_probe: Instant,
@@ -35,6 +37,7 @@ impl LanRuntime {
             direct_address,
             status: "Search the LAN or enter an address.".to_string(),
             ready: false,
+            architect: false,
             consumed_match: None,
             requested_team: None,
             last_probe: Instant::now() - Duration::from_secs(2),
@@ -56,6 +59,7 @@ impl LanRuntime {
                 && let Some(seat) = lobby.seats.iter().find(|seat| seat.player == player)
             {
                 self.ready = seat.ready;
+                self.architect = seat.architect;
             }
             if let Some(reason) = client.rejection.clone() {
                 self.status = reason;
@@ -105,6 +109,17 @@ impl LanRuntime {
             .as_ref()
             .ok_or_else(|| "not connected".to_string())?
             .set_ready(self.ready)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Claim the team's Architect desk, or give it up. The server refuses a claim while a
+    /// teammate holds it; the roster says who does.
+    pub fn toggle_architect(&mut self) -> Result<(), String> {
+        let claim = !self.architect;
+        self.client
+            .as_ref()
+            .ok_or_else(|| "not connected".to_string())?
+            .claim_architect(claim)
             .map_err(|error| error.to_string())
     }
 

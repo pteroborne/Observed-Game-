@@ -24,17 +24,26 @@ The Host LAN button launches the same server library in a stoppable background t
 ## Architect Ascent on LAN
 
 `--ascent` on the dedicated server - or *Architect Ascent* in the Play Hub before Host LAN -
-plays the Ascent rules. The launch says so (LAN protocol 4), and the server and every
-client build the same rules beside the match from the launch alone
-(`observed_match::ascent::facility::architect_seats`, `game/src/hex_wfc/ascent.rs`
-`lan_rules`): a bot Architect for every team, every human a body. They step the same
-frames through those rules, so the digest keeps them honest exactly as it does a race;
-a resync rebuilds the rules from the launch with the match.
+plays the Ascent rules. The launch says so, and names the seats whose humans sit at their
+team's Architect desk. The server and every client build the same rules beside the match
+from the launch alone (`observed_match::ascent::facility::architect_seats_where`,
+`game/src/hex_wfc/ascent.rs` `lan_rules`): a human Architect where one claimed the desk, a
+bot everywhere else.
 
-Not yet over LAN: a human Architect, and a body's ask (T), because seat commands do not
-travel in frames yet; and bot bodies' asks, because which bodies bots drive changes with
-who is connected, and every peer must agree. The Play Hub's *as the Architect* seat plays
-as a body on LAN.
+**The desk.** In the lobby, *Architect: ON* claims your team's Architect desk (one a team;
+the roster marks it ARCHITECT). At launch you sit at the desk and a bot walks your body.
+
+**Seat commands** (LAN protocol 5, `observed_net::lan::WireSeatCommand`). Every body
+command carries its seat's say in the rules this tick, nothing on most: a card played, a
+requisition, an ask for help (T), an answer to one. The server puts each into the frame,
+and every peer maps it to a rules seat the same way (`seat_for`: the team's Architect seat
+for a human at the desk, the player's own otherwise) and applies it on the same tick, so
+the digest keeps them honest exactly as it does movement. A resync rebuilds the rules from
+the launch with the match. Frames are budgeted for the largest seat command on every seat,
+so a bundle never outgrows a datagram.
+
+Not yet over LAN: bot bodies' asks, because which bodies bots drive changes with who is
+connected, and every peer must agree.
 
 ## Session lifecycle
 

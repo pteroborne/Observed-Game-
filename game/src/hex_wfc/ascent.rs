@@ -57,10 +57,55 @@ pub(super) fn rules_for(
 }
 
 /// Step the match through its rules, if it has them, with the local Architect's play
-/// when there is one. Returns whether it did.
+/// or the local body's ask when there is one. Returns whether it did.
 pub(super) fn step(
     runtime: &mut HexWfcRuntime,
     bodies: &HexInputFrame,
+    mut desk: Option<&mut ArchitectDesk>,
+    mut ask: Option<&mut super::ask::AskTheArchitect>,
+) -> bool {
+    if runtime.ascent.is_none() {
+        return false;
+    }
+    let commands = local_seat_command(runtime, desk.as_deref_mut(), ask.as_deref_mut())
+        .map(|(seat, command)| BTreeMap::from([(seat, command)]))
+        .unwrap_or_default();
+    apply(runtime, bodies, commands, desk, ask)
+}
+
+/// What the local player says to the rules this tick, taken from what is waiting: the
+/// desk's play or answer (one command a seat a tick, so an answer waits behind a play), or
+/// the local body's ask, for what the rules say it needs. Keyed by the rules seat it is
+/// from: the desk's Architect seat, or the body's own.
+pub(super) fn local_seat_command(
+    runtime: &HexWfcRuntime,
+    desk: Option<&mut ArchitectDesk>,
+    ask: Option<&mut super::ask::AskTheArchitect>,
+) -> Option<(PlayerId, SeatCommand)> {
+    if let Some(desk) = desk {
+        if let Some(play) = desk.pending.take() {
+            return Some((desk.seat, SeatCommand::Architect(play)));
+        }
+        if let Some((author, created_at)) = desk.pending_answer.take() {
+            return Some((desk.seat, SeatCommand::Acknowledge { author, created_at }));
+        }
+    }
+    let ask = ask?;
+    if !std::mem::take(&mut ask.pending) {
+        return None;
+    }
+    let local = runtime.local_player;
+    let (kind, target) = runtime.ascent.as_ref()?.session().ask_for_help(local)?;
+    Some((local, SeatCommand::Request { kind, target }))
+}
+
+/// Step the match through its rules with `commands`, every seat's say this tick, and tell
+/// the desk and the local body how theirs went: a play's refusal, or the building the
+/// Architect now knows stands; an ask the rules refused. Returns whether there were rules.
+pub(super) fn apply(
+    runtime: &mut HexWfcRuntime,
+    bodies: &HexInputFrame,
+    commands: BTreeMap<PlayerId, SeatCommand>,
     desk: Option<&mut ArchitectDesk>,
     ask: Option<&mut super::ask::AskTheArchitect>,
 ) -> bool {
@@ -69,30 +114,13 @@ pub(super) fn step(
     let Some(rules) = runtime.ascent.as_mut() else {
         return false;
     };
-    let mut commands = BTreeMap::new();
-    let mut desk = desk;
-    let mut played = None;
-    if let Some(desk) = desk.as_deref_mut()
-        && let Some(play) = desk.pending.take()
-    {
-        commands.insert(desk.seat, SeatCommand::Architect(play));
-        played = Some(play);
-    } else if let Some(desk) = desk.as_deref_mut()
-        && let Some((author, created_at)) = desk.pending_answer.take()
-    {
-        // One command a seat a tick: an answer waits behind a play, and goes the next.
-        commands.insert(desk.seat, SeatCommand::Acknowledge { author, created_at });
-    }
-    // The local body asking its Architect for help, for what the rules say it needs.
-    let mut ask = ask;
-    let mut asked = false;
-    if let Some(ask) = ask.as_deref_mut()
-        && std::mem::take(&mut ask.pending)
-        && let Some((kind, target)) = rules.session().ask_for_help(local)
-    {
-        commands.insert(local, SeatCommand::Request { kind, target });
-        asked = true;
-    }
+    let played = desk
+        .as_ref()
+        .and_then(|desk| match commands.get(&desk.seat) {
+            Some(SeatCommand::Architect(play)) => Some(*play),
+            _ => None,
+        });
+    let asked = matches!(commands.get(&local), Some(SeatCommand::Request { .. }));
     let seats = InputFrame {
         version: ASCENT_INPUT_VERSION,
         tick: rules.rules().tick + 1,
@@ -145,11 +173,23 @@ pub(super) fn step(
     true
 }
 
-/// The rules for a LAN match that plays Architect Ascent: a bot Architect for every
-/// team, and nobody's requests voiced, since which bodies bots drive changes with who is
+/// The rules for a LAN match that plays Architect Ascent (`launch`): an Architect for
+/// every team, a human's where the launch names one at the desk and a bot's everywhere
+/// else, and nobody's requests voiced, since which bodies bots drive changes with who is
 /// connected. Built identically on the server and every client from the launch alone.
-pub(super) fn lan_rules(match_state: &mut HexWfcMatch) -> Option<AscentRules> {
-    let seats = observed_match::ascent::facility::architect_seats(match_state, None);
+pub(super) fn lan_rules(
+    match_state: &mut HexWfcMatch,
+    launch: &observed_net::lan::LanLaunch,
+) -> Option<AscentRules> {
+    let at_desk: Vec<TeamId> = match_state
+        .players
+        .iter()
+        .filter(|(player, _)| launch.is_architect(**player))
+        .map(|(_, state)| state.team)
+        .collect();
+    let seats = observed_match::ascent::facility::architect_seats_where(match_state, |team| {
+        at_desk.contains(&team)
+    });
     let seed = match_state.seed;
     AscentRules::new(match_state, seed, seats)
         .inspect_err(|refusal| warn!("Architect Ascent could not start: {refusal:?}"))
@@ -159,27 +199,33 @@ pub(super) fn lan_rules(match_state: &mut HexWfcMatch) -> Option<AscentRules> {
 /// Seat a fresh local match for `play_setup`: the Ascent rules when it asks for them, the
 /// local player at their team's Architect desk when that is their seat, and a way for a
 /// local body to ask its Architect for help when it is not. `None` for a race. A LAN
-/// match (`lan`, whether its launch plays Ascent) takes the server's rules instead: a
-/// bot Architect a team, every human a body, and no asks, which do not travel yet.
-/// Clears the last match's desk.
+/// match (`lan`: `Some`, with its launch once there is one) takes the launch's rules
+/// instead, and the local player sits at the desk if the launch says so. Clears the last
+/// match's desk.
 pub(super) fn seat(
     commands: &mut Commands,
     match_state: &mut HexWfcMatch,
     local: PlayerId,
     play_setup: &crate::play_setup::PlaySetupDraft,
-    lan: Option<bool>,
+    lan: Option<Option<observed_net::lan::LanLaunch>>,
 ) -> Option<AscentRules> {
     commands.remove_resource::<ArchitectDesk>();
     commands.remove_resource::<super::ask::AskTheArchitect>();
-    if let Some(ascent) = lan {
-        return ascent.then(|| lan_rules(match_state)).flatten();
-    }
-    if play_setup.rules != crate::play_setup::PlayRules::Ascent {
-        return None;
-    }
     let team = match_state.players[&local].team;
-    let human = (play_setup.seat == crate::play_setup::PlaySeat::Architect).then_some(team);
-    let rules = rules_for(match_state, local, human)?;
+    let (rules, human) = match lan {
+        Some(launch) => {
+            let launch = launch.filter(|launch| launch.ascent)?;
+            let human = launch.is_architect(local).then_some(team);
+            (lan_rules(match_state, &launch)?, human)
+        }
+        None => {
+            if play_setup.rules != crate::play_setup::PlayRules::Ascent {
+                return None;
+            }
+            let human = (play_setup.seat == crate::play_setup::PlaySeat::Architect).then_some(team);
+            (rules_for(match_state, local, human)?, human)
+        }
+    };
     if human.is_some() {
         commands.insert_resource(ArchitectDesk::new(
             architect_seat(team),
