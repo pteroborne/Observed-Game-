@@ -32,7 +32,7 @@ use crate::hex_wfc::equipment::hex_prism;
 use crate::hex_wfc::sim::HexWfcRuntime;
 
 /// The stack's own render layer and camera order, above the board.
-const STACK_LAYER: usize = 4;
+pub(super) const STACK_LAYER: usize = 4;
 const STACK_ORDER: isize = 3;
 /// Metres between floors in the stack: far more than a storey, so that no floor's
 /// footprint, seen at [`PITCH`], reaches the floor above it.

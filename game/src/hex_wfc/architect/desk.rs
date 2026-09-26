@@ -2,31 +2,26 @@
 //!
 //! The panel says who and where the Architect is, whether the hand is charged, where the
 //! team's Observers are, and what the rules would say to the play under the cursor. The
-//! hand is five cards; each card's glyph is a hub with a spoke for every doorway the tile
-//! would have, turned to the rotation it would be played at, so the card shows the tile
-//! it will make. The UI belongs to the board's camera, which draws over the world.
+//! hand is five cards; each shows a miniature of the real tile it will build (`cards`),
+//! turned to the rotation it would be played at. The UI belongs to the board's camera, which draws over the world.
 
 use bevy::prelude::*;
 use bevy::ui::UiTargetCamera;
-use observed_hex::HexFace;
-use observed_match::ascent::sim::{ArchitectCommand, CardKind, ObserverState, floor_title};
+use observed_match::ascent::sim::{ArchitectCommand, ObserverState, floor_title};
 
 use super::ArchitectDesk;
 use super::board::BoardCamera;
-use super::pick::face_angle;
+use super::cards::{CardArt, HAND};
 use super::words;
 use crate::GameState;
 use crate::hex_wfc::sim::HexWfcRuntime;
 use crate::view::theme::{ACCENT, DIM, PANEL, TITLE, WARNING};
 
-/// Cards in a hand.
-const HAND: usize = 5;
 const PANEL_WIDTH: f32 = 310.0;
 const CARD_WIDTH: f32 = 150.0;
 const CARD_HEIGHT: f32 = 196.0;
-/// The glyph's box, and a spoke's length from its hub.
-const GLYPH: f32 = 76.0;
-const SPOKE: f32 = 30.0;
+/// The miniature's box on a card.
+const ART: Vec2 = Vec2::new(130.0, 88.0);
 
 #[derive(Component)]
 pub(super) struct DeskUi;
@@ -53,16 +48,13 @@ pub(super) enum CardLine {
     Detail,
 }
 
-/// A spoke of a card's glyph, for the doorway on face `.1`.
-#[derive(Component)]
-pub(super) struct Spoke(usize, usize);
-
 pub(super) fn spawn(
     mut commands: Commands,
     camera: Query<Entity, With<BoardCamera>>,
+    art: Option<Res<CardArt>>,
     existing: Query<(), With<DeskUi>>,
 ) {
-    let Ok(camera) = camera.single() else {
+    let (Ok(camera), Some(art)) = (camera.single(), art) else {
         return;
     };
     if !existing.is_empty() {
@@ -82,7 +74,7 @@ pub(super) fn spawn(
         ))
         .with_children(|root| {
             panel(root);
-            hand(root);
+            hand(root, &art);
             root.spawn((
                 Line::Message,
                 Text::new(""),
@@ -160,7 +152,7 @@ fn panel(root: &mut ChildSpawnerCommands) {
     });
 }
 
-fn hand(root: &mut ChildSpawnerCommands) {
+fn hand(root: &mut ChildSpawnerCommands, art: &CardArt) {
     root.spawn(Node {
         position_type: PositionType::Absolute,
         left: px(PANEL_WIDTH),
@@ -211,7 +203,16 @@ fn hand(root: &mut ChildSpawnerCommands) {
                     text_font(12.0),
                     TextColor(DIM),
                 ));
-                glyph(card, index);
+                // The tile itself, drawn by the card's own camera (`cards`).
+                card.spawn((
+                    ImageNode::new(art.images[index].clone()),
+                    Node {
+                        width: px(ART.x),
+                        height: px(ART.y),
+                        border_radius: BorderRadius::all(px(4)),
+                        ..default()
+                    },
+                ));
                 card.spawn((
                     CardLine::Detail,
                     Text::new(""),
@@ -220,65 +221,6 @@ fn hand(root: &mut ChildSpawnerCommands) {
                 ));
             });
         }
-    });
-}
-
-/// A hub, a ring, and a spoke for each of the six faces, shown when the tile opens it.
-fn glyph(card: &mut ChildSpawnerCommands, slot: usize) {
-    card.spawn(Node {
-        width: px(GLYPH),
-        height: px(GLYPH),
-        ..default()
-    })
-    .with_children(|glyph| {
-        let centre = GLYPH * 0.5;
-        glyph.spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(centre - 26.0),
-                top: px(centre - 26.0),
-                width: px(52),
-                height: px(52),
-                border: UiRect::all(px(2)),
-                border_radius: BorderRadius::MAX,
-                ..default()
-            },
-            BorderColor::all(DIM.with_alpha(0.6)),
-        ));
-        for face in HexFace::LATERAL {
-            let angle = face_angle(face);
-            let mid = Vec2::new(angle.cos(), angle.sin()) * SPOKE * 0.5;
-            glyph.spawn((
-                Spoke(slot, face.index()),
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: px(centre + mid.x - SPOKE * 0.5),
-                    top: px(centre + mid.y - 2.5),
-                    width: px(SPOKE),
-                    height: px(5),
-                    border_radius: BorderRadius::all(px(2)),
-                    ..default()
-                },
-                UiTransform {
-                    rotation: Rot2::radians(angle),
-                    ..UiTransform::IDENTITY
-                },
-                BackgroundColor(ACCENT),
-                Visibility::Hidden,
-            ));
-        }
-        glyph.spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(centre - 6.0),
-                top: px(centre - 6.0),
-                width: px(12),
-                height: px(12),
-                border_radius: BorderRadius::MAX,
-                ..default()
-            },
-            BackgroundColor(TITLE),
-        ));
     });
 }
 
@@ -295,17 +237,6 @@ type Cards<'w, 's> = Query<
 >;
 type CardLines<'w, 's> =
     Query<'w, 's, (&'static CardLine, &'static ChildOf, &'static mut Text), Without<Line>>;
-type Spokes<'w, 's> = Query<
-    'w,
-    's,
-    (
-        &'static Spoke,
-        &'static mut Visibility,
-        &'static mut BackgroundColor,
-    ),
-    Without<Slot>,
->;
-
 pub(super) fn sync(
     desk: Res<ArchitectDesk>,
     runtime: Res<HexWfcRuntime>,
@@ -313,7 +244,6 @@ pub(super) fn sync(
     mut cards: Cards,
     mut card_lines: CardLines,
     slots: Query<&Slot>,
-    mut spokes: Spokes,
 ) {
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
@@ -402,23 +332,5 @@ pub(super) fn sync(
                 .to_ascii_uppercase(),
             CardLine::Detail => words::card_detail(card.kind).to_owned(),
         };
-    }
-    for (spoke, mut visibility, mut color) in &mut spokes {
-        let Some(card) = hand.deck.hand.get(spoke.0) else {
-            continue;
-        };
-        let lifted = desk.selected == Some(spoke.0);
-        // A lifted card shows the rotation it would be played at.
-        let rotation = if lifted { desk.rotation } else { 0 };
-        let open = match card.kind {
-            CardKind::Tile(shape) => shape.doors(rotation) & (1 << spoke.1) != 0,
-            CardKind::Door => spoke.1 == usize::from(rotation % 6),
-        };
-        *visibility = if open {
-            Visibility::Inherited
-        } else {
-            Visibility::Hidden
-        };
-        *color = BackgroundColor(if lifted { TITLE } else { ACCENT });
     }
 }

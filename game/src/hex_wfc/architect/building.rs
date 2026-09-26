@@ -245,6 +245,12 @@ pub(super) fn draw(
     }
 }
 
+/// A tile's floors (`floor`) or walls in `register`'s concrete, lit, as a room in view.
+#[must_use]
+pub(super) fn tile_material(register: ArchitectureRegister, floor: bool) -> StandardMaterial {
+    Tone::Seen.material(register, floor)
+}
+
 /// The bearing the board is looked at from, which decides which walls are cut away.
 #[must_use]
 pub(super) fn bearing() -> Vec2 {

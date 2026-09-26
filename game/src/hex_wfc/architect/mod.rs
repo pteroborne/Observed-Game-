@@ -72,6 +72,7 @@ impl ArchitectDesk {
 mod board;
 mod building;
 pub(super) mod capture;
+mod cards;
 mod desk;
 mod input;
 mod pick;
@@ -81,7 +82,8 @@ mod words;
 /// The desk's systems, in order: build, read the player, frame, draw.
 pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleSystem, ()> {
     (
-        (board::setup, stack::setup, desk::spawn, init_building),
+        (board::setup, stack::setup, cards::setup, init_building),
+        desk::spawn,
         stack::click,
         input::input,
         board::frame,
@@ -91,6 +93,7 @@ pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleS
         board::draw_marks,
         board::draw_play,
         stack::draw,
+        cards::sync,
         desk::sync,
     )
         .chain()

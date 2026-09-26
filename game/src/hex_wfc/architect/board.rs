@@ -125,7 +125,13 @@ pub(super) fn setup(
             shadow_maps_enabled: true,
             ..default()
         },
-        RenderLayers::layer(BOARD_LAYER),
+        // The cards' miniatures are lit by it too, so the tile in hand looks like the tile
+        // on the board.
+        RenderLayers::from_layers(
+            &std::iter::once(BOARD_LAYER)
+                .chain(super::cards::layers())
+                .collect::<Vec<_>>(),
+        ),
         Transform::from_xyz(40.0, 90.0, 20.0).looking_at(Vec3::ZERO, Vec3::Y),
         Name::new("Architect board key"),
     ));

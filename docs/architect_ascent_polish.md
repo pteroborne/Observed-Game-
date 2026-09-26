@@ -232,8 +232,13 @@ team's bodies are bots, and the player sits at the desk (`game/src/hex_wfc/archi
   contradictions, the summit and the prison lobby stand up as pins. A click on a floor
   puts the board on it. On the board itself, a stair or ramp cell carries a chevron: green
   up, the way to the summit, and dim down.
-- **The hand** is five cards along the bottom. Each card's glyph is a hub with a spoke for
-  each doorway the tile would have, turned to the rotation it would be played at.
+- **The hand** is five cards along the bottom, and each card is a miniature of the real
+  tile it will build (`architect/cards.rs`), as the lab draws its hand: every card has its
+  own camera rendering into an image on the card, at the board's pitch and under the
+  board's key light, showing the authored tile for the card's district cut away the same
+  way as the board's rooms. A bar lies across each doorway, cyan in hand and amber on the
+  card picked up, which turns with the desk's rotation - at card size the doorways read by
+  their thresholds, not by gaps in cut walls. A door card shows a door frame.
 - **Playing:** pick a card (1-5, or click it), turn it (Q / E), point at a cell. Every cell
   the rules would take the card on wears a green ring. The cell under the cursor wears an
   amber ring if the rules would take the play and a red one if not, and a tile card shows
