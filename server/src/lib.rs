@@ -12,6 +12,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use observed_content::ArchitectureRegister;
 use observed_core::{PlayerId, TeamId};
 use observed_facility::hex_wfc::HexWfcConfig;
+use observed_match::ascent::facility::AscentRules;
+use observed_match::ascent::session::{ASCENT_INPUT_VERSION, InputFrame};
 use observed_match::hex_wfc::{
     HEX_INPUT_VERSION, HexBotDriver, HexInputFrame, HexMatchConfig, HexMatchContent,
     HexMatchStatus, HexPlayerCommand, HexWfcMatch,
@@ -42,6 +44,8 @@ pub struct ServerConfig {
     pub discovery: bool,
     pub tile_dir: PathBuf,
     match_config: HexMatchConfig,
+    /// Play the Architect Ascent rules, with a bot Architect for every team.
+    pub ascent: bool,
 }
 
 impl Default for ServerConfig {
@@ -61,6 +65,7 @@ impl Default for ServerConfig {
                 members_per_team: 2,
                 wfc: HexWfcConfig::arc_default(),
             },
+            ascent: false,
         }
     }
 }
@@ -80,6 +85,7 @@ impl ServerConfig {
                         .map_err(|_| "--bind is not a valid IP:port")?;
                 }
                 "--name" => config.name = args.next().ok_or("--name requires text")?,
+                "--ascent" => config.ascent = true,
                 "--min-humans" => {
                     config.min_humans = args
                         .next()
@@ -172,6 +178,8 @@ pub struct AuthoritativeServer {
     clients: BTreeMap<u64, ClientConnection>,
     inputs: BTreeMap<(PlayerId, u64), WireHexCommand>,
     match_state: Option<HexWfcMatch>,
+    /// The Architect Ascent rules riding beside the match, when it plays them.
+    ascent: Option<AscentRules>,
     bot_driver: HexBotDriver,
     launch_config: Option<HexMatchConfig>,
     launch_started: Option<u32>,
@@ -225,6 +233,7 @@ impl AuthoritativeServer {
             clients: BTreeMap::new(),
             inputs: BTreeMap::new(),
             match_state: None,
+            ascent: None,
             bot_driver: HexBotDriver::new(),
             launch_config: None,
             launch_started: None,
@@ -519,6 +528,17 @@ impl AuthoritativeServer {
             })
             .ok_or("no solvable nearby server seed")?;
         self.config.base_seed = selected_seed.wrapping_sub(u64::from(self.session.match_number));
+        // Every peer builds the same rules from the same launch: a bot Architect a team.
+        let mut game = game;
+        self.ascent = if self.config.ascent {
+            let seats = observed_match::ascent::facility::architect_seats(&game, None);
+            Some(
+                AscentRules::new(&mut game, selected_seed, seats)
+                    .map_err(|refusal| format!("Architect Ascent could not start: {refusal:?}"))?,
+            )
+        } else {
+            None
+        };
         self.match_state = Some(game);
         self.bot_driver.reset();
         self.launch_config = Some(config);
@@ -539,6 +559,7 @@ impl AuthoritativeServer {
             match_number: self.session.match_number,
             config,
             simulation_content_hash: self.content.simulation_content_hash(),
+            ascent: self.ascent.is_some(),
         });
         Ok(())
     }
@@ -597,14 +618,33 @@ impl AuthoritativeServer {
             } else {
                 self.bot_driver.command(game, seat.player)
             };
-            wire[seat.player.index()] = WireHexCommand::from_command(command);
-            commands.insert(seat.player, command);
+            // The canonical command is the one on the wire. Encoding rounds a command
+            // (its look, for one), and every client steps the decoded frame, so the
+            // server must step exactly that or every client parts from it at once.
+            let wired = WireHexCommand::from_command(command);
+            wire[seat.player.index()] = wired;
+            commands.insert(seat.player, wired.to_command());
         }
-        game.step(&HexInputFrame {
+        let frame = HexInputFrame {
             version: HEX_INPUT_VERSION,
             tick,
             commands,
-        });
+        };
+        // Through the rules when the match plays them; no seat commands travel yet, so
+        // every Architect is a bot.
+        match self.ascent.as_mut() {
+            Some(rules) => {
+                let seats = InputFrame {
+                    version: ASCENT_INPUT_VERSION,
+                    tick,
+                    commands: BTreeMap::new(),
+                };
+                let _ = rules.step(game, &frame, &seats);
+            }
+            None => {
+                game.step(&frame);
+            }
+        }
         let digest = game.snapshot().digest;
         self.frames.push(WireFrame {
             tick: game.tick,
@@ -647,6 +687,7 @@ impl AuthoritativeServer {
                 match_number: self.session.match_number,
                 config,
                 simulation_content_hash: self.content.simulation_content_hash(),
+                ascent: self.ascent.is_some(),
             },
         );
     }
@@ -1067,6 +1108,93 @@ mod tests {
             thread::yield_now();
         }
         assert_eq!(replayed.first().map(|frame| frame.tick), Some(1));
+    }
+
+    /// A client that rebuilds the match - and, for Ascent, the rules - from the launch
+    /// alone, as the game does, replays the server's frames digest for digest. This
+    /// failed at tick 2 while the server stepped its own commands rather than the ones
+    /// it put on the wire, which encoding rounds.
+    fn replays_in_step(ascent: bool) {
+        let config = ServerConfig {
+            bind: "127.0.0.1:0".parse().expect("loopback address"),
+            discovery: false,
+            match_config: HexMatchConfig::default(),
+            ascent,
+            ..ServerConfig::default()
+        };
+        let mut server = AuthoritativeServer::bind(config).expect("server binds");
+        let content = Arc::clone(&server.content);
+        let address = server.local_addr().expect("server address");
+        let mut client =
+            LanClient::connect(address, 78, None, None, content.simulation_content_hash())
+                .expect("client binds");
+        drive_until(&mut server, &mut client, |client| client.token.is_some());
+        client.set_ready(true).expect("ready");
+        drive_until(&mut server, &mut client, |client| client.launch.is_some());
+        let launch = client.launch.expect("launch descriptor");
+        assert_eq!(launch.ascent, ascent, "the launch says what rules it plays");
+        assert_eq!(
+            server
+                .match_state()
+                .is_some_and(|game| game.prison.is_some()),
+            ascent,
+            "and the server's match plays them"
+        );
+
+        let mut replica = HexWfcMatch::new_with_content(launch.seed, launch.config, content)
+            .expect("the launch reconstructs");
+        let seats = observed_match::ascent::facility::architect_seats(&replica, None);
+        let seed = replica.seed;
+        let mut rules =
+            ascent.then(|| AscentRules::new(&mut replica, seed, seats).expect("the same rules"));
+        client
+            .mark_launch_ready(launch.match_number)
+            .expect("prepared client announces readiness");
+        let mut replayed = 0;
+        for _ in 0..4_000 {
+            server.fixed_tick().expect("server tick");
+            client.poll();
+            for frame in client.take_ready_frames(observed_net::lan::FRAME_WINDOW) {
+                let seats = InputFrame {
+                    version: ASCENT_INPUT_VERSION,
+                    tick: frame.tick,
+                    commands: BTreeMap::new(),
+                };
+                match rules.as_mut() {
+                    Some(rules) => {
+                        let _ = rules.step(&mut replica, &frame.to_input_frame(), &seats);
+                    }
+                    None => {
+                        replica.step(&frame.to_input_frame());
+                    }
+                }
+                assert_eq!(
+                    replica.snapshot().digest,
+                    frame.digest,
+                    "the replica parted from the server at tick {}",
+                    frame.tick
+                );
+                replayed += 1;
+            }
+            if replayed >= 180 {
+                break;
+            }
+            thread::yield_now();
+        }
+        assert!(
+            replayed >= 180,
+            "three seconds of frames replayed, got {replayed}"
+        );
+    }
+
+    #[test]
+    fn a_race_is_replayed_in_step_by_its_clients() {
+        replays_in_step(false);
+    }
+
+    #[test]
+    fn an_ascent_launch_is_replayed_in_step_by_a_client_building_the_same_rules() {
+        replays_in_step(true);
     }
 
     #[test]

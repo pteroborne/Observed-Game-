@@ -21,6 +21,38 @@ use super::session::{ASCENT_INPUT_VERSION, AscentSession, InputFrame, Refusal, R
 use super::sim::{ArchitectLab, Embodiment, MatchOutcome, ObserverId, TeamId};
 use crate::hex_wfc::{HexInputFrame, HexWfcMatch};
 
+/// Architect seats are numbered past every body: team `t`'s Architect is this plus `t`.
+/// Every peer of a LAN match seats them the same way.
+pub const ARCHITECT_SEATS: u16 = 200;
+
+/// The seat team `team`'s Architect sits in.
+#[must_use]
+pub fn architect_seat(team: observed_core::TeamId) -> PlayerId {
+    PlayerId(ARCHITECT_SEATS + u16::from(team.0))
+}
+
+/// An Architect seat for every team of `physical`: `human`'s held by a player, every
+/// other by a bot.
+#[must_use]
+pub fn architect_seats(
+    physical: &HexWfcMatch,
+    human: Option<observed_core::TeamId>,
+) -> BTreeMap<PlayerId, Seat> {
+    physical
+        .teams
+        .keys()
+        .map(|&team| {
+            (
+                architect_seat(team),
+                Seat {
+                    role: Role::Architect(TeamId(team.0)),
+                    bot: Some(team) != human,
+                },
+            )
+        })
+        .collect()
+}
+
 /// The Ascent rules for one physical match: its seats, and which body each Observer is.
 ///
 /// Kept beside the [`HexWfcMatch`] it rules rather than around it, so a host that already

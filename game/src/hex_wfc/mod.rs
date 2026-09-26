@@ -18,12 +18,12 @@ mod input;
 mod lantern;
 pub(crate) mod launch;
 pub(crate) mod loading;
+mod net;
 mod objective_models;
 pub(crate) mod overlay;
 mod pad;
 mod perf;
 mod prison_gate;
-
 pub(crate) use perf::GPU_PROFILE_ENV;
 pub mod sim;
 pub(crate) mod view;

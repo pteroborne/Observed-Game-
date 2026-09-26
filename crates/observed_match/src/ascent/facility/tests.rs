@@ -723,3 +723,71 @@ fn production_ascent_tick_times() {
         .collect();
     eprintln!("beat ticks: max {:?}", beats.iter().max());
 }
+
+/// A LAN match's peers each build the rules from the launch and step the server's
+/// frames. They must stay identical tick for tick - bot Architects, Guardian catches,
+/// mazes carved on other threads and all - or every client desyncs.
+#[test]
+fn two_peers_stepping_the_same_frames_stay_in_step() {
+    let config = HexMatchConfig {
+        teams: 2,
+        members_per_team: 2,
+        guardian: true,
+        wfc: HexWfcConfig {
+            levels: 2,
+            ..HexWfcConfig::default()
+        },
+    };
+    let peer = || {
+        let physical = HexWfcMatch::new_with_content(
+            11,
+            config,
+            crate::hex_wfc::compatibility_test_content().clone(),
+        )
+        .expect("a two-level facility solves");
+        let seats = super::architect_seats(&physical, None);
+        AscentMatch::new(physical, 11, seats).expect("bot Architects for both teams")
+    };
+    let (mut server, mut client) = (peer(), peer());
+    let mut caught = 0;
+    for _ in 0..12_000 {
+        let tick = server.rules().tick + 1;
+        let commands: BTreeMap<_, _> = server
+            .physical()
+            .players
+            .keys()
+            .map(|&player| (player, server.physical().bot_player_command(player)))
+            .collect();
+        let bodies = HexInputFrame {
+            version: HEX_INPUT_VERSION,
+            tick,
+            commands,
+        };
+        let seats = InputFrame {
+            version: ASCENT_INPUT_VERSION,
+            tick,
+            commands: BTreeMap::new(),
+        };
+        let _ = server.step(&bodies, &seats);
+        let _ = client.step(&bodies, &seats);
+        assert_eq!(
+            server.physical().snapshot().digest,
+            client.physical().snapshot().digest,
+            "the peers parted at tick {tick}"
+        );
+        assert_eq!(server.rules().command_log, client.rules().command_log);
+        caught += server
+            .physical()
+            .recent_events
+            .iter()
+            .filter(|event| event.kind == HexMatchEventKind::PlayerJailed)
+            .count();
+        if server.rules().outcome != crate::ascent::sim::MatchOutcome::Running {
+            break;
+        }
+    }
+    assert!(
+        caught > 0,
+        "a catch, so mazes carved on other threads were covered"
+    );
+}

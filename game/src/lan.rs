@@ -151,6 +151,10 @@ fn listen_server_config(setup: ValidatedPlaySetup) -> Result<ServerConfig, Strin
     if !setup.fill_empty_seats {
         arguments.push("--require-full-roster".to_string());
     }
+    // Architect Ascent on LAN: a bot Architect for every team, every human a body.
+    if setup.rules == crate::play_setup::PlayRules::Ascent {
+        arguments.push("--ascent".to_string());
+    }
     ServerConfig::from_args(arguments)
 }
 
@@ -186,6 +190,29 @@ mod tests {
         assert_eq!(config.roster.teams, 4);
         assert_eq!(config.roster.members_per_team, 4);
         assert!(config.fill_empty_seats);
+    }
+
+    #[test]
+    fn a_listen_host_plays_the_rules_chosen_in_the_play_hub() {
+        let setup = |rules| {
+            PlaySetupDraft {
+                preset: PlayPreset::Custom,
+                teams: 2,
+                members_per_team: 2,
+                fill_empty_seats: true,
+                guardian: true,
+                rules,
+                seat: crate::play_setup::PlaySeat::Observer,
+            }
+            .validate()
+            .expect("2x2 is a valid LAN roster")
+        };
+        let ascent = listen_server_config(setup(crate::play_setup::PlayRules::Ascent))
+            .expect("server config");
+        assert!(ascent.ascent, "Architect Ascent on LAN");
+        let race =
+            listen_server_config(setup(crate::play_setup::PlayRules::Race)).expect("server config");
+        assert!(!race.ascent);
     }
 
     #[test]

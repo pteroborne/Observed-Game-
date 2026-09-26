@@ -10,7 +10,7 @@ private.
 ## Run
 
 ```powershell
-# Dedicated host
+# Dedicated host (add --ascent for Architect Ascent)
 cargo run -p observed_server -- --bind 0.0.0.0:47624 --name "Workshop"
 
 # Each player
@@ -21,6 +21,21 @@ The LAN Play screen listens for UDP broadcast replies and accepts a direct `IP:p
 when broadcast is unavailable. `OBSERVED2_LAN_ADDRESS` sets the initial direct address.
 The Host LAN button launches the same server library in a stoppable background thread.
 
+## Architect Ascent on LAN
+
+`--ascent` on the dedicated server - or *Architect Ascent* in the Play Hub before Host LAN -
+plays the Ascent rules. The launch says so (LAN protocol 4), and the server and every
+client build the same rules beside the match from the launch alone
+(`observed_match::ascent::facility::architect_seats`, `game/src/hex_wfc/ascent.rs`
+`lan_rules`): a bot Architect for every team, every human a body. They step the same
+frames through those rules, so the digest keeps them honest exactly as it does a race;
+a resync rebuilds the rules from the launch with the match.
+
+Not yet over LAN: a human Architect, and a body's ask (T), because seat commands do not
+travel in frames yet; and bot bodies' asks, because which bodies bots drive changes with
+who is connected, and every peer must agree. The Play Hub's *as the Architect* seat plays
+as a body on LAN.
+
 ## Session lifecycle
 
 1. The handshake checks the LAN protocol, hex input version, and canonical simulation
@@ -29,7 +44,10 @@ The Host LAN button launches the same server library in a stoppable background t
    fills the remaining seats with bots.
 3. Clients send redundant future input bundles. The server selects one command per
    player at 60 Hz, simulates the canonical match, and broadcasts retained command
-   frames with deterministic state digests.
+   frames with deterministic state digests. The command it simulates is the one it puts
+   on the wire, decoded: encoding rounds a command, and every client steps the decoded
+   frame, so a server stepping its own unrounded commands parted from every client by
+   tick 2 (`server` test `replays_in_step`).
 4. Missing/disconnected human commands immediately fall back to bot control. A seat is
    reserved for 30 seconds; reconnecting and late-joining clients replay history from
    tick one before control transfers back.

@@ -337,8 +337,10 @@ production facility after twenty seconds of the team's bots walking):
   physical match's (what the in-play map shows). They are fed by different sight models.
 - Doors, anchors and torches are rule state and physical state respectively, not one
   thing.
-- A match snapshot does not yet carry where each body is or the prison's mazes, so a
-  replay or LAN peer of an Ascent match would not see them. That is part of the LAN slice.
+- Ascent plays over LAN with a bot Architect for every team and every human a body
+  (`docs/lan_integration.md`); a human Architect and asks do not travel yet. A match
+  snapshot still does not carry where each body is or the prison's mazes, so a late
+  joiner replays history from tick one, which rebuilds both.
 - A replay tape of an Ascent match samples jailed bodies at their maze coordinates.
 
 ## Remaining integration

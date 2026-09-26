@@ -184,7 +184,10 @@ pub(super) fn setup_runtime(
     mut commands: Commands,
     mut seed: Option<ResMut<ActiveMatchSeed>>,
     mut career: ResMut<crate::flow::Career>,
-    play_setup: Res<crate::play_setup::PlaySetupDraft>,
+    (play_setup, lan): (
+        Res<crate::play_setup::PlaySetupDraft>,
+        Res<crate::lan::LanRuntime>,
+    ),
     request: Option<Res<HexLaunchRequest>>,
     mut prepared_slot: Option<ResMut<PreparedHexLaunchSlot>>,
     direct_driver: Option<Res<crate::sim::state::SpectatorBot>>,
@@ -265,12 +268,15 @@ pub(super) fn setup_runtime(
     ));
     let seed_offset = prepared.seed_offset;
     let mut match_state = prepared.match_state;
+    // A LAN match plays the rules its launch names.
+    let lan = networked.then(|| lan.client.as_ref().and_then(|client| client.launch));
+    let lan = lan.map(|launch| launch.is_some_and(|launch| launch.ascent));
     let ascent = super::ascent::seat(
         &mut commands,
         &mut match_state,
         local_player,
         &play_setup,
-        networked,
+        lan,
     );
     let replay = crate::sim::replay::ReplayTape::new_hex_wfc_for_player(&match_state, local_player);
     let map_level = match_state.players[&local_player].cell.level;
@@ -396,91 +402,9 @@ pub(super) fn step_runtime(
         }
     };
     if runtime.networked {
-        let Some(client) = lan.client.as_mut() else {
-            runtime.status = "LAN server disconnected".to_string();
-            finish_input_tick(&mut intent, policy);
-            return;
-        };
-        client.poll();
-        let target_tick = runtime
-            .match_state
-            .tick
-            .saturating_add(observed_net::lan::INPUT_LEAD_TICKS);
-        if let Err(error) = client.queue_input(target_tick, local_command) {
-            runtime.status = format!("LAN input error: {error}");
-        }
-        let frames = client.take_ready_frames(observed_net::lan::FRAME_WINDOW);
-        let mut request_resync = false;
-        let mut repeated_desync = false;
-        for frame in frames {
-            let previous_generation = runtime.match_state.facility.generation;
-            runtime.match_state.step(&frame.to_input_frame());
-            let digest = runtime.match_state.snapshot().digest;
-            if digest != frame.digest {
-                if runtime.resync_attempts == 0 {
-                    runtime.status = format!(
-                        "DESYNC at tick {}; replaying authoritative history",
-                        frame.tick
-                    );
-                    request_resync = true;
-                } else {
-                    runtime.status = format!(
-                        "Repeated DESYNC at tick {}: local {digest:016x}, server {:016x}",
-                        frame.tick, frame.digest
-                    );
-                    repeated_desync = true;
-                }
-                break;
-            }
-            if let Some(replay) = replay.as_deref_mut() {
-                replay.record_hex_wfc(&runtime.match_state);
-            }
-            record_generation_changes(&mut runtime, previous_generation);
-        }
-        if request_resync {
-            let launch = client.launch;
-            match launch.and_then(|launch| {
-                match_from_launch(launch.seed, launch.config, launch.simulation_content_hash).ok()
-            }) {
-                Some(match_state) => {
-                    runtime.match_state = match_state;
-                    runtime.bot_driver.reset();
-                    runtime.presented_revisions =
-                        runtime.match_state.facility.cell_revisions.clone();
-                    runtime.pending_visual_cells = runtime
-                        .match_state
-                        .facility
-                        .placements
-                        .keys()
-                        .copied()
-                        .collect();
-                    runtime.map_level = runtime.local().cell.level;
-                    runtime.resync_attempts = runtime.resync_attempts.saturating_add(1);
-                    if let Some(replay) = replay.as_deref_mut() {
-                        *replay = crate::sim::replay::ReplayTape::new_hex_wfc_for_player(
-                            &runtime.match_state,
-                            runtime.local_player,
-                        );
-                    }
-                    if let Err(error) = client.request_resync() {
-                        runtime.status = format!("LAN resync request failed: {error}");
-                        repeated_desync = true;
-                    }
-                }
-                None => {
-                    runtime.status = "LAN resync could not reconstruct the launch".to_string();
-                    repeated_desync = true;
-                }
-            }
-        }
-        if repeated_desync {
-            client.goodbye();
-        }
-        if let Some(event) = runtime.match_state.recent_events.last() {
-            runtime.status = super::cues::cue_for(event.kind).label.to_string();
-        }
+        let leave = super::net::step(&mut runtime, &mut lan, replay.as_deref_mut(), local_command);
         finish_input_tick(&mut intent, policy);
-        if repeated_desync {
+        if leave {
             lan.leave();
             next.set(crate::GameState::MainMenu);
         }
@@ -523,7 +447,7 @@ pub(super) fn step_runtime(
     finish_input_tick(&mut intent, policy);
 }
 
-fn record_generation_changes(runtime: &mut HexWfcRuntime, previous_generation: u32) {
+pub(super) fn record_generation_changes(runtime: &mut HexWfcRuntime, previous_generation: u32) {
     if runtime.match_state.facility.generation == previous_generation {
         return;
     }

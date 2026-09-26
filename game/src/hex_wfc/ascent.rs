@@ -10,16 +10,13 @@ use std::collections::BTreeMap;
 use bevy::prelude::*;
 use observed_core::{PlayerId, TeamId};
 use observed_match::ascent::facility::AscentRules;
-use observed_match::ascent::session::{ASCENT_INPUT_VERSION, InputFrame, Role, Seat, SeatCommand};
+use observed_match::ascent::session::{ASCENT_INPUT_VERSION, InputFrame, SeatCommand};
 use observed_match::ascent::sim::{ArchitectCommand, MatchOutcome, TeamId as AscentTeam};
 use observed_match::hex_wfc::{HexBodyPlace, HexInputFrame, HexPlayerState, HexWfcMatch};
 
 use super::architect::ArchitectDesk;
 use super::sim::HexWfcRuntime;
 use crate::flow::MatchResult;
-
-/// Architect seats are numbered past every body: team `t`'s Architect is this plus `t`.
-const ARCHITECT_SEATS: u16 = 200;
 
 /// How far below the facility the prison dimension lies, and how far apart each team's
 /// maze is from the next. Only presentation reads these: in the simulation each maze is a
@@ -30,7 +27,7 @@ const PRISON_SPACING: f32 = 2_000.0;
 /// The seat team `team`'s Architect sits in.
 #[must_use]
 pub(super) fn architect_seat(team: TeamId) -> PlayerId {
-    PlayerId(ARCHITECT_SEATS + u16::from(team.0))
+    observed_match::ascent::facility::architect_seat(team)
 }
 
 /// The rules for a fresh local match, with an Architect for every team: the local
@@ -43,19 +40,7 @@ pub(super) fn rules_for(
     local: PlayerId,
     human: Option<TeamId>,
 ) -> Option<AscentRules> {
-    let seats = match_state
-        .teams
-        .keys()
-        .map(|&team| {
-            (
-                architect_seat(team),
-                Seat {
-                    role: Role::Architect(AscentTeam(team.0)),
-                    bot: Some(team) != human,
-                },
-            )
-        })
-        .collect();
+    let seats = observed_match::ascent::facility::architect_seats(match_state, human);
     let seed = match_state.seed;
     let driven: Vec<PlayerId> = match_state
         .players
@@ -147,20 +132,36 @@ pub(super) fn step(
     true
 }
 
+/// The rules for a LAN match that plays Architect Ascent: a bot Architect for every
+/// team, and nobody's requests voiced, since which bodies bots drive changes with who is
+/// connected. Built identically on the server and every client from the launch alone.
+pub(super) fn lan_rules(match_state: &mut HexWfcMatch) -> Option<AscentRules> {
+    let seats = observed_match::ascent::facility::architect_seats(match_state, None);
+    let seed = match_state.seed;
+    AscentRules::new(match_state, seed, seats)
+        .inspect_err(|refusal| warn!("Architect Ascent could not start: {refusal:?}"))
+        .ok()
+}
+
 /// Seat a fresh local match for `play_setup`: the Ascent rules when it asks for them, the
 /// local player at their team's Architect desk when that is their seat, and a way for a
-/// local body to ask its Architect for help when it is not. `None` for a race, and for a
-/// `networked` match, which does not carry the rules yet. Clears the last match's desk.
+/// local body to ask its Architect for help when it is not. `None` for a race. A LAN
+/// match (`lan`, whether its launch plays Ascent) takes the server's rules instead: a
+/// bot Architect a team, every human a body, and no asks, which do not travel yet.
+/// Clears the last match's desk.
 pub(super) fn seat(
     commands: &mut Commands,
     match_state: &mut HexWfcMatch,
     local: PlayerId,
     play_setup: &crate::play_setup::PlaySetupDraft,
-    networked: bool,
+    lan: Option<bool>,
 ) -> Option<AscentRules> {
     commands.remove_resource::<ArchitectDesk>();
     commands.remove_resource::<super::ask::AskTheArchitect>();
-    if networked || play_setup.rules != crate::play_setup::PlayRules::Ascent {
+    if let Some(ascent) = lan {
+        return ascent.then(|| lan_rules(match_state)).flatten();
+    }
+    if play_setup.rules != crate::play_setup::PlayRules::Ascent {
         return None;
     }
     let team = match_state.players[&local].team;

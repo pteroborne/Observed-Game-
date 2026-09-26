@@ -15,7 +15,9 @@ use crate::protocol::WireIntent;
 
 /// Version 3 adds the generation-scoped preparation barrier and an explicit empty
 /// seat. Older peers must reject it rather than simulate as soon as `Launch` lands.
-pub const LAN_PROTOCOL_VERSION: u16 = 3;
+/// Version 4 says in `Launch` whether the match plays the Architect Ascent rules, which
+/// every peer must then step beside the match to stay in step with the server.
+pub const LAN_PROTOCOL_VERSION: u16 = 4;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;
@@ -251,6 +253,7 @@ pub enum LanPacket {
         match_number: u32,
         config: HexMatchConfig,
         simulation_content_hash: [u8; 32],
+        ascent: bool,
     },
     InputBundle {
         token: u64,
@@ -431,11 +434,13 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             match_number,
             config,
             simulation_content_hash,
+            ascent,
         } => {
             put_u64(&mut out, *seed);
             put_u32(&mut out, *match_number);
             encode_config(&mut out, *config);
             out.extend_from_slice(simulation_content_hash);
+            out.push(u8::from(*ascent));
             7
         }
         LanPacket::InputBundle { token, commands } => {
@@ -568,6 +573,7 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
             match_number: cursor.u32()?,
             config: decode_config(&mut cursor)?,
             simulation_content_hash: cursor.array32()?,
+            ascent: cursor.u8()? != 0,
         },
         8 => {
             let token = cursor.u64()?;
@@ -857,6 +863,8 @@ pub struct LanLaunch {
     pub match_number: u32,
     pub config: HexMatchConfig,
     pub simulation_content_hash: [u8; 32],
+    /// The match plays the Architect Ascent rules, with a bot Architect for every team.
+    pub ascent: bool,
 }
 
 /// Latest authoritative lobby projection. The generation travels with the phase
@@ -1027,12 +1035,14 @@ impl LanClient {
                 match_number,
                 config,
                 simulation_content_hash,
+                ascent,
             } => {
                 self.receive_launch(LanLaunch {
                     seed,
                     match_number,
                     config,
                     simulation_content_hash,
+                    ascent,
                 });
             }
             LanPacket::LaunchStart { match_number } => {
@@ -1340,6 +1350,7 @@ mod tests {
                 match_number: 3,
                 config: HexMatchConfig::default(),
                 simulation_content_hash: [4; 32],
+                ascent: true,
             },
             LanPacket::InputBundle {
                 token: 9,
@@ -1554,6 +1565,7 @@ mod tests {
             match_number,
             config: HexMatchConfig::default(),
             simulation_content_hash: [4; 32],
+            ascent: false,
         }
     }
 
@@ -1563,6 +1575,7 @@ mod tests {
             match_number: launch.match_number,
             config: launch.config,
             simulation_content_hash: launch.simulation_content_hash,
+            ascent: launch.ascent,
         }
     }
 
