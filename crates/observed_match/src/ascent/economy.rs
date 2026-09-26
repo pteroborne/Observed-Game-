@@ -728,10 +728,7 @@ impl ArchitectLab {
 
     /// Resolve any pending disturbance waves on a floor level.
     pub fn resolve_disturbance_waves(&mut self, level: u8) -> Vec<GuardianId> {
-        // A first-person facility gives the Guardians it hunts with bodies, and has none to
-        // give a wave yet: a released minor would hunt in the rules alone, unseen. The
-        // disturbance holds until it can.
-        if self.collapsed_floors.contains(&level) || self.authored {
+        if self.collapsed_floors.contains(&level) {
             return Vec::new();
         }
         let mut spawned = Vec::new();
@@ -778,15 +775,12 @@ impl ArchitectLab {
                     ((wave_num as usize).wrapping_mul(17) + i.wrapping_mul(7)) % candidates.len();
                 let spawn_cell = candidates[idx];
                 let minor_id = GuardianId(self.economy.alloc_minor_id());
-                self.guardians.insert(
-                    minor_id,
-                    Guardian {
-                        id: minor_id,
-                        cell: spawn_cell,
-                        last_detection: None,
-                        kind: GuardianKind::Minor,
-                    },
-                );
+                self.release(Guardian {
+                    id: minor_id,
+                    cell: spawn_cell,
+                    last_detection: None,
+                    kind: GuardianKind::Minor,
+                });
                 self.record_event(
                     LabEventKind::Warning,
                     Some(spawn_cell),

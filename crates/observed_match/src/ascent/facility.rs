@@ -18,12 +18,14 @@ use std::collections::BTreeMap;
 use observed_core::PlayerId;
 
 use super::session::{ASCENT_INPUT_VERSION, AscentSession, InputFrame, Refusal, Role, Seat};
-use super::sim::{ArchitectLab, Embodiment, MatchOutcome, ObserverId, TeamId};
-use crate::hex_wfc::{HexInputFrame, HexWfcMatch};
+use super::sim::{
+    ArchitectLab, Embodiment, GuardianId, GuardianKind, MatchOutcome, ObserverId, TeamId,
+};
+use crate::hex_wfc::{HexInputFrame, HexReleasedKind, HexWfcMatch};
 
 /// The rules' id for the first-person match's own Guardian, the Tumbler: reserved, above
 /// every Guardian the rules release themselves.
-pub const TUMBLER: crate::ascent::sim::GuardianId = crate::ascent::sim::GuardianId(u16::MAX);
+pub const TUMBLER: GuardianId = GuardianId(u16::MAX);
 
 /// The Rogue's seat, always a bot's: the faction the corrupted join, whose seats become
 /// Rogue seats of their own as they fall.
@@ -196,6 +198,30 @@ impl AscentRules {
                 .apply_directed_change(rewrites)
                 .expect("the rules rewrite only what the facility can build");
         }
+        // What the rules release - a wave's minors, a requisition's major - is given a
+        // body here, under the rules' own id, and the rules follow that body from the next
+        // tick (`observe`). A release onto a cell the facility no longer builds is lost.
+        for guardian in self.session.sim.take_releases() {
+            let kind = match guardian.kind {
+                GuardianKind::Major => HexReleasedKind::Major,
+                GuardianKind::Minor => HexReleasedKind::Minor,
+            };
+            physical.release_guardian(guardian.id.0, kind, guardian.cell);
+        }
+        // A floor that has collapsed takes its minors with it.
+        let collapsed = &self.session.sim.collapsed_floors;
+        let taken: Vec<u16> = physical
+            .released
+            .iter()
+            .filter(|(_, guardian)| {
+                guardian.kind() == HexReleasedKind::Minor
+                    && collapsed.contains(&guardian.cell().level)
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        for id in taken {
+            physical.remove_released(id);
+        }
         // The rules decide the match; the physical match stops when they have.
         if self.session.sim.outcome != MatchOutcome::Running {
             physical.status = crate::hex_wfc::HexMatchStatus::Finished;
@@ -220,9 +246,24 @@ impl AscentRules {
         // reserved above anything the rules release.
         self.session.sim.embody_guardian(
             TUMBLER,
+            GuardianKind::Major,
             physical.guardian.cell,
             physical.guardian_hunts(),
         );
+        // Every Guardian released since tick zero, where its body is; one whose body has
+        // gone - lost to the void, taken with its floor - is gone from the rules too.
+        for (&id, guardian) in &physical.released {
+            let kind = match guardian.kind() {
+                HexReleasedKind::Major => GuardianKind::Major,
+                HexReleasedKind::Minor => GuardianKind::Minor,
+            };
+            self.session
+                .sim
+                .embody_guardian(GuardianId(id), kind, guardian.cell(), true);
+        }
+        self.session
+            .sim
+            .retire_embodied_guardians(|id| id == TUMBLER || physical.released.contains_key(&id.0));
         self.session.sim.refresh_observation();
     }
 

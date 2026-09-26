@@ -156,7 +156,7 @@ pub(crate) fn apply_requisition_on_floor(lab: &mut ArchitectLab, floor: u8) {
         last_detection: None,
         kind: GuardianKind::Major,
     };
-    lab.guardians.insert(guardian_id, guardian);
+    lab.release(guardian);
 
     // 3. Pushes command to log.
     lab.command_log

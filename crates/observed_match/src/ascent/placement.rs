@@ -140,7 +140,6 @@ pub const fn refusal_tally(refusal: CommandRefusal) -> &'static str {
         CommandRefusal::DoorAlreadyPresent => "already doored",
         CommandRefusal::FixedStructure => "room or stair",
         CommandRefusal::Unbuildable => "no such tile",
-        CommandRefusal::NoRelease => "no Guardian to release",
     }
 }
 

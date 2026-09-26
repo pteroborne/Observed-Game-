@@ -272,6 +272,10 @@ pub struct ArchitectLab {
     /// Guardians the host moves and catches with - a first-person match's own - whose
     /// cells the rules take from it (`embody_guardian`) and never move themselves.
     pub(crate) embodied_guardians: BTreeSet<GuardianId>,
+    /// Guardians released on a first-person facility since the host last took them
+    /// (`take_releases`): each is given a body there, and comes back to the rules as an
+    /// embodied Guardian rather than hunting in the rules alone.
+    pub(crate) releases: Vec<Guardian>,
 }
 
 /// Everything that differs between one match's rules and another's at tick zero.
@@ -351,6 +355,7 @@ impl ArchitectLab {
             rewrites: BTreeMap::new(),
             embodied: BTreeSet::new(),
             embodied_guardians: BTreeSet::new(),
+            releases: Vec::new(),
         }
     }
 
@@ -600,10 +605,6 @@ impl ArchitectLab {
                     return Some(CommandRefusal::Cooldown);
                 }
                 (card, target, rotation)
-            }
-            // Paid for in a Guardian, which a first-person facility cannot give a body yet.
-            ArchitectCommand::Requisition if self.authored => {
-                return Some(CommandRefusal::NoRelease);
             }
             ArchitectCommand::Requisition => return None,
         };

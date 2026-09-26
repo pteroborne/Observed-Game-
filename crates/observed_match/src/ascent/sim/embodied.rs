@@ -127,6 +127,37 @@ impl ArchitectLab {
         }
     }
 
+    /// Put a released Guardian into the facility: on a lab board, straight into the
+    /// rules; on a first-person facility, into the host's hands to give a body
+    /// (`take_releases`), after which the rules follow that body.
+    pub(crate) fn release(&mut self, guardian: super::Guardian) {
+        if self.authored {
+            self.releases.push(guardian);
+        } else {
+            self.guardians.insert(guardian.id, guardian);
+        }
+    }
+
+    /// Every Guardian released since the last call, for the host to give a body.
+    pub(crate) fn take_releases(&mut self) -> Vec<super::Guardian> {
+        std::mem::take(&mut self.releases)
+    }
+
+    /// Forget every Guardian the host moved whose body `has_body` no longer finds: lost
+    /// to the void, taken with a collapsed floor, or a Guardian that stopped hunting.
+    pub(crate) fn retire_embodied_guardians(&mut self, has_body: impl Fn(GuardianId) -> bool) {
+        let gone: Vec<GuardianId> = self
+            .embodied_guardians
+            .iter()
+            .copied()
+            .filter(|&id| !has_body(id))
+            .collect();
+        for id in gone {
+            self.embodied_guardians.remove(&id);
+            self.guardians.remove(&id);
+        }
+    }
+
     /// Everything rewritten since the last call, for the host to build.
     pub(crate) fn take_rewrites(&mut self) -> BTreeMap<HexCoord, HexPlacement> {
         std::mem::take(&mut self.rewrites)
@@ -154,11 +185,17 @@ impl ArchitectLab {
             || vertical(grid.neighbor(cell, HexFace::Up), HexFace::Down)
     }
 
-    /// Put a Guardian the host moves and catches with where its body is: a Major on
+    /// Put a Guardian the host moves and catches with where its body is: one of `kind` on
     /// `cell` while it `hunts`, and gone from the rules while it does not. The rules never
     /// move it or catch with it themselves (`embodied_guardians`); they see it, route
     /// against it, and show it to whoever can.
-    pub(crate) fn embody_guardian(&mut self, id: GuardianId, cell: HexCoord, hunts: bool) {
+    pub(crate) fn embody_guardian(
+        &mut self,
+        id: GuardianId,
+        kind: GuardianKind,
+        cell: HexCoord,
+        hunts: bool,
+    ) {
         if !hunts {
             self.guardians.remove(&id);
             self.embodied_guardians.remove(&id);
@@ -172,7 +209,7 @@ impl ArchitectLab {
                 id,
                 cell,
                 last_detection,
-                kind: GuardianKind::Major,
+                kind,
             },
         );
     }
