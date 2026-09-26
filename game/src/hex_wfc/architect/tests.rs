@@ -184,3 +184,81 @@ fn the_architect_believes_what_they_built_until_the_team_sees_the_cell_again() {
         "the team has seen it since, and what it saw wins"
     );
 }
+
+fn cell(q: u16, r: u16) -> HexCoord {
+    HexCoord { q, r, level: 0 }
+}
+
+#[test]
+fn a_click_aims_and_a_second_click_on_the_aim_confirms() {
+    let mut desk = desk();
+    assert!(
+        !desk.click_cell(cell(1, 1)),
+        "no card in hand: nothing to aim"
+    );
+    assert_eq!(desk.aimed, None);
+
+    desk.pick_up(2, 5);
+    assert!(!desk.click_cell(cell(1, 1)), "the first click aims");
+    assert_eq!(desk.aimed, Some(cell(1, 1)));
+    assert!(!desk.click_cell(cell(2, 1)), "another cell moves the aim");
+    assert_eq!(desk.aimed, Some(cell(2, 1)));
+    assert!(desk.click_cell(cell(2, 1)), "the aim again confirms");
+
+    // The aim is what the play is about, even with the cursor elsewhere.
+    desk.hovered = Some(cell(4, 4));
+    assert_eq!(desk.focus(), Some(cell(2, 1)));
+}
+
+#[test]
+fn escape_steps_back_from_the_aim_then_from_the_card() {
+    let mut desk = desk();
+    desk.pick_up(0, 5);
+    desk.click_cell(cell(1, 1));
+    desk.cancel();
+    assert_eq!((desk.selected, desk.aimed), (Some(0), None));
+    desk.cancel();
+    assert_eq!(desk.selected, None);
+
+    // Another card keeps the aim; the same card again puts it down with the aim.
+    desk.pick_up(0, 5);
+    desk.click_cell(cell(1, 1));
+    desk.pick_up(1, 5);
+    assert_eq!((desk.selected, desk.aimed), (Some(1), Some(cell(1, 1))));
+    desk.pick_up(1, 5);
+    assert_eq!((desk.selected, desk.aimed), (None, None));
+    desk.pick_up(7, 5);
+    assert_eq!(desk.selected, None, "no such card");
+}
+
+#[test]
+fn a_confirmed_play_is_sent_only_if_the_rules_would_take_it() {
+    let mut desk = desk();
+    desk.pick_up(0, 5);
+    desk.click_cell(cell(1, 1));
+    let play = ArchitectCommand::Requisition;
+    let refusal = Refusal::Architect(CommandRefusal::UnknownTarget);
+    desk.settle(play, Some(refusal));
+    assert_eq!(desk.pending, None);
+    assert_eq!(desk.last_refusal, Some(refusal));
+    assert_eq!(desk.aimed, Some(cell(1, 1)), "a refused play stays aimed");
+
+    desk.settle(play, None);
+    assert_eq!(desk.pending, Some(play));
+    assert_eq!(
+        (desk.selected, desk.aimed, desk.last_refusal),
+        (None, None, None)
+    );
+}
+
+#[test]
+fn changing_floor_drops_the_aim() {
+    let mut desk = desk();
+    desk.pick_up(0, 5);
+    desk.click_cell(cell(1, 1));
+    desk.look_at(0);
+    assert_eq!(desk.aimed, Some(cell(1, 1)), "the same floor keeps it");
+    desk.look_at(1);
+    assert_eq!((desk.floor, desk.aimed, desk.hovered), (1, None, None));
+    assert_eq!(desk.selected, Some(0), "the card stays in hand");
+}

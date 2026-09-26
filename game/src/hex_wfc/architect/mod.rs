@@ -27,6 +27,9 @@ pub(crate) struct ArchitectDesk {
     pub rotation: u8,
     /// The cell under the cursor, on the floor in view.
     pub hovered: Option<HexCoord>,
+    /// The cell the card picked up is aimed at: a click aims, and the play waits there,
+    /// its ghost standing, until it is confirmed or cancelled.
+    pub aimed: Option<HexCoord>,
     /// The floor the board shows.
     pub floor: u8,
     /// A play committed and not yet stepped.
@@ -54,6 +57,74 @@ impl ArchitectDesk {
         }
     }
 
+    /// The cell the play is about: the one aimed at, or else the one under the cursor.
+    #[must_use]
+    pub(crate) fn focus(&self) -> Option<HexCoord> {
+        self.aimed.or(self.hovered)
+    }
+
+    /// Pick up card `index` of `held`, or put it down if it is the card in hand. The aim
+    /// stays with another card, so cards can be compared on one cell.
+    pub(crate) fn pick_up(&mut self, index: usize, held: usize) {
+        if index >= held {
+            return;
+        }
+        if self.selected == Some(index) {
+            self.put_down();
+        } else {
+            self.selected = Some(index);
+        }
+    }
+
+    /// Put the card down, and the aim with it.
+    pub(crate) fn put_down(&mut self) {
+        self.selected = None;
+        self.aimed = None;
+    }
+
+    /// Step back once: from an aim to the card in hand, and from the card to none.
+    pub(crate) fn cancel(&mut self) {
+        if self.aimed.take().is_none() {
+            self.selected = None;
+        }
+    }
+
+    /// A click on `cell` of the board. With a card in hand it aims there; a click on the
+    /// cell already aimed at is the confirmation, and says so.
+    pub(crate) fn click_cell(&mut self, cell: HexCoord) -> bool {
+        if self.selected.is_none() {
+            return false;
+        }
+        if self.aimed == Some(cell) {
+            return true;
+        }
+        self.aimed = Some(cell);
+        self.last_refusal = None;
+        false
+    }
+
+    /// Settle a confirmed `play` by the rules' own inspection of it: sent, with the card
+    /// put down, when they would take it; kept in hand, with their reason, when not.
+    pub(crate) fn settle(&mut self, play: ArchitectCommand, refusal: Option<Refusal>) {
+        match refusal {
+            None => {
+                self.pending = Some(play);
+                self.put_down();
+                self.last_refusal = None;
+            }
+            Some(refusal) => self.last_refusal = Some(refusal),
+        }
+    }
+
+    /// Look at `floor`, which drops an aim on the floor left.
+    pub(crate) fn look_at(&mut self, floor: u8) {
+        if floor != self.floor {
+            self.floor = floor;
+            self.aimed = None;
+            self.hovered = None;
+        }
+    }
+
     /// A desk for `team`'s Architect, looking at `floor`, where the team starts.
     pub(crate) fn new(seat: PlayerId, team: TeamId, floor: u8) -> Self {
         Self {
@@ -62,6 +133,7 @@ impl ArchitectDesk {
             selected: None,
             rotation: 0,
             hovered: None,
+            aimed: None,
             floor,
             pending: None,
             built: BTreeMap::new(),
@@ -75,7 +147,9 @@ pub(super) mod capture;
 mod cards;
 mod desk;
 mod input;
+mod overlay;
 mod pick;
+mod readout;
 mod stack;
 mod words;
 
@@ -91,10 +165,10 @@ pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleS
         building::clear,
         building::draw,
         board::draw_marks,
-        board::draw_play,
+        overlay::draw,
         stack::draw,
         cards::sync,
-        desk::sync,
+        readout::sync,
     )
         .chain()
         .run_if(resource_exists::<ArchitectDesk>)

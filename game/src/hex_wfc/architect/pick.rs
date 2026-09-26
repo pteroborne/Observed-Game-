@@ -20,13 +20,38 @@ pub(super) const CELL_RADIUS: f32 = 8.1;
 /// so a team that has seen three cells still sees them in their surroundings.
 pub(super) const MIN_VIEW: Vec2 = Vec2::new(8.0 * COLUMN, 6.0 * ROW);
 
-/// Screen space the board must leave clear: the side panel, the hand and the top bar,
-/// in pixels.
+/// Screen space the board must leave clear: the side panel, the card panel, the hand and
+/// the top bar, in pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::hex_wfc) struct Margins {
     pub left: f32,
+    pub right: f32,
     pub bottom: f32,
     pub top: f32,
+}
+
+impl Margins {
+    /// `t` (0..=1) of the way from these margins to `to`, so a panel opening slides the
+    /// board aside rather than jumping it.
+    #[must_use]
+    pub fn toward(self, to: Self, t: f32) -> Self {
+        let mix = |a: f32, b: f32| a + (b - a) * t.clamp(0.0, 1.0);
+        Self {
+            left: mix(self.left, to.left),
+            right: mix(self.right, to.right),
+            bottom: mix(self.bottom, to.bottom),
+            top: mix(self.top, to.top),
+        }
+    }
+
+    /// Whether a pixel of a `window` is in the board's free area.
+    #[must_use]
+    pub fn contain(self, window: Vec2, pixel: Vec2) -> bool {
+        pixel.x > self.left
+            && pixel.x < window.x - self.right
+            && pixel.y > self.top
+            && pixel.y < window.y - self.bottom
+    }
 }
 
 /// What the board's camera looks at and how many metres a pixel spans.
@@ -102,7 +127,7 @@ pub(super) fn frame(
 
 fn free_area(window: Vec2, margins: Margins) -> Vec2 {
     Vec2::new(
-        (window.x - margins.left).max(1.0),
+        (window.x - margins.left - margins.right).max(1.0),
         (window.y - margins.bottom - margins.top).max(1.0),
     )
 }
@@ -114,7 +139,8 @@ pub(super) fn camera(framing: Framing, margins: Margins) -> Transform {
     let rotation = rotation();
     let right = rotation * Vec3::X;
     let up = rotation * Vec3::Y;
-    let shift = right * (-margins.left * 0.5) + up * ((margins.top - margins.bottom) * 0.5);
+    let shift = right * ((margins.right - margins.left) * 0.5)
+        + up * ((margins.top - margins.bottom) * 0.5);
     Transform::from_translation(
         framing.focus + rotation * Vec3::Z * 1_500.0 + shift * framing.metres_per_pixel,
     )
@@ -211,7 +237,8 @@ mod tests {
 
     const WINDOW: Vec2 = Vec2::new(1280.0, 800.0);
     const MARGINS: Margins = Margins {
-        left: 320.0,
+        left: 250.0,
+        right: 290.0,
         bottom: 220.0,
         top: 56.0,
     };
@@ -273,14 +300,7 @@ mod tests {
             let origin = hex_origin(cell);
             let point = Vec3::new(origin[0], deck(2), origin[2]);
             let pixel = pixel_of(at, framing.metres_per_pixel, point);
-            assert!(
-                pixel.x > MARGINS.left && pixel.x < WINDOW.x,
-                "{cell:?} at {pixel}"
-            );
-            assert!(
-                pixel.y > MARGINS.top && pixel.y < WINDOW.y - MARGINS.bottom,
-                "{cell:?} at {pixel}"
-            );
+            assert!(MARGINS.contain(WINDOW, pixel), "{cell:?} at {pixel}");
             let back = on_deck(ray(at, framing.metres_per_pixel, WINDOW, pixel), 2)
                 .and_then(|plan| cell_at(config, plan, 2));
             assert_eq!(back, Some(cell));

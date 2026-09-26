@@ -1,14 +1,16 @@
 //! The Architect's hands: keys and the mouse, turned into the desk's state and plays.
 //!
-//! A play goes to the rules only when their own inspection would take it; otherwise the
-//! desk shows why not and nothing is sent. Either way the rules decide on the tick.
+//! A click on the board aims the card in hand; a second click on the aim, Space, Enter or
+//! PLAY confirms it. A confirmed play goes to the rules only when their own inspection
+//! would take it; otherwise the desk shows why not and nothing is sent. Either way the
+//! rules decide on the tick.
 
 use bevy::prelude::*;
 use observed_match::ascent::sim::ArchitectCommand;
 
 use super::ArchitectDesk;
-use super::board::{Board, MARGINS};
-use super::desk::Slot;
+use super::board::{Board, margins as board_margins};
+use super::desk::{DeskButton, Slot};
 use super::pick;
 use crate::hex_wfc::sim::HexWfcRuntime;
 
@@ -29,6 +31,7 @@ pub(super) fn input(
     runtime: Res<HexWfcRuntime>,
     mut desk: ResMut<ArchitectDesk>,
     cards: Query<(&Slot, &Interaction)>,
+    controls: Query<(&DeskButton, &Interaction)>,
 ) {
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
@@ -37,54 +40,64 @@ pub(super) fn input(
         return;
     };
     let held = hand.deck.hand.len();
-    let pick_up = |desk: &mut ArchitectDesk, index: usize| {
-        if index < held {
-            desk.selected = (desk.selected != Some(index)).then_some(index);
-        }
-    };
+    let clicked = buttons.just_pressed(MouseButton::Left);
     for (index, key) in CARD_KEYS.into_iter().enumerate() {
         if keys.just_pressed(key) {
-            pick_up(&mut desk, index);
+            desk.pick_up(index, held);
         }
     }
-    let over_a_card = cards
-        .iter()
-        .any(|(_, interaction)| *interaction != Interaction::None);
     for (slot, interaction) in &cards {
-        if *interaction == Interaction::Pressed && buttons.just_pressed(MouseButton::Left) {
-            pick_up(&mut desk, slot.0);
+        if *interaction == Interaction::Pressed && clicked {
+            desk.pick_up(slot.0, held);
         }
     }
-    if keys.just_pressed(KeyCode::KeyQ) {
+    // The desk's buttons do what their keys do.
+    let pressed = |action: DeskButton| {
+        clicked
+            && controls.iter().any(|(button, interaction)| {
+                *button == action && *interaction == Interaction::Pressed
+            })
+    };
+    let over_the_ui = cards
+        .iter()
+        .map(|(_, interaction)| interaction)
+        .chain(controls.iter().map(|(_, interaction)| interaction))
+        .any(|interaction| *interaction != Interaction::None);
+
+    if keys.just_pressed(KeyCode::KeyQ) || pressed(DeskButton::TurnLeft) {
         desk.rotation = (desk.rotation + 5) % 6;
     }
-    if keys.just_pressed(KeyCode::KeyE) {
+    if keys.just_pressed(KeyCode::KeyE) || pressed(DeskButton::TurnRight) {
         desk.rotation = (desk.rotation + 1) % 6;
     }
     let levels = runtime.match_state.facility.config.levels;
-    if keys.just_pressed(KeyCode::BracketLeft) {
-        desk.floor = desk.floor.saturating_sub(1);
+    if keys.just_pressed(KeyCode::BracketLeft) || pressed(DeskButton::FloorDown) {
+        let floor = desk.floor.saturating_sub(1);
+        desk.look_at(floor);
     }
-    if keys.just_pressed(KeyCode::BracketRight) {
-        desk.floor = (desk.floor + 1).min(levels.saturating_sub(1));
+    if keys.just_pressed(KeyCode::BracketRight) || pressed(DeskButton::FloorUp) {
+        let floor = (desk.floor + 1).min(levels.saturating_sub(1));
+        desk.look_at(floor);
     }
     if keys.just_pressed(KeyCode::KeyR) {
         desk.pending = Some(ArchitectCommand::Requisition);
     }
     if buttons.just_pressed(MouseButton::Right) {
-        desk.selected = None;
+        desk.put_down();
+    }
+    if keys.just_pressed(KeyCode::Escape) || pressed(DeskButton::Cancel) {
+        desk.cancel();
     }
 
     // The cell under the cursor. A cursor off the window leaves the last one in place; one
-    // over the panel or the hand is not over the board, whatever is drawn beneath them.
+    // over the desk is not over the board, whatever is drawn beneath it.
     let cursor = windows.single().ok().and_then(Window::cursor_position);
-    let on_board = |pixel: Vec2, size: Vec2| {
-        pixel.x > MARGINS.left && pixel.y > MARGINS.top && pixel.y < size.y - MARGINS.bottom
-    };
-    let over_the_desk = cursor
-        .zip(board.framing)
-        .is_some_and(|(pixel, (_, size))| !on_board(pixel, size));
-    if over_a_card || over_the_desk {
+    let margins = board_margins(desk.selected.is_some());
+    let over_the_desk = over_the_ui
+        || cursor
+            .zip(board.framing)
+            .is_some_and(|(pixel, (_, size))| !margins.contain(size, pixel));
+    if over_the_desk {
         desk.hovered = None;
     } else if let (Some(pixel), Some((framing, size))) = (cursor, board.framing) {
         // Traced onto the floor in view, so the pick is exact at the isometric pitch.
@@ -94,10 +107,18 @@ pub(super) fn input(
         });
     }
 
-    if buttons.just_pressed(MouseButton::Left)
-        && !over_a_card
+    // A click on the board aims; a second click on the aim, Space, Enter or PLAY confirms.
+    let mut confirm = keys.just_pressed(KeyCode::Space)
+        || keys.just_pressed(KeyCode::Enter)
+        || pressed(DeskButton::Play);
+    if clicked
         && !over_the_desk
-        && let (Some(index), Some(target)) = (desk.selected, desk.hovered)
+        && let Some(cell) = desk.hovered
+    {
+        confirm |= desk.click_cell(cell);
+    }
+    if confirm
+        && let (Some(index), Some(target)) = (desk.selected, desk.aimed)
         && let Some(card) = hand.deck.hand.get(index)
     {
         let play = ArchitectCommand::Play {
@@ -105,13 +126,7 @@ pub(super) fn input(
             target,
             rotation: desk.rotation,
         };
-        match ascent.session().architect_refusal(desk.seat, play) {
-            None => {
-                desk.pending = Some(play);
-                desk.selected = None;
-                desk.last_refusal = None;
-            }
-            Some(refusal) => desk.last_refusal = Some(refusal),
-        }
+        let refusal = ascent.session().architect_refusal(desk.seat, play);
+        desk.settle(play, refusal);
     }
 }

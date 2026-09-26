@@ -319,7 +319,7 @@ pub(super) fn click(
     };
     let config = runtime.match_state.facility.config;
     if let Some(level) = floor_under(config, ray) {
-        desk.floor = level;
+        desk.look_at(level);
     }
 }
 

@@ -239,15 +239,27 @@ team's bodies are bots, and the player sits at the desk (`game/src/hex_wfc/archi
   way as the board's rooms. A bar lies across each doorway, cyan in hand and amber on the
   card picked up, which turns with the desk's rotation - at card size the doorways read by
   their thresholds, not by gaps in cut walls. A door card shows a door frame.
+- **The desk** is laid out as the lab lays out its own, in the lab's palette: a top bar
+  (the seat and team, whether the hand is charged, and a floor switcher), a slim side
+  panel (the team's Observers, the climb, the key), the hand along the bottom with the
+  controls in a line beneath it, and - while a card is picked up - a card panel at the
+  right: the tile large, the cell it is aimed at and its orientation, the rules' verdict,
+  TURN buttons, PLAY CARD [SPACE] (amber only when the rules would take the play) and
+  CANCEL [ESC]. The board frames itself inside whatever the desk leaves free, and slides
+  aside as the card panel opens.
 - **Playing:** pick a card (1-5, or click it), turn it (Q / E), point at a cell. Every cell
-  the rules would take the card on wears a green ring. The cell under the cursor wears an
-  amber ring if the rules would take the play and a red one if not, and a tile card shows
-  the lab's amber ghost of the actual tile - its real hulls, projected for that cell at that
-  rotation - standing where it would be built. Picking is exact at the angle: the cursor's
-  ray is traced onto the deck of the floor in view (`pick::ray`, `pick::on_deck`). The side panel says why a cell is refused, in the rules' own
-  words. A click sends the play only if the rules' inspection would take it; the step hands
-  it to the rules as the seat's command, and a refusal comes back to the desk. `[` / `]`
-  change floor, R is the emergency requisition, right click puts the card down.
+  the rules would take the card on wears a green ring. The cell the play is about wears an
+  amber ring if the rules would take it and a red one if not, and a tile card shows the
+  lab's amber ghost of the actual tile - its real hulls, projected for that cell at that
+  rotation - standing where it would be built. Picking is exact at the angle: the
+  cursor's ray is traced onto the deck of the floor in view (`pick::ray`,
+  `pick::on_deck`). A click **aims** the card at a cell, where its ghost stays while the
+  cursor moves on; a second click on the aim, Space, Enter or PLAY **confirms** it, and
+  Esc steps back from the aim and then from the card. The card panel says why a cell is
+  refused, in the rules' own words. A confirmed play is sent only if the rules'
+  inspection would take it; the step hands it to the rules as the seat's command, and a
+  refusal comes back to the desk. `[` / `]` or the top bar change floor, R is the
+  emergency requisition, right click puts the card down.
 - Legality is never decided at the desk: every ring and verdict is
   `AscentSession::architect_refusal` for the player's own seat, the question the play asks.
 

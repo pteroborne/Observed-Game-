@@ -102,29 +102,31 @@ pub(in crate::hex_wfc) fn capture(
             };
             desk.selected = Some(index);
             desk.rotation = rotation;
-            desk.floor = target.level;
+            desk.look_at(target.level);
             // Point at it. (Moving the real cursor needs it locked on Wayland; the desk
             // keeps the cell it was given while the cursor is off the window.)
             desk.hovered = Some(target);
+            desk.click_cell(target);
             request.last_shot_tick = tick;
             request.stills = 2;
         }
         2 if tick >= request.last_shot_tick + 20 => {
             shoot(&mut commands, "architect-play-1280x800.png");
-            // Commit it as the click does.
-            if let (Some(index), Some(target)) = (desk.selected, desk.hovered)
+            // Confirm it as PLAY does.
+            if let (Some(index), Some(target)) = (desk.selected, desk.aimed)
                 && let Some(card) = ascent
                     .session()
                     .hands
                     .get(&desk.team)
                     .and_then(|hand| hand.deck.hand.get(index))
             {
-                desk.pending = Some(ArchitectCommand::Play {
+                let play = ArchitectCommand::Play {
                     card: card.id,
                     target,
                     rotation: desk.rotation,
-                });
-                desk.selected = None;
+                };
+                let refusal = ascent.session().architect_refusal(desk.seat, play);
+                desk.settle(play, refusal);
             }
             request.last_shot_tick = tick;
             request.stills = 3;

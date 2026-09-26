@@ -29,11 +29,11 @@ pub(super) const fn card_detail(kind: CardKind) -> &'static str {
     }
 }
 
-/// The verdict on the cell under the cursor for the card picked up.
+/// The verdict on the cell aimed at, or under the cursor, for the card picked up.
 #[must_use]
 pub(super) fn verdict(refusal: Option<Refusal>) -> String {
     match refusal {
-        None => "Legal. Click to play.".to_owned(),
+        None => "Ready to play.".to_owned(),
         Some(refusal) => format!("Not here: {}.", refusal_words(refusal)),
     }
 }
@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn a_refusal_says_why_and_a_legal_cell_says_so() {
-        assert_eq!(verdict(None), "Legal. Click to play.");
+        assert_eq!(verdict(None), "Ready to play.");
         assert_eq!(
             verdict(Some(Refusal::Architect(CommandRefusal::Observed))),
             "Not here: an Observer is holding that tile in view."

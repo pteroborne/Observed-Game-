@@ -1,39 +1,55 @@
-//! The Architect's desk: the side panel and the hand, over the board.
+//! The Architect's desk: the chrome around the board, laid out as `architect_lab` lays
+//! out its own.
 //!
-//! The panel says who and where the Architect is, whether the hand is charged, where the
-//! team's Observers are, and what the rules would say to the play under the cursor. The
-//! hand is five cards; each shows a miniature of the real tile it will build (`cards`),
-//! turned to the rotation it would be played at. The UI belongs to the board's camera, which draws over the world.
+//! - **The top bar** names the seat and the team, says whether the hand is charged, and
+//!   switches floors.
+//! - **The side panel** holds the team's Observers, the climb (`stack`) and the key.
+//! - **The hand** runs along the bottom: five cards, each a miniature of the real tile it
+//!   will build (`cards`), with the controls in a line beneath.
+//! - **The card panel** stands at the right while a card is picked up: the tile large,
+//!   where it is aimed and how it is turned, the rules' verdict, and the buttons that turn
+//!   it, play it and put it down. A play is aimed and then confirmed, so the amber preview
+//!   can be inspected before it is built.
+//!
+//! In the lab's palette (`observed_style::architect`). The UI belongs to the board's
+//! camera, which draws over the world; `readout` keeps what it says current.
 
 use bevy::prelude::*;
 use bevy::ui::UiTargetCamera;
-use observed_match::ascent::sim::{ArchitectCommand, ObserverState, floor_title};
+use observed_style::architect::{Role, color};
 
-use super::ArchitectDesk;
 use super::board::BoardCamera;
 use super::cards::{CardArt, HAND};
-use super::words;
 use crate::GameState;
-use crate::hex_wfc::sim::HexWfcRuntime;
-use crate::view::theme::{ACCENT, DIM, PANEL, TITLE, WARNING};
 
-const PANEL_WIDTH: f32 = 310.0;
-const CARD_WIDTH: f32 = 150.0;
-const CARD_HEIGHT: f32 = 196.0;
-/// The miniature's box on a card.
-const ART: Vec2 = Vec2::new(130.0, 88.0);
+/// The desk's measures, in pixels, which the board frames itself inside.
+pub(super) const TOP_BAR: f32 = 56.0;
+pub(super) const PANEL_WIDTH: f32 = 250.0;
+pub(super) const CARD_PANEL_WIDTH: f32 = 270.0;
+pub(super) const GAP: f32 = 16.0;
+const CARD: Vec2 = Vec2::new(176.0, 176.0);
+/// Under the cards: the line of controls.
+const STRIP: f32 = 28.0;
+pub(super) const HAND_HEIGHT: f32 = CARD.y + STRIP + 14.0;
+/// A card's miniature, and the card panel's larger one, in the image's proportions.
+const ART: Vec2 = Vec2::new(156.0, 98.0);
+const PANEL_ART: Vec2 = Vec2::new(234.0, 158.0);
 
 #[derive(Component)]
 pub(super) struct DeskUi;
 
-/// A text of the panel.
+/// A text the desk keeps current.
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Line {
-    Heading,
-    Charge,
+    Team,
+    Phase,
+    Floor,
     Observers,
-    Target,
     Message,
+    CardName,
+    CardDistrict,
+    CardWhere,
+    Verdict,
 }
 
 /// One card's place in the hand.
@@ -47,6 +63,26 @@ pub(super) enum CardLine {
     District,
     Detail,
 }
+
+/// What a desk button does; `input` acts on the press.
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum DeskButton {
+    FloorDown,
+    FloorUp,
+    TurnLeft,
+    TurnRight,
+    Play,
+    Cancel,
+}
+
+#[derive(Component)]
+pub(super) struct CardPanel;
+
+#[derive(Component)]
+pub(super) struct CardPanelArt;
+
+#[derive(Component)]
+pub(super) struct PlayLabel;
 
 pub(super) fn spawn(
     mut commands: Commands,
@@ -73,17 +109,19 @@ pub(super) fn spawn(
             Pickable::IGNORE,
         ))
         .with_children(|root| {
-            panel(root);
+            top_bar(root);
+            side_panel(root);
             hand(root, &art);
+            card_panel(root, &art);
             root.spawn((
                 Line::Message,
                 Text::new(""),
-                text_font(16.0),
-                TextColor(WARNING),
+                text_font(15.0),
+                TextColor(color(Role::Guardian)),
                 Node {
                     position_type: PositionType::Absolute,
-                    top: px(18),
-                    left: px(PANEL_WIDTH + 30.0),
+                    top: px(TOP_BAR + 14.0),
+                    left: px(PANEL_WIDTH + 24.0),
                     ..default()
                 },
             ));
@@ -97,53 +135,142 @@ fn text_font(size: f32) -> TextFont {
     }
 }
 
-fn panel(root: &mut ChildSpawnerCommands) {
+fn label(text: &str, size: f32, role: Role) -> impl Bundle {
+    (Text::new(text), text_font(size), TextColor(color(role)))
+}
+
+/// A bordered button saying `text`.
+fn button(parent: &mut ChildSpawnerCommands, action: DeskButton, text: &str, grow: bool) {
+    parent
+        .spawn((
+            action,
+            Button,
+            Node {
+                padding: UiRect::axes(px(12), px(8)),
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(4)),
+                justify_content: JustifyContent::Center,
+                flex_grow: if grow { 1.0 } else { 0.0 },
+                ..default()
+            },
+            BackgroundColor(color(Role::Card)),
+            BorderColor::all(color(Role::Border)),
+        ))
+        .with_children(|button| {
+            let mut text = button.spawn(label(text, 13.0, Role::Text));
+            if action == DeskButton::Play {
+                text.insert(PlayLabel);
+            }
+        });
+}
+
+fn top_bar(root: &mut ChildSpawnerCommands) {
     root.spawn((
         Node {
             position_type: PositionType::Absolute,
             left: px(0),
+            right: px(0),
             top: px(0),
-            width: px(PANEL_WIDTH),
-            height: percent(100),
+            height: px(TOP_BAR),
+            padding: UiRect::horizontal(px(20)),
+            align_items: AlignItems::Center,
+            column_gap: px(28),
+            border: UiRect::bottom(px(1)),
+            ..default()
+        },
+        BackgroundColor(color(Role::Panel)),
+        BorderColor::all(color(Role::Border)),
+    ))
+    .with_children(|bar| {
+        bar.spawn(Node {
+            width: px(PANEL_WIDTH - 48.0),
             flex_direction: FlexDirection::Column,
-            row_gap: px(14),
-            padding: UiRect::all(px(20)),
+            ..default()
+        })
+        .with_children(|name| {
+            name.spawn(label("ARCHITECT", 22.0, Role::Text));
+            name.spawn((Line::Team, label("", 12.0, Role::Muted)));
+        });
+        // A fixed width, so the floor switcher does not move as the charge counts down.
+        bar.spawn((
+            Line::Phase,
+            label("", 14.0, Role::Valid),
+            Node {
+                width: px(170),
+                ..default()
+            },
+        ));
+        // The floor switcher, centred in what is left.
+        bar.spawn(Node {
+            flex_grow: 1.0,
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            column_gap: px(10),
+            ..default()
+        })
+        .with_children(|switcher| {
+            button(switcher, DeskButton::FloorDown, "<   FLOOR", false);
+            switcher.spawn((
+                Line::Floor,
+                label("", 13.0, Role::Text),
+                TextLayout::justify(Justify::Center),
+                Node {
+                    min_width: px(220),
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+            ));
+            button(switcher, DeskButton::FloorUp, "FLOOR   >", false);
+        });
+        bar.spawn(Node {
+            width: px(PANEL_WIDTH - 48.0),
+            ..default()
+        });
+    });
+}
+
+fn side_panel(root: &mut ChildSpawnerCommands) {
+    root.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            left: px(0),
+            top: px(TOP_BAR),
+            bottom: px(0),
+            width: px(PANEL_WIDTH),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(10),
+            padding: UiRect::all(px(18)),
             border: UiRect::right(px(1)),
             ..default()
         },
-        BackgroundColor(PANEL),
-        BorderColor::all(ACCENT.with_alpha(0.35)),
+        BackgroundColor(color(Role::Panel)),
+        BorderColor::all(color(Role::Border)),
     ))
     .with_children(|panel| {
-        panel.spawn((Text::new("ARCHITECT"), text_font(30.0), TextColor(TITLE)));
-        for (line, size, color) in [
-            (Line::Heading, 15.0, ACCENT),
-            (Line::Charge, 15.0, TITLE),
-            (Line::Observers, 14.0, DIM),
-        ] {
-            panel.spawn((line, Text::new(""), text_font(size), TextColor(color)));
-        }
-        // Every floor at once: the stack's camera draws into this space.
+        panel.spawn(label("THE TEAM", 12.0, Role::Muted));
+        panel.spawn((Line::Observers, label("", 13.0, Role::Text)));
         panel.spawn((
-            Text::new("THE CLIMB  (click a floor)"),
-            text_font(12.0),
-            TextColor(DIM),
+            label("THE CLIMB  (click a floor)", 12.0, Role::Muted),
+            Node {
+                margin: UiRect::top(px(10)),
+                ..default()
+            },
         ));
+        // Every floor at once: the stack's camera draws into this space.
         panel.spawn((
             super::stack::StackSpace,
             Node {
                 width: percent(100),
-                height: px(270),
+                height: px(250),
                 ..default()
             },
         ));
-        panel.spawn((Line::Target, Text::new(""), text_font(15.0), TextColor(TITLE)));
         panel.spawn((
-            Text::new(
-                "1-5  pick up a card\nQ / E  turn it\nClick  play it here\nRight click  put it down\n[ / ]  floor below / above\nR  emergency requisition",
+            label(
+                "KEY\nCyan eye     Observer\nRed pyramid  Guardian\nGreen ring   can build\nAmber        your play\nRed ring     contradiction\nViolet ring  prison lobby\nChevron      stair or ramp",
+                12.0,
+                Role::Muted,
             ),
-            text_font(13.0),
-            TextColor(DIM),
             Node {
                 margin: UiRect::top(Val::Auto),
                 ..default()
@@ -153,11 +280,25 @@ fn panel(root: &mut ChildSpawnerCommands) {
 }
 
 fn hand(root: &mut ChildSpawnerCommands, art: &CardArt) {
+    // The hand's own table, so the board ends where the hand begins.
+    root.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            left: px(PANEL_WIDTH),
+            right: px(0),
+            bottom: px(0),
+            height: px(HAND_HEIGHT),
+            border: UiRect::top(px(1)),
+            ..default()
+        },
+        BackgroundColor(color(Role::Panel)),
+        BorderColor::all(color(Role::Border)),
+    ));
     root.spawn(Node {
         position_type: PositionType::Absolute,
         left: px(PANEL_WIDTH),
         right: px(0),
-        bottom: px(18),
+        bottom: px(STRIP),
         justify_content: JustifyContent::Center,
         column_gap: px(14),
         ..default()
@@ -168,169 +309,109 @@ fn hand(root: &mut ChildSpawnerCommands, art: &CardArt) {
                 Slot(index),
                 Button,
                 Node {
-                    width: px(CARD_WIDTH),
-                    height: px(CARD_HEIGHT),
+                    width: px(CARD.x),
+                    height: px(CARD.y),
                     flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::Center,
-                    row_gap: px(6),
+                    row_gap: px(4),
                     padding: UiRect::all(px(10)),
-                    border: UiRect::all(px(2)),
-                    border_radius: BorderRadius::all(px(6)),
+                    border: UiRect::all(px(1)),
+                    border_radius: BorderRadius::all(px(4)),
                     ..default()
                 },
-                BackgroundColor(PANEL),
-                BorderColor::all(DIM.with_alpha(0.5)),
+                BackgroundColor(color(Role::Card)),
+                BorderColor::all(color(Role::Border)),
             ))
             .with_children(|card| {
-                card.spawn((
-                    Text::new(format!("{}", index + 1)),
-                    text_font(13.0),
-                    TextColor(DIM),
-                    Node {
-                        align_self: AlignSelf::FlexEnd,
-                        ..default()
-                    },
-                ));
-                card.spawn((
-                    CardLine::Name,
-                    Text::new(""),
-                    text_font(17.0),
-                    TextColor(TITLE),
-                ));
-                card.spawn((
-                    CardLine::District,
-                    Text::new(""),
-                    text_font(12.0),
-                    TextColor(DIM),
-                ));
+                card.spawn(Node {
+                    column_gap: px(8),
+                    ..default()
+                })
+                .with_children(|head| {
+                    head.spawn(label(&format!("{}", index + 1), 15.0, Role::Muted));
+                    head.spawn((CardLine::Name, label("", 15.0, Role::Text)));
+                });
+                card.spawn((CardLine::District, label("", 11.0, Role::Muted)));
                 // The tile itself, drawn by the card's own camera (`cards`).
                 card.spawn((
                     ImageNode::new(art.images[index].clone()),
                     Node {
                         width: px(ART.x),
                         height: px(ART.y),
-                        border_radius: BorderRadius::all(px(4)),
+                        margin: UiRect::vertical(px(2)),
                         ..default()
                     },
                 ));
-                card.spawn((
-                    CardLine::Detail,
-                    Text::new(""),
-                    text_font(12.0),
-                    TextColor(DIM),
-                ));
+                card.spawn((CardLine::Detail, label("", 11.0, Role::Muted)));
             });
         }
     });
+    root.spawn((
+        label(
+            "1-5  pick a card   >   click a cell  aim   >   Q / E  turn   >   Space  play        Esc  cancel     [ / ]  floor     R  requisition",
+            12.0,
+            Role::Muted,
+        ),
+        Node {
+            position_type: PositionType::Absolute,
+            left: px(PANEL_WIDTH),
+            right: px(0),
+            bottom: px(7),
+            justify_content: JustifyContent::Center,
+            ..default()
+        },
+        TextLayout::justify(Justify::Center),
+    ));
 }
 
-type Lines<'w, 's> = Query<'w, 's, (&'static Line, &'static mut Text)>;
-type Cards<'w, 's> = Query<
-    'w,
-    's,
-    (
-        &'static Slot,
-        &'static mut BorderColor,
-        &'static mut UiTransform,
-        &'static mut Visibility,
-    ),
->;
-type CardLines<'w, 's> =
-    Query<'w, 's, (&'static CardLine, &'static ChildOf, &'static mut Text), Without<Line>>;
-pub(super) fn sync(
-    desk: Res<ArchitectDesk>,
-    runtime: Res<HexWfcRuntime>,
-    mut lines: Lines,
-    mut cards: Cards,
-    mut card_lines: CardLines,
-    slots: Query<&Slot>,
-) {
-    let Some(ascent) = runtime.ascent.as_ref() else {
-        return;
-    };
-    let rules = ascent.rules();
-    let Some(hand) = ascent.session().hands.get(&desk.team) else {
-        return;
-    };
-    let selected_card = desk.selected.and_then(|index| hand.deck.hand.get(index));
-    for (line, mut text) in &mut lines {
-        **text = match line {
-            Line::Heading => format!(
-                "TEAM {}  /  FLOOR {} OF {}\n{}",
-                desk.team.0 + 1,
-                desk.floor + 1,
-                rules.world.config.levels,
-                floor_title(desk.floor).to_ascii_uppercase(),
-            ),
-            Line::Charge => words::cooldown(hand.cooldown),
-            Line::Observers => rules
-                .observers
-                .values()
-                .filter(|observer| observer.team == desk.team)
-                .map(|observer| {
-                    let doing = match observer.state {
-                        ObserverState::Active => format!("floor {}", observer.cell.level + 1),
-                        ObserverState::Jailed => "in the prison".to_owned(),
-                        ObserverState::Corrupted => "lost to the void".to_owned(),
-                    };
-                    format!("Observer {}   {doing}", observer.id.0 + 1)
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
-            Line::Target => match (selected_card, desk.hovered) {
-                (None, _) => "Pick up a card to build.".to_owned(),
-                (Some(_), None) => "Point at a cell.".to_owned(),
-                (Some(card), Some(cell)) => format!(
-                    "Cell {}, {}\n{}",
-                    cell.q,
-                    cell.r,
-                    words::verdict(ascent.session().architect_refusal(
-                        desk.seat,
-                        ArchitectCommand::Play {
-                            card: card.id,
-                            target: cell,
-                            rotation: desk.rotation,
-                        },
-                    ))
-                ),
+fn card_panel(root: &mut ChildSpawnerCommands, art: &CardArt) {
+    root.spawn((
+        CardPanel,
+        Node {
+            position_type: PositionType::Absolute,
+            right: px(GAP),
+            top: px(TOP_BAR + GAP),
+            width: px(CARD_PANEL_WIDTH),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(10),
+            padding: UiRect::all(px(18)),
+            border: UiRect::all(px(1)),
+            border_radius: BorderRadius::all(px(6)),
+            ..default()
+        },
+        BackgroundColor(color(Role::Panel)),
+        BorderColor::all(color(Role::Border)),
+        Visibility::Hidden,
+    ))
+    .with_children(|panel| {
+        panel.spawn((Line::CardName, label("", 22.0, Role::Text)));
+        panel.spawn((Line::CardDistrict, label("", 12.0, Role::Muted)));
+        panel.spawn((
+            CardPanelArt,
+            ImageNode::new(art.images[0].clone()),
+            Node {
+                width: px(PANEL_ART.x),
+                height: px(PANEL_ART.y),
+                border_radius: BorderRadius::all(px(4)),
+                ..default()
             },
-            Line::Message => desk
-                .last_refusal
-                .map(|refusal| {
-                    format!(
-                        "The rules refused that play: {}.",
-                        words::refusal_words(refusal)
-                    )
-                })
-                .unwrap_or_default(),
-        };
-    }
-    for (slot, mut border, mut transform, mut visibility) in &mut cards {
-        let card = hand.deck.hand.get(slot.0);
-        *visibility = if card.is_some() {
-            Visibility::Inherited
-        } else {
-            Visibility::Hidden
-        };
-        let lifted = desk.selected == Some(slot.0);
-        *border = BorderColor::all(if lifted { ACCENT } else { DIM.with_alpha(0.5) });
-        transform.translation = Val2::px(0.0, if lifted { -14.0 } else { 0.0 });
-    }
-    for (line, parent, mut text) in &mut card_lines {
-        let Some(card) = slots
-            .get(parent.parent())
-            .ok()
-            .and_then(|slot| hand.deck.hand.get(slot.0))
-        else {
-            continue;
-        };
-        **text = match line {
-            CardLine::Name => words::card_name(card.kind).to_owned(),
-            CardLine::District => card
-                .district
-                .map_or("any floor", |district| district.label())
-                .to_ascii_uppercase(),
-            CardLine::Detail => words::card_detail(card.kind).to_owned(),
-        };
-    }
+        ));
+        panel.spawn((Line::CardWhere, label("", 13.0, Role::Muted)));
+        panel.spawn((Line::Verdict, label("", 15.0, Role::Valid)));
+        panel
+            .spawn(Node {
+                column_gap: px(8),
+                ..default()
+            })
+            .with_children(|turn| {
+                button(turn, DeskButton::TurnLeft, "Q   TURN", true);
+                button(turn, DeskButton::TurnRight, "TURN   E", true);
+            });
+        button(panel, DeskButton::Play, "PLAY CARD   [SPACE]", false);
+        button(panel, DeskButton::Cancel, "CANCEL   [ESC]", false);
+        panel.spawn(label(
+            "Aim at a cell, inspect the amber preview, then play the card.",
+            12.0,
+            Role::Muted,
+        ));
+    });
 }

@@ -85,7 +85,8 @@ pub(super) fn setup(
             Camera3d::default(),
             Camera {
                 order,
-                clear_color: color(Role::Card).into(),
+                // Clear, so the tile stands on the card itself, lifted or not.
+                clear_color: ClearColorConfig::Custom(Color::NONE),
                 ..default()
             },
             RenderTarget::Image(image.clone().into()),

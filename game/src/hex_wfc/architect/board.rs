@@ -1,34 +1,23 @@
 //! The Architect's board: the building as the team knows it, at the isometric pitch.
 //!
 //! Drawn by its own camera on its own render layer over the world, and lit by its own
-//! key and fill, the way `architect_lab` lights its board. The building itself - the
-//! real tiles, cut away, as remembered - is `building`'s; this module frames it and draws
-//! what sits on it:
-//!
-//! - **The floor's marks** (`BoardMark`): the team's Observers as eyes and the Guardians
-//!   they can see as pyramids, contradictions, the prison lobby and the summit as rings on
-//!   the deck, deployed doors (a bar across the doorway closed, two posts open), and a
-//!   chevron on a stair or ramp, green up and dim down. Rebuilt when any of them change.
-//! - **The play being made** (`BoardOverlay`): a ring on every cell the picked card can be
-//!   played on at this rotation, and on the cell under the cursor an amber ghost of the
-//!   tile itself, turned as it would be played, with an amber ring if the rules would take
-//!   it and a red one if not. Rebuilt when the card, the rotation or the cell changes.
-//!
-//! Nothing here decides legality: the rings are the rules' own answers
-//! (`AscentSession::architect_refusal`) for this seat.
+//! key the way `architect_lab` lights its board. The building itself - the real tiles, cut
+//! away, as remembered - is `building`'s, and the play being made over it is `overlay`'s;
+//! this module frames the board and draws the floor's marks (`BoardMark`): the team's
+//! Observers as eyes and the Guardians they can see as pyramids, contradictions, the
+//! prison lobby and the summit as rings on the deck, deployed doors (a bar across the
+//! doorway closed, two posts open), a chevron on a stair or ramp (green up, muted down),
+//! and a dark plate on a known cell with nothing built. Rebuilt when any of them change.
 
-use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use observed_hex::{HexCoord, PortClass, hex_origin};
-use observed_match::ascent::sim::{ArchitectCommand, CardKind, DoorState, ObserverState};
-use observed_match::hex_wfc::project_hypothetical_cell;
+use observed_match::ascent::sim::{DoorState, ObserverState};
 use observed_style::architect::{Role, color};
 
 use super::ArchitectDesk;
-use super::building;
 use super::pick::{self, BOARD_ORIGIN, CELL_RADIUS, Framing, Margins};
 use crate::GameState;
 use crate::hex_wfc::equipment::{hex_prism, hex_ring};
@@ -36,14 +25,25 @@ use crate::hex_wfc::sim::HexWfcRuntime;
 
 /// The board's render layer, apart from the world's and the survivor map's.
 pub(super) const BOARD_LAYER: usize = 3;
+/// How fast the board glides to a new framing: the share of the gap closed per second.
+const GLIDE: f32 = 4.0;
 /// Above the world and the survivor map.
 const BOARD_ORDER: isize = 2;
-/// The panel and the hand the board leaves room for, in pixels.
-pub(super) const MARGINS: Margins = Margins {
-    left: 330.0,
-    bottom: 230.0,
-    top: 24.0,
-};
+/// The desk the board leaves room for, in pixels: the top bar, the side panel, the hand,
+/// and the card panel while a card is picked up.
+#[must_use]
+pub(super) fn margins(lifted: bool) -> Margins {
+    Margins {
+        left: super::desk::PANEL_WIDTH,
+        right: if lifted {
+            super::desk::CARD_PANEL_WIDTH + 2.0 * super::desk::GAP
+        } else {
+            0.0
+        },
+        bottom: super::desk::HAND_HEIGHT,
+        top: super::desk::TOP_BAR,
+    }
+}
 
 #[derive(Component)]
 pub(super) struct BoardCamera;
@@ -51,24 +51,23 @@ pub(super) struct BoardCamera;
 #[derive(Component)]
 pub(super) struct BoardMark;
 
-#[derive(Component)]
-pub(super) struct BoardOverlay;
-
 /// Shared meshes, what was last drawn, and where the camera stands.
 #[derive(Resource)]
 pub(in crate::hex_wfc) struct Board {
-    ring: Handle<Mesh>,
+    pub(super) ring: Handle<Mesh>,
     plate: Handle<Mesh>,
-    thin_ring: Handle<Mesh>,
+    pub(super) thin_ring: Handle<Mesh>,
     bar: Handle<Mesh>,
     eye: Handle<Mesh>,
     pyramid: Handle<Mesh>,
-    marks_signature: u64,
-    play_signature: u64,
+    pub(super) marks_signature: u64,
+    pub(super) play_signature: u64,
     /// The framing and the window it was made for.
     pub framing: Option<(Framing, Vec2)>,
     /// Where the camera stands for that framing, for picking.
     pub camera: Transform,
+    /// The desk the board is leaving room for, as it slides toward the desk's layout.
+    pub margins: Option<Margins>,
 }
 
 pub(super) fn setup(
@@ -96,6 +95,7 @@ pub(super) fn setup(
         play_signature: 0,
         framing: None,
         camera: Transform::default(),
+        margins: None,
     });
     commands.spawn((
         BoardCamera,
@@ -153,6 +153,7 @@ pub(super) fn frame(
     };
     let size = Vec2::new(window.width(), window.height());
     let config = runtime.match_state.facility.config;
+    let margins = margins(desk.selected.is_some());
     let known = runtime.ascent.as_ref().and_then(|ascent| {
         let rules = ascent.rules();
         let cells = rules.team_knowledge.get(&desk.team)?.cells.keys();
@@ -168,7 +169,7 @@ pub(super) fn frame(
                 .copied(),
             desk.floor,
             size,
-            MARGINS,
+            margins,
         )
     });
     // Nothing known on this floor yet: the whole of it.
@@ -187,16 +188,20 @@ pub(super) fn frame(
             }),
             desk.floor,
             size,
-            MARGINS,
+            margins,
         )
         .expect("a lattice has corners")
     });
-    let framing = match board.framing {
-        Some((from, was)) if was == size => pick::ease(from, target, 4.0, time.delta_secs()),
-        _ => target,
+    let (framing, margins) = match (board.framing, board.margins) {
+        (Some((from, was)), Some(margins_were)) if was == size => (
+            pick::ease(from, target, GLIDE, time.delta_secs()),
+            margins_were.toward(margins, GLIDE * time.delta_secs()),
+        ),
+        _ => (target, margins),
     };
     board.framing = Some((framing, size));
-    board.camera = pick::camera(framing, MARGINS);
+    board.margins = Some(margins);
+    board.camera = pick::camera(framing, margins);
     *transform = board
         .camera
         .with_translation(board.camera.translation + BOARD_ORIGIN);
@@ -398,154 +403,12 @@ pub(super) fn draw_marks(
 
 /// The lab's signal material: the role's own colour, unlit, so it reads the same in
 /// light and shadow.
-fn signal(role: Role) -> StandardMaterial {
+pub(super) fn signal(role: Role) -> StandardMaterial {
     StandardMaterial {
         base_color: color(role),
         unlit: true,
         ..default()
     }
-}
-
-/// Redraw the play being made: legal targets, and the ghost under the cursor.
-pub(super) fn draw_play(
-    mut commands: Commands,
-    desk: Res<ArchitectDesk>,
-    runtime: Res<HexWfcRuntime>,
-    mut board: ResMut<Board>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    drawn: Query<Entity, With<BoardOverlay>>,
-) {
-    let Some(ascent) = runtime.ascent.as_ref() else {
-        return;
-    };
-    let mut hasher = std::hash::DefaultHasher::new();
-    (desk.selected, desk.rotation, desk.hovered, desk.floor).hash(&mut hasher);
-    board.marks_signature.hash(&mut hasher);
-    runtime.match_state.geometry.generation.hash(&mut hasher);
-    let hand = ascent.session().hands.get(&desk.team);
-    hand.map(|hand| (hand.cooldown == 0, hand.deck.hand.len()))
-        .hash(&mut hasher);
-    let signature = hasher.finish();
-    if signature == board.play_signature {
-        return;
-    }
-    board.play_signature = signature;
-    for entity in &drawn {
-        commands.entity(entity).despawn();
-    }
-    let Some(card) = desk
-        .selected
-        .and_then(|index| hand?.deck.hand.get(index))
-        .copied()
-    else {
-        return;
-    };
-    let rules = ascent.rules();
-    let Some(knowledge) = rules.team_knowledge.get(&desk.team) else {
-        return;
-    };
-    let layer = RenderLayers::layer(BOARD_LAYER);
-    let on_deck = |cell: HexCoord, rise: f32| {
-        let at = hex_origin(cell);
-        BOARD_ORIGIN + Vec3::new(at[0], pick::deck(cell.level) + rise, at[2])
-    };
-    let legal = legal_targets(
-        ascent,
-        &desk,
-        card.id,
-        knowledge
-            .cells
-            .keys()
-            .copied()
-            .filter(|cell| cell.level == desk.floor),
-    );
-    let valid = materials.add(signal(Role::Valid));
-    for &cell in &legal {
-        commands.spawn((
-            BoardOverlay,
-            DespawnOnExit(GameState::HexWfc),
-            Mesh3d(board.thin_ring.clone()),
-            MeshMaterial3d(valid.clone()),
-            Transform::from_translation(on_deck(cell, 0.15)),
-            layer.clone(),
-        ));
-    }
-    let Some(hovered) = desk.hovered else {
-        return;
-    };
-    let takes_it = legal.contains(&hovered);
-    let edge = materials.add(signal(if takes_it {
-        Role::Selected
-    } else {
-        Role::Guardian
-    }));
-    commands.spawn((
-        BoardOverlay,
-        DespawnOnExit(GameState::HexWfc),
-        Mesh3d(board.ring.clone()),
-        MeshMaterial3d(edge),
-        Transform::from_translation(on_deck(hovered, 0.2)),
-        layer.clone(),
-    ));
-    // The tile itself, as it would be played: the lab's amber ghost of its real hulls,
-    // floors and walls, turned as the desk has it.
-    let CardKind::Tile(shape) = card.kind else {
-        return;
-    };
-    let placement = rules.played_placement(shape, hovered, desk.rotation);
-    let physical = &runtime.match_state;
-    let Ok(pieces) = project_hypothetical_cell(
-        &physical.facility,
-        hovered,
-        placement,
-        physical.content().cells(),
-    ) else {
-        return;
-    };
-    let ghost = materials.add(StandardMaterial {
-        base_color: color(Role::Selected).with_alpha(0.45),
-        alpha_mode: AlphaMode::Blend,
-        unlit: true,
-        ..default()
-    });
-    for floors in [true, false] {
-        if let Some(mesh) = building::cutaway_mesh(&pieces, floors, building::bearing()) {
-            commands.spawn((
-                BoardOverlay,
-                DespawnOnExit(GameState::HexWfc),
-                Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(ghost.clone()),
-                // Just proud of whatever stands there now, so it is seen over it.
-                Transform::from_translation(BOARD_ORIGIN + Vec3::Y * 0.08),
-                layer.clone(),
-            ));
-        }
-    }
-}
-
-/// The cells among `cells` where the rules would take card `card` at the desk's rotation.
-fn legal_targets(
-    ascent: &observed_match::ascent::facility::AscentRules,
-    desk: &ArchitectDesk,
-    card: observed_match::ascent::sim::CardId,
-    cells: impl Iterator<Item = HexCoord>,
-) -> BTreeSet<HexCoord> {
-    cells
-        .filter(|&target| {
-            ascent
-                .session()
-                .architect_refusal(
-                    desk.seat,
-                    ArchitectCommand::Play {
-                        card,
-                        target,
-                        rotation: desk.rotation,
-                    },
-                )
-                .is_none()
-        })
-        .collect()
 }
 
 /// The two bars of a chevron standing over a cell, pointing up (`up`) or down.
