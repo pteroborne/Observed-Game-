@@ -509,9 +509,10 @@ fn a_retraction_cannot_open_a_window_beside_a_watched_room() {
     panic!("the body never stood where a neighbour's retraction would redraw it");
 }
 
-mod prison;
 mod guardians;
+mod prison;
 mod requests;
+mod rogue;
 mod stairs;
 
 #[test]
@@ -695,8 +696,8 @@ fn production_ascent_tick_times() {
         .rules()
         .traces
         .iter()
+        // "Architect" alone is the Rogue's; "Architect <team>" each loyal bot's.
         .filter(|(k, _)| k.starts_with("Architect"))
-        .chain(game.rules().traces.iter().filter(|(k, _)| k.as_str() == "Architect"))
         .map(|(k, t)| (k.clone(), t.selected))
         .collect();
     eprintln!(

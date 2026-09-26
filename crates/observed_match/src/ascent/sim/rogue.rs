@@ -8,9 +8,10 @@
 //! 2. **Close the hunt:** play what shortens a Guardian's way to an Observer the Rogue has
 //!    detected - the Guardian's own search and the Observer's, joined through the cell a
 //!    candidate would build.
-//! 3. **Undermine:** beside a detected Observer, play what leaves doorways meeting walls:
-//!    a contradiction, which the rules retract out from under whoever stands near it
-//!    unless a loyal Architect repairs it first.
+//! 3. **Undermine:** in a detected Observer's path, play what leaves doorways meeting
+//!    walls: a contradiction, which the rules retract out from under whoever walks into
+//!    it unless a loyal Architect repairs it first. The cells beside an Observer are in
+//!    its sight and cannot be played, so the path is as near as the Rogue can reach.
 //! 4. Otherwise hold the card.
 //!
 //! It never reads where an undetected Observer is: every anchor and every target is a
@@ -82,9 +83,9 @@ impl ArchitectLab {
                 let route = from_hunters
                     .iter()
                     .flat_map(|hunter| {
-                        from_prey
-                            .iter()
-                            .map(|target| self.through(changes[0].coord, changes[0], hunter, target))
+                        from_prey.iter().map(|target| {
+                            self.through(changes[0].coord, changes[0], hunter, target)
+                        })
                     })
                     .min()
                     .unwrap_or(NO_WAY_UP);
@@ -96,7 +97,9 @@ impl ArchitectLab {
             return (closer.map(|(_, command)| *command), trace);
         }
 
-        // Undermine: beside a detected Observer, the most doorways left meeting walls.
+        // Undermine: in a detected Observer's path, the most doorways left meeting walls,
+        // nearest first. Every candidate is already within reach of its prey, and the
+        // cells beside it are in its sight, so no nearer bound would leave a play.
         let undermine = candidates
             .iter()
             .filter_map(|(command, changes)| {
@@ -107,14 +110,15 @@ impl ArchitectLab {
                     .iter()
                     .map(|&cell| travel_distance(cell, target))
                     .min()?;
-                if near > 1 {
-                    return None;
-                }
                 let (before, after) = self.mismatches_around(changes);
                 (after > before).then_some((after - before, near, command))
             })
             .max_by_key(|(broken, near, command)| {
-                (*broken, std::cmp::Reverse(*near), std::cmp::Reverse(key(command)))
+                (
+                    *broken,
+                    std::cmp::Reverse(*near),
+                    std::cmp::Reverse(key(command)),
+                )
             });
         if trace.test("undermine", undermine.is_some()) {
             return (undermine.map(|(_, _, command)| *command), trace);

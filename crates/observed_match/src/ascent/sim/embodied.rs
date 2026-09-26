@@ -11,9 +11,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use observed_facility::hex_wfc::{HexPlacement, HexWfcWorld};
 use observed_hex::{HexCoord, HexFace, PortClass};
 
-use super::{GuardianId, GuardianKind, 
-    ArchitectLab, ArchitectMode, Deck, EconomyState, LabEventKind, Observer, ObserverId,
-    ObserverState, Parts, TeamId, TileShape,
+use super::{
+    ArchitectLab, ArchitectMode, Deck, EconomyState, GuardianId, GuardianKind, LabEventKind,
+    Observer, ObserverId, ObserverState, Parts, TeamId, TileShape,
 };
 
 /// Where an embodied Observer's body is: the first-person match's own answer.
@@ -154,12 +154,6 @@ impl ArchitectLab {
             || vertical(grid.neighbor(cell, HexFace::Up), HexFace::Down)
     }
 
-    /// Put an Observer where its body is, in the state its body's place implies.
-    ///
-    /// A jailed body is in the prison, which the rules see as the lobby it will come out
-    /// of; its maze cell means nothing here. A lost body fell into true void and has
-    /// corrupted, which is permanent: a corrupted Observer has left play and no longer
-    /// has a body the rules follow.
     /// Put a Guardian the host moves and catches with where its body is: a Major on
     /// `cell` while it `hunts`, and gone from the rules while it does not. The rules never
     /// move it or catch with it themselves (`embodied_guardians`); they see it, route
@@ -183,6 +177,12 @@ impl ArchitectLab {
         );
     }
 
+    /// Put an Observer where its body is, in the state its body's place implies.
+    ///
+    /// A jailed body is in the prison, which the rules see as the lobby it will come out
+    /// of; its maze cell means nothing here. A lost body fell into true void and has
+    /// corrupted, which is permanent: a corrupted Observer has left play and no longer
+    /// has a body the rules follow.
     pub(crate) fn embody(&mut self, id: ObserverId, cell: HexCoord, facing: HexFace, place: Place) {
         let lobby = self.prison.lowest_cell;
         let Some(observer) = self.observers.get_mut(&id) else {

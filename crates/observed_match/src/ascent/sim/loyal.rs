@@ -174,7 +174,10 @@ impl ArchitectLab {
 
     /// Every legal tile or stair play within reach of the team, with the cells it would
     /// build.
-    pub(super) fn candidates(&self, own: &[HexCoord]) -> Vec<(ArchitectCommand, Vec<HexPlacement>)> {
+    pub(super) fn candidates(
+        &self,
+        own: &[HexCoord],
+    ) -> Vec<(ArchitectCommand, Vec<HexPlacement>)> {
         let near: BTreeSet<HexCoord> = self
             .known
             .iter()
@@ -329,7 +332,11 @@ impl ArchitectLab {
 
     /// Steps from `origin` to every cell a walk of at most `limit` steps reaches, through
     /// the rules' own exits.
-    pub(super) fn distances_from(&self, origin: HexCoord, limit: usize) -> BTreeMap<HexCoord, usize> {
+    pub(super) fn distances_from(
+        &self,
+        origin: HexCoord,
+        limit: usize,
+    ) -> BTreeMap<HexCoord, usize> {
         let mut distance = BTreeMap::from([(origin, 0)]);
         let mut queue = VecDeque::from([origin]);
         while let Some(cell) = queue.pop_front() {

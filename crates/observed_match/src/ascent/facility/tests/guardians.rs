@@ -44,10 +44,7 @@ fn a_requisition_is_refused_rather_than_paid_in_a_guardian_with_no_body() {
         Some(&Refusal::Architect(CommandRefusal::NoRelease))
     );
     assert!(
-        game.rules()
-            .guardians
-            .keys()
-            .all(|&id| id == TUMBLER),
+        game.rules().guardians.keys().all(|&id| id == TUMBLER),
         "nothing released"
     );
 }
