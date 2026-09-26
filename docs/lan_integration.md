@@ -60,12 +60,18 @@ as a body on LAN.
 ```powershell
 cargo test -p observed_server
 cargo test -p observed_net
+cargo dev-test -p observed_game an_ascent_lan_match   # headless LAN soak
 cargo test -p observed_progression session::lan
 cargo dev-run -p lan_lab
 ```
 
 The automated server test crosses real loopback UDP, switches teams, readies, launches,
-receives authoritative tick one, and requests/replays history. `lan_lab` exposes the
+receives authoritative tick one, and requests/replays history. The game's headless LAN soak
+(`hex_wfc::net` tests) runs a real `--ascent` server on the production facility with two
+game clients stepping through the game's own networked tick, their bodies walked by the
+game's bot as a player would, and a third joining mid-match to replay history from tick
+one: about 8,000 ticks, every client ending digest for digest with the server. It fails at
+tick 3 if the server steps anything but the commands it sends. `lan_lab` exposes the
 same production seam with `R` reset. A release check should still include two physical
 machines and host-firewall validation.
 
