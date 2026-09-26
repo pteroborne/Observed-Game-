@@ -463,3 +463,50 @@ fn a_rescue_may_point_at_the_lobby_every_team_knows_and_nothing_else_may() {
     assert_eq!(session.accept(PlayerId(1), rescue), Ok(None));
     assert_eq!(session.requests[&PlayerId(1)].target, lobby);
 }
+
+#[test]
+fn a_body_asks_for_what_its_place_says_it_needs() {
+    let mut session = session();
+    let id = ObserverId(0);
+    let (cell, facing) = {
+        let observer = &session.sim.observers[&id];
+        (observer.cell, observer.facing)
+    };
+    session.sim.economy.set_powered(cell.level, true);
+    let ahead = session.sim.world.config.grid().neighbor(cell, facing);
+    let known = session.sim.team_knowledge(TeamId(0)).discovered_cells;
+    let expected = ahead.filter(|cell| known.contains(cell)).unwrap_or(cell);
+    assert_eq!(
+        session.ask_for_help(PlayerId(1)),
+        Some((RequestKind::Route, expected)),
+        "a route on from where it faces, if found, else from where it stands"
+    );
+
+    // Facing a cell the team has not found: from where it stands.
+    if let Some(ahead) = ahead
+        && let Some(knowledge) = session.sim.team_knowledge.get_mut(&TeamId(0))
+    {
+        knowledge.discovered_cells.remove(&ahead);
+        knowledge.cells.remove(&ahead);
+        assert_eq!(
+            session.ask_for_help(PlayerId(1)),
+            Some((RequestKind::Route, cell))
+        );
+    }
+
+    session.sim.economy.set_powered(cell.level, false);
+    assert_eq!(
+        session.ask_for_help(PlayerId(1)),
+        Some((RequestKind::Power, cell))
+    );
+    session.sim.observers.get_mut(&id).expect("observer").state = ObserverState::Jailed;
+    assert_eq!(
+        session.ask_for_help(PlayerId(1)),
+        Some((RequestKind::Rescue, cell))
+    );
+    assert_eq!(
+        session.ask_for_help(PlayerId(0)),
+        None,
+        "an Architect is no body"
+    );
+}

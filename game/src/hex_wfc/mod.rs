@@ -6,6 +6,7 @@
 mod architect;
 mod ascent;
 mod ascent_capture;
+mod ask;
 mod audio;
 mod cues;
 mod entities;
@@ -64,6 +65,7 @@ impl Plugin for HexWfcPlugin {
             .init_resource::<view::camera::OverviewFrame>()
             .init_resource::<view::PrisonView>()
             .add_observer(overlay::activate)
+            .add_plugins(ask::AskPlugin)
             .add_systems(
                 OnEnter(GameState::HexWfc),
                 (

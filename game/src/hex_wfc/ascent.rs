@@ -76,7 +76,9 @@ pub(super) fn step(
     runtime: &mut HexWfcRuntime,
     bodies: &HexInputFrame,
     desk: Option<&mut ArchitectDesk>,
+    ask: Option<&mut super::ask::AskTheArchitect>,
 ) -> bool {
+    let local = runtime.local_player;
     let runtime = &mut *runtime;
     let Some(rules) = runtime.ascent.as_mut() else {
         return false;
@@ -95,6 +97,16 @@ pub(super) fn step(
         // One command a seat a tick: an answer waits behind a play, and goes the next.
         commands.insert(desk.seat, SeatCommand::Acknowledge { author, created_at });
     }
+    // The local body asking its Architect for help, for what the rules say it needs.
+    let mut ask = ask;
+    let mut asked = false;
+    if let Some(ask) = ask.as_deref_mut()
+        && std::mem::take(&mut ask.pending)
+        && let Some((kind, target)) = rules.session().ask_for_help(local)
+    {
+        commands.insert(local, SeatCommand::Request { kind, target });
+        asked = true;
+    }
     let seats = InputFrame {
         version: ASCENT_INPUT_VERSION,
         tick: rules.rules().tick + 1,
@@ -102,7 +114,14 @@ pub(super) fn step(
     };
     // A refused frame is one the rules would refuse whole: the match has already been
     // decided, and the physical match has stopped with it.
-    if let Ok(refusals) = rules.step(&mut runtime.match_state, bodies, &seats)
+    let stepped = rules.step(&mut runtime.match_state, bodies, &seats);
+    if let (Ok(refusals), Some(ask)) = (&stepped, ask)
+        && asked
+    {
+        let tick = rules.rules().tick;
+        ask.refused = refusals.get(&local).map(|&refusal| (refusal, tick));
+    }
+    if let Ok(refusals) = stepped
         && let Some(desk) = desk
         // A play's refusal is the desk's to say; an answer the rules find expired is not.
         && played.is_some()
@@ -126,6 +145,37 @@ pub(super) fn step(
         }
     }
     true
+}
+
+/// Seat a fresh local match for `play_setup`: the Ascent rules when it asks for them, the
+/// local player at their team's Architect desk when that is their seat, and a way for a
+/// local body to ask its Architect for help when it is not. `None` for a race, and for a
+/// `networked` match, which does not carry the rules yet. Clears the last match's desk.
+pub(super) fn seat(
+    commands: &mut Commands,
+    match_state: &mut HexWfcMatch,
+    local: PlayerId,
+    play_setup: &crate::play_setup::PlaySetupDraft,
+    networked: bool,
+) -> Option<AscentRules> {
+    commands.remove_resource::<ArchitectDesk>();
+    commands.remove_resource::<super::ask::AskTheArchitect>();
+    if networked || play_setup.rules != crate::play_setup::PlayRules::Ascent {
+        return None;
+    }
+    let team = match_state.players[&local].team;
+    let human = (play_setup.seat == crate::play_setup::PlaySeat::Architect).then_some(team);
+    let rules = rules_for(match_state, local, human)?;
+    if human.is_some() {
+        commands.insert_resource(ArchitectDesk::new(
+            architect_seat(team),
+            AscentTeam(team.0),
+            match_state.players[&local].cell.level,
+        ));
+    } else {
+        commands.insert_resource(super::ask::AskTheArchitect::default());
+    }
+    Some(rules)
 }
 
 /// The local player's result from the rules' outcome.

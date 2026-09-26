@@ -263,20 +263,13 @@ pub(super) fn setup_runtime(
     ));
     let seed_offset = prepared.seed_offset;
     let mut match_state = prepared.match_state;
-    let local_team = match_state.players[&local_player].team;
-    let human = (play_setup.seat == crate::play_setup::PlaySeat::Architect).then_some(local_team);
-    let ascent = (!networked && play_setup.rules == crate::play_setup::PlayRules::Ascent)
-        .then(|| super::ascent::rules_for(&mut match_state, local_player, human))
-        .flatten();
-    if ascent.is_some() && human.is_some() {
-        commands.insert_resource(super::architect::ArchitectDesk::new(
-            super::ascent::architect_seat(local_team),
-            observed_match::ascent::sim::TeamId(local_team.0),
-            match_state.players[&local_player].cell.level,
-        ));
-    } else {
-        commands.remove_resource::<super::architect::ArchitectDesk>();
-    }
+    let ascent = super::ascent::seat(
+        &mut commands,
+        &mut match_state,
+        local_player,
+        &play_setup,
+        networked,
+    );
     let replay = crate::sim::replay::ReplayTape::new_hex_wfc_for_player(&match_state, local_player);
     let map_level = match_state.players[&local_player].cell.level;
     let presented_revisions = match_state.facility.cell_revisions.clone();
@@ -348,6 +341,7 @@ pub(super) struct SimulationControl<'w> {
     overlay: Res<'w, MatchOverlayState>,
     onboarding: Res<'w, HexOnboardingGate>,
     desk: Option<ResMut<'w, super::architect::ArchitectDesk>>,
+    ask: Option<ResMut<'w, super::ask::AskTheArchitect>>,
 }
 
 pub(super) fn step_runtime(
@@ -510,7 +504,8 @@ pub(super) fn step_runtime(
         }
     }
     let previous_generation = runtime.match_state.facility.generation;
-    if !super::ascent::step(&mut runtime, &frame, control.desk.as_deref_mut()) {
+    let (desk, ask) = (control.desk.as_deref_mut(), control.ask.as_deref_mut());
+    if !super::ascent::step(&mut runtime, &frame, desk, ask) {
         runtime.match_state.step(&frame);
     }
     if let Some(replay) = replay.as_deref_mut() {

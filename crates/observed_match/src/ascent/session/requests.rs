@@ -54,6 +54,36 @@ impl AscentSession {
         }
     }
 
+    /// What `player`'s body asks its Architect for when its player asks: the trouble it
+    /// is in if it is jailed or in the dark, as a bot would name it; otherwise a route on
+    /// from the cell it faces, if the team has found that cell, or from where it stands.
+    /// Nothing for a seat that is not a body, or a body lost to the void.
+    #[must_use]
+    pub fn ask_for_help(&self, player: PlayerId) -> Option<(RequestKind, HexCoord)> {
+        let Role::Observer(id) = self.seats.get(&player)?.role else {
+            return None;
+        };
+        let observer = self.sim.observers.get(&id)?;
+        match observer.state {
+            ObserverState::Corrupted => None,
+            ObserverState::Jailed => Some((RequestKind::Rescue, observer.cell)),
+            ObserverState::Active if !self.sim.economy.is_powered(observer.cell.level) => {
+                Some((RequestKind::Power, observer.cell))
+            }
+            ObserverState::Active => {
+                let known = self.sim.team_knowledge(observer.team).discovered_cells;
+                let ahead = self
+                    .sim
+                    .world
+                    .config
+                    .grid()
+                    .neighbor(observer.cell, observer.facing)
+                    .filter(|cell| known.contains(cell));
+                Some((RequestKind::Route, ahead.unwrap_or(observer.cell)))
+            }
+        }
+    }
+
     /// Once a beat: note where every Observer stands, and let every bot Observer ask for
     /// what it needs or withdraw what it no longer does.
     pub(super) fn run_bot_requests(&mut self) {

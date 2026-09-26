@@ -5,8 +5,10 @@
 //! catches whoever it is hunting, which is not reliably the local player; the catch
 //! itself is covered by `observed_match`'s prison tests.) The maze, the walk out and the
 //! release into the lobby are the match's own, and the body walks out on the game's own
-//! bot. Three stills: inside the maze, at its way out, and back in the facility looking
-//! at the lobby's gate, for which the body is stood a few metres off and turned to it.
+//! bot. Once jailed, it asks its Architect for rescue as a player would. Three stills:
+//! inside the maze (with the ask and the Architect's answer), at its way out, and back in
+//! the facility looking at the lobby's gate, for which the body is stood a few metres
+//! off and turned to it.
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
@@ -74,6 +76,22 @@ pub(in crate::hex_wfc) fn advance(
             runtime.match_state.jail(local);
             request.stills = 1;
             request.last_shot_tick = tick;
+        }
+        // Once the rules know the body is jailed, it asks its Architect for rescue, as
+        // its player would, so the maze still shows the ask and the answer.
+        1 if (request.last_shot_tick + 10..request.last_shot_tick + 90).contains(&tick)
+            && runtime.ascent.as_ref().is_some_and(|ascent| {
+                !ascent
+                    .session()
+                    .requests
+                    .contains_key(&runtime.local_player)
+            }) =>
+        {
+            commands.queue(|world: &mut World| {
+                if let Some(mut ask) = world.get_resource_mut::<super::ask::AskTheArchitect>() {
+                    ask.pending = true;
+                }
+            });
         }
         1 if tick >= request.last_shot_tick + 90 => {
             shoot("prison-maze-1280x800.png");

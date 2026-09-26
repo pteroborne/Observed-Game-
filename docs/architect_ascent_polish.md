@@ -182,7 +182,7 @@ plays the race.
 Evidence (`OBSERVED2_CAPTURE_HEX_WFC_PRISON=<dir> cargo dev-run -p observed_game`, a
 production facility, the local body jailed and walked out by the game's own bot):
 
-- [In the maze](evidence/ascent-prison/prison-maze-1280x800.png)
+- [In the maze, having asked the Architect for rescue and been answered](evidence/ascent-prison/prison-maze-1280x800.png)
 - [At its way out](evidence/ascent-prison/prison-way-out-1280x800.png)
 - [The lobby's gate, from the hall next door](evidence/ascent-prison/prison-lobby-1280x800.png)
 
@@ -292,6 +292,13 @@ team's bodies are bots, and the player sits at the desk (`game/src/hex_wfc/archi
   unanswered one: the rules acknowledge it to the team as the Architect's seat, and the
   board goes to its floor. A bot Architect acknowledges its team's requests on its beat
   and, after repairs, builds within reach of the oldest route it was asked for.
+- **A player's body asks too** (`hex_wfc/ask.rs`): T (rebindable as "Ask the Architect")
+  or the controller's D-pad left asks. The player does not pick what for - the rules name
+  it from where the body is (`AscentSession::ask_for_help`): rescue when jailed, power on a
+  dark floor, and otherwise a route on from the cell the body faces if the team has found
+  it, or from where it stands. A small panel under the objective says what was asked,
+  whether the Architect has answered ("ON IT"), and how long the ask has left, and names
+  the key; a refusal shows for four seconds, and an answer is heard.
 - Legality is never decided at the desk: every ring and verdict is
   `AscentSession::architect_refusal` for the player's own seat, the question the play asks.
 
@@ -315,8 +322,7 @@ production facility after twenty seconds of the team's bots walking):
   thing.
 - A match snapshot does not yet carry where each body is or the prison's mazes, so a
   replay or LAN peer of an Ascent match would not see them. That is part of the LAN slice.
-- The Architect's desk cannot look through an Observer's eyes, and a human Observer has
-  no way yet to ask their Architect for help.
+- The Architect's desk cannot look through an Observer's eyes.
 - A replay tape of an Ascent match samples jailed bodies at their maze coordinates.
 
 ## Remaining integration

@@ -154,6 +154,7 @@ const fn binding_key(slot: BindingSlot) -> u64 {
         BindingSlot::RecoverLantern => 12,
         BindingSlot::TacMap => 13,
         BindingSlot::Pause => 14,
+        BindingSlot::Ask => 15,
     }
 }
 

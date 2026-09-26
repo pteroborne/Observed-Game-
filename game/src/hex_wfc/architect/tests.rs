@@ -64,7 +64,7 @@ fn tick(runtime: &mut HexWfcRuntime, desk: &mut ArchitectDesk) {
         tick: runtime.match_state.tick + 1,
         commands,
     };
-    assert!(ascent::step(runtime, &frame, Some(desk)));
+    assert!(ascent::step(runtime, &frame, Some(desk), None));
 }
 
 /// A play the rules would take from this desk now, if there is one.
@@ -374,4 +374,76 @@ fn a_request_answered_at_the_desk_is_acknowledged_by_the_rules() {
     assert_eq!(answered.acknowledged_by, Some(desk.seat));
     assert_eq!(desk.pending_answer, None);
     assert_eq!(desk.last_refusal, None, "an answer is not a play");
+}
+
+#[test]
+fn a_player_s_body_asks_its_bot_architect_and_is_answered() {
+    use crate::hex_wfc::ask::AskTheArchitect;
+
+    // The local player is a body; every Architect is a bot.
+    let mut runtime = runtime();
+    let prototypes = crate::hex_wfc::sim::load_prototypes();
+    let config = HexMatchConfig {
+        teams: 2,
+        members_per_team: 1,
+        guardian: false,
+        wfc: HexWfcConfig {
+            levels: 2,
+            ..HexWfcConfig::default()
+        },
+    };
+    runtime.match_state = HexWfcMatch::new(7, config, &prototypes).expect("solves");
+    runtime.ascent = ascent::rules_for(&mut runtime.match_state, PlayerId(0), None);
+    let local = runtime.local_player;
+    let mut ask = AskTheArchitect::default();
+    let step = |runtime: &mut HexWfcRuntime, ask: &mut AskTheArchitect| {
+        let commands = runtime
+            .match_state
+            .players
+            .keys()
+            .map(|&id| (id, runtime.match_state.bot_player_command(id)))
+            .collect::<BTreeMap<_, _>>();
+        let frame = HexInputFrame {
+            version: HEX_INPUT_VERSION,
+            tick: runtime.match_state.tick + 1,
+            commands,
+        };
+        assert!(ascent::step(runtime, &frame, None, Some(ask)));
+    };
+    for _ in 0..300 {
+        step(&mut runtime, &mut ask);
+    }
+    let wanted = runtime
+        .ascent
+        .as_ref()
+        .unwrap()
+        .session()
+        .ask_for_help(local)
+        .expect("a body can ask");
+    ask.pending = true;
+    step(&mut runtime, &mut ask);
+    assert!(!ask.pending, "the ask went with the step");
+    assert_eq!(ask.refused, None);
+    let session = runtime.ascent.as_ref().unwrap().session();
+    let asked = session
+        .requests
+        .get(&local)
+        .expect("the rules hold the ask");
+    assert_eq!((asked.kind, asked.target), wanted);
+
+    // The bot Architect acknowledges on its beat.
+    let architect = ascent::architect_seat(TEAM);
+    let mut answered = false;
+    for _ in 0..120 {
+        step(&mut runtime, &mut ask);
+        answered |= runtime
+            .ascent
+            .as_ref()
+            .unwrap()
+            .session()
+            .requests
+            .get(&local)
+            .is_some_and(|request| request.acknowledged_by == Some(architect));
+    }
+    assert!(answered, "the bot Architect answered the player's ask");
 }

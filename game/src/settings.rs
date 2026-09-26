@@ -46,6 +46,9 @@ pub struct KeyBindings {
     pub activate_pad: KeyCode,
     pub tac_map: KeyCode,
     pub pause: KeyCode,
+    /// In Architect Ascent, asks the team's Architect for help with what the body needs
+    /// (`hex_wfc::ask`). Absent from older saves, which take the default.
+    pub ask: KeyCode,
 }
 
 impl Default for KeyBindings {
@@ -71,6 +74,7 @@ impl Default for KeyBindings {
             activate_pad: KeyCode::KeyE,
             tac_map: KeyCode::Tab,
             pause: KeyCode::Escape,
+            ask: KeyCode::KeyT,
         }
     }
 }
@@ -93,10 +97,11 @@ pub enum BindingSlot {
     RecoverLantern,
     TacMap,
     Pause,
+    Ask,
 }
 
 impl BindingSlot {
-    pub const ALL: [BindingSlot; 15] = [
+    pub const ALL: [BindingSlot; 16] = [
         BindingSlot::MoveLeft,
         BindingSlot::MoveRight,
         BindingSlot::MoveBack,
@@ -112,6 +117,7 @@ impl BindingSlot {
         BindingSlot::RecoverLantern,
         BindingSlot::TacMap,
         BindingSlot::Pause,
+        BindingSlot::Ask,
     ];
 
     pub fn label(self) -> &'static str {
@@ -131,6 +137,7 @@ impl BindingSlot {
             BindingSlot::RecoverLantern => "Recover anchor lantern",
             BindingSlot::TacMap => "Survivor map",
             BindingSlot::Pause => "Pause",
+            BindingSlot::Ask => "Ask the Architect",
         }
     }
 
@@ -151,6 +158,7 @@ impl BindingSlot {
             BindingSlot::RecoverLantern => bindings.recover_lantern,
             BindingSlot::TacMap => bindings.tac_map,
             BindingSlot::Pause => bindings.pause,
+            BindingSlot::Ask => bindings.ask,
         }
     }
 
@@ -177,6 +185,7 @@ impl BindingSlot {
             BindingSlot::RecoverLantern => bindings.recover_lantern = key,
             BindingSlot::TacMap => bindings.tac_map = key,
             BindingSlot::Pause => bindings.pause = key,
+            BindingSlot::Ask => bindings.ask = key,
         }
     }
 }
