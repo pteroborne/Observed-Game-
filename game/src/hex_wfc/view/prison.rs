@@ -33,7 +33,7 @@ pub(in crate::hex_wfc) fn sync_prison_view(
     gate: Option<Res<crate::hex_wfc::prison_gate::PrisonGateAssets>>,
     drawn: Query<Entity, With<PrisonMaze>>,
 ) {
-    let local = runtime.local();
+    let local = runtime.viewed();
     let prison = runtime.match_state.prison.as_ref();
     let wanted = (local.place == HexBodyPlace::Prison)
         .then(|| prison?.mazes.get(&local.team))

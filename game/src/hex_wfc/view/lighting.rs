@@ -84,12 +84,12 @@ pub(in crate::hex_wfc) fn sync_practical_shadow_budget(
     mut shadowed: Local<Vec<Entity>>,
     mut practicals: Query<(Entity, &HexPractical, &mut PointLight)>,
 ) {
-    let current = runtime.local().cell;
+    let current = runtime.viewed().cell;
     if *last_cell == Some(current) {
         return;
     }
     *last_cell = Some(current);
-    let focus = crate::hex_wfc::ascent::presented_position(runtime.local());
+    let focus = crate::hex_wfc::ascent::presented_position(runtime.viewed());
 
     // Nearest fixtures by squared distance to the runner (small budget → cheap select).
     let mut ranked: Vec<(f32, Entity)> = practicals
@@ -147,7 +147,7 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
     mut camera: Query<&mut DistanceFog, With<GameCam>>,
     mut key: Query<(&mut SpotLight, &mut Transform), With<HexWfcKeyLight>>,
 ) {
-    let current = runtime.local().cell;
+    let current = runtime.viewed().cell;
     let architecture = runtime
         .match_state
         .facility
@@ -334,6 +334,7 @@ mod tests {
             networked: false,
             resync_attempts: 0,
             ascent: None,
+            viewed_player: None,
         })
         .add_systems(Update, sync_practical_shadow_budget);
         for _ in 0..4 {

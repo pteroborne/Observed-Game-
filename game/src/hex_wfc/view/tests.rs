@@ -295,6 +295,7 @@ fn test_runtime() -> crate::hex_wfc::sim::HexWfcRuntime {
         networked: false,
         resync_attempts: 0,
         ascent: None,
+        viewed_player: None,
     }
 }
 

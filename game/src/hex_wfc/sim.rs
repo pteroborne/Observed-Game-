@@ -52,6 +52,8 @@ pub struct HexWfcRuntime {
     pub resync_attempts: u8,
     /// The Architect Ascent rules riding beside the match, when it plays them.
     pub ascent: Option<observed_match::ascent::facility::AscentRules>,
+    /// The body the world is presented from, when not the local one (`viewed`).
+    pub viewed_player: Option<PlayerId>,
 }
 
 impl HexWfcRuntime {
@@ -299,6 +301,7 @@ pub(super) fn setup_runtime(
         networked,
         resync_attempts: 0,
         ascent,
+        viewed_player: None,
     });
     commands.insert_resource(HexWfcIntent::default());
     commands.insert_resource(replay);

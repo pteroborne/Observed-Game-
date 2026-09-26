@@ -10,7 +10,8 @@
 //!    (`architect-building-in`), and
 //! 4. built (`architect-built`);
 //! 5. a teammate's request, once a body the bot drives asks for help (`architect-request`),
-//! 6. and answered at the desk (`architect-answered`).
+//! 6. and answered at the desk (`architect-answered`);
+//! 7. off the desk, through a teammate's eyes (`architect-eyes`).
 //!
 //! The only staging is choosing the play and where it points; the play itself goes
 //! through the desk, the rules and the physical facility like any other.
@@ -174,7 +175,25 @@ pub(in crate::hex_wfc) fn capture(
             request.last_shot_tick = tick;
             request.stills = 8;
         }
-        8 if tick >= request.last_shot_tick + 20 => {
+        // Off the desk, through the eyes of a teammate other than the local body if there
+        // is one, once the facility has streamed in around it.
+        8 => {
+            let eyes = super::eyes::eyes_for(&runtime, &desk);
+            desk.eyes = eyes
+                .iter()
+                .copied()
+                .find(|&eye| eye != runtime.local_player)
+                .or_else(|| eyes.first().copied());
+            request.last_shot_tick = tick;
+            request.stills = 9;
+        }
+        9 if tick >= request.last_shot_tick + 150 => {
+            shoot(&mut commands, "architect-eyes-1280x800.png");
+            request.last_shot_tick = tick;
+            request.stills = 10;
+        }
+        10 if tick >= request.last_shot_tick + 20 => {
+            desk.eyes = None;
             info!("architect capture complete");
             exit.write(AppExit::Success);
         }

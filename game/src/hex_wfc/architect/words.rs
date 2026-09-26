@@ -78,6 +78,8 @@ pub(super) const fn button_label(action: DeskButton, pad: bool) -> &'static str 
         (DeskButton::Cancel, true) => "CANCEL   [B]",
         (DeskButton::Answer, false) => "ANSWER   [F]",
         (DeskButton::Answer, true) => "ANSWER   [Y]",
+        (DeskButton::Look, false) => "LOOK THROUGH THEIR EYES   [V]",
+        (DeskButton::Look, true) => "LOOK THROUGH THEIR EYES   [VIEW]",
     }
 }
 
@@ -138,6 +140,7 @@ mod tests {
                 DeskButton::Play,
                 DeskButton::Cancel,
                 DeskButton::Answer,
+                DeskButton::Look,
             ] {
                 printed.push(button_label(action, pad).to_owned());
             }

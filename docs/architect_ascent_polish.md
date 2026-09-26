@@ -299,6 +299,16 @@ team's bodies are bots, and the player sits at the desk (`game/src/hex_wfc/archi
   it, or from where it stands. A small panel under the objective says what was asked,
   whether the Architect has answered ("ON IT"), and how long the ask has left, and names
   the key; a refusal shows for four seconds, and an answer is heard.
+- **Through an Observer's eyes** (`architect/eyes.rs`): V (the controller's View button,
+  or LOOK THROUGH THEIR EYES) steps off the desk into the first active Observer's eyes, Q
+  / E (LB / RB) go to the next, and V, Escape or B come back. Nothing is simulated for it:
+  the world view follows one body, the runtime's viewed body (`HexWfcRuntime::viewed`,
+  normally the local one), and while looking that is the Observer's - the camera rides its
+  eye with the gaze easing after the bot's head, the facility streams in around it, the
+  light and district are its, and a jailed Observer is seen in its maze. The board, the
+  climb and the desk step aside, their cameras resting, and a bar over the view says whose
+  eyes these are and how to go back; the desk hears nothing else, and the desk has first
+  claim on Escape and East while looking, so neither pauses.
 - Legality is never decided at the desk: every ring and verdict is
   `AscentSession::architect_refusal` for the player's own seat, the question the play asks.
 
@@ -311,6 +321,7 @@ production facility after twenty seconds of the team's bots walking):
 - [The play built, the hand recharging](evidence/ascent-architect/architect-built-1280x800.png)
 - [A teammate jailed, asking for rescue at the lobby](evidence/ascent-architect/architect-request-1280x800.png)
 - [The request answered](evidence/ascent-architect/architect-answered-1280x800.png)
+- [Through a teammate's eyes](evidence/ascent-architect/architect-eyes-1280x800.png)
 
 ### Not yet joined
 
@@ -322,7 +333,6 @@ production facility after twenty seconds of the team's bots walking):
   thing.
 - A match snapshot does not yet carry where each body is or the prison's mazes, so a
   replay or LAN peer of an Ascent match would not see them. That is part of the LAN slice.
-- The Architect's desk cannot look through an Observer's eyes.
 - A replay tape of an Ascent match samples jailed bodies at their maze coordinates.
 
 ## Remaining integration

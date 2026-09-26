@@ -52,7 +52,8 @@ pub(super) fn input(
         Local<Option<Vec2>>,
     ),
 ) {
-    if !desk_live(&overlay, &capture) {
+    // Looking through an Observer's eyes, the desk hears nothing (`eyes`).
+    if !desk_live(&overlay, &capture) || desk.eyes.is_some() {
         return;
     }
     let Some(ascent) = runtime.ascent.as_ref() else {

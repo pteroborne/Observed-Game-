@@ -46,6 +46,7 @@ fn test_runtime() -> HexWfcRuntime {
         networked: false,
         resync_attempts: 0,
         ascent: None,
+        viewed_player: None,
     }
 }
 

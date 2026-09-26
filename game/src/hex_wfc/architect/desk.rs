@@ -76,6 +76,7 @@ pub(super) enum DeskButton {
     Play,
     Cancel,
     Answer,
+    Look,
 }
 
 #[derive(Component)]
@@ -262,6 +263,7 @@ fn side_panel(root: &mut ChildSpawnerCommands) {
     .with_children(|panel| {
         panel.spawn(label("THE TEAM", 12.0, Role::Muted));
         panel.spawn((Line::Observers, label("", 13.0, Role::Text)));
+        button(panel, DeskButton::Look, false);
         panel.spawn((
             label("REQUESTS", 12.0, Role::Muted),
             Node {

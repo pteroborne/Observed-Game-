@@ -44,6 +44,7 @@ fn runtime() -> HexWfcRuntime {
         networked: false,
         resync_attempts: 0,
         ascent,
+        viewed_player: None,
     }
 }
 
@@ -446,4 +447,65 @@ fn a_player_s_body_asks_its_bot_architect_and_is_answered() {
             .is_some_and(|request| request.acknowledged_by == Some(architect));
     }
     assert!(answered, "the bot Architect answered the player's ask");
+}
+
+#[test]
+fn the_architect_looks_through_an_observer_s_eyes_and_comes_back() {
+    use bevy::ecs::system::RunSystemOnce;
+    use bevy::input::ButtonInput;
+    use bevy::prelude::*;
+
+    use crate::hex_wfc::overlay::MatchOverlayState;
+    use crate::screens::widgets::UiInputCapture;
+
+    let mut app = App::new();
+    app.insert_resource(runtime())
+        .insert_resource(desk())
+        .init_resource::<MatchOverlayState>()
+        .init_resource::<UiInputCapture>()
+        .init_resource::<ButtonInput<KeyCode>>()
+        .init_resource::<ButtonInput<MouseButton>>();
+    let press = |app: &mut App, key: KeyCode| {
+        let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        *keys = ButtonInput::default();
+        keys.press(key);
+        app.world_mut()
+            .run_system_once(super::eyes::input)
+            .expect("eyes input runs");
+        app.world_mut()
+            .run_system_once(super::eyes::sync)
+            .expect("eyes sync runs");
+    };
+    let eyes = {
+        let world = app.world();
+        super::eyes::eyes_for(
+            world.resource::<HexWfcRuntime>(),
+            world.resource::<ArchitectDesk>(),
+        )
+    };
+    assert!(!eyes.is_empty(), "the team has a body to look through");
+
+    press(&mut app, KeyCode::KeyV);
+    let looking = app.world().resource::<ArchitectDesk>().eyes;
+    assert_eq!(
+        looking,
+        Some(eyes[0]),
+        "V steps into the first Observer's eyes"
+    );
+    let runtime = app.world().resource::<HexWfcRuntime>();
+    assert_eq!(
+        runtime.viewed_player, looking,
+        "and the world is shown from it"
+    );
+    assert_eq!(runtime.viewed().id, eyes[0]);
+
+    press(&mut app, KeyCode::Escape);
+    assert_eq!(
+        app.world().resource::<ArchitectDesk>().eyes,
+        None,
+        "Esc comes back"
+    );
+    let runtime = app.world().resource::<HexWfcRuntime>();
+    assert_eq!(runtime.viewed_player, None);
+    assert_eq!(runtime.viewed().id, runtime.local_player);
 }

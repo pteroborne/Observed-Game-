@@ -61,6 +61,8 @@ const CHASE_PITCH: f32 = -0.26;
 /// yaw is a simulation value that can still swing quickly; easing toward it
 /// keeps the view readable without altering anything the simulation sees.
 const CHASE_RESPONSE: f32 = 6.0;
+/// How quickly the gaze turns after a bot's head when looking through its eyes.
+const EYES_RESPONSE: f32 = 12.0;
 
 pub(in crate::hex_wfc) fn sync_camera(
     runtime: Res<HexWfcRuntime>,
@@ -70,7 +72,7 @@ pub(in crate::hex_wfc) fn sync_camera(
     mut camera: Query<&mut Transform, With<GameCam>>,
     mut was_overviewing: Local<bool>,
 ) {
-    let player = runtime.local();
+    let player = runtime.viewed();
     let Ok(mut transform) = camera.single_mut() else {
         return;
     };
@@ -78,7 +80,14 @@ pub(in crate::hex_wfc) fn sync_camera(
         // Human play is untouched: the eye pose, rigidly, every frame.
         let (eye, rotation) = player_eye_pose(player);
         transform.translation = eye;
-        transform.rotation = rotation;
+        // Through an Observer's eyes from the Architect's desk the body is a bot's,
+        // whose head can snap between headings: the eye follows it, the gaze eases.
+        transform.rotation = if runtime.viewed_player.is_some() {
+            let t = 1.0 - (-EYES_RESPONSE * time.delta_secs()).exp();
+            transform.rotation.slerp(rotation, t)
+        } else {
+            rotation
+        };
         return;
     }
 

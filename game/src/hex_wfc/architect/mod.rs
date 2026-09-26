@@ -38,6 +38,8 @@ pub(crate) struct ArchitectDesk {
     /// Whether the last hand on the desk was on a controller, which is what the desk's
     /// prompts name.
     pub pad: bool,
+    /// The body whose eyes the Architect is looking through, when off the desk (`eyes`).
+    pub eyes: Option<PlayerId>,
     /// A play committed and not yet stepped.
     pub pending: Option<ArchitectCommand>,
     /// A team request answered at the desk and not yet stepped: its author and when it
@@ -169,6 +171,7 @@ impl ArchitectDesk {
             floor,
             pad_cursor: None,
             pad: false,
+            eyes: None,
             pending: None,
             pending_answer: None,
             built: BTreeMap::new(),
@@ -181,6 +184,7 @@ mod building;
 pub(super) mod capture;
 mod cards;
 mod desk;
+mod eyes;
 mod feedback;
 mod input;
 mod overlay;
@@ -201,10 +205,13 @@ pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleS
             feedback::setup,
             init_building,
         ),
-        desk::spawn,
+        (desk::spawn, eyes::spawn),
         stack::click,
         input::input,
         pad::input,
+        // After the desk's own hands, which it silences while looking.
+        eyes::input,
+        eyes::sync,
         board::frame,
         stack::frame,
         building::clear,

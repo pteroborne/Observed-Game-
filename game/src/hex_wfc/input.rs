@@ -198,9 +198,9 @@ pub(super) fn mode_hotkeys(
             present: architect.is_some(),
             // Only in play: a card still in hand does not stop Escape closing a pause page.
             holds_a_card: *overlay == MatchOverlayState::Playing
-                && architect
-                    .as_ref()
-                    .is_some_and(|desk| desk.selected.is_some() || desk.aimed.is_some()),
+                && architect.as_ref().is_some_and(|desk| {
+                    desk.selected.is_some() || desk.aimed.is_some() || desk.eyes.is_some()
+                }),
             pause_is_escape: settings.bindings.pause == KeyCode::Escape,
             escape,
         },

@@ -84,7 +84,7 @@ pub(super) fn input(
     overlay: Res<MatchOverlayState>,
     capture: Res<UiInputCapture>,
 ) {
-    if !desk_live(&overlay, &capture) {
+    if !desk_live(&overlay, &capture) || desk.eyes.is_some() {
         return;
     }
     let Some(held) = runtime

@@ -172,7 +172,7 @@ impl CutawayMarks<'_, '_> {
             return;
         };
 
-        let followed = runtime.local();
+        let followed = runtime.viewed();
         let wanted = Section {
             cell: followed.cell,
             detent: overview.detent,

@@ -404,7 +404,7 @@ pub(super) fn sync(
     let toward = guardian
         .target
         .and_then(|id| runtime.match_state.players.get(&id))
-        .unwrap_or_else(|| runtime.local())
+        .unwrap_or_else(|| runtime.viewed())
         .position
         + Vec3::Y * EYE_OFFSET;
     let pose = form::pose(

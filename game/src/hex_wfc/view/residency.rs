@@ -349,7 +349,7 @@ pub(crate) fn sync_streamed_cells(
     mut meshes: ResMut<Assets<Mesh>>,
     mut perf: Option<ResMut<crate::hex_wfc::perf::HexPerfMetrics>>,
 ) {
-    let focus = runtime.local();
+    let focus = runtime.viewed();
     if residency.defer_incremental_once {
         residency.defer_incremental_once = false;
         *readiness = presentation_readiness(&residency.catalog, &residency.resident, focus, 0, 0);
