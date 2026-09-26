@@ -48,6 +48,17 @@ impl HexGuardianState {
         }
     }
 
+    /// A Guardian standing in `cell`, hunting: one released after the match began.
+    #[must_use]
+    pub fn at(cell: HexCoord) -> Self {
+        Self {
+            cell,
+            position: Vec3::from_array(hex_origin(cell)) + Vec3::Y * 0.9,
+            status: HexGuardianStatus::Active,
+            target: None,
+        }
+    }
+
     #[must_use]
     pub fn pressure_for(&self, world: &HexWfcWorld, player: &HexPlayerState) -> f32 {
         if player.cell == self.cell {

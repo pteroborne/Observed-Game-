@@ -36,6 +36,7 @@ mod objectives;
 mod pad;
 #[cfg(test)]
 mod pad_tests;
+mod released;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -46,6 +47,7 @@ pub use guardian::{HexGuardianState, HexGuardianStatus};
 pub use knowledge::{HexMapCellKnowledge, HexMapDiscovery, HexPlayerMapKnowledge};
 pub use objectives::{DUAL_STATION_HOLD_TICKS, HexObjectiveState, KEYSTONES_REQUIRED};
 pub use pad::{HexDeployedPad, HexPadState, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER};
+pub use released::{HexMinorState, HexReleasedGuardian, HexReleasedKind, MINOR_SIGHT_STEPS};
 pub use snapshot::{HexMapCellSnapshot, HexMatchSnapshot, HexPlayerSnapshot, HexTeamSnapshot};
 
 pub(super) const FIXED_DT: f32 = 1.0 / 60.0;
@@ -148,6 +150,10 @@ pub enum HexMatchEventKind {
     /// A body stood on one plate and was moved to its team's other plate.
     PadTraversed,
     GuardianCatch,
+    /// A Guardian was released into the facility after the match began, at `cell`.
+    GuardianReleased,
+    /// A released Guardian fell out of the facility, over `cell`, and is gone.
+    GuardianLost,
     /// A caught body woke in its team's prison maze.
     PlayerJailed,
     /// A jailed body walked out of the maze into the prison lobby.
@@ -299,6 +305,8 @@ pub struct HexWfcMatch {
     pub lanterns: HexLanternState,
     pub pads: HexPadState,
     pub guardian: HexGuardianState,
+    /// Guardians released after tick zero, under the rules' ids for them.
+    pub released: BTreeMap<u16, HexReleasedGuardian>,
     pub objectives: HexObjectiveState,
     /// Whether the Guardian hunts this match. See `HexMatchConfig::guardian`.
     pub(super) guardian_active: bool,
@@ -512,6 +520,7 @@ impl HexWfcMatch {
             lanterns,
             pads,
             guardian,
+            released: BTreeMap::new(),
             objectives: HexObjectiveState {
                 enabled: false,
                 keystones_required: objectives::KEYSTONES_REQUIRED,
@@ -599,6 +608,7 @@ impl HexWfcMatch {
                 self.prison.as_ref(),
             );
         }
+        self.step_released();
         self.step_prison();
         self.sync_teleports_to_bodies();
         self.update_map_knowledge();
