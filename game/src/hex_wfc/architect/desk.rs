@@ -195,8 +195,9 @@ fn top_bar(root: &mut ChildSpawnerCommands) {
         bar.spawn((
             Line::Phase,
             label("", 14.0, Role::Valid),
+            TextLayout::no_wrap(),
             Node {
-                width: px(170),
+                width: px(190),
                 ..default()
             },
         ));

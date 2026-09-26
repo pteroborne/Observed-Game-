@@ -6,8 +6,9 @@
 //! 1. the board as it is (`architect-board`);
 //! 2. a card picked up and pointed at a cell the rules would take it on
 //!    (`architect-play`): the legal targets, the ghost, the verdict;
-//! 3. the same play committed through the desk, once the rules have built it
-//!    (`architect-built`).
+//! 3. the same play confirmed through the desk, building in as the rules build it
+//!    (`architect-building-in`), and
+//! 4. built (`architect-built`).
 //!
 //! The only staging is choosing the play and where it points; the play itself goes
 //! through the desk, the rules and the physical facility like any other.
@@ -18,6 +19,7 @@ use observed_match::ascent::sim::{ArchitectCommand, CardKind};
 
 use super::ArchitectDesk;
 use super::board::Board;
+use super::feedback::BuildIn;
 use crate::hex_wfc::{HexWfcCapture, HexWfcCaptureMode, sim::HexWfcRuntime};
 
 /// Ticks the bots walk before the first still: time to map a floor.
@@ -32,6 +34,7 @@ pub(in crate::hex_wfc) fn capture(
     desk: Option<ResMut<ArchitectDesk>>,
     board: Option<Res<Board>>,
     mut windows: Query<&mut Window>,
+    building_in: Query<&BuildIn>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let Some(mut request) = request else {
@@ -131,14 +134,22 @@ pub(in crate::hex_wfc) fn capture(
             request.last_shot_tick = tick;
             request.stills = 3;
         }
-        3 if tick >= request.last_shot_tick + 30 => {
+        // Caught while it builds in, however the ticks fall against the frames.
+        3 if building_in.iter().any(|room| room.age > 0.25)
+            || tick >= request.last_shot_tick + 120 =>
+        {
+            shoot(&mut commands, "architect-building-in-1280x800.png");
+            request.last_shot_tick = tick;
+            request.stills = 4;
+        }
+        4 if tick >= request.last_shot_tick + 90 => {
             shoot(&mut commands, "architect-built-1280x800.png");
             let played = ascent.rules().command_log.len();
             info!("architect capture: the rules have logged {played} plays");
             request.last_shot_tick = tick;
-            request.stills = 4;
+            request.stills = 5;
         }
-        4 if tick >= request.last_shot_tick + 20 => {
+        5 if tick >= request.last_shot_tick + 20 => {
             info!("architect capture complete");
             exit.write(AppExit::Success);
         }

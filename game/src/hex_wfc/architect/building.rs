@@ -17,7 +17,7 @@
 //! The floor in view is drawn with the two below it as hazed context decks, so the climb
 //! is under the board rather than only beside it.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::visibility::RenderLayers;
@@ -33,6 +33,7 @@ use observed_traversal::{ColliderShape, ConvexRenderMesh};
 
 use super::ArchitectDesk;
 use super::board::BOARD_LAYER;
+use super::feedback;
 use super::pick;
 use crate::GameState;
 use crate::hex_wfc::sim::HexWfcRuntime;
@@ -85,7 +86,10 @@ pub(super) struct BuiltCell;
 /// What is drawn, so a cell is rebuilt only when what it should show changes.
 #[derive(Resource, Default)]
 pub(super) struct Building {
-    drawn: BTreeMap<HexCoord, (Entity, u64)>,
+    /// Each room drawn: its entity, what it was drawn from, and the placement it shows.
+    drawn: BTreeMap<HexCoord, (Entity, u64, HexPlacement)>,
+    /// The Architect's own builds that have built in, by cell and tick, so each does once.
+    celebrated: BTreeSet<(HexCoord, u64)>,
     materials: HashMap<(ArchitectureRegister, bool, Tone), Handle<StandardMaterial>>,
     /// The live geometry's pieces by the cell that owns them, for one generation.
     index: Option<(u32, HashMap<HexCoord, Vec<usize>>)>,
@@ -156,7 +160,7 @@ pub(super) fn draw(
         .copied()
         .collect();
     for cell in gone {
-        if let Some((entity, _)) = building.drawn.remove(&cell) {
+        if let Some((entity, ..)) = building.drawn.remove(&cell) {
             commands.entity(entity).despawn();
         }
     }
@@ -178,12 +182,26 @@ pub(super) fn draw(
         if building
             .drawn
             .get(&cell)
-            .is_some_and(|(_, drawn)| *drawn == signature)
+            .is_some_and(|(_, drawn, _)| *drawn == signature)
         {
             continue;
         }
-        if let Some((entity, _)) = building.drawn.remove(&cell) {
+        let before = building.drawn.remove(&cell).map(|(entity, _, before)| {
             commands.entity(entity).despawn();
+            before
+        });
+        // Whether it builds in: only when what stands there has changed.
+        let own = desk.built.get(&cell).copied();
+        let glow = feedback::build_glow(
+            own.map(|(placement, _)| placement),
+            own.is_some_and(|(_, at)| building.celebrated.contains(&(cell, at))),
+            before,
+            remembered,
+        );
+        if glow == Some(Role::Selected)
+            && let Some((_, at)) = own
+        {
+            building.celebrated.insert((cell, at));
         }
         let pieces: Vec<HexStructurePiece> = if as_it_is {
             building
@@ -217,11 +235,17 @@ pub(super) fn draw(
             .spawn((
                 BuiltCell,
                 DespawnOnExit(GameState::HexWfc),
-                Transform::from_translation(pick::BOARD_ORIGIN),
+                if glow.is_some() {
+                    feedback::start()
+                } else {
+                    Transform::from_translation(pick::BOARD_ORIGIN)
+                },
                 Visibility::default(),
                 layer.clone(),
             ))
             .id();
+        let glow = glow.map(|role| (role, materials.add(feedback::glow_material(role))));
+        let mut glows = Vec::new();
         for floor in [true, false] {
             let Some(mesh) = cutaway_mesh(&pieces, floor, bearing) else {
                 continue;
@@ -231,17 +255,39 @@ pub(super) fn draw(
                 .entry((register, floor, tone))
                 .or_insert_with(|| materials.add(tone.material(register, floor)))
                 .clone();
+            let mesh = meshes.add(mesh);
             let child = commands
                 .spawn((
-                    Mesh3d(meshes.add(mesh)),
+                    Mesh3d(mesh.clone()),
                     MeshMaterial3d(material),
                     Transform::IDENTITY,
                     layer.clone(),
                 ))
                 .id();
             commands.entity(root).add_child(child);
+            if let Some((_, glow)) = &glow {
+                // The same room again, a hair proud of it, in light.
+                let lit = commands
+                    .spawn((
+                        Mesh3d(mesh),
+                        MeshMaterial3d(glow.clone()),
+                        Transform::from_xyz(0.0, 0.02, 0.0),
+                        layer.clone(),
+                    ))
+                    .id();
+                commands.entity(root).add_child(lit);
+                glows.push(lit);
+            }
         }
-        building.drawn.insert(cell, (root, signature));
+        if let Some((role, glow)) = glow {
+            commands.entity(root).insert(feedback::BuildIn {
+                age: 0.0,
+                glow,
+                glows,
+                own: role == Role::Selected,
+            });
+        }
+        building.drawn.insert(cell, (root, signature, remembered));
     }
 }
 
@@ -268,7 +314,7 @@ pub(super) fn clear(
         return;
     }
     *floor = Some(desk.floor);
-    for (_, (entity, _)) in std::mem::take(&mut building.drawn) {
+    for (_, (entity, ..)) in std::mem::take(&mut building.drawn) {
         commands.entity(entity).despawn();
     }
 }

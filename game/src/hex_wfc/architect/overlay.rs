@@ -22,6 +22,7 @@ use observed_style::architect::{Role, color};
 use super::ArchitectDesk;
 use super::board::{BOARD_LAYER, Board, signal};
 use super::building;
+use super::feedback::Pulse;
 use super::pick::{self, BOARD_ORIGIN};
 use crate::GameState;
 use crate::hex_wfc::sim::HexWfcRuntime;
@@ -119,19 +120,23 @@ pub(super) fn draw(
         return;
     };
     let takes_it = legal.contains(&focus);
-    let edge = materials.add(signal(if takes_it {
+    let verdict = if takes_it {
         Role::Selected
     } else {
         Role::Guardian
-    }));
-    commands.spawn((
+    };
+    let mut edge = commands.spawn((
         BoardOverlay,
         DespawnOnExit(GameState::HexWfc),
         Mesh3d(board.ring.clone()),
-        MeshMaterial3d(edge),
+        MeshMaterial3d(materials.add(signal(verdict))),
         Transform::from_translation(on_deck(focus, 0.2)),
         layer.clone(),
     ));
+    // An aim breathes while it waits to be confirmed.
+    if desk.aimed == Some(focus) {
+        edge.insert(Pulse(verdict));
+    }
     // The tile itself, as it would be played: the lab's amber ghost of its real hulls,
     // floors and walls, turned as the desk has it.
     let CardKind::Tile(shape) = card.kind else {

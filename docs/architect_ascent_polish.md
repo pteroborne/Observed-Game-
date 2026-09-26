@@ -260,6 +260,13 @@ team's bodies are bots, and the player sits at the desk (`game/src/hex_wfc/archi
   inspection would take it; the step hands it to the rules as the seat's command, and a
   refusal comes back to the desk. `[` / `]` or the top bar change floor, R is the
   emergency requisition, right click puts the card down.
+- **Feedback** (`architect/feedback.rs`): a tile the rules take from this desk builds in -
+  the room rises the last metres into place under an amber glow that fades, with the
+  facility's reroute sound - and a remembered room the team finds changed builds in under
+  a cyan glow. Only a changed placement builds in: a room drawn again because the team now
+  sees it, or no longer does, stays put. A contradiction's red ring breathes, and so does
+  the aim's ring while the play waits to be confirmed. A card picked up clicks, an aim
+  ticks, and a refused play lands with a dull knock.
 - Legality is never decided at the desk: every ring and verdict is
   `AscentSession::architect_refusal` for the player's own seat, the question the play asks.
 
@@ -268,7 +275,8 @@ production facility after twenty seconds of the team's bots walking):
 
 - [The board](evidence/ascent-architect/architect-board-1280x800.png)
 - [A card picked up and pointed](evidence/ascent-architect/architect-play-1280x800.png)
-- [The play built, a door across its doorway, the hand recharging](evidence/ascent-architect/architect-built-1280x800.png)
+- [The play building in under its amber glow](evidence/ascent-architect/architect-building-in-1280x800.png)
+- [The play built, the hand recharging](evidence/ascent-architect/architect-built-1280x800.png)
 
 ### Not yet joined
 

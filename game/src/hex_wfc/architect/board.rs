@@ -18,6 +18,7 @@ use observed_match::ascent::sim::{DoorState, ObserverState};
 use observed_style::architect::{Role, color};
 
 use super::ArchitectDesk;
+use super::feedback::Pulse;
 use super::pick::{self, BOARD_ORIGIN, CELL_RADIUS, Framing, Margins};
 use crate::GameState;
 use crate::hex_wfc::equipment::{hex_prism, hex_ring};
@@ -350,7 +351,20 @@ pub(super) fn draw_marks(
     }
 
     // The lab's legend: red is trouble, violet the prison, green the way up, cyan an eye
-    // and a red pyramid a Guardian.
+    // and a red pyramid a Guardian. A contradiction breathes (`feedback::pulse`).
+    for &cell in rules.contradictions.iter().filter(|c| c.level == floor) {
+        if knowledge.cells.contains_key(&cell) {
+            commands.spawn((
+                BoardMark,
+                Pulse(Role::Guardian),
+                DespawnOnExit(GameState::HexWfc),
+                Mesh3d(board.ring.clone()),
+                MeshMaterial3d(paint(Role::Guardian)),
+                Transform::from_translation(on_deck(cell, 0.1)),
+                layer.clone(),
+            ));
+        }
+    }
     let mut ring = |commands: &mut Commands, role: Role, cell: HexCoord| {
         let material = paint(role);
         spawn(
@@ -360,11 +374,6 @@ pub(super) fn draw_marks(
             Transform::from_translation(on_deck(cell, 0.1)),
         );
     };
-    for &cell in rules.contradictions.iter().filter(|c| c.level == floor) {
-        if knowledge.cells.contains_key(&cell) {
-            ring(&mut commands, Role::Guardian, cell);
-        }
-    }
     for &cell in rules.prison.cells.iter().filter(|c| c.level == floor) {
         ring(&mut commands, Role::Prison, cell);
     }

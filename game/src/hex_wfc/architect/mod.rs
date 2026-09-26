@@ -146,6 +146,7 @@ mod building;
 pub(super) mod capture;
 mod cards;
 mod desk;
+mod feedback;
 mod input;
 mod overlay;
 mod pick;
@@ -156,7 +157,13 @@ mod words;
 /// The desk's systems, in order: build, read the player, frame, draw.
 pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleSystem, ()> {
     (
-        (board::setup, stack::setup, cards::setup, init_building),
+        (
+            board::setup,
+            stack::setup,
+            cards::setup,
+            feedback::setup,
+            init_building,
+        ),
         desk::spawn,
         stack::click,
         input::input,
@@ -166,6 +173,9 @@ pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleS
         building::draw,
         board::draw_marks,
         overlay::draw,
+        feedback::build_in,
+        feedback::pulse,
+        feedback::sounds,
         stack::draw,
         cards::sync,
         readout::sync,
