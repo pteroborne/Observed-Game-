@@ -165,6 +165,17 @@ impl AscentRules {
     pub fn observer_for(&self, player: PlayerId) -> Option<ObserverId> {
         self.bodies.get(&player).copied()
     }
+
+    /// Voice the requests of the bodies `players`, which a bot drives: their seats are
+    /// human to the rules, which move them from the physical match, but a bot still asks
+    /// its Architect for help (`AscentSession::voice`).
+    pub fn voice(&mut self, players: impl IntoIterator<Item = PlayerId>) {
+        self.session.voice(
+            players
+                .into_iter()
+                .filter(|player| self.bodies.contains_key(player)),
+        );
+    }
 }
 
 /// A first-person match and its Ascent rules, held together.
@@ -216,6 +227,11 @@ impl AscentMatch {
     #[must_use]
     pub fn observer_for(&self, player: PlayerId) -> Option<ObserverId> {
         self.ascent.observer_for(player)
+    }
+
+    /// See [`AscentRules::voice`].
+    pub fn voice(&mut self, players: impl IntoIterator<Item = PlayerId>) {
+        self.ascent.voice(players);
     }
 }
 

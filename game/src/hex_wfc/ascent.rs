@@ -34,10 +34,13 @@ pub(super) fn architect_seat(team: TeamId) -> PlayerId {
 }
 
 /// The rules for a fresh local match, with an Architect for every team: the local
-/// player in `human`'s seat, and a bot in every other. `None` when the facility cannot
-/// host them, which a solved facility always can.
+/// player in `human`'s seat, and a bot in every other. Every body a bot drives - all of
+/// them when the local player is an Architect, every other when they are a body
+/// (`local`) - asks its Architect for help as a bot. `None` when the facility cannot host
+/// them, which a solved facility always can.
 pub(super) fn rules_for(
     match_state: &mut HexWfcMatch,
+    local: PlayerId,
     human: Option<TeamId>,
 ) -> Option<AscentRules> {
     let seats = match_state
@@ -54,9 +57,17 @@ pub(super) fn rules_for(
         })
         .collect();
     let seed = match_state.seed;
-    AscentRules::new(match_state, seed, seats)
+    let driven: Vec<PlayerId> = match_state
+        .players
+        .keys()
+        .copied()
+        .filter(|&player| human.is_some() || player != local)
+        .collect();
+    let mut rules = AscentRules::new(match_state, seed, seats)
         .inspect_err(|refusal| warn!("Architect Ascent could not start: {refusal:?}"))
-        .ok()
+        .ok()?;
+    rules.voice(driven);
+    Some(rules)
 }
 
 /// Step the match through its rules, if it has them, with the local Architect's play
@@ -78,6 +89,11 @@ pub(super) fn step(
     {
         commands.insert(desk.seat, SeatCommand::Architect(play));
         played = Some(play);
+    } else if let Some(desk) = desk.as_deref_mut()
+        && let Some((author, created_at)) = desk.pending_answer.take()
+    {
+        // One command a seat a tick: an answer waits behind a play, and goes the next.
+        commands.insert(desk.seat, SeatCommand::Acknowledge { author, created_at });
     }
     let seats = InputFrame {
         version: ASCENT_INPUT_VERSION,
@@ -88,7 +104,8 @@ pub(super) fn step(
     // decided, and the physical match has stopped with it.
     if let Ok(refusals) = rules.step(&mut runtime.match_state, bodies, &seats)
         && let Some(desk) = desk
-        && !seats.commands.is_empty()
+        // A play's refusal is the desk's to say; an answer the rules find expired is not.
+        && played.is_some()
     {
         desk.last_refusal = refusals.get(&desk.seat).copied();
         // A tile the rules took is one the Architect knows stands, seen or not.

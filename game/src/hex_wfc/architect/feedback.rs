@@ -7,8 +7,8 @@
 //!   now sees it, or sees it no longer, does not build in: nothing about it changed.
 //! - **Trouble pulses.** A contradiction's ring breathes red, and the aim's amber ring
 //!   breathes while the play waits to be confirmed.
-//! - **The desk clicks.** A card picked up clicks, an aim ticks, and a play the rules
-//!   refuse lands with a dull knock.
+//! - **The desk clicks.** A card picked up clicks, an aim ticks, a play the rules refuse
+//!   lands with a dull knock, and a teammate's new request calls, low and long.
 
 use bevy::audio::{PlaybackMode, Volume};
 use bevy::prelude::*;
@@ -37,9 +37,22 @@ pub(in crate::hex_wfc) struct BuildIn {
     pub own: bool,
 }
 
-/// A ring that breathes, in `role`'s colour.
+/// A mark that breathes, in `role`'s colour, swelling across from its own `scale`.
 #[derive(Component)]
-pub(super) struct Pulse(pub Role);
+pub(super) struct Pulse {
+    pub role: Role,
+    pub scale: Vec3,
+}
+
+impl Pulse {
+    /// A ring at its own size.
+    pub(super) const fn ring(role: Role) -> Self {
+        Self {
+            role,
+            scale: Vec3::ONE,
+        }
+    }
+}
 
 /// Whether a room drawn now as `now` builds in, and in what colour: amber for the tile
 /// this Architect built (`own`, not yet `celebrated`), cyan for a room that was drawn
@@ -126,9 +139,9 @@ pub(super) fn pulse(
 ) {
     let breath = breath(time.elapsed_secs());
     for (pulse, mut transform, material) in &mut rings {
-        transform.scale = Vec3::new(1.0 + 0.1 * breath, 1.0, 1.0 + 0.1 * breath);
+        transform.scale = pulse.scale * Vec3::new(1.0 + 0.1 * breath, 1.0, 1.0 + 0.1 * breath);
         if let Some(mut material) = materials.get_mut(&material.0) {
-            let base = color(pulse.0).to_linear();
+            let base = color(pulse.role).to_linear();
             material.base_color = Color::LinearRgba(base * (0.6 + 0.6 * breath)).with_alpha(1.0);
         }
     }
@@ -162,6 +175,8 @@ pub(super) struct Heard {
     selected: Option<usize>,
     aimed: Option<observed_hex::HexCoord>,
     refused: bool,
+    /// The team's requests, by author and when made.
+    requests: std::collections::BTreeSet<(observed_core::PlayerId, u64)>,
 }
 
 pub(super) fn sounds(
@@ -170,6 +185,7 @@ pub(super) fn sounds(
     sounds: Res<DeskSounds>,
     settings: Res<crate::settings::Settings>,
     built: Query<&BuildIn, Added<BuildIn>>,
+    runtime: Res<crate::hex_wfc::sim::HexWfcRuntime>,
     mut heard: Local<Heard>,
 ) {
     let volume = settings.effective_sfx_volume();
@@ -202,10 +218,28 @@ pub(super) fn sounds(
     for building in &built {
         play(&sounds.build, if building.own { 0.7 } else { 0.35 }, 1.0);
     }
+    // A teammate asking: the tick, twice as long, so it is heard as a call.
+    let requests: std::collections::BTreeSet<_> = runtime
+        .ascent
+        .as_ref()
+        .map(|ascent| {
+            super::requests::team_requests(ascent.session(), desk.team)
+                .into_iter()
+                .map(|request| (request.author, request.created_at))
+                .collect()
+        })
+        .unwrap_or_default();
+    if requests
+        .iter()
+        .any(|request| !heard.requests.contains(request))
+    {
+        play(&sounds.tick, 0.7, 0.6);
+    }
     *heard = Heard {
         selected: desk.selected,
         aimed: desk.aimed,
         refused,
+        requests,
     };
 }
 

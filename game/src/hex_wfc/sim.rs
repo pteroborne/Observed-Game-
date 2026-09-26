@@ -264,11 +264,11 @@ pub(super) fn setup_runtime(
     let seed_offset = prepared.seed_offset;
     let mut match_state = prepared.match_state;
     let local_team = match_state.players[&local_player].team;
-    let architect = play_setup.seat == crate::play_setup::PlaySeat::Architect;
+    let human = (play_setup.seat == crate::play_setup::PlaySeat::Architect).then_some(local_team);
     let ascent = (!networked && play_setup.rules == crate::play_setup::PlayRules::Ascent)
-        .then(|| super::ascent::rules_for(&mut match_state, architect.then_some(local_team)))
+        .then(|| super::ascent::rules_for(&mut match_state, local_player, human))
         .flatten();
-    if ascent.is_some() && architect {
+    if ascent.is_some() && human.is_some() {
         commands.insert_resource(super::architect::ArchitectDesk::new(
             super::ascent::architect_seat(local_team),
             observed_match::ascent::sim::TeamId(local_team.0),

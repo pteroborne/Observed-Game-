@@ -118,6 +118,22 @@ pub(super) fn sync(
                     .join("\n"),
                 Role::Text,
             ),
+            Line::Requests => {
+                let requests = super::requests::team_requests(ascent.session(), desk.team);
+                if requests.is_empty() {
+                    ("None.".to_owned(), Role::Muted)
+                } else {
+                    (
+                        requests
+                            .iter()
+                            .take(3)
+                            .map(|request| super::requests::line(request, rules.tick))
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                        Role::Text,
+                    )
+                }
+            }
             Line::Message => (
                 desk.last_refusal
                     .map(|refusal| {

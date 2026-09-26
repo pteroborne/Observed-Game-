@@ -149,7 +149,7 @@ pub(super) fn draw(
     ));
     // An aim breathes while it waits to be confirmed.
     if desk.aimed == Some(focus) {
-        edge.insert(Pulse(verdict));
+        edge.insert(Pulse::ring(verdict));
     }
     // The tile itself, as it would be played: the lab's amber ghost of its real hulls,
     // floors and walls, turned as the desk has it.

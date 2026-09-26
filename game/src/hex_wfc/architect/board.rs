@@ -26,6 +26,8 @@ use crate::hex_wfc::sim::HexWfcRuntime;
 
 /// The board's render layer, apart from the world's and the survivor map's.
 pub(super) const BOARD_LAYER: usize = 3;
+/// A request's beacon: a pillar over the cell, tall enough to find from across a floor.
+const BEACON: Vec3 = Vec3::new(1.8, 20.0, 1.8);
 /// How fast the board glides to a new framing: the share of the gap closed per second.
 const GLIDE: f32 = 4.0;
 /// Above the world and the survivor map.
@@ -249,6 +251,10 @@ pub(super) fn draw_marks(
     for (key, state) in &rules.doors {
         (key.cell, key.face, *state == DoorState::Open).hash(&mut hasher);
     }
+    let requests = super::requests::team_requests(ascent.session(), desk.team);
+    for request in &requests {
+        (request.target, request.created_at, request.acknowledged_by).hash(&mut hasher);
+    }
     let signature = hasher.finish();
     if signature == board.marks_signature {
         return;
@@ -350,13 +356,41 @@ pub(super) fn draw_marks(
         }
     }
 
+    // A request is a beacon over the cell it is about, in its kind's colour, breathing
+    // until the Architect answers it.
+    for request in requests.iter().filter(|r| r.target.level == floor) {
+        let role = super::requests::role(request.kind);
+        let mut beacon = commands.spawn((
+            BoardMark,
+            DespawnOnExit(GameState::HexWfc),
+            Mesh3d(board.bar.clone()),
+            MeshMaterial3d(paint(role)),
+            Transform::from_translation(on_deck(request.target, 10.0)).with_scale(BEACON),
+            layer.clone(),
+        ));
+        if request.acknowledged_by.is_none() {
+            beacon.insert(Pulse {
+                role,
+                scale: BEACON,
+            });
+        }
+        commands.spawn((
+            BoardMark,
+            DespawnOnExit(GameState::HexWfc),
+            Mesh3d(board.ring.clone()),
+            MeshMaterial3d(paint(role)),
+            Transform::from_translation(on_deck(request.target, 0.12)),
+            layer.clone(),
+        ));
+    }
+
     // The lab's legend: red is trouble, violet the prison, green the way up, cyan an eye
     // and a red pyramid a Guardian. A contradiction breathes (`feedback::pulse`).
     for &cell in rules.contradictions.iter().filter(|c| c.level == floor) {
         if knowledge.cells.contains_key(&cell) {
             commands.spawn((
                 BoardMark,
-                Pulse(Role::Guardian),
+                Pulse::ring(Role::Guardian),
                 DespawnOnExit(GameState::HexWfc),
                 Mesh3d(board.ring.clone()),
                 MeshMaterial3d(paint(Role::Guardian)),

@@ -8,7 +8,9 @@
 //!    (`architect-play`): the legal targets, the ghost, the verdict;
 //! 3. the same play confirmed through the desk, building in as the rules build it
 //!    (`architect-building-in`), and
-//! 4. built (`architect-built`).
+//! 4. built (`architect-built`);
+//! 5. a teammate's request, once a body the bot drives asks for help (`architect-request`),
+//! 6. and answered at the desk (`architect-answered`).
 //!
 //! The only staging is choosing the play and where it points; the play itself goes
 //! through the desk, the rules and the physical facility like any other.
@@ -149,7 +151,30 @@ pub(in crate::hex_wfc) fn capture(
             request.last_shot_tick = tick;
             request.stills = 5;
         }
-        5 if tick >= request.last_shot_tick + 20 => {
+        // A teammate's request, as the desk shows it, and once it has been answered.
+        5 => {
+            let asked = super::requests::oldest_unanswered(ascent.session(), desk.team);
+            if let Some(asked) = asked {
+                desk.look_at(asked.target.level);
+                request.last_shot_tick = tick;
+                request.stills = 6;
+            } else if tick >= request.last_shot_tick + 6_000 {
+                warn!("architect capture: no teammate asked for help; no request stills");
+                request.stills = 8;
+            }
+        }
+        6 if tick >= request.last_shot_tick + 10 => {
+            shoot(&mut commands, "architect-request-1280x800.png");
+            super::requests::answer_oldest(&mut desk, &runtime);
+            request.last_shot_tick = tick;
+            request.stills = 7;
+        }
+        7 if tick >= request.last_shot_tick + 20 => {
+            shoot(&mut commands, "architect-answered-1280x800.png");
+            request.last_shot_tick = tick;
+            request.stills = 8;
+        }
+        8 if tick >= request.last_shot_tick + 20 => {
             info!("architect capture complete");
             exit.write(AppExit::Success);
         }

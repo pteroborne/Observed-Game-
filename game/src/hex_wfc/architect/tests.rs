@@ -30,7 +30,7 @@ fn runtime() -> HexWfcRuntime {
     };
     let prototypes = crate::hex_wfc::sim::load_prototypes();
     let mut match_state = HexWfcMatch::new(7, config, &prototypes).expect("solves");
-    let ascent = ascent::rules_for(&mut match_state, Some(TEAM));
+    let ascent = ascent::rules_for(&mut match_state, PlayerId(0), Some(TEAM));
     HexWfcRuntime {
         presented_revisions: match_state.facility.cell_revisions.clone(),
         match_state,
@@ -348,4 +348,30 @@ fn a_controller_drives_the_desk_through_the_same_steps() {
         MatchOverlayState::Pause(PausePage::Root);
     press(&mut app, GamepadButton::DPadRight);
     assert_eq!(desk_now(&app).0, None, "the desk does not hear it");
+}
+
+#[test]
+fn a_request_answered_at_the_desk_is_acknowledged_by_the_rules() {
+    let mut runtime = runtime();
+    let mut desk = desk();
+    let mut asked = None;
+    for _ in 0..6_000 {
+        tick(&mut runtime, &mut desk);
+        asked = super::requests::oldest_unanswered(
+            runtime.ascent.as_ref().unwrap().session(),
+            desk.team,
+        );
+        if asked.is_some() {
+            break;
+        }
+    }
+    let asked = asked.expect("a body a bot drives asks its Architect for help");
+    super::requests::answer_oldest(&mut desk, &runtime);
+    assert_eq!(desk.floor, asked.target.level, "the board goes to it");
+    tick(&mut runtime, &mut desk);
+    let session = runtime.ascent.as_ref().unwrap().session();
+    let answered = session.requests.get(&asked.author).expect("still standing");
+    assert_eq!(answered.acknowledged_by, Some(desk.seat));
+    assert_eq!(desk.pending_answer, None);
+    assert_eq!(desk.last_refusal, None, "an answer is not a play");
 }

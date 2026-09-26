@@ -12,7 +12,7 @@ use observed_core::PlayerId;
 use std::collections::BTreeMap;
 
 use observed_facility::hex_wfc::{HexCoord, HexPlacement};
-use observed_match::ascent::session::Refusal;
+use observed_match::ascent::session::{Refusal, TeamRequest};
 use observed_match::ascent::sim::{ArchitectCommand, TeamId};
 
 /// What the local Architect is doing.
@@ -40,6 +40,9 @@ pub(crate) struct ArchitectDesk {
     pub pad: bool,
     /// A play committed and not yet stepped.
     pub pending: Option<ArchitectCommand>,
+    /// A team request answered at the desk and not yet stepped: its author and when it
+    /// was made, which is what the rules acknowledge it by.
+    pub pending_answer: Option<(PlayerId, u64)>,
     /// The rules' answer to the last play stepped, when they refused it.
     pub last_refusal: Option<Refusal>,
     /// The tiles this Architect has built, and the tick each was built at. The team learns
@@ -137,6 +140,13 @@ impl ArchitectDesk {
         }
     }
 
+    /// Answer `request`: acknowledge it to the team on the next step, and look at the
+    /// floor it is on.
+    pub(crate) fn answer(&mut self, request: &TeamRequest) {
+        self.pending_answer = Some((request.author, request.created_at));
+        self.look_at(request.target.level);
+    }
+
     /// Look at `floor`, which drops an aim on the floor left.
     pub(crate) fn look_at(&mut self, floor: u8) {
         if floor != self.floor {
@@ -160,6 +170,7 @@ impl ArchitectDesk {
             pad_cursor: None,
             pad: false,
             pending: None,
+            pending_answer: None,
             built: BTreeMap::new(),
             last_refusal: None,
         }
@@ -176,6 +187,7 @@ mod overlay;
 mod pad;
 mod pick;
 mod readout;
+mod requests;
 mod stack;
 mod words;
 

@@ -45,10 +45,16 @@ impl ArchitectLab {
     ///
     /// 1. Wait for the cooldown.
     /// 2. Repair: play what mends mismatched doorways, before a floor starts retracting.
-    /// 3. Build up: play what shortens the team's way to the summit, breaking nothing.
-    /// 4. Otherwise hold the card.
+    /// 3. Answer: build within reach of a route the team `asked` for, nearest the oldest
+    ///    ask first, breaking nothing and losing none of the way up.
+    /// 4. Build up: play what shortens the team's way to the summit, breaking nothing.
+    /// 5. Otherwise hold the card.
     #[must_use]
-    pub fn loyal_intent(&self, team: TeamId) -> (Option<ArchitectCommand>, BehaviorTrace) {
+    pub fn loyal_intent(
+        &self,
+        team: TeamId,
+        asked: &[HexCoord],
+    ) -> (Option<ArchitectCommand>, BehaviorTrace) {
         let mut trace = BehaviorTrace::default();
         if trace.test("wait for cooldown", self.cooldown > 0) {
             return (None, trace);
@@ -59,7 +65,9 @@ impl ArchitectLab {
             .filter(|o| o.team == team && o.state == ObserverState::Active)
             .map(|o| o.cell)
             .collect();
-        let candidates = self.candidates(&own);
+        // Candidates around the team, and around where it has asked for a route.
+        let anchors: Vec<HexCoord> = own.iter().chain(asked).copied().collect();
+        let candidates = self.candidates(&anchors);
         if candidates.is_empty() {
             trace.test("hold card", true);
             return (None, trace);
@@ -122,6 +130,27 @@ impl ArchitectLab {
             return (repair.map(|j| j.command), trace);
         }
         let now: usize = current.iter().sum();
+        // How near a play is to an ask: to the oldest ask it answers, then how near.
+        let answers = |j: &Judged| {
+            let ArchitectCommand::Play { target, .. } = j.command else {
+                return None;
+            };
+            asked
+                .iter()
+                .enumerate()
+                .map(|(age, &at)| (age, travel_distance(at, target)))
+                .filter(|&(_, distance)| distance <= REACH)
+                .min()
+        };
+        let answer = judged
+            .iter()
+            .filter(|j| j.after == 0 && j.way_up <= now)
+            .filter_map(|j| Some((answers(j)?, j)))
+            .min_by_key(|(near, j)| (*near, j.way_up, key(j)))
+            .map(|(_, j)| j);
+        if trace.test("answer a request", answer.is_some()) {
+            return (answer.map(|j| j.command), trace);
+        }
         let build = judged
             .iter()
             .filter(|j| j.after == 0 && j.way_up < now)

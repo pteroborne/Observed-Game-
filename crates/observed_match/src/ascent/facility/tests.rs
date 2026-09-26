@@ -504,6 +504,7 @@ fn a_retraction_cannot_open_a_window_beside_a_watched_room() {
 }
 
 mod prison;
+mod requests;
 
 #[test]
 fn a_bot_architect_repairs_what_the_rogue_breaks_through_the_human_path() {

@@ -278,6 +278,20 @@ team's bodies are bots, and the player sits at the desk (`game/src/hex_wfc/archi
   in the match; with nothing in hand Escape pauses as ever, and Start always pauses. The
   survivor map never opens at the desk - the board is the Architect's map, and RB turns
   cards. While a pause page is up the desk hears nothing.
+- **Team requests** (`architect/requests.rs`, `ascent::session::requests`): a body a bot
+  drives asks its Architect for help when it is in trouble it can name - rescue when
+  jailed (at the prison lobby, which every team knows), power on a dark floor, a route
+  when it has stood on one cell for eight beats - and withdraws the ask when the trouble
+  passes. It judges only what a body standing there would know, never the rules' map. The
+  rules seat embodied bodies as human, so the game names the ones a bot drives
+  (`AscentRules::voice`): every body at the Architect's desk, every other one when the
+  player is a body. At the desk each request is a beacon over its cell in its kind's
+  colour (cyan route, yellow power, violet rescue), breathing until answered, a tall pin
+  on its floor of the climb, and a line in the side panel with the time it has left; a
+  new one calls, low and long. F (Y on a controller, or ANSWER) answers the oldest
+  unanswered one: the rules acknowledge it to the team as the Architect's seat, and the
+  board goes to its floor. A bot Architect acknowledges its team's requests on its beat
+  and, after repairs, builds within reach of the oldest route it was asked for.
 - Legality is never decided at the desk: every ring and verdict is
   `AscentSession::architect_refusal` for the player's own seat, the question the play asks.
 
@@ -288,6 +302,8 @@ production facility after twenty seconds of the team's bots walking):
 - [A card picked up and pointed](evidence/ascent-architect/architect-play-1280x800.png)
 - [The play building in under its amber glow](evidence/ascent-architect/architect-building-in-1280x800.png)
 - [The play built, the hand recharging](evidence/ascent-architect/architect-built-1280x800.png)
+- [A teammate jailed, asking for rescue at the lobby](evidence/ascent-architect/architect-request-1280x800.png)
+- [The request answered](evidence/ascent-architect/architect-answered-1280x800.png)
 
 ### Not yet joined
 
@@ -299,8 +315,8 @@ production facility after twenty seconds of the team's bots walking):
   thing.
 - A match snapshot does not yet carry where each body is or the prison's mazes, so a
   replay or LAN peer of an Ascent match would not see them. That is part of the LAN slice.
-- The Architect's desk has no team requests yet, and cannot
-  look through an Observer's eyes.
+- The Architect's desk cannot look through an Observer's eyes, and a human Observer has
+  no way yet to ask their Architect for help.
 - A replay tape of an Ascent match samples jailed bodies at their maze coordinates.
 
 ## Remaining integration

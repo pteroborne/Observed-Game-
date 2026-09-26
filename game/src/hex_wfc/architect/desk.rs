@@ -3,7 +3,8 @@
 //!
 //! - **The top bar** names the seat and the team, says whether the hand is charged, and
 //!   switches floors.
-//! - **The side panel** holds the team's Observers, the climb (`stack`) and the key.
+//! - **The side panel** holds the team's Observers, their requests and the button that
+//!   answers them (`requests`), the climb (`stack`) and the key.
 //! - **The hand** runs along the bottom: five cards, each a miniature of the real tile it
 //!   will build (`cards`), with the controls in a line beneath.
 //! - **The card panel** stands at the right while a card is picked up: the tile large,
@@ -45,6 +46,7 @@ pub(super) enum Line {
     Phase,
     Floor,
     Observers,
+    Requests,
     Message,
     CardName,
     CardDistrict,
@@ -73,6 +75,7 @@ pub(super) enum DeskButton {
     TurnRight,
     Play,
     Cancel,
+    Answer,
 }
 
 #[derive(Component)]
@@ -259,6 +262,15 @@ fn side_panel(root: &mut ChildSpawnerCommands) {
     .with_children(|panel| {
         panel.spawn(label("THE TEAM", 12.0, Role::Muted));
         panel.spawn((Line::Observers, label("", 13.0, Role::Text)));
+        panel.spawn((
+            label("REQUESTS", 12.0, Role::Muted),
+            Node {
+                margin: UiRect::top(px(8)),
+                ..default()
+            },
+        ));
+        panel.spawn((Line::Requests, label("", 12.0, Role::Text)));
+        button(panel, DeskButton::Answer, false);
         panel.spawn((
             label("THE CLIMB  (click a floor)", 12.0, Role::Muted),
             Node {

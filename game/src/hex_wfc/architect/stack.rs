@@ -206,6 +206,10 @@ pub(super) fn draw(
     for observer in rules.observers.values() {
         (observer.cell, observer.state == ObserverState::Active).hash(&mut hasher);
     }
+    let requests = super::requests::team_requests(ascent.session(), desk.team);
+    for request in &requests {
+        (request.target, request.kind as u8).hash(&mut hasher);
+    }
     let signature = hasher.finish();
     if signature == stack.signature {
         return;
@@ -290,6 +294,18 @@ pub(super) fn draw(
     }
     if let Some(&lobby) = rules.prison.cells.iter().next() {
         pin_at(&mut commands, MarkerRole::Prison, lobby);
+    }
+    // The team's requests, taller than any other pin, so a floor that asks shows it.
+    let beacon = meshes.add(hex_prism(3.5, 3.5, 0.0, 80.0));
+    for request in &requests {
+        let tint = observed_style::architect::color(super::requests::role(request.kind));
+        let material = paint(tint, tint.to_linear() * 0.8);
+        spawn(
+            &mut commands,
+            &beacon,
+            material,
+            at(request.target) + Vec3::Y * 2.0,
+        );
     }
 }
 

@@ -14,7 +14,9 @@ use super::sim::{
     ObserverId, ObserverRefusal, ObserverState, TeamId,
 };
 
+mod requests;
 mod snapshot;
+pub use requests::STALL_BEATS;
 pub use snapshot::{CellRead, GuardianRead, ObserverRead, SeatSnapshot};
 
 pub const ASCENT_INPUT_VERSION: u16 = 1;
@@ -118,6 +120,11 @@ pub struct AscentSession {
     seats: BTreeMap<PlayerId, Seat>,
     pub hands: BTreeMap<TeamId, LoyalHand>,
     pub requests: BTreeMap<PlayerId, TeamRequest>,
+    /// Where each Observer has stood since when, for a bot's sense of being stuck.
+    stalls: BTreeMap<ObserverId, (HexCoord, u64)>,
+    /// Observer seats whose bodies a bot drives outside the rules, which the rules voice
+    /// the requests of as they do a bot seat's (`voice`).
+    voiced: std::collections::BTreeSet<PlayerId>,
 }
 
 impl AscentSession {
@@ -178,6 +185,8 @@ impl AscentSession {
             seats,
             hands,
             requests: BTreeMap::new(),
+            stalls: BTreeMap::new(),
+            voiced: std::collections::BTreeSet::new(),
         })
     }
 
@@ -256,6 +265,7 @@ impl AscentSession {
         self.requests.retain(|_, request| {
             self.sim.tick.saturating_sub(request.created_at) < REQUEST_LIFETIME_TICKS
         });
+        self.run_bot_requests();
         for seat in self.seats.values_mut() {
             match seat.role {
                 Role::Observer(id) if self.sim.observers[&id].state == ObserverState::Corrupted => {
@@ -306,11 +316,16 @@ impl AscentSession {
                     return Err(Refusal::WrongRole);
                 }
                 let team = self.team(player).ok_or(Refusal::WrongRole)?;
-                if !self
-                    .sim
-                    .team_knowledge(team)
-                    .discovered_cells
-                    .contains(&target)
+                // A request points at a cell the team has found - or, for a rescue, at the
+                // prison's lobby, which every team knows as the way back out.
+                let landmark =
+                    kind == RequestKind::Rescue && self.sim.prison.cells.contains(&target);
+                if !landmark
+                    && !self
+                        .sim
+                        .team_knowledge(team)
+                        .discovered_cells
+                        .contains(&target)
                 {
                     return Err(Refusal::UnknownTarget);
                 }
@@ -398,8 +413,10 @@ impl AscentSession {
             .filter(|team| u64::from(team.0) * BOT_STAGGER_TICKS % beat == phase)
             .collect();
         for team in teams {
+            self.acknowledge_as_bot(team);
+            let asked = self.asked_routes(team);
             let decided = self.in_team_context(team, |sim| {
-                let (command, trace) = sim.loyal_intent(team);
+                let (command, trace) = sim.loyal_intent(team, &asked);
                 sim.traces.insert(format!("Architect {}", team.0), trace);
                 command.map(|command| sim.submit_for_faction(command, Some(team)))
             });

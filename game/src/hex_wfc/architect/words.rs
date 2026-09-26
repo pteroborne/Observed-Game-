@@ -76,6 +76,8 @@ pub(super) const fn button_label(action: DeskButton, pad: bool) -> &'static str 
         (DeskButton::Play, true) => "PLAY CARD   [A]",
         (DeskButton::Cancel, false) => "CANCEL   [ESC]",
         (DeskButton::Cancel, true) => "CANCEL   [B]",
+        (DeskButton::Answer, false) => "ANSWER   [F]",
+        (DeskButton::Answer, true) => "ANSWER   [Y]",
     }
 }
 
@@ -83,9 +85,9 @@ pub(super) const fn button_label(action: DeskButton, pad: bool) -> &'static str 
 #[must_use]
 pub(super) const fn controls(pad: bool) -> &'static str {
     if pad {
-        "LS  point   >   A  aim   >   LB / RB  turn   >   A again  play        B  back     D-pad  < >  card   ^ v  floor     R3  requisition"
+        "LS point  >  A aim  >  LB/RB turn  >  A again play     B back   Y answer   D-pad < > card  ^ v floor   R3 requisition"
     } else {
-        "1-5  pick a card   >   click a cell  aim   >   Q / E  turn   >   Space  play        Esc  cancel     [ / ]  floor     R  requisition"
+        "1-5 card  >  click a cell to aim  >  Q/E turn  >  Space play     Esc back   F answer   [ / ] floor   R requisition"
     }
 }
 
@@ -135,6 +137,7 @@ mod tests {
                 DeskButton::TurnRight,
                 DeskButton::Play,
                 DeskButton::Cancel,
+                DeskButton::Answer,
             ] {
                 printed.push(button_label(action, pad).to_owned());
             }

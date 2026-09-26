@@ -329,3 +329,137 @@ fn request_expiration_and_invalid_protocol_frames_are_authoritative() {
         Refusal::RequestExpired
     );
 }
+
+/// A tick just before a beat, when bot seats decide.
+fn at_a_beat(session: &mut AscentSession, beats: u64) {
+    let beat = u64::from(crate::ascent::sim::ACTOR_BEAT_TICKS);
+    session.sim.tick = beat * beats - 1;
+}
+
+#[test]
+fn a_bot_observer_names_only_trouble_a_body_there_would_know() {
+    let mut session = session();
+    let id = ObserverId(1);
+    let cell = session.sim.observers[&id].cell;
+    session.sim.economy.set_powered(cell.level, true);
+    at_a_beat(&mut session, 2);
+    session.stalls.insert(id, (cell, session.sim.tick));
+    assert_eq!(session.trouble(id), None, "just arrived, lights on");
+
+    at_a_beat(&mut session, 2 + STALL_BEATS);
+    assert_eq!(
+        session.trouble(id),
+        Some((RequestKind::Route, cell)),
+        "going nowhere"
+    );
+    session.sim.economy.set_powered(cell.level, false);
+    assert_eq!(session.trouble(id), Some((RequestKind::Power, cell)));
+    session.sim.observers.get_mut(&id).expect("observer").state = ObserverState::Jailed;
+    assert_eq!(session.trouble(id), Some((RequestKind::Rescue, cell)));
+}
+
+#[test]
+fn a_bot_observer_asks_and_withdraws_but_never_for_a_human() {
+    let mut session = session();
+    let cell = session.sim.observers[&ObserverId(1)].cell;
+    for id in [ObserverId(0), ObserverId(1)] {
+        session.sim.observers.get_mut(&id).expect("observer").state = ObserverState::Jailed;
+    }
+    at_a_beat(&mut session, 3);
+    session.run_bot_requests();
+    let asked = session.requests.get(&PlayerId(2)).expect("the bot asks");
+    assert_eq!((asked.kind, asked.target), (RequestKind::Rescue, cell));
+    assert!(
+        !session.requests.contains_key(&PlayerId(1)),
+        "a human asks for themselves"
+    );
+
+    // Free, lit, and just arrived: the trouble has passed, and so has the ask.
+    session
+        .sim
+        .observers
+        .get_mut(&ObserverId(1))
+        .expect("observer")
+        .state = ObserverState::Active;
+    session.sim.economy.set_powered(cell.level, true);
+    at_a_beat(&mut session, 4);
+    session
+        .stalls
+        .insert(ObserverId(1), (cell, session.sim.tick));
+    session.run_bot_requests();
+    assert!(!session.requests.contains_key(&PlayerId(2)));
+}
+
+#[test]
+fn a_bot_architect_acknowledges_its_team_and_is_asked_for_routes_oldest_first() {
+    let mut session = session();
+    session
+        .seats
+        .get_mut(&PlayerId(0))
+        .expect("the Architect")
+        .bot = true;
+    let cells: Vec<HexCoord> = session
+        .sim
+        .team_knowledge(TeamId(0))
+        .discovered_cells
+        .into_iter()
+        .take(2)
+        .collect();
+    for (author, (&target, created_at)) in [PlayerId(1), PlayerId(2)]
+        .into_iter()
+        .zip(cells.iter().zip([5, 3]))
+    {
+        session.requests.insert(
+            author,
+            TeamRequest {
+                author,
+                team: TeamId(0),
+                kind: RequestKind::Route,
+                target,
+                created_at,
+                acknowledged_by: None,
+            },
+        );
+    }
+    session.sim.tick = 10;
+    session.acknowledge_as_bot(TeamId(0));
+    assert!(
+        session
+            .requests
+            .values()
+            .all(|request| request.acknowledged_by == Some(PlayerId(0)))
+    );
+    assert_eq!(session.asked_routes(TeamId(0)), vec![cells[1], cells[0]]);
+}
+
+#[test]
+fn a_rescue_may_point_at_the_lobby_every_team_knows_and_nothing_else_may() {
+    let mut session = session();
+    let lobby = *session.sim.prison.cells.iter().next().expect("a lobby");
+    if let Some(known) = session.sim.team_knowledge.get_mut(&TeamId(0)) {
+        known.discovered_cells.remove(&lobby);
+        known.cells.remove(&lobby);
+    }
+    assert!(
+        !session
+            .sim
+            .team_knowledge(TeamId(0))
+            .discovered_cells
+            .contains(&lobby),
+        "the team has not found the lobby"
+    );
+    let route = SeatCommand::Request {
+        kind: RequestKind::Route,
+        target: lobby,
+    };
+    assert_eq!(
+        session.accept(PlayerId(1), route),
+        Err(Refusal::UnknownTarget)
+    );
+    let rescue = SeatCommand::Request {
+        kind: RequestKind::Rescue,
+        target: lobby,
+    };
+    assert_eq!(session.accept(PlayerId(1), rescue), Ok(None));
+    assert_eq!(session.requests[&PlayerId(1)].target, lobby);
+}

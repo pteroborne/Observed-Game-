@@ -108,6 +108,9 @@ pub(super) fn input(
     if keys.just_pressed(KeyCode::KeyR) {
         desk.pending = Some(ArchitectCommand::Requisition);
     }
+    if keys.just_pressed(KeyCode::KeyF) || pressed(DeskButton::Answer) {
+        super::requests::answer_oldest(&mut desk, &runtime);
+    }
     if buttons.just_pressed(MouseButton::Right) {
         desk.put_down();
     }
