@@ -111,7 +111,7 @@ impl ArchitectLab {
                     .map(|&cell| travel_distance(cell, target))
                     .min()?;
                 let (before, after) = self.mismatches_around(changes);
-                (after > before).then_some((after - before, near, command))
+                (after > before).then(|| (after - before, near, command))
             })
             .max_by_key(|(broken, near, command)| {
                 (
