@@ -128,10 +128,24 @@ fn panel(root: &mut ChildSpawnerCommands) {
             (Line::Heading, 15.0, ACCENT),
             (Line::Charge, 15.0, TITLE),
             (Line::Observers, 14.0, DIM),
-            (Line::Target, 15.0, TITLE),
         ] {
             panel.spawn((line, Text::new(""), text_font(size), TextColor(color)));
         }
+        // Every floor at once: the stack's camera draws into this space.
+        panel.spawn((
+            Text::new("THE CLIMB  (click a floor)"),
+            text_font(12.0),
+            TextColor(DIM),
+        ));
+        panel.spawn((
+            super::stack::StackSpace,
+            Node {
+                width: percent(100),
+                height: px(270),
+                ..default()
+            },
+        ));
+        panel.spawn((Line::Target, Text::new(""), text_font(15.0), TextColor(TITLE)));
         panel.spawn((
             Text::new(
                 "1-5  pick up a card\nQ / E  turn it\nClick  play it here\nRight click  put it down\n[ / ]  floor below / above\nR  emergency requisition",

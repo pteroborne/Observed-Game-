@@ -53,17 +53,22 @@ pub(super) mod capture;
 mod desk;
 mod input;
 mod pick;
+mod stack;
 mod words;
 
 /// The desk's systems, in order: build, read the player, frame, draw.
 pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleSystem, ()> {
     (
         board::setup,
+        stack::setup,
         desk::spawn,
+        stack::click,
         input::input,
         board::frame,
+        stack::frame,
         board::draw_floor,
         board::draw_play,
+        stack::draw,
         desk::sync,
     )
         .chain()

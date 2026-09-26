@@ -204,6 +204,16 @@ team's bodies are bots, and the player sits at the desk (`game/src/hex_wfc/archi
   the team's Observers, the Guardians they can see, contradictions, the prison lobby, the
   summit once found, and deployed doors - a bar across the doorway when closed, two posts
   when open, so the state reads by shape first.
+- **The climb** (`architect/stack.rs`) is every floor at once, in the panel: the board is
+  one floor, flat and exact, because a play needs a cell under the cursor with nothing in
+  front of it, and what that costs is the vertical picture. The stack gives it back - the
+  same reading the survivor map gives an Observer, from the same knowledge the board
+  draws. Each floor is a plate of the whole lattice with the team's known cells standing
+  on it, pulled apart far past a storey and seen head-on rather than corner-on, so no
+  floor hides another; the floor in view is lit and numbered, and the team's Observers,
+  contradictions, the summit and the prison lobby stand up as pins. A click on a floor
+  puts the board on it. On the board itself, a stair or ramp cell carries a chevron: green
+  up, the way to the summit, and dim down.
 - **The hand** is five cards along the bottom. Each card's glyph is a hub with a spoke for
   each doorway the tile would have, turned to the rotation it would be played at.
 - **Playing:** pick a card (1-5, or click it), turn it (Q / E), point at a cell. Every cell

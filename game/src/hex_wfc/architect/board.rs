@@ -228,6 +228,11 @@ pub(super) fn draw_floor(
             layer.clone(),
         ));
     };
+    // The way between floors: a chevron up where a stair or ramp climbs, green because it
+    // is the way to the summit, and a dim one down where it descends.
+    let climb = marker(MarkerRole::Exit);
+    let climb = paint(climb.base_color, climb.emissive);
+    let descend = paint(Color::srgb(0.6, 0.64, 0.7), LinearRgba::gray(0.5));
     for (&cell, known) in knowledge
         .cells
         .iter()
@@ -235,6 +240,17 @@ pub(super) fn draw_floor(
     {
         if !known.placement.space.built() {
             continue;
+        }
+        let origin = Vec3::from_array(hex_origin(cell));
+        for (open, up, material) in [
+            (known.placement.up, true, &climb),
+            (known.placement.down, false, &descend),
+        ] {
+            if open != observed_hex::PortClass::Sealed {
+                for bar in chevron(origin, up) {
+                    spawn(&mut commands, &board.spoke, material.clone(), bar);
+                }
+            }
         }
         let register = rules
             .world
@@ -494,6 +510,19 @@ fn legal_targets(
                 .is_none()
         })
         .collect()
+}
+
+/// The two bars of a chevron over a cell, pointing up the screen (`up`) or down it. Screen
+/// up is world -Z, so a chevron in the upper half of the cell points toward it.
+fn chevron(origin: Vec3, up: bool) -> [Transform; 2] {
+    let (side, lean) = if up { (-2.4, 1.0) } else { (2.4, -1.0) };
+    let bar = |x: f32, turn: f32| {
+        Transform::from_translation(origin + Vec3::new(x, 1.3, side))
+            .with_rotation(Quat::from_rotation_y(turn))
+            .with_scale(Vec3::new(0.5, 1.0, 0.55))
+    };
+    let quarter = std::f32::consts::FRAC_PI_4 * lean;
+    [bar(-1.0, quarter), bar(1.0, -quarter)]
 }
 
 /// A spoke from a cell's centre out toward `face`, `rise` above the slab.

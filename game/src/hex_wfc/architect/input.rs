@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use observed_match::ascent::sim::ArchitectCommand;
 
 use super::ArchitectDesk;
-use super::board::Board;
+use super::board::{Board, MARGINS};
 use super::desk::Slot;
 use super::pick;
 use crate::hex_wfc::sim::HexWfcRuntime;
@@ -75,9 +75,16 @@ pub(super) fn input(
         desk.selected = None;
     }
 
-    // The cell under the cursor. A cursor off the window leaves the last one in place.
+    // The cell under the cursor. A cursor off the window leaves the last one in place; one
+    // over the panel or the hand is not over the board, whatever is drawn beneath them.
     let cursor = windows.single().ok().and_then(Window::cursor_position);
-    if over_a_card {
+    let on_board = |pixel: Vec2, size: Vec2| {
+        pixel.x > MARGINS.left && pixel.y > MARGINS.top && pixel.y < size.y - MARGINS.bottom
+    };
+    let over_the_desk = cursor
+        .zip(board.framing)
+        .is_some_and(|(pixel, (_, size))| !on_board(pixel, size));
+    if over_a_card || over_the_desk {
         desk.hovered = None;
     } else if let (Some(pixel), Some((framing, size))) = (cursor, board.framing) {
         desk.hovered = pick::cell_at(
@@ -89,6 +96,7 @@ pub(super) fn input(
 
     if buttons.just_pressed(MouseButton::Left)
         && !over_a_card
+        && !over_the_desk
         && let (Some(index), Some(target)) = (desk.selected, desk.hovered)
         && let Some(card) = hand.deck.hand.get(index)
     {
