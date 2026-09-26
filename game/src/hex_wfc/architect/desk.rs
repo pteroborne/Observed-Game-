@@ -84,6 +84,14 @@ pub(super) struct CardPanelArt;
 #[derive(Component)]
 pub(super) struct PlayLabel;
 
+/// A button's text, which names the key or the controller button (`words::button_label`).
+#[derive(Component)]
+pub(super) struct ButtonLabel(pub(super) DeskButton);
+
+/// The line of controls under the hand.
+#[derive(Component)]
+pub(super) struct ControlStrip;
+
 pub(super) fn spawn(
     mut commands: Commands,
     camera: Query<Entity, With<BoardCamera>>,
@@ -140,7 +148,8 @@ fn label(text: &str, size: f32, role: Role) -> impl Bundle {
 }
 
 /// A bordered button saying `text`.
-fn button(parent: &mut ChildSpawnerCommands, action: DeskButton, text: &str, grow: bool) {
+fn button(parent: &mut ChildSpawnerCommands, action: DeskButton, grow: bool) {
+    let text = super::words::button_label(action, false);
     parent
         .spawn((
             action,
@@ -157,7 +166,7 @@ fn button(parent: &mut ChildSpawnerCommands, action: DeskButton, text: &str, gro
             BorderColor::all(color(Role::Border)),
         ))
         .with_children(|button| {
-            let mut text = button.spawn(label(text, 13.0, Role::Text));
+            let mut text = button.spawn((ButtonLabel(action), label(text, 13.0, Role::Text)));
             if action == DeskButton::Play {
                 text.insert(PlayLabel);
             }
@@ -210,7 +219,7 @@ fn top_bar(root: &mut ChildSpawnerCommands) {
             ..default()
         })
         .with_children(|switcher| {
-            button(switcher, DeskButton::FloorDown, "<   FLOOR", false);
+            button(switcher, DeskButton::FloorDown, false);
             switcher.spawn((
                 Line::Floor,
                 label("", 13.0, Role::Text),
@@ -221,7 +230,7 @@ fn top_bar(root: &mut ChildSpawnerCommands) {
                     ..default()
                 },
             ));
-            button(switcher, DeskButton::FloorUp, "FLOOR   >", false);
+            button(switcher, DeskButton::FloorUp, false);
         });
         bar.spawn(Node {
             width: px(PANEL_WIDTH - 48.0),
@@ -347,11 +356,8 @@ fn hand(root: &mut ChildSpawnerCommands, art: &CardArt) {
         }
     });
     root.spawn((
-        label(
-            "1-5  pick a card   >   click a cell  aim   >   Q / E  turn   >   Space  play        Esc  cancel     [ / ]  floor     R  requisition",
-            12.0,
-            Role::Muted,
-        ),
+        ControlStrip,
+        label(super::words::controls(false), 12.0, Role::Muted),
         Node {
             position_type: PositionType::Absolute,
             left: px(PANEL_WIDTH),
@@ -404,11 +410,11 @@ fn card_panel(root: &mut ChildSpawnerCommands, art: &CardArt) {
                 ..default()
             })
             .with_children(|turn| {
-                button(turn, DeskButton::TurnLeft, "Q   TURN", true);
-                button(turn, DeskButton::TurnRight, "TURN   E", true);
+                button(turn, DeskButton::TurnLeft, true);
+                button(turn, DeskButton::TurnRight, true);
             });
-        button(panel, DeskButton::Play, "PLAY CARD   [SPACE]", false);
-        button(panel, DeskButton::Cancel, "CANCEL   [ESC]", false);
+        button(panel, DeskButton::Play, false);
+        button(panel, DeskButton::Cancel, false);
         panel.spawn(label(
             "Aim at a cell, inspect the amber preview, then play the card.",
             12.0,

@@ -7,7 +7,9 @@ use observed_style::architect::{Role, color};
 
 use super::ArchitectDesk;
 use super::cards::CardArt;
-use super::desk::{CardLine, CardPanel, CardPanelArt, DeskButton, Line, PlayLabel, Slot};
+use super::desk::{
+    ButtonLabel, CardLine, CardPanel, CardPanelArt, ControlStrip, DeskButton, Line, PlayLabel, Slot,
+};
 use super::words;
 use crate::hex_wfc::sim::HexWfcRuntime;
 
@@ -163,9 +165,9 @@ pub(super) fn sync(
                 Role::Muted,
             ),
             Line::Verdict => match refusal {
-                None => ("Click a cell to aim.".to_owned(), Role::Muted),
+                None => ("Point at a cell to aim.".to_owned(), Role::Muted),
                 Some(None) if desk.aimed.is_none() => {
-                    ("Legal here. Click to aim.".to_owned(), Role::Valid)
+                    ("Legal here: aim to play.".to_owned(), Role::Valid)
                 }
                 Some(verdict) => (
                     words::verdict(verdict),
@@ -255,5 +257,25 @@ pub(super) fn sync(
         } else {
             Role::Muted
         });
+    }
+}
+
+/// Name the keys or the controller's buttons, whichever the last hand on the desk used.
+pub(super) fn prompts(
+    desk: Res<ArchitectDesk>,
+    mut labels: Query<(&ButtonLabel, &mut Text)>,
+    mut strip: Query<&mut Text, (With<ControlStrip>, Without<ButtonLabel>)>,
+) {
+    for (label, mut text) in &mut labels {
+        let said = words::button_label(label.0, desk.pad);
+        if **text != said {
+            said.clone_into(&mut **text);
+        }
+    }
+    for mut text in &mut strip {
+        let said = words::controls(desk.pad);
+        if **text != said {
+            said.clone_into(&mut **text);
+        }
     }
 }

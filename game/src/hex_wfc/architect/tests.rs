@@ -262,3 +262,90 @@ fn changing_floor_drops_the_aim() {
     assert_eq!((desk.floor, desk.aimed, desk.hovered), (1, None, None));
     assert_eq!(desk.selected, Some(0), "the card stays in hand");
 }
+
+#[test]
+fn a_controller_goes_along_the_hand_and_wraps() {
+    let mut desk = desk();
+    desk.cycle(1, 5);
+    assert_eq!(
+        desk.selected,
+        Some(0),
+        "forward from none is the first card"
+    );
+    desk.cycle(-1, 5);
+    assert_eq!(desk.selected, Some(4), "and back from the first, the last");
+    desk.cycle(1, 5);
+    assert_eq!(desk.selected, Some(0));
+    desk.put_down();
+    desk.cycle(-1, 5);
+    assert_eq!(desk.selected, Some(4), "back from none is the last card");
+    desk.cycle(1, 0);
+    assert_eq!(
+        desk.selected,
+        Some(4),
+        "an empty hand leaves the desk as it is"
+    );
+}
+
+#[test]
+fn a_controller_drives_the_desk_through_the_same_steps() {
+    use bevy::ecs::system::RunSystemOnce;
+    use bevy::input::ButtonInput;
+    use bevy::input::gamepad::{Gamepad, GamepadButton};
+    use bevy::prelude::*;
+
+    use crate::hex_wfc::overlay::{MatchOverlayState, PausePage};
+    use crate::screens::widgets::UiInputCapture;
+
+    let mut app = App::new();
+    app.insert_resource(runtime())
+        .insert_resource(desk())
+        .init_resource::<MatchOverlayState>()
+        .init_resource::<UiInputCapture>()
+        .init_resource::<Time>();
+    let pad = app.world_mut().spawn(Gamepad::default()).id();
+    let press = |app: &mut App, button: GamepadButton| {
+        let mut gamepad = app.world_mut().get_mut::<Gamepad>(pad).expect("a pad");
+        *gamepad.digital_mut() = ButtonInput::default();
+        gamepad.digital_mut().press(button);
+        app.world_mut()
+            .run_system_once(super::pad::input)
+            .expect("the pad runs");
+    };
+    let desk_now = |app: &App| {
+        let desk = app.world().resource::<ArchitectDesk>();
+        (desk.selected, desk.aimed, desk.rotation)
+    };
+
+    press(&mut app, GamepadButton::DPadRight);
+    assert_eq!(desk_now(&app), (Some(0), None, 0), "along the hand");
+    assert!(
+        app.world().resource::<ArchitectDesk>().pad,
+        "the prompts follow"
+    );
+    press(&mut app, GamepadButton::RightTrigger);
+    assert_eq!(desk_now(&app).2, 1, "RB turns it");
+
+    let target = HexCoord {
+        q: 1,
+        r: 1,
+        level: 0,
+    };
+    app.world_mut().resource_mut::<ArchitectDesk>().hovered = Some(target);
+    press(&mut app, GamepadButton::South);
+    assert_eq!(desk_now(&app), (Some(0), Some(target), 1), "A aims");
+    press(&mut app, GamepadButton::East);
+    assert_eq!(
+        desk_now(&app),
+        (Some(0), None, 1),
+        "B steps back from the aim"
+    );
+    press(&mut app, GamepadButton::East);
+    assert_eq!(desk_now(&app).0, None, "and from the card");
+
+    // A pause page has the pad until it closes.
+    *app.world_mut().resource_mut::<MatchOverlayState>() =
+        MatchOverlayState::Pause(PausePage::Root);
+    press(&mut app, GamepadButton::DPadRight);
+    assert_eq!(desk_now(&app).0, None, "the desk does not hear it");
+}

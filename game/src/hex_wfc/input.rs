@@ -126,6 +126,39 @@ fn map_level_browse(keyboard: &ButtonInput<KeyCode>, gamepads: &Query<&Gamepad>)
     }
 }
 
+/// What the Architect's desk claims of the match's hotkeys this frame.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct DeskClaim {
+    /// The local player is at the Architect's desk.
+    pub present: bool,
+    /// The desk holds a card, in play.
+    pub holds_a_card: bool,
+    pub pause_is_escape: bool,
+    /// Escape itself was pressed (`raw.back` may also be the controller's East).
+    pub escape: bool,
+}
+
+/// The match's hotkeys once the Architect's desk has had its claim on `raw` (the pause
+/// key, the map keys, Escape or East), with Start (`start`) pausing whatever the desk holds.
+///
+/// While the desk holds a card, Escape and East step back at the desk, so neither pauses
+/// nor goes back in the match; the desk's systems run after this one, so it still holds the
+/// card this frame. The desk is the Architect's map, and its controller turns cards on the
+/// shoulder buttons, so the map never opens from it.
+#[must_use]
+pub(super) fn hotkeys_beside_desk(
+    raw: OverlayHotkeys,
+    desk: DeskClaim,
+    start: bool,
+) -> OverlayHotkeys {
+    let desks_escape = desk.holds_a_card && desk.escape;
+    OverlayHotkeys {
+        pause: (raw.pause && !(desks_escape && desk.pause_is_escape)) || start,
+        map: raw.map && !desk.present,
+        back: raw.back && !desk.holds_a_card,
+    }
+}
+
 fn neutralize(intent: &mut HexWfcIntent) {
     intent.intent = PlayerIntent::default();
     intent.actions = HexActionButtons::default();
@@ -139,7 +172,10 @@ pub(super) fn mode_hotkeys(
     mut capture: ResMut<UiInputCapture>,
     onboarding: Option<Res<crate::screens::onboarding::OnboardingState>>,
     overlay_roots: Query<(), With<OverlayRoot>>,
-    mut overlay: ResMut<MatchOverlayState>,
+    (mut overlay, architect): (
+        ResMut<MatchOverlayState>,
+        Option<Res<super::architect::ArchitectDesk>>,
+    ),
 ) {
     // A higher-priority match overlay (for example first-run onboarding) owns
     // Escape/East while captured. Its semantic widget handles dismissal, and this
@@ -147,18 +183,31 @@ pub(super) fn mode_hotkeys(
     if onboarding.is_some() || capture.is_active() {
         return;
     }
-    let hotkeys = OverlayHotkeys {
-        pause: keyboard.just_pressed(settings.bindings.pause)
-            || gamepads
-                .iter()
-                .any(|gamepad| gamepad.just_pressed(GamepadButton::Start)),
-        map: keyboard.just_pressed(settings.bindings.tac_map)
-            || crate::screens::input::gamepad_map_pressed(&gamepads),
-        back: keyboard.just_pressed(KeyCode::Escape)
-            || gamepads
-                .iter()
-                .any(|gamepad| gamepad.just_pressed(GamepadButton::East)),
-    };
+    let escape = keyboard.just_pressed(KeyCode::Escape);
+    let hotkeys = hotkeys_beside_desk(
+        OverlayHotkeys {
+            pause: keyboard.just_pressed(settings.bindings.pause),
+            map: keyboard.just_pressed(settings.bindings.tac_map)
+                || crate::screens::input::gamepad_map_pressed(&gamepads),
+            back: escape
+                || gamepads
+                    .iter()
+                    .any(|gamepad| gamepad.just_pressed(GamepadButton::East)),
+        },
+        DeskClaim {
+            present: architect.is_some(),
+            // Only in play: a card still in hand does not stop Escape closing a pause page.
+            holds_a_card: *overlay == MatchOverlayState::Playing
+                && architect
+                    .as_ref()
+                    .is_some_and(|desk| desk.selected.is_some() || desk.aimed.is_some()),
+            pause_is_escape: settings.bindings.pause == KeyCode::Escape,
+            escape,
+        },
+        gamepads
+            .iter()
+            .any(|gamepad| gamepad.just_pressed(GamepadButton::Start)),
+    );
     // Escape/East on a rendered pause page belongs to that page's semantic Back
     // widget. This guard makes the result independent of whether the shared focus
     // system happens to run before or after this adapter in Update.
@@ -246,6 +295,83 @@ pub(super) fn sync_cursor(
 mod tests {
     use super::super::overlay::PausePage;
     use super::*;
+
+    fn escape_pressed() -> OverlayHotkeys {
+        // The default bindings: Escape is both the pause key and back.
+        OverlayHotkeys {
+            pause: true,
+            map: false,
+            back: true,
+        }
+    }
+
+    fn desk(holds_a_card: bool) -> DeskClaim {
+        DeskClaim {
+            present: true,
+            holds_a_card,
+            pause_is_escape: true,
+            escape: true,
+        }
+    }
+
+    #[test]
+    fn escape_with_a_card_in_hand_is_the_desk_s_and_does_not_pause() {
+        let hotkeys = hotkeys_beside_desk(escape_pressed(), desk(true), false);
+        assert_eq!(hotkeys, OverlayHotkeys::default());
+        assert_eq!(
+            reduce_hotkeys(MatchOverlayState::Playing, hotkeys),
+            MatchOverlayState::Playing
+        );
+    }
+
+    #[test]
+    fn escape_with_nothing_in_hand_pauses_as_ever() {
+        let hotkeys = hotkeys_beside_desk(escape_pressed(), desk(false), false);
+        assert!(matches!(
+            reduce_hotkeys(MatchOverlayState::Playing, hotkeys),
+            MatchOverlayState::Pause(_)
+        ));
+        let without_a_desk = hotkeys_beside_desk(escape_pressed(), DeskClaim::default(), false);
+        assert_eq!(without_a_desk, escape_pressed());
+    }
+
+    #[test]
+    fn start_pauses_whatever_the_desk_holds() {
+        let hotkeys = hotkeys_beside_desk(OverlayHotkeys::default(), desk(true), true);
+        assert!(hotkeys.pause);
+    }
+
+    #[test]
+    fn a_rebound_pause_key_still_pauses_with_a_card_in_hand() {
+        let claim = DeskClaim {
+            pause_is_escape: false,
+            escape: false,
+            ..desk(true)
+        };
+        let pause_key = OverlayHotkeys {
+            pause: true,
+            ..OverlayHotkeys::default()
+        };
+        assert!(hotkeys_beside_desk(pause_key, claim, false).pause);
+    }
+
+    #[test]
+    fn east_with_a_card_is_the_desk_s_and_the_map_never_opens_at_the_desk() {
+        let east = OverlayHotkeys {
+            back: true,
+            map: true,
+            pause: false,
+        };
+        let claim = DeskClaim {
+            escape: false,
+            ..desk(true)
+        };
+        let hotkeys = hotkeys_beside_desk(east, claim, false);
+        assert!(!hotkeys.back);
+        assert!(!hotkeys.map, "the board is the Architect's map");
+        let observer = hotkeys_beside_desk(east, DeskClaim::default(), false);
+        assert!(observer.map && observer.back, "an Observer keeps both");
+    }
 
     #[test]
     fn pausing_neutralizes_every_held_and_one_shot_input() {

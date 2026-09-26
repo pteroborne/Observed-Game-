@@ -267,6 +267,17 @@ team's bodies are bots, and the player sits at the desk (`game/src/hex_wfc/archi
   sees it, or no longer does, stays put. A contradiction's red ring breathes, and so does
   the aim's ring while the play waits to be confirmed. A card picked up clicks, an aim
   ticks, and a refused play lands with a dull knock.
+- **On a controller** (`architect/pad.rs`): the left stick moves a cursor across the floor
+  in view in the board's own screen directions, and the cell under it is the one pointed
+  at. A aims and A on the aim confirms, B steps back from the aim and then from the card,
+  LB / RB turn the card, the D-pad goes along the hand (left / right) and changes floor
+  (up / down), and R3 is the emergency requisition. The prompts - the card panel's
+  buttons and the line under the hand - name whichever the last hand on the desk used.
+- **The desk and the match's hotkeys** (`hex_wfc::input::hotkeys_beside_desk`): while the
+  desk holds a card, Escape and East step back at the desk and neither pause nor go back
+  in the match; with nothing in hand Escape pauses as ever, and Start always pauses. The
+  survivor map never opens at the desk - the board is the Architect's map, and RB turns
+  cards. While a pause page is up the desk hears nothing.
 - Legality is never decided at the desk: every ring and verdict is
   `AscentSession::architect_refusal` for the player's own seat, the question the play asks.
 
@@ -288,7 +299,7 @@ production facility after twenty seconds of the team's bots walking):
   thing.
 - A match snapshot does not yet carry where each body is or the prison's mazes, so a
   replay or LAN peer of an Ascent match would not see them. That is part of the LAN slice.
-- The Architect's desk has no controller navigation yet, no team requests, and cannot
+- The Architect's desk has no team requests yet, and cannot
   look through an Observer's eyes.
 - A replay tape of an Ascent match samples jailed bodies at their maze coordinates.
 

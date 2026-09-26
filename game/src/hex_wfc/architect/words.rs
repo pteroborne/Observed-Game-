@@ -3,6 +3,8 @@
 use observed_match::ascent::session::Refusal;
 use observed_match::ascent::sim::{CardKind, CommandRefusal, TileShape};
 
+use super::desk::DeskButton;
+
 /// A card's name as the hand prints it.
 #[must_use]
 pub(super) const fn card_name(kind: CardKind) -> &'static str {
@@ -60,6 +62,33 @@ pub(super) fn cooldown(ticks: u32) -> String {
     }
 }
 
+/// A desk button's label, naming the key or the controller button that does the same.
+#[must_use]
+pub(super) const fn button_label(action: DeskButton, pad: bool) -> &'static str {
+    match (action, pad) {
+        (DeskButton::FloorDown, _) => "<   FLOOR",
+        (DeskButton::FloorUp, _) => "FLOOR   >",
+        (DeskButton::TurnLeft, false) => "Q   TURN",
+        (DeskButton::TurnLeft, true) => "LB   TURN",
+        (DeskButton::TurnRight, false) => "TURN   E",
+        (DeskButton::TurnRight, true) => "TURN   RB",
+        (DeskButton::Play, false) => "PLAY CARD   [SPACE]",
+        (DeskButton::Play, true) => "PLAY CARD   [A]",
+        (DeskButton::Cancel, false) => "CANCEL   [ESC]",
+        (DeskButton::Cancel, true) => "CANCEL   [B]",
+    }
+}
+
+/// The line of controls under the hand.
+#[must_use]
+pub(super) const fn controls(pad: bool) -> &'static str {
+    if pad {
+        "LS  point   >   A  aim   >   LB / RB  turn   >   A again  play        B  back     D-pad  < >  card   ^ v  floor     R3  requisition"
+    } else {
+        "1-5  pick a card   >   click a cell  aim   >   Q / E  turn   >   Space  play        Esc  cancel     [ / ]  floor     R  requisition"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -97,6 +126,19 @@ mod tests {
     #[test]
     fn everything_it_prints_is_in_the_shipped_font() {
         let mut printed = vec![verdict(None), cooldown(90)];
+        for pad in [false, true] {
+            printed.push(controls(pad).to_owned());
+            for action in [
+                DeskButton::FloorDown,
+                DeskButton::FloorUp,
+                DeskButton::TurnLeft,
+                DeskButton::TurnRight,
+                DeskButton::Play,
+                DeskButton::Cancel,
+            ] {
+                printed.push(button_label(action, pad).to_owned());
+            }
+        }
         for kind in TileShape::ALL.into_iter().map(CardKind::Tile) {
             printed.push(card_name(kind).to_owned());
             printed.push(card_detail(kind).to_owned());

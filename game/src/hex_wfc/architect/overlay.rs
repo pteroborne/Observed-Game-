@@ -50,6 +50,7 @@ pub(super) fn draw(
         desk.hovered,
         desk.aimed,
         desk.floor,
+        desk.pad_cursor.is_some(),
     )
         .hash(&mut hasher);
     board.marks_signature.hash(&mut hasher);
@@ -65,21 +66,34 @@ pub(super) fn draw(
     for entity in &drawn {
         commands.entity(entity).despawn();
     }
+    let layer = RenderLayers::layer(BOARD_LAYER);
+    let on_deck = |cell: HexCoord, rise: f32| {
+        let at = hex_origin(cell);
+        BOARD_ORIGIN + Vec3::new(at[0], pick::deck(cell.level) + rise, at[2])
+    };
     let Some(card) = desk
         .selected
         .and_then(|index| hand?.deck.hand.get(index))
         .copied()
     else {
+        // No card in hand: a controller's cursor still needs to be seen to be steered.
+        if desk.pad_cursor.is_some()
+            && let Some(hovered) = desk.hovered
+        {
+            commands.spawn((
+                BoardOverlay,
+                DespawnOnExit(GameState::HexWfc),
+                Mesh3d(board.thin_ring.clone()),
+                MeshMaterial3d(materials.add(signal(Role::Muted))),
+                Transform::from_translation(on_deck(hovered, 0.18)),
+                layer.clone(),
+            ));
+        }
         return;
     };
     let rules = ascent.rules();
     let Some(knowledge) = rules.team_knowledge.get(&desk.team) else {
         return;
-    };
-    let layer = RenderLayers::layer(BOARD_LAYER);
-    let on_deck = |cell: HexCoord, rise: f32| {
-        let at = hex_origin(cell);
-        BOARD_ORIGIN + Vec3::new(at[0], pick::deck(cell.level) + rise, at[2])
     };
     let legal = legal_targets(
         ascent,

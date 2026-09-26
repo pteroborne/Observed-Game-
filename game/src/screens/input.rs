@@ -66,7 +66,7 @@ fn gamepad_just_pressed(gamepads: &Query<&Gamepad>, buttons: &[GamepadButton]) -
         .any(|gamepad| buttons.iter().any(|button| gamepad.just_pressed(*button)))
 }
 
-fn apply_deadzone(value: Vec2) -> Vec2 {
+pub(crate) fn apply_deadzone(value: Vec2) -> Vec2 {
     let length = value.length();
     if length <= GAMEPAD_DEADZONE {
         return Vec2::ZERO;

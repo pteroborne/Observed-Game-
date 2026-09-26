@@ -32,6 +32,12 @@ pub(crate) struct ArchitectDesk {
     pub aimed: Option<HexCoord>,
     /// The floor the board shows.
     pub floor: u8,
+    /// Where a controller's cursor stands on the floor in view, in plan metres, while a
+    /// controller is pointing rather than the mouse.
+    pub pad_cursor: Option<Vec2>,
+    /// Whether the last hand on the desk was on a controller, which is what the desk's
+    /// prompts name.
+    pub pad: bool,
     /// A play committed and not yet stepped.
     pub pending: Option<ArchitectCommand>,
     /// The rules' answer to the last play stepped, when they refused it.
@@ -74,6 +80,21 @@ impl ArchitectDesk {
         } else {
             self.selected = Some(index);
         }
+    }
+
+    /// Pick up the card `step` places along the hand of `held` from the one in hand,
+    /// wrapping; from none, the first card forward or the last one back.
+    pub(crate) fn cycle(&mut self, step: i8, held: usize) {
+        if held == 0 {
+            return;
+        }
+        let held_i = i64::try_from(held).unwrap_or(i64::MAX);
+        let next = match self.selected {
+            None if step >= 0 => 0,
+            None => held_i - 1,
+            Some(index) => (i64::try_from(index).unwrap_or(0) + i64::from(step)).rem_euclid(held_i),
+        };
+        self.selected = usize::try_from(next).ok();
     }
 
     /// Put the card down, and the aim with it.
@@ -122,6 +143,7 @@ impl ArchitectDesk {
             self.floor = floor;
             self.aimed = None;
             self.hovered = None;
+            self.pad_cursor = None;
         }
     }
 
@@ -135,6 +157,8 @@ impl ArchitectDesk {
             hovered: None,
             aimed: None,
             floor,
+            pad_cursor: None,
+            pad: false,
             pending: None,
             built: BTreeMap::new(),
             last_refusal: None,
@@ -149,6 +173,7 @@ mod desk;
 mod feedback;
 mod input;
 mod overlay;
+mod pad;
 mod pick;
 mod readout;
 mod stack;
@@ -167,6 +192,7 @@ pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleS
         desk::spawn,
         stack::click,
         input::input,
+        pad::input,
         board::frame,
         stack::frame,
         building::clear,
@@ -179,6 +205,7 @@ pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleS
         stack::draw,
         cards::sync,
         readout::sync,
+        readout::prompts,
     )
         .chain()
         .run_if(resource_exists::<ArchitectDesk>)
