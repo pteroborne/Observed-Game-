@@ -86,7 +86,12 @@ pub(in crate::hex_wfc) fn capture(
                 return;
             };
             let mut cards: Vec<_> = hand.deck.hand.iter().enumerate().collect();
-            cards.sort_by_key(|(_, card)| !matches!(card.kind, CardKind::Tile(_)));
+            // A stair when one is in hand, so the still shows the climb; a tile else.
+            cards.sort_by_key(|(_, card)| match card.kind {
+                CardKind::Stair => 0,
+                CardKind::Tile(_) => 1,
+                CardKind::Door => 2,
+            });
             let found = cards.into_iter().find_map(|(index, card)| {
                 knowledge.cells.keys().find_map(|&target| {
                     (0..6).find_map(|rotation| {

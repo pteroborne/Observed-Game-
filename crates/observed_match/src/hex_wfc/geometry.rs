@@ -806,6 +806,29 @@ pub fn project_hypothetical_cell(
     Ok(out.pieces)
 }
 
+/// [`project_hypothetical_cell`] for a play that builds several cells together - a
+/// stair's foot and head - each projected with the others already in place.
+///
+/// # Errors
+///
+/// Whatever the projector says about any of the cells.
+pub fn project_hypothetical_cells(
+    world: &HexWfcWorld,
+    placements: &[HexPlacement],
+    prototypes: &[TilePrototype],
+) -> Result<Vec<HexStructurePiece>, HexGeometryError> {
+    let mut hypothetical = world.clone();
+    for placement in placements {
+        hypothetical.placements.insert(placement.coord, *placement);
+    }
+    let catalogue = HexTileCatalogue::new(prototypes);
+    let mut out = ProjectedCells::default();
+    for placement in placements {
+        project_cell(&hypothetical, placement.coord, &catalogue, &mut out)?;
+    }
+    Ok(out.pieces)
+}
+
 fn validate_id_capacity(world: &HexWfcWorld) -> Result<(), HexGeometryError> {
     let cells = u64::from(world.config.cols)
         * u64::from(world.config.rows)

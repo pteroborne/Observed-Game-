@@ -16,6 +16,7 @@ pub use geometry::{
     HexPiecePart, HexRoomSocket, HexStructurePiece, HexStructureRole, HexTileCatalogue,
     HexTileSupply, HexTraversalCursor, HexTraversalLease, HexWfcGeometrySnapshot, ProjectedPort,
     ProjectedTraversalGraph, ProjectedTraversalGuide, project_hypothetical_cell,
+    project_hypothetical_cells,
 };
 #[cfg(test)]
 pub(crate) use model::MAX_MUTATION_TICKS;

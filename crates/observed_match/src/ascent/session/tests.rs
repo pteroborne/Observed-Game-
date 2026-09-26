@@ -510,3 +510,31 @@ fn a_body_asks_for_what_its_place_says_it_needs() {
         "an Architect is no body"
     );
 }
+
+#[test]
+fn a_hand_with_nothing_for_its_team_s_floor_draws_something_that_is() {
+    use crate::ascent::sim::{CardKind, District};
+    let mut session = session();
+    let floor = District::for_level(session.sim.observers[&ObserverId(0)].cell.level);
+    let other = match floor {
+        District::Institutional => District::LiminalGrid,
+        District::LiminalGrid => District::Institutional,
+    };
+    // A dead hand: the other district's tiles and doors only.
+    let hand = session.hands.get_mut(&TeamId(0)).expect("a hand");
+    for card in &mut hand.deck.hand {
+        if matches!(card.kind, CardKind::Tile(_)) {
+            card.district = Some(other);
+        }
+    }
+    assert!(!session.hands[&TeamId(0)].deck.has_tile_for(floor));
+    session.sim.tick = 3 * u64::from(crate::ascent::sim::ACTOR_BEAT_TICKS) + 1;
+    session.keep_hands_live();
+    assert!(
+        !session.hands[&TeamId(0)].deck.has_tile_for(floor),
+        "only on the beat"
+    );
+    session.sim.tick = 3 * u64::from(crate::ascent::sim::ACTOR_BEAT_TICKS);
+    session.keep_hands_live();
+    assert!(session.hands[&TeamId(0)].deck.has_tile_for(floor));
+}

@@ -15,10 +15,8 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use observed_content::ArchitectureRegister;
-use observed_facility::hex_wfc::authored_hall;
 use observed_hex::{HexFace, hex_origin};
 use observed_match::ascent::sim::{Card, CardKind};
-use observed_match::hex_wfc::project_hypothetical_cell;
 use observed_style::architect::{Role, color};
 
 use super::ArchitectDesk;
@@ -36,6 +34,8 @@ const IMAGE: UVec2 = UVec2::new(260, 176);
 /// Metres per image pixel for a tile, and for the smaller door frame.
 const TILE_SCALE: f32 = 0.092;
 const DOOR_SCALE: f32 = 0.04;
+/// A stair stands two floors tall.
+const STAIR_SCALE: f32 = 0.13;
 
 /// Every card layer, for the light that lights them.
 pub(super) fn layers() -> impl Iterator<Item = usize> {
@@ -154,6 +154,7 @@ pub(super) fn sync(
             {
                 ortho.scale = match card.kind {
                     CardKind::Tile(_) => TILE_SCALE,
+                    CardKind::Stair => STAIR_SCALE,
                     CardKind::Door => DOOR_SCALE,
                 };
             }
@@ -171,34 +172,37 @@ pub(super) fn sync(
             ));
         };
         match card.kind {
-            CardKind::Tile(shape) => {
+            CardKind::Tile(_) | CardKind::Stair => {
                 let register = card
                     .district
                     .map_or(ArchitectureRegister::ALL[0], |district| district.register());
                 let physical = &runtime.match_state;
                 // The tile as the corpus builds it in this district: projected at a cell
-                // of the district, and moved from there to the card.
+                // of the district - with a floor above it, for a stair - and moved from
+                // there to the card.
+                let top = physical.facility.config.levels.saturating_sub(1);
                 let Some(cell) = physical
                     .facility
                     .architecture
                     .iter()
-                    .find(|(_, found)| **found == register)
+                    .find(|(cell, found)| {
+                        **found == register && (card.kind != CardKind::Stair || cell.level < top)
+                    })
                     .map(|(&cell, _)| cell)
                 else {
                     continue;
                 };
-                let Some(placement) = authored_hall(cell, shape.doors(rotation)) else {
+                let Some(pieces) = building::built_by(physical, card.kind, cell, rotation) else {
                     continue;
                 };
-                let Ok(pieces) = project_hypothetical_cell(
-                    &physical.facility,
-                    cell,
-                    placement,
-                    physical.content().cells(),
-                ) else {
-                    continue;
+                // A stair sits half a floor low, so both of its floors are on the card.
+                let drop = if card.kind == CardKind::Stair {
+                    Vec3::Y * observed_hex::TILE_LEVEL_HEIGHT * 0.5
+                } else {
+                    Vec3::ZERO
                 };
-                let moved = Transform::from_translation(at - Vec3::from_array(hex_origin(cell)));
+                let moved =
+                    Transform::from_translation(at - Vec3::from_array(hex_origin(cell)) - drop);
                 for floor in [true, false] {
                     if let Some(mesh) = building::cutaway_mesh(&pieces, floor, building::bearing())
                     {
@@ -207,7 +211,8 @@ pub(super) fn sync(
                     }
                 }
                 // At this size the doorways read by their thresholds, not by gaps in cut
-                // walls: a bar on each, amber on the card in hand.
+                // walls: a bar on each, amber on the card in hand. A stair's way in is at
+                // its foot and its way out a floor above.
                 let threshold = materials.add(StandardMaterial {
                     base_color: color(if lifted {
                         Role::Selected
@@ -217,12 +222,23 @@ pub(super) fn sync(
                     unlit: true,
                     ..default()
                 });
-                for face in HexFace::LATERAL
-                    .into_iter()
-                    .filter(|face| shape.doors(rotation) & (1 << face.index()) != 0)
-                {
+                let bars: Vec<(HexFace, f32)> = match card.kind {
+                    CardKind::Tile(shape) => HexFace::LATERAL
+                        .into_iter()
+                        .filter(|face| shape.doors(rotation) & (1 << face.index()) != 0)
+                        .map(|face| (face, 0.0))
+                        .collect(),
+                    _ => {
+                        let heading = HexFace::LATERAL[usize::from(rotation % 6)];
+                        vec![
+                            (heading.opposite(), 0.0),
+                            (heading, observed_hex::TILE_LEVEL_HEIGHT),
+                        ]
+                    }
+                };
+                for (face, rise) in bars {
                     let mut bar = threshold_bar(face);
-                    bar.translation += at;
+                    bar.translation += at - drop + Vec3::Y * rise;
                     spawn(Cuboid::new(1.0, 1.0, 1.0).into(), threshold.clone(), bar);
                 }
             }

@@ -106,6 +106,9 @@ impl TileShape {
 pub enum CardKind {
     Tile(TileShape),
     Door,
+    /// An ascent: a ramp pair climbing from the cell played on to the one above, turned
+    /// to the direction of the climb. The only card that builds the way up.
+    Stair,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -123,6 +126,8 @@ impl Card {
                 format!("{} - {}", shape.label(), district.label())
             }
             (CardKind::Door, _) => "deployable door".to_string(),
+            (CardKind::Stair, Some(district)) => format!("stair - {}", district.label()),
+            (CardKind::Stair, None) => "stair".to_string(),
             (CardKind::Tile(shape), None) => shape.label().to_string(),
         }
     }
@@ -150,6 +155,12 @@ impl Deck {
     /// Two of each of `shapes` per district, and four doors.
     #[must_use]
     pub fn with_shapes(seed: u64, levels: u8, shapes: &[TileShape]) -> Self {
+        Self::with_stairs(seed, levels, shapes, 0)
+    }
+
+    /// A deck of `shapes` and `stairs` stair cards in each district, and the doors.
+    #[must_use]
+    pub fn with_stairs(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
         let mut cards = Vec::new();
         let mut next_id = 0;
         for district in [District::Institutional, District::LiminalGrid]
@@ -165,6 +176,14 @@ impl Deck {
                     });
                     next_id += 1;
                 }
+            }
+            for _ in 0..stairs {
+                cards.push(Card {
+                    id: CardId(next_id),
+                    kind: CardKind::Stair,
+                    district: Some(district),
+                });
+                next_id += 1;
             }
         }
         for _ in 0..4 {
@@ -194,6 +213,34 @@ impl Deck {
         } else if let Some(index) = self.draw.iter().position(matches) {
             std::mem::swap(&mut self.hand[0], &mut self.draw[index]);
         }
+    }
+
+    /// Whether the hand holds a tile of `district`.
+    #[must_use]
+    pub fn has_tile_for(&self, district: District) -> bool {
+        self.hand
+            .iter()
+            .any(|card| matches!(card.kind, CardKind::Tile(_)) && card.district == Some(district))
+    }
+
+    /// Bring a tile of `district` into the hand from the draw pile, or failing that the
+    /// discard, in place of the hand's first card; whether there was one. Deterministic:
+    /// the first such card in the pile.
+    pub(crate) fn offer_any_tile(&mut self, district: District) -> bool {
+        if self.hand.is_empty() {
+            return false;
+        }
+        let matches =
+            |card: &Card| matches!(card.kind, CardKind::Tile(_)) && card.district == Some(district);
+        if let Some(index) = self.draw.iter().position(matches) {
+            std::mem::swap(&mut self.hand[0], &mut self.draw[index]);
+            return true;
+        }
+        if let Some(index) = self.discard.iter().position(matches) {
+            std::mem::swap(&mut self.hand[0], &mut self.discard[index]);
+            return true;
+        }
+        false
     }
 
     fn shuffle_draw(&mut self) {

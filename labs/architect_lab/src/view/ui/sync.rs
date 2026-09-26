@@ -539,6 +539,7 @@ fn card_title(card: Card) -> String {
         CardKind::Tile(TileShape::Junction) => "JUNCTION",
         CardKind::Tile(TileShape::Hall) => "HALL",
         CardKind::Door => "DOOR",
+        CardKind::Stair => "STAIR",
     }
     .to_string()
 }

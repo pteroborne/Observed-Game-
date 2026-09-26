@@ -42,7 +42,7 @@ pub use blueprint::{
     RoomBlueprint, StampedBlueprint, blueprint_cell_archetype, blueprint_for_role,
 };
 pub use context::{HexInfluenceField, PROFILE_MAX, PROFILE_MIN};
-pub use directed::authored_hall;
+pub use directed::{authored_hall, authored_ramp};
 pub use neighborhood::{
     FaceDomain, NeighborCandidate, Neighborhood, NeighborhoodError, neighborhood,
 };

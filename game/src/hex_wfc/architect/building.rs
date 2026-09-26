@@ -127,8 +127,19 @@ pub(super) fn draw(
     // What should be drawn, and how.
     let lowest = desk.floor.saturating_sub(CONTEXT_FLOORS);
     let mut wanted: BTreeMap<HexCoord, (Tone, HexPlacement)> = BTreeMap::new();
-    for (&cell, known) in &knowledge.cells {
-        let Some(placement) = desk.believed(cell, Some(known)) else {
+    // What the team knows, and what this Architect built where it does not - a stair's
+    // head, on a floor nobody has reached yet.
+    let unseen_builds = desk
+        .built
+        .keys()
+        .filter(|cell| !knowledge.cells.contains_key(cell))
+        .map(|&cell| (cell, None));
+    let known = knowledge
+        .cells
+        .iter()
+        .map(|(&cell, known)| (cell, Some(known)));
+    for (cell, known) in known.chain(unseen_builds) {
+        let Some(placement) = desk.believed(cell, known) else {
             continue;
         };
         if cell.level > desk.floor || cell.level < lowest || !placement.space.built() {
@@ -289,6 +300,43 @@ pub(super) fn draw(
         }
         building.drawn.insert(cell, (root, signature, remembered));
     }
+}
+
+/// What a card of `kind` would build at `cell`, turned by `rotation`, as the corpus builds
+/// it: a tile's hall, or a stair's foot and head. `None` for a door, or where the corpus
+/// has no such cell - the board's ghost and the hand's miniatures both ask this.
+#[must_use]
+pub(super) fn built_by(
+    physical: &observed_match::hex_wfc::HexWfcMatch,
+    kind: observed_match::ascent::sim::CardKind,
+    cell: HexCoord,
+    rotation: u8,
+) -> Option<Vec<HexStructurePiece>> {
+    use observed_match::ascent::sim::CardKind;
+    let placements = match kind {
+        CardKind::Tile(shape) => {
+            vec![observed_facility::hex_wfc::authored_hall(
+                cell,
+                shape.doors(rotation),
+            )?]
+        }
+        CardKind::Stair => {
+            let heading = observed_hex::HexFace::LATERAL[usize::from(rotation % 6)];
+            let (foot, head) = observed_facility::hex_wfc::authored_ramp(
+                cell,
+                heading,
+                physical.facility.config.levels,
+            )?;
+            vec![foot, head]
+        }
+        CardKind::Door => return None,
+    };
+    observed_match::hex_wfc::project_hypothetical_cells(
+        &physical.facility,
+        &placements,
+        physical.content().cells(),
+    )
+    .ok()
 }
 
 /// A tile's floors (`floor`) or walls in `register`'s concrete, lit, as a room in view.

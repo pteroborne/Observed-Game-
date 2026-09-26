@@ -10,7 +10,7 @@ use observed_core::PlayerId;
 use observed_hex::HexCoord;
 
 use super::sim::{
-    ArchitectCommand, ArchitectLab, CommandRefusal, Deck, MatchOutcome, ObserverCommand,
+    ArchitectCommand, ArchitectLab, CommandRefusal, Deck, District, MatchOutcome, ObserverCommand,
     ObserverId, ObserverRefusal, ObserverState, TeamId,
 };
 
@@ -257,6 +257,7 @@ impl AscentSession {
                 }
             }
         }
+        self.keep_hands_live();
         self.run_bot_architects();
         for hand in self.hands.values_mut() {
             hand.cooldown = hand.cooldown.saturating_sub(1);
@@ -394,6 +395,33 @@ impl AscentSession {
     /// Bot Architects decide once a beat, in their team's context, and play through the
     /// same submission a human's play takes. A Rogue seat held by a bot drives the
     /// rules' own Rogue tree.
+    /// Refill "must leave at least one card with a legal target in a currently placeable
+    /// district" (`docs/architect_ascent_design.md`, section 2): once a beat, a loyal hand
+    /// holding no tile for any floor its team stands on draws one in, in place of its
+    /// first card, from its own deck. Otherwise a hand of the wrong district's tiles, stairs
+    /// and doors is dead until something else is played - which, if nothing can be, is
+    /// never.
+    fn keep_hands_live(&mut self) {
+        let beat = u64::from(super::sim::ACTOR_BEAT_TICKS);
+        if !self.sim.tick.is_multiple_of(beat) {
+            return;
+        }
+        for (team, hand) in &mut self.hands {
+            let districts: Vec<District> = self
+                .sim
+                .observers
+                .values()
+                .filter(|o| o.team == *team && o.state == ObserverState::Active)
+                .map(|o| District::for_level(o.cell.level))
+                .collect();
+            if let Some(&district) = districts.first()
+                && !districts.iter().any(|&d| hand.deck.has_tile_for(d))
+            {
+                hand.deck.offer_any_tile(district);
+            }
+        }
+    }
+
     fn run_bot_architects(&mut self) {
         self.sim.bot_architect = self
             .seats

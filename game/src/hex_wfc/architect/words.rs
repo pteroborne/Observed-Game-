@@ -15,6 +15,7 @@ pub(super) const fn card_name(kind: CardKind) -> &'static str {
         CardKind::Tile(TileShape::Junction) => "JUNCTION",
         CardKind::Tile(TileShape::Hall) => "HALL",
         CardKind::Door => "DOOR",
+        CardKind::Stair => "STAIR",
     }
 }
 
@@ -28,6 +29,7 @@ pub(super) const fn card_detail(kind: CardKind) -> &'static str {
         CardKind::Tile(TileShape::Junction) => "3 ways",
         CardKind::Tile(TileShape::Hall) => "4 ways",
         CardKind::Door => "on a doorway",
+        CardKind::Stair => "climbs a floor",
     }
 }
 
@@ -102,7 +104,7 @@ mod tests {
         for kind in TileShape::ALL
             .into_iter()
             .map(CardKind::Tile)
-            .chain([CardKind::Door])
+            .chain([CardKind::Door, CardKind::Stair])
         {
             assert!(!card_name(kind).is_empty());
             assert!(!card_detail(kind).is_empty());
@@ -145,7 +147,11 @@ mod tests {
                 printed.push(button_label(action, pad).to_owned());
             }
         }
-        for kind in TileShape::ALL.into_iter().map(CardKind::Tile) {
+        for kind in TileShape::ALL
+            .into_iter()
+            .map(CardKind::Tile)
+            .chain([CardKind::Door, CardKind::Stair])
+        {
             printed.push(card_name(kind).to_owned());
             printed.push(card_detail(kind).to_owned());
         }

@@ -14,11 +14,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use observed_hex::{HexCoord, PortClass};
+use observed_hex::{HexCoord, HexFace, PortClass};
 
 use super::variants::hall_archetype;
 use super::{
-    HexMutationRegion, HexPlacement, HexRelayoutDelta, HexSpace, HexWfcError, HexWfcWorld,
+    HexArchetype, HexMutationRegion, HexPlacement, HexRelayoutDelta, HexSpace, HexWfcError,
+    HexWfcWorld,
 };
 
 /// The flat hall cell with exactly these lateral doors, if the authored corpus has one.
@@ -36,6 +37,43 @@ pub fn authored_hall(coord: HexCoord, doors: u8) -> Option<HexPlacement> {
         up: PortClass::Sealed,
         down: PortClass::Sealed,
     })
+}
+
+/// The ramp pair climbing from `foot` to the cell above it toward `heading`: the corpus's
+/// `RampUp` at the foot, entered from the side facing away from the climb, and its
+/// `RampHead` above, which leaves toward `heading`. `None` on the top floor of `levels`
+/// or for a vertical heading.
+#[must_use]
+pub fn authored_ramp(
+    foot: HexCoord,
+    heading: HexFace,
+    levels: u8,
+) -> Option<(HexPlacement, HexPlacement)> {
+    if !heading.is_lateral() || foot.level + 1 >= levels {
+        return None;
+    }
+    let head = HexCoord {
+        level: foot.level + 1,
+        ..foot
+    };
+    Some((
+        HexPlacement {
+            coord: foot,
+            space: HexSpace::Hall,
+            archetype: HexArchetype::RampUp,
+            doors: 1 << heading.opposite().index(),
+            up: PortClass::RampOpen,
+            down: PortClass::Sealed,
+        },
+        HexPlacement {
+            coord: head,
+            space: HexSpace::Hall,
+            archetype: HexArchetype::RampHead,
+            doors: 1 << heading.index(),
+            up: PortClass::Sealed,
+            down: PortClass::RampOpen,
+        },
+    ))
 }
 
 impl HexWfcWorld {

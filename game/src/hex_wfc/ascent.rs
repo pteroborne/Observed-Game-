@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use observed_core::{PlayerId, TeamId};
+use observed_facility::hex_wfc::{HexArchetype, HexCoord};
 use observed_match::ascent::facility::AscentRules;
 use observed_match::ascent::session::{ASCENT_INPUT_VERSION, InputFrame, SeatCommand};
 use observed_match::ascent::sim::{ArchitectCommand, MatchOutcome, TeamId as AscentTeam};
@@ -112,20 +113,32 @@ pub(super) fn step(
         && played.is_some()
     {
         desk.last_refusal = refusals.get(&desk.seat).copied();
-        // A tile the rules took is one the Architect knows stands, seen or not.
+        // What the rules took is what the Architect knows stands, seen or not: a tile's
+        // cell, or a stair's foot and the head above it.
         if desk.last_refusal.is_none()
             && let Some(ArchitectCommand::Play { target, .. }) = played
-            && let Some(&placement) = rules.rules().world.placements.get(&target)
         {
-            // A door leaves the cell's placement as the team knows it.
-            let known = rules
-                .rules()
-                .team_knowledge
-                .get(&desk.team)
-                .and_then(|knowledge| knowledge.cells.get(&target))
-                .map(|known| known.placement);
-            if known != Some(placement) {
-                desk.built.insert(target, (placement, rules.rules().tick));
+            let head = HexCoord {
+                level: target.level + 1,
+                ..target
+            };
+            for cell in [target, head] {
+                let Some(&placement) = rules.rules().world.placements.get(&cell) else {
+                    continue;
+                };
+                // Only a stair builds the head; a door changes neither cell's placement.
+                if cell == head && placement.archetype != HexArchetype::RampHead {
+                    continue;
+                }
+                let known = rules
+                    .rules()
+                    .team_knowledge
+                    .get(&desk.team)
+                    .and_then(|knowledge| knowledge.cells.get(&cell))
+                    .map(|known| known.placement);
+                if known != Some(placement) {
+                    desk.built.insert(cell, (placement, rules.rules().tick));
+                }
             }
         }
     }

@@ -657,6 +657,60 @@ impl ArchitectLab {
                 });
                 (!fits).then_some(CommandRefusal::NoLocalAttachment)
             }
+            CardKind::Stair => {
+                if card.district != Some(District::for_level(target.level)) {
+                    return Some(CommandRefusal::WrongDistrict);
+                }
+                let heading = lateral_face(rotation);
+                let Some((_, head)) = observed_facility::hex_wfc::authored_ramp(
+                    target,
+                    heading,
+                    self.world.config.levels,
+                ) else {
+                    return Some(CommandRefusal::Unbuildable);
+                };
+                let head = head.coord;
+                // The climb goes where the team has not been, but not through anything a
+                // play could not touch at its foot.
+                if self.fixed_structure(target) || self.fixed_structure(head) {
+                    return Some(CommandRefusal::FixedStructure);
+                }
+                if !self.world.placements.contains_key(&head)
+                    || self.collapsed_floors.contains(&head.level)
+                {
+                    return Some(CommandRefusal::CollapsedFloor);
+                }
+                // Not up into open sky, nor from it: building in the air re-derives the
+                // whole open-air region, and the edges of it re-project wherever they are -
+                // in front of whoever is watching them.
+                if [target, head].iter().any(|cell| {
+                    self.world
+                        .placements
+                        .get(cell)
+                        .is_some_and(|p| p.space == HexSpace::Air)
+                }) {
+                    return Some(CommandRefusal::Unbuildable);
+                }
+                if self.observed.contains(&head) {
+                    return Some(CommandRefusal::Observed);
+                }
+                if self.occupied().contains(&head) {
+                    return Some(CommandRefusal::Occupied);
+                }
+                if self.anchored.contains(&head) || self.prison_core.contains(&head) {
+                    return Some(CommandRefusal::Anchored);
+                }
+                // Entered from the side facing away from the climb, off a walkway.
+                let entrance = heading.opposite();
+                let fits = self
+                    .world
+                    .config
+                    .grid()
+                    .neighbor(target, entrance)
+                    .and_then(|next| self.world.placements.get(&next))
+                    .is_some_and(|next| next.space.built() && next.is_open(entrance.opposite()));
+                (!fits).then_some(CommandRefusal::NoLocalAttachment)
+            }
             CardKind::Door => {
                 let Some(key) = self.threshold_key(target, lateral_face(rotation)) else {
                     return Some(CommandRefusal::InvalidThreshold);
@@ -722,6 +776,19 @@ impl ArchitectLab {
         }
     }
 
+    /// The two cells a stair play builds from `target`, turned by `rotation`: the foot and
+    /// the head above it. Legality has already refused a stair with no floor above.
+    #[must_use]
+    pub fn played_stair(&self, target: HexCoord, rotation: u8) -> [HexPlacement; 2] {
+        let (foot, head) = observed_facility::hex_wfc::authored_ramp(
+            target,
+            lateral_face(rotation),
+            self.world.config.levels,
+        )
+        .expect("legality proved there is a floor above");
+        [foot, head]
+    }
+
     pub fn submit(&mut self, command: ArchitectCommand) -> Result<(), CommandRefusal> {
         self.submit_for_faction(command, None)
     }
@@ -761,6 +828,15 @@ impl ArchitectLab {
                             .threshold_key(target, lateral_face(rotation))
                             .expect("legality proved the threshold exists");
                         self.doors.insert(key, DoorState::Closed);
+                    }
+                    CardKind::Stair => {
+                        for placement in self.played_stair(target, rotation) {
+                            let cell = placement.coord;
+                            self.rewrite(placement);
+                            self.retracted.remove(&cell);
+                            self.doors
+                                .retain(|key, _| !threshold_touches(*key, cell, &self.world));
+                        }
                     }
                 }
                 assert!(self.deck.spend(card), "legality proved the card is held");

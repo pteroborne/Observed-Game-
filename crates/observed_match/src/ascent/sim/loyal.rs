@@ -18,6 +18,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use observed_facility::hex_wfc::HexPlacement;
 use observed_hex::{HexCoord, HexFace, PortClass, ports_compatible, travel_distance};
 
+use super::util::lateral_face;
 use super::{
     ArchitectCommand, ArchitectLab, BehaviorTrace, CardKind, ObserverState, TeamId, command_key,
 };
@@ -96,19 +97,28 @@ impl ArchitectLab {
 
         let judged: Vec<Judged> = candidates
             .into_iter()
-            .filter_map(|(command, placement)| {
-                let ArchitectCommand::Play { target, .. } = command else {
+            .filter_map(|(command, changes)| {
+                let ArchitectCommand::Play {
+                    target, rotation, ..
+                } = command
+                else {
                     return None;
                 };
-                let (before, after) = self.mismatches_around(target, placement);
-                let way_up = if in_use(target) {
+                let (before, after) = self.mismatches_around(&changes);
+                // A stair's two cells, or a tile's one.
+                let stair = changes.len() == 2;
+                let way_up = if changes.iter().any(|change| in_use(change.coord)) {
                     current.iter().sum()
                 } else {
                     from_own
                         .iter()
                         .zip(&current)
                         .map(|(reach, &now)| {
-                            now.min(self.through(target, placement, reach, &from_summit))
+                            now.min(if stair {
+                                self.up_stair(target, lateral_face(rotation), reach, &from_summit)
+                            } else {
+                                self.through(target, changes[0], reach, &from_summit)
+                            })
                         })
                         .sum()
                 };
@@ -162,8 +172,9 @@ impl ArchitectLab {
         (None, trace)
     }
 
-    /// Every legal tile play within reach of the team, with the cell it would build.
-    fn candidates(&self, own: &[HexCoord]) -> Vec<(ArchitectCommand, HexPlacement)> {
+    /// Every legal tile or stair play within reach of the team, with the cells it would
+    /// build.
+    fn candidates(&self, own: &[HexCoord]) -> Vec<(ArchitectCommand, Vec<HexPlacement>)> {
         let near: BTreeSet<HexCoord> = self
             .known
             .iter()
@@ -172,9 +183,9 @@ impl ArchitectLab {
             .collect();
         let mut out = Vec::new();
         for card in &self.deck.hand {
-            let CardKind::Tile(shape) = card.kind else {
+            if !matches!(card.kind, CardKind::Tile(_) | CardKind::Stair) {
                 continue;
-            };
+            }
             for &target in &near {
                 for rotation in 0..6 {
                     let command = ArchitectCommand::Play {
@@ -182,9 +193,16 @@ impl ArchitectLab {
                         target,
                         rotation,
                     };
-                    if self.refusal(command).is_none() {
-                        out.push((command, self.played_placement(shape, target, rotation)));
+                    if self.refusal(command).is_some() {
+                        continue;
                     }
+                    let changes = match card.kind {
+                        CardKind::Tile(shape) => {
+                            vec![self.played_placement(shape, target, rotation)]
+                        }
+                        _ => self.played_stair(target, rotation).to_vec(),
+                    };
+                    out.push((command, changes));
                 }
             }
         }
@@ -195,14 +213,32 @@ impl ArchitectLab {
     /// Mismatched doorways between `cell` and its neighbours: as it stands, and if it
     /// held `placement`. A doorway is mismatched where two built cells' ports disagree, or
     /// where an open port faces a retracted cell.
-    fn mismatches_around(&self, cell: HexCoord, placement: HexPlacement) -> (usize, usize) {
+    fn mismatches_around(&self, changes: &[HexPlacement]) -> (usize, usize) {
+        changes
+            .iter()
+            .map(|placement| self.mismatches_of(placement.coord, *placement, changes))
+            .fold((0, 0), |(b, a), (before, after)| (b + before, a + after))
+    }
+
+    /// [`Self::mismatches_around`] for one cell of a play that builds `changes` together:
+    /// a neighbour in the same play is judged as it will be, not as it is.
+    fn mismatches_of(
+        &self,
+        cell: HexCoord,
+        placement: HexPlacement,
+        changes: &[HexPlacement],
+    ) -> (usize, usize) {
         let grid = self.world.config.grid();
         let current = self.world.placements[&cell];
-        let bad = |here: &HexPlacement, retracted: bool, face: HexFace| {
+        let bad = |here: &HexPlacement, retracted: bool, face: HexFace, planned: bool| {
             let Some(next) = grid.neighbor(cell, face) else {
                 return false;
             };
-            let Some(other) = self.world.placements.get(&next) else {
+            let other = planned
+                .then(|| changes.iter().find(|change| change.coord == next))
+                .flatten()
+                .or_else(|| self.world.placements.get(&next));
+            let Some(other) = other else {
                 return false;
             };
             let mine = here.ports().port(face);
@@ -215,13 +251,44 @@ impl ArchitectLab {
         };
         let before = HexFace::ALL
             .into_iter()
-            .filter(|&face| bad(&current, self.retracted.contains(&cell), face))
+            .filter(|&face| bad(&current, self.retracted.contains(&cell), face, false))
             .count();
         let after = HexFace::ALL
             .into_iter()
-            .filter(|&face| bad(&placement, false, face))
+            .filter(|&face| bad(&placement, false, face, true))
             .count();
         (before, after)
+    }
+
+    /// The shortest walk from an Observer to the summit up a stair built from `foot`
+    /// toward `heading`: to the cell in front of its foot, three steps up and out, and on
+    /// from the cell its head leaves into, if that leads anywhere.
+    fn up_stair(
+        &self,
+        foot: HexCoord,
+        heading: HexFace,
+        from_observer: &BTreeMap<HexCoord, usize>,
+        from_summit: &BTreeMap<HexCoord, usize>,
+    ) -> usize {
+        let grid = self.world.config.grid();
+        let head = HexCoord {
+            level: foot.level + 1,
+            ..foot
+        };
+        let entry = grid.neighbor(foot, heading.opposite());
+        let exit = grid.neighbor(head, heading).filter(|&next| {
+            self.world
+                .placements
+                .get(&next)
+                .is_some_and(|p| p.space.built() && p.is_open(heading.opposite()))
+        });
+        match (
+            entry.and_then(|cell| from_observer.get(&cell)),
+            exit.and_then(|cell| from_summit.get(&cell)),
+        ) {
+            (Some(to), Some(on)) => to + 3 + on,
+            _ => NO_WAY_UP,
+        }
     }
 
     /// The shortest walk from an Observer to the summit through `cell` holding

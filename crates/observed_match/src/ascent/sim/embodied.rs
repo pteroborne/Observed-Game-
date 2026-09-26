@@ -28,6 +28,9 @@ pub struct Embodiment {
     pub facing: HexFace,
 }
 
+/// Stair cards in each district of an Architect's deck on the real facility.
+pub const STAIRS_PER_DISTRICT: u8 = 3;
+
 impl ArchitectLab {
     /// The rules over `world`, a facility bodies walk in, with every Observer embodied.
     ///
@@ -103,7 +106,9 @@ impl ArchitectLab {
     pub fn new_deck(&self, seed: u64) -> Deck {
         let levels = self.world.config.levels;
         if self.authored {
-            Deck::with_shapes(seed, levels, &TileShape::AUTHORED)
+            // The real facility's climb is gated on stairs, so an Architect who cannot lay
+            // one cannot build the way up: three to a district.
+            Deck::with_stairs(seed, levels, &TileShape::AUTHORED, STAIRS_PER_DISTRICT)
         } else {
             Deck::for_levels(seed, levels)
         }

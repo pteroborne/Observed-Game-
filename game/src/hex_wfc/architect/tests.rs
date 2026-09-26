@@ -509,3 +509,73 @@ fn the_architect_looks_through_an_observer_s_eyes_and_comes_back() {
     assert_eq!(runtime.viewed_player, None);
     assert_eq!(runtime.viewed().id, runtime.local_player);
 }
+
+#[test]
+fn a_stair_played_at_the_desk_is_built_and_believed_on_both_floors() {
+    use observed_facility::hex_wfc::HexArchetype;
+    use observed_match::ascent::sim::CardKind;
+
+    let mut runtime = runtime();
+    let mut desk = desk();
+    let stair = |runtime: &HexWfcRuntime, desk: &ArchitectDesk| {
+        let ascent = runtime.ascent.as_ref()?;
+        let known = &ascent.rules().team_knowledge.get(&desk.team)?.cells;
+        let hand = &ascent.session().hands.get(&desk.team)?.deck.hand;
+        hand.iter()
+            .filter(|card| card.kind == CardKind::Stair)
+            .find_map(|card| {
+                known.keys().find_map(|&target| {
+                    (0..6).find_map(|rotation| {
+                        let play = ArchitectCommand::Play {
+                            card: card.id,
+                            target,
+                            rotation,
+                        };
+                        ascent
+                            .session()
+                            .architect_refusal(desk.seat, play)
+                            .is_none()
+                            .then_some(play)
+                    })
+                })
+            })
+    };
+    let mut play = None;
+    for tick_count in 0..6_000 {
+        play = stair(&runtime, &desk);
+        if play.is_some() {
+            break;
+        }
+        // A hand without a stair draws again now and then.
+        if tick_count % 600 == 599 {
+            desk.pending = Some(ArchitectCommand::Requisition);
+        }
+        tick(&mut runtime, &mut desk);
+    }
+    let play = play.expect("a stair becomes legal as the team maps the ground floor");
+    let ArchitectCommand::Play { target, .. } = play else {
+        unreachable!()
+    };
+    desk.pending = Some(play);
+    tick(&mut runtime, &mut desk);
+    assert_eq!(desk.last_refusal, None);
+    let head = HexCoord {
+        level: target.level + 1,
+        ..target
+    };
+    let physical = &runtime.match_state.facility.placements;
+    assert_eq!(physical[&target].archetype, HexArchetype::RampUp);
+    assert_eq!(physical[&head].archetype, HexArchetype::RampHead);
+    // The Architect knows both halves stand, the head on a floor nobody has reached.
+    for cell in [target, head] {
+        assert_eq!(
+            desk.believed(cell, None).map(|p| p.archetype),
+            Some(physical[&cell].archetype),
+            "{cell:?}"
+        );
+    }
+    // And the board's ghost and the hand's miniature can draw one.
+    let pieces = super::building::built_by(&runtime.match_state, CardKind::Stair, target, 0)
+        .expect("the corpus builds a stair");
+    assert!(pieces.iter().any(|piece| piece.source_cell == target));
+}

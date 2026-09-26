@@ -402,14 +402,20 @@ fn no_legal_play_redraws_what_a_body_is_watching() {
     for tick in 0..3_000 {
         if tick % 150 == 0 {
             let watched = game.rules().observed.clone();
+            // What is drawn of each watched cell, as a set: a room beside a play is
+            // re-projected whole, and may come back in another order with nothing moved -
+            // the presentation redraws by revision, and those are not bumped.
             let drawn = |game: &AscentMatch| {
-                game.physical()
+                let mut pieces = game
+                    .physical()
                     .geometry
                     .pieces
                     .iter()
                     .filter(|piece| watched.contains(&piece.source_cell))
                     .cloned()
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+                pieces.sort_by_key(|piece| piece.id);
+                pieces
             };
             let before = drawn(&game);
             let mut plays = Vec::new();
@@ -505,6 +511,7 @@ fn a_retraction_cannot_open_a_window_beside_a_watched_room() {
 
 mod prison;
 mod requests;
+mod stairs;
 
 #[test]
 fn a_bot_architect_repairs_what_the_rogue_breaks_through_the_human_path() {

@@ -315,6 +315,38 @@ team's bodies are bots, and the player sits at the desk (`game/src/hex_wfc/archi
   climb and the desk step aside, their cameras resting, and a bar over the view says whose
   eyes these are and how to go back; the desk hears nothing else, and the desk has first
   claim on Escape and East while looking, so neither pauses.
+- **Stair cards** (`CardKind::Stair`; three to a district in an Architect's deck on the
+  real facility): the one play that builds the way up. Played on a cell the team has
+  found and turned to the direction of the climb, it lays the corpus's ramp pair
+  (`observed_facility::hex_wfc::authored_ramp`) - a `RampUp` at the foot, entered from the
+  walkway behind it, and its `RampHead` on the floor above, which may be unexplored - as
+  one play and one cooldown. Both cells must be free as any play's target must, neither
+  may be fixed structure, and neither may be open sky - building in the air re-derives the
+  whole open-air region, whose edges re-project wherever they are, watched or not. Once
+  built, the stair is fixed itself. Every register builds one
+  (three authored ramp tiles are scoped to all). At the desk it is a card whose miniature is
+  the ramp, an amber ghost of both cells on the board, and a build the Architect believes
+  on both floors. A stair laid over a hall with other doorways leaves those doorways
+  meeting walls: contradictions, which the rules treat as play and a loyal Architect
+  repairs. The desk does not yet say so before the play.
+- **A live hand** (`AscentSession::keep_hands_live`): the design's refill rule - a hand
+  must keep a card with a legal target in a district its team can play - is now kept once a
+  beat: a loyal hand holding no tile for any floor its team stands on draws one in from its
+  own deck. Stair cards made the dead hand likelier (two stairs, the other district's tiles
+  and a door, with nothing ever played to change it), and a bot holding one could never
+  repair a contradiction on its floor.
+- **Why the bot Architects hold their cards** (measured 2026-09-26 on a production
+  facility): a loyal Architect may only play on ground its team has found, and a solved
+  facility is consistent - every doorway meets a doorway - so with nobody disturbing it,
+  no play near the team shortens its way up or opens a new route (an unexplored cell with a
+  doorway facing the team already meets one). Stairs do not change that: the production
+  facility climbs by authored stair towers, so a new ramp's head is exactly as far from the
+  summit as its foot. The bot now judges stairs as readily as halls, and plays when it can
+  repair or answer; what the design leaves it to answer is the **Rogue**, whose plays make
+  the contradictions and the Guardian pressure a loyal Architect exists to meet. Neither the
+  game nor LAN seats a Rogue yet, and the Rogue bot judges every play by simulating it on a
+  copy of the whole rules - unaffordable at production scale until it is made local, as the
+  loyal bot was.
 - Legality is never decided at the desk: every ring and verdict is
   `AscentSession::architect_refusal` for the player's own seat, the question the play asks.
 

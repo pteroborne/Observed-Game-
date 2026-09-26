@@ -13,10 +13,8 @@ use std::hash::{Hash, Hasher};
 
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
-use observed_facility::hex_wfc::authored_hall;
 use observed_hex::{HexCoord, hex_origin};
-use observed_match::ascent::sim::{ArchitectCommand, CardKind};
-use observed_match::hex_wfc::project_hypothetical_cell;
+use observed_match::ascent::sim::ArchitectCommand;
 use observed_style::architect::{Role, color};
 
 use super::ArchitectDesk;
@@ -153,21 +151,11 @@ pub(super) fn draw(
     }
     // The tile itself, as it would be played: the lab's amber ghost of its real hulls,
     // floors and walls, turned as the desk has it.
-    let CardKind::Tile(shape) = card.kind else {
-        return;
-    };
-    // The corpus's hall for these doorways, as a play builds it (`played_placement`, which
-    // may assume legality this cell has not been granted).
-    let Some(placement) = authored_hall(focus, shape.doors(desk.rotation)) else {
-        return;
-    };
-    let physical = &runtime.match_state;
-    let Ok(pieces) = project_hypothetical_cell(
-        &physical.facility,
-        focus,
-        placement,
-        physical.content().cells(),
-    ) else {
+    // The corpus's hall for these doorways, or the stair's two cells, as a play builds
+    // them (not `played_placement`, which may assume legality this cell has not been
+    // granted).
+    let Some(pieces) = building::built_by(&runtime.match_state, card.kind, focus, desk.rotation)
+    else {
         return;
     };
     let ghost = materials.add(StandardMaterial {
