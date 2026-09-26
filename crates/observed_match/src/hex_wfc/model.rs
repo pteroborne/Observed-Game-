@@ -736,6 +736,12 @@ impl HexWfcMatch {
         (1.0 - remaining as f32 / baseline as f32).clamp(0.0, 1.0)
     }
 
+    /// Whether the Guardian hunts this match (`HexMatchConfig::guardian`).
+    #[must_use]
+    pub const fn guardian_hunts(&self) -> bool {
+        self.guardian_active
+    }
+
     #[must_use]
     pub fn guardian_pressure(&self, player: PlayerId) -> f32 {
         self.players.get(&player).map_or(0.0, |player| {

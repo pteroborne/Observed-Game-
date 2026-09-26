@@ -728,7 +728,10 @@ impl ArchitectLab {
 
     /// Resolve any pending disturbance waves on a floor level.
     pub fn resolve_disturbance_waves(&mut self, level: u8) -> Vec<GuardianId> {
-        if self.collapsed_floors.contains(&level) {
+        // A first-person facility gives the Guardians it hunts with bodies, and has none to
+        // give a wave yet: a released minor would hunt in the rules alone, unseen. The
+        // disturbance holds until it can.
+        if self.collapsed_floors.contains(&level) || self.authored {
             return Vec::new();
         }
         let mut spawned = Vec::new();

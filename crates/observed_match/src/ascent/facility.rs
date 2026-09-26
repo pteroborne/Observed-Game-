@@ -21,6 +21,14 @@ use super::session::{ASCENT_INPUT_VERSION, AscentSession, InputFrame, Refusal, R
 use super::sim::{ArchitectLab, Embodiment, MatchOutcome, ObserverId, TeamId};
 use crate::hex_wfc::{HexInputFrame, HexWfcMatch};
 
+/// The rules' id for the first-person match's own Guardian, the Tumbler: reserved, above
+/// every Guardian the rules release themselves.
+pub const TUMBLER: crate::ascent::sim::GuardianId = crate::ascent::sim::GuardianId(u16::MAX);
+
+/// The Rogue's seat, always a bot's: the faction the corrupted join, whose seats become
+/// Rogue seats of their own as they fall.
+pub const ROGUE_SEAT: PlayerId = PlayerId(ARCHITECT_SEATS - 1);
+
 /// Architect seats are numbered past every body: team `t`'s Architect is this plus `t`.
 /// Every peer of a LAN match seats them the same way.
 pub const ARCHITECT_SEATS: u16 = 200;
@@ -41,14 +49,15 @@ pub fn architect_seats(
     architect_seats_where(physical, |team| Some(team) == human)
 }
 
-/// An Architect seat for every team of `physical`, held by a player where `human` says so
-/// and by a bot everywhere else.
+/// The seats every Ascent match has besides its bodies: an Architect for every team of
+/// `physical`, held by a player where `human` says so and by a bot everywhere else, and
+/// the Rogue, always a bot, whom the corrupted join (`ROGUE_SEAT`).
 #[must_use]
 pub fn architect_seats_where(
     physical: &HexWfcMatch,
     human: impl Fn(observed_core::TeamId) -> bool,
 ) -> BTreeMap<PlayerId, Seat> {
-    physical
+    let mut seats: BTreeMap<PlayerId, Seat> = physical
         .teams
         .keys()
         .map(|&team| {
@@ -60,7 +69,15 @@ pub fn architect_seats_where(
                 },
             )
         })
-        .collect()
+        .collect();
+    seats.insert(
+        ROGUE_SEAT,
+        Seat {
+            role: Role::Rogue,
+            bot: true,
+        },
+    );
+    seats
 }
 
 /// The rules seat `player`'s seat command belongs to: their team's Architect seat when
@@ -198,6 +215,14 @@ impl AscentRules {
                 self.session.sim.embody(id, cell, facing, place);
             }
         }
+        // The match's own Guardian, the Tumbler, is the rules' too: where it stands, in a
+        // match it hunts in - frozen by sight or not, it is standing there. Its id is
+        // reserved above anything the rules release.
+        self.session.sim.embody_guardian(
+            TUMBLER,
+            physical.guardian.cell,
+            physical.guardian_hunts(),
+        );
         self.session.sim.refresh_observation();
     }
 

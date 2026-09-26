@@ -48,6 +48,9 @@ pub enum CommandRefusal {
     FixedStructure,
     /// The authored tile corpus has no tile of this shape.
     Unbuildable,
+    /// A requisition pays with a Guardian released into the facility, and a first-person
+    /// facility has no body to give a Guardian the rules release yet.
+    NoRelease,
 }
 
 impl CommandRefusal {
@@ -73,6 +76,7 @@ impl CommandRefusal {
             Self::DoorAlreadyPresent => "a deployable door already owns that threshold",
             Self::FixedStructure => "rooms and stairs are built whole and cannot be rewritten",
             Self::Unbuildable => "no authored tile has that shape",
+            Self::NoRelease => "no Guardian can be released into this facility yet",
         }
     }
 }

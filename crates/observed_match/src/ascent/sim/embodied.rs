@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use observed_facility::hex_wfc::{HexPlacement, HexWfcWorld};
 use observed_hex::{HexCoord, HexFace, PortClass};
 
-use super::{
+use super::{GuardianId, GuardianKind, 
     ArchitectLab, ArchitectMode, Deck, EconomyState, LabEventKind, Observer, ObserverId,
     ObserverState, Parts, TeamId, TileShape,
 };
@@ -160,6 +160,29 @@ impl ArchitectLab {
     /// of; its maze cell means nothing here. A lost body fell into true void and has
     /// corrupted, which is permanent: a corrupted Observer has left play and no longer
     /// has a body the rules follow.
+    /// Put a Guardian the host moves and catches with where its body is: a Major on
+    /// `cell` while it `hunts`, and gone from the rules while it does not. The rules never
+    /// move it or catch with it themselves (`embodied_guardians`); they see it, route
+    /// against it, and show it to whoever can.
+    pub(crate) fn embody_guardian(&mut self, id: GuardianId, cell: HexCoord, hunts: bool) {
+        if !hunts {
+            self.guardians.remove(&id);
+            self.embodied_guardians.remove(&id);
+            return;
+        }
+        self.embodied_guardians.insert(id);
+        let last_detection = self.guardians.get(&id).and_then(|g| g.last_detection);
+        self.guardians.insert(
+            id,
+            super::Guardian {
+                id,
+                cell,
+                last_detection,
+                kind: GuardianKind::Major,
+            },
+        );
+    }
+
     pub(crate) fn embody(&mut self, id: ObserverId, cell: HexCoord, facing: HexFace, place: Place) {
         let lobby = self.prison.lowest_cell;
         let Some(observer) = self.observers.get_mut(&id) else {

@@ -510,6 +510,7 @@ fn a_retraction_cannot_open_a_window_beside_a_watched_room() {
 }
 
 mod prison;
+mod guardians;
 mod requests;
 mod stairs;
 
@@ -637,22 +638,8 @@ fn production_ascent_tick_times() {
         wfc: HexWfcConfig::arc_default(),
     };
     let physical = HexWfcMatch::new_with_content(1, config, content).unwrap();
-    let seats = BTreeMap::from([
-        (
-            PlayerId(40),
-            Seat {
-                role: Role::Architect(TeamId(0)),
-                bot: true,
-            },
-        ),
-        (
-            PlayerId(41),
-            Seat {
-                role: Role::Architect(TeamId(1)),
-                bot: true,
-            },
-        ),
-    ]);
+    // The seats every Ascent match has: a bot Architect a team, and the bot Rogue.
+    let seats = super::architect_seats(&physical, None);
     let started = std::time::Instant::now();
     let mut game = AscentMatch::new(physical, 1, seats).unwrap();
     eprintln!("construct {:?}", started.elapsed());
@@ -709,6 +696,7 @@ fn production_ascent_tick_times() {
         .traces
         .iter()
         .filter(|(k, _)| k.starts_with("Architect"))
+        .chain(game.rules().traces.iter().filter(|(k, _)| k.as_str() == "Architect"))
         .map(|(k, t)| (k.clone(), t.selected))
         .collect();
     eprintln!(
