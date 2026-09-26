@@ -186,10 +186,16 @@ production facility, the local body jailed and walked out by the game's own bot)
 - [At its way out](evidence/ascent-prison/prison-way-out-1280x800.png)
 - [The lobby's gate, from the hall next door](evidence/ascent-prison/prison-lobby-1280x800.png)
 
-Measured at production scale: a tick is about 0.1 ms of rules, a bot Architect's beat
-about 3 ms, and a Guardian's catch 35-40 ms, which is the new maze's geometry (17 ms) and
-colliders (17 ms) built on the tick of the catch. Spreading that build over several ticks,
-as a relayout is spread, is the fix when it matters.
+Measured at production scale: a tick is about 0.1 ms of rules and a bot Architect's beat
+about 3 ms. A Guardian's catch used to cost 35-40 ms, because the new maze's geometry and
+colliders (about 13 ms each) were built on the tick of the catch. A team's `n`th maze is now
+fixed by the match seed, the team and `n`, so it is carved ahead on a thread of its own -
+the first when the prison opens, each next one as soon as the last is used - and the catch
+only takes it (`hex_wfc/model/prison/carving.rs`). Measured 2026-09-26 the catch itself is
+under a millisecond and its whole tick about 3-6 ms, the higher only when it lands on a bot
+Architect's decision beat. The result is the same maze whichever thread carved it and
+whenever it finished; a catch before its maze is ready waits for the rest, and one whose
+carving failed, or on a target without threads, carves it on the spot.
 
 ### The Architect's seat
 

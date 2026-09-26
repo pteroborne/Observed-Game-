@@ -613,9 +613,10 @@ fn a_bot_architect_repairs_what_the_rogue_breaks_through_the_human_path() {
 }
 
 /// Evidence, not regression cover: a production facility with two bot Architects,
-/// printing tick times. Measured 2026-09-25: median about 0.1 ms, a bot's decision beat
-/// about 3 ms, and a Guardian catch about 35-40 ms, which is the new maze's geometry
-/// (17 ms) and colliders (17 ms) built on the tick of the catch.
+/// printing tick times. Measured 2026-09-26: median about 0.1 ms, a bot's decision beat
+/// about 3 ms, and a Guardian catch's tick about 3-6 ms, its maze carved ahead
+/// (`hex_wfc::model::prison::carving`); it was 35-40 ms when the maze's geometry and
+/// colliders were built on the tick of the catch.
 #[test]
 #[ignore = "two minutes of production play (about 10 s); prints timings, asserts nothing"]
 fn production_ascent_tick_times() {
@@ -649,6 +650,8 @@ fn production_ascent_tick_times() {
     let mut game = AscentMatch::new(physical, 1, seats).unwrap();
     eprintln!("construct {:?}", started.elapsed());
     let mut times = Vec::new();
+    // The ticks a body was caught on, which carve a maze: what the prison costs.
+    let mut catches = Vec::new();
     for _ in 0..7_200 {
         let tick = game.rules().tick + 1;
         let commands = game
@@ -670,6 +673,14 @@ fn production_ascent_tick_times() {
         let started = std::time::Instant::now();
         game.step(&bodies, &seats).unwrap();
         times.push(started.elapsed());
+        if game
+            .physical()
+            .recent_events
+            .iter()
+            .any(|event| event.kind == HexMatchEventKind::PlayerJailed)
+        {
+            catches.push(started.elapsed());
+        }
         if started.elapsed() > std::time::Duration::from_millis(8) {
             eprintln!(
                 "slow tick {} {:?}: {:?}",
@@ -693,6 +704,11 @@ fn production_ascent_tick_times() {
         .filter(|(k, _)| k.starts_with("Architect"))
         .map(|(k, t)| (k.clone(), t.selected))
         .collect();
+    eprintln!(
+        "catches {} slowest catch tick {:?}",
+        catches.len(),
+        catches.iter().max()
+    );
     eprintln!(
         "median {:?} p95 {:?} max {:?} plays {plays} traces {traces:?}",
         sorted[sorted.len() / 2],

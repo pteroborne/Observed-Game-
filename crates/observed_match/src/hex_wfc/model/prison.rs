@@ -17,7 +17,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use glam::{Vec2, Vec3};
 use observed_content::ArchitectureRegister;
 use observed_core::{PlayerId, TeamId};
-use observed_facility::hex_wfc::maze::{braided_maze, maze_entry, maze_exit};
+mod carving;
+
+use observed_facility::hex_wfc::maze::{maze_entry, maze_exit};
 use observed_facility::hex_wfc::{HexCoord, HexWfcWorld};
 use observed_hex::hex_origin;
 use observed_traversal::FpsBody;
@@ -50,6 +52,8 @@ pub struct HexPrison {
     pub mazes: BTreeMap<TeamId, HexPrisonMaze>,
     /// How long a teammate has stood in the lobby while the team had someone jailed.
     pub lobby_hold: BTreeMap<TeamId, u16>,
+    /// Each team's next maze, carved ahead of the catch that needs it (`carving`).
+    next: BTreeMap<TeamId, carving::Carving>,
 }
 
 /// One team's maze: a world of its own, drawn and collided like the facility.
@@ -57,7 +61,7 @@ pub struct HexPrison {
 pub struct HexPrisonMaze {
     pub world: HexWfcWorld,
     pub geometry: HexWfcGeometrySnapshot,
-    physics: RapierTraversalScene,
+    pub(in crate::hex_wfc::model) physics: RapierTraversalScene,
 }
 
 impl HexPrisonMaze {
@@ -122,6 +126,7 @@ impl HexPrison {
             lobby_anchor: tile,
             mazes: BTreeMap::new(),
             lobby_hold: BTreeMap::new(),
+            next: BTreeMap::new(),
         }
     }
 }
@@ -131,7 +136,14 @@ impl HexWfcMatch {
     /// through the whole facility loses it. Must be called before tick zero.
     pub fn send_catches_to_prison(&mut self) {
         assert_eq!(self.tick, 0, "a match has a prison from tick zero or never");
-        self.prison = Some(HexPrison::new(&self.facility));
+        let mut prison = HexPrison::new(&self.facility);
+        for &team in self.teams.keys() {
+            prison.next.insert(
+                team,
+                carving::Carving::start(self.seed, team, 0, &self.content),
+            );
+        }
+        self.prison = Some(prison);
     }
 
     /// Which space a player's body is in.
@@ -153,25 +165,19 @@ impl HexWfcMatch {
             .filter(|player| player.team == team && player.place == HexBodyPlace::Prison)
             .count();
         let fresh = inside == 0;
-        let seed = self.seed ^ u64::from(team.0).wrapping_mul(0xA24B_AED4_963E_E407) ^ self.tick;
-        let content = self.content.clone();
+        let (seed, content) = (self.seed, self.content.clone());
         let prison = self.prison.as_mut().expect("only a prison match jails");
         if fresh {
-            let world = braided_maze(seed, MAZE_COLS, MAZE_ROWS, MAZE_REGISTER);
-            let geometry = HexWfcGeometrySnapshot::project_with_rooms(
-                &world,
-                content.cells(),
-                content.rooms(),
-            )
-            .expect("every prison hall is one the corpus is required to build");
-            let physics = geometry.rapier_scene();
-            prison.mazes.insert(
+            // The maze carved ahead for this catch, and the next one started behind it.
+            let carving = prison
+                .next
+                .remove(&team)
+                .unwrap_or_else(|| carving::Carving::start(seed, team, 0, &content));
+            let ordinal = carving.ordinal;
+            prison.mazes.insert(team, carving.take(&content));
+            prison.next.insert(
                 team,
-                HexPrisonMaze {
-                    world,
-                    geometry,
-                    physics,
-                },
+                carving::Carving::start(seed, team, ordinal + 1, &content),
             );
         }
         let maze = &prison.mazes[&team];
@@ -342,6 +348,7 @@ fn spawn_in(
 mod tests {
     use super::*;
     use crate::hex_wfc::HexMatchContent;
+    use observed_facility::hex_wfc::maze::braided_maze;
 
     fn production_content() -> std::sync::Arc<HexMatchContent> {
         std::sync::Arc::new(HexMatchContent::from_runtime_catalog(
