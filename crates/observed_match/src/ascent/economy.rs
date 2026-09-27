@@ -102,6 +102,19 @@ fn lateral_passable_neighbors(
         .collect()
 }
 
+/// The cell of `cells` with the greatest `key` that `allowed` admits. `allowed` is asked
+/// best first and only until it answers, because on a first-person facility it is a
+/// physics query.
+fn best_where<K: Ord>(
+    cells: &[HexCoord],
+    key: impl Fn(HexCoord) -> K,
+    allowed: impl Fn(HexCoord) -> bool,
+) -> Option<HexCoord> {
+    let mut ranked: Vec<(K, HexCoord)> = cells.iter().map(|&u| (key(u), u)).collect();
+    ranked.sort_by(|a, b| b.0.cmp(&a.0));
+    ranked.into_iter().map(|(_, u)| u).find(|&u| allowed(u))
+}
+
 impl EconomyState {
     /// Initialize fresh economy state for a generated world and observer set.
     ///
@@ -114,6 +127,22 @@ impl EconomyState {
         observers: &BTreeMap<ObserverId, Observer>,
         prison_core: &BTreeSet<HexCoord>,
         _seed: u64,
+    ) -> Self {
+        Self::sited(world, observers, prison_core, |_| true, |_| false)
+    }
+
+    /// As [`Self::new`], with each fixture only on a cell `allowed` admits, and the
+    /// generator on a cell `preferred` names wherever one qualifies. A first-person
+    /// facility needs both: a fixture stands on a floor a body can reach, and the
+    /// generator is a room's (`ascent::facility::power`). A level with no allowed cell
+    /// gets no fixture at all.
+    #[must_use]
+    pub fn sited(
+        world: &HexWfcWorld,
+        observers: &BTreeMap<ObserverId, Observer>,
+        prison_core: &BTreeSet<HexCoord>,
+        allowed: impl Fn(HexCoord) -> bool,
+        preferred: impl Fn(HexCoord) -> bool,
     ) -> Self {
         let mut charges = BTreeMap::new();
         for id in observers.keys() {
@@ -228,44 +257,48 @@ impl EconomyState {
             }
 
             // 1. Generator: central and well-connected (degree >= 2 preferred, minimum total_dist)
-            let generator = *best_comp
-                .iter()
-                .max_by_key(|&&u| {
+            let Some(generator) = best_where(
+                &best_comp,
+                |u| {
                     (
+                        preferred(u),
                         deg.get(&u).copied().unwrap_or(0).min(3),
                         std::cmp::Reverse(total_dist.get(&u).copied().unwrap_or(usize::MAX)),
                         std::cmp::Reverse(u),
                     )
-                })
-                .unwrap_or(&best_comp[0]);
+                },
+                &allowed,
+            ) else {
+                continue;
+            };
             generators.insert(level, generator);
 
             // 2. Recharge Station: distinct from generator, separated by path distance with good connectivity
             let gen_dists = dists.get(&generator);
-            let station = *best_comp
-                .iter()
-                .filter(|&&u| u != generator)
-                .max_by_key(|&&u| {
+            let station = best_where(
+                &best_comp,
+                |u| {
                     (
                         gen_dists.and_then(|d| d.get(&u)).copied().unwrap_or(0),
                         deg.get(&u).copied().unwrap_or(0),
                         std::cmp::Reverse(u),
                     )
-                })
-                .unwrap_or(&generator);
+                },
+                |u| u != generator && allowed(u),
+            )
+            .unwrap_or(generator);
             stations.insert(station);
 
             // 3. Teleport/equipment Pad: distinct from generator and station, maximizing separation
             let st_dists = dists.get(&station);
             let fallback = if best_comp.len() > 1 {
-                &station
+                station
             } else {
-                &generator
+                generator
             };
-            let pad = *best_comp
-                .iter()
-                .filter(|&&u| u != generator && u != station)
-                .max_by_key(|&&u| {
+            let pad = best_where(
+                &best_comp,
+                |u| {
                     let d_gen = gen_dists.and_then(|d| d.get(&u)).copied().unwrap_or(0);
                     let d_st = st_dists.and_then(|d| d.get(&u)).copied().unwrap_or(0);
                     (
@@ -273,8 +306,10 @@ impl EconomyState {
                         deg.get(&u).copied().unwrap_or(0),
                         std::cmp::Reverse(u),
                     )
-                })
-                .unwrap_or(fallback);
+                },
+                |u| u != generator && u != station && allowed(u),
+            )
+            .unwrap_or(fallback);
             pads.insert(pad);
         }
 
@@ -421,9 +456,23 @@ impl EconomyState {
     }
 
     /// Process per-beat recharge and disturbance decay down to height floors.
-    pub fn tick_beat(&mut self, _world: &HexWfcWorld, observers: &BTreeMap<ObserverId, Observer>) {
+    pub fn tick_beat(&mut self, world: &HexWfcWorld, observers: &BTreeMap<ObserverId, Observer>) {
+        self.tick_beat_except(world, observers, &BTreeSet::new());
+    }
+
+    /// As [`Self::tick_beat`], recharging none of `embodied`: a body's cell is fourteen
+    /// metres across, so a first-person Observer recharges by standing at the station
+    /// itself (`ascent::facility::power`), not anywhere in its cell.
+    pub fn tick_beat_except(
+        &mut self,
+        _world: &HexWfcWorld,
+        observers: &BTreeMap<ObserverId, Observer>,
+        embodied: &BTreeSet<ObserverId>,
+    ) {
         for (id, observer) in observers {
-            if observer.state == ObserverState::Active && self.is_at_powered_station(observer.cell)
+            if observer.state == ObserverState::Active
+                && !embodied.contains(id)
+                && self.is_at_powered_station(observer.cell)
             {
                 self.recharge_observer(*id, RECHARGE_PER_BEAT);
             }

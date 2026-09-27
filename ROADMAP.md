@@ -64,6 +64,15 @@ the combined loop.
     requisition's major gets a body the same way. The rules follow every released body
     and never move one. In the game a minor is a small Roller that tips once per stride
     it walks. Next: the kinetic tool, to put minors into the void on purpose.
+    **The kinetic tool and floor power reach the real facility (2026-09):** every body
+    carries the Lance, whose push and pull move the minor in the crosshair and spend the
+    Observer's charge. Every floor's generator and recharge station now stand in the
+    facility where a body can reach them (`ascent::facility::power`): interact at the
+    generator switches the floor, a powered station refills the tool of whoever stands in
+    its cradle, and a dark floor's practicals fall away. See
+    [the integration notes](docs/architect_ascent_polish.md#the-kinetic-tool-and-floor-power).
+    Next: bot bodies that recharge and restore power, stations placed from the Architect's
+    mixed hand, and power gating doors, plates and ascent physically.
     Open tuning question: waves grow with height and minors only die by falling, so a
     long match can accumulate a crowd.
 

@@ -511,6 +511,7 @@ fn a_retraction_cannot_open_a_window_beside_a_watched_room() {
 
 mod guardians;
 mod kinetic;
+mod power;
 mod prison;
 mod requests;
 mod rogue;

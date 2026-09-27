@@ -28,6 +28,20 @@ pub struct Embodiment {
     pub facing: HexFace,
 }
 
+/// Whether a stair or ramp in `world` links `cell` to the floor above or below it.
+#[must_use]
+pub fn linked_vertically(world: &HexWfcWorld, cell: HexCoord) -> bool {
+    let vertical = |at: Option<HexCoord>, face: HexFace| {
+        at.and_then(|at| world.placements.get(&at))
+            .is_some_and(|p| p.ports().port(face) != PortClass::Sealed)
+    };
+    let grid = world.config.grid();
+    vertical(Some(cell), HexFace::Up)
+        || vertical(Some(cell), HexFace::Down)
+        || vertical(grid.neighbor(cell, HexFace::Down), HexFace::Up)
+        || vertical(grid.neighbor(cell, HexFace::Up), HexFace::Down)
+}
+
 /// Stair cards in each district of an Architect's deck on the real facility.
 pub const STAIRS_PER_DISTRICT: u8 = 3;
 
@@ -38,13 +52,20 @@ impl ArchitectLab {
     /// the rules is the prison's work. The mode is a lab scenario label and means nothing
     /// here; nothing in the rules reads it.
     /// `lobby` is the prison lobby's cells and the cell a released body appears in: the
-    /// rules' prison core, which no card rewrites.
+    /// rules' prison core, which no card rewrites. `site` places each floor's generator
+    /// and station, which on a first-person facility must stand where a body can
+    /// (`ascent::facility::power`), given the facility, its Observers and the prison core.
     #[must_use]
     pub fn over_facility(
         world: HexWfcWorld,
         seed: u64,
         bodies: &[Embodiment],
         lobby: (BTreeSet<HexCoord>, HexCoord),
+        site: impl FnOnce(
+            &HexWfcWorld,
+            &BTreeMap<ObserverId, Observer>,
+            &BTreeSet<HexCoord>,
+        ) -> EconomyState,
     ) -> Self {
         let prison = crate::ascent::prison::PrisonState::lobby(lobby.0, lobby.1);
         let prison_core = prison.cells.clone();
@@ -74,7 +95,7 @@ impl ArchitectLab {
             .copied()
             .chain(prison_core.iter().copied())
             .collect();
-        let economy = EconomyState::new(&world, &observers, &prison_core, seed);
+        let economy = site(&world, &observers, &prison_core);
         let levels = world.config.levels;
         let mut lab = Self::assemble(Parts {
             mode: ArchitectMode::FullAscent,
@@ -163,26 +184,27 @@ impl ArchitectLab {
         std::mem::take(&mut self.rewrites)
     }
 
-    /// A stamped room, or a cell a stair or ramp links vertically. A first-person
-    /// facility builds these whole; a lab board has no such thing.
+    /// A stamped room, a cell a stair or ramp links vertically, or a floor's generator or
+    /// recharge station. A first-person facility builds these whole, and no play creates
+    /// or removes a fixture; a lab board has no such thing.
     #[must_use]
     pub fn fixed_structure(&self, cell: HexCoord) -> bool {
         if !self.authored {
             return false;
         }
-        let vertical = |at: Option<HexCoord>, face: HexFace| {
-            at.and_then(|at| self.world.placements.get(&at))
-                .is_some_and(|p| p.ports().port(face) != PortClass::Sealed)
-        };
-        let grid = self.world.config.grid();
         self.world
             .blueprints
             .iter()
             .any(|blueprint| blueprint.cells.contains(&cell))
-            || vertical(Some(cell), HexFace::Up)
-            || vertical(Some(cell), HexFace::Down)
-            || vertical(grid.neighbor(cell, HexFace::Down), HexFace::Up)
-            || vertical(grid.neighbor(cell, HexFace::Up), HexFace::Down)
+            || self.linked_vertically(cell)
+            || self.economy.is_at_generator(cell)
+            || self.economy.stations.contains(&cell)
+    }
+
+    /// Whether a stair or ramp links `cell` to the floor above or below it.
+    #[must_use]
+    pub fn linked_vertically(&self, cell: HexCoord) -> bool {
+        linked_vertically(&self.world, cell)
     }
 
     /// Put a Guardian the host moves and catches with where its body is: one of `kind` on

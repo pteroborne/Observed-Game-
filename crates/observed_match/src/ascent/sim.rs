@@ -27,7 +27,7 @@ mod embodied;
 mod loyal;
 mod rogue;
 mod util;
-pub use embodied::{Embodiment, Place};
+pub use embodied::{Embodiment, Place, linked_vertically};
 use util::{
     Prng, command_key, face_between, face_toward, key_face_from, lateral_face, threshold_touches,
 };
@@ -952,7 +952,8 @@ impl ArchitectLab {
             self.traces.insert(format!("Observer {}", id.0), trace);
             self.apply_observer_intent(id, intent);
         }
-        self.economy.tick_beat(&self.world, &self.observers);
+        self.economy
+            .tick_beat_except(&self.world, &self.observers, &self.embodied);
         self.refresh_observation();
 
         let guardian_ids: Vec<_> = self

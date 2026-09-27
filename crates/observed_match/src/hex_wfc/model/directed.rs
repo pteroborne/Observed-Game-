@@ -7,9 +7,10 @@
 
 use std::collections::BTreeMap;
 
+use glam::Vec3;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{HexPlacement, HexRelayoutDelta, HexWfcError};
-use observed_hex::{HexCoord, HexFace};
+use observed_hex::{FLOOR_SLAB_TOP, HexCoord, HexFace, hex_origin};
 use observed_traversal::ColliderDeltaError;
 
 use super::super::geometry::HexGeometryError;
@@ -42,6 +43,46 @@ impl HexWfcMatch {
     pub fn body_cell_and_facing(&self, player: PlayerId) -> Option<(HexCoord, HexFace)> {
         let state = self.players.get(&player)?;
         Some((state.cell, super::movement::look_face(state.yaw, 0.0)))
+    }
+
+    /// A point on the floor of `cell`, as near its centre as a body could stand there: the
+    /// centre itself if a body fits, otherwise the nearest clear, supported spot on rings
+    /// round it. Where a fixture stands, so everyone can walk up to it. `None` when no
+    /// body fits anywhere near the centre, as on a ramp or in a cell of pillars.
+    ///
+    /// Pure queries against the colliders the match was built with, so every peer finds
+    /// the same point.
+    #[must_use]
+    pub fn standing_point(&self, cell: HexCoord) -> Option<Vec3> {
+        const RINGS: [f32; 4] = [0.0, 1.5, 3.0, 4.0];
+        const STEPS: u8 = 12;
+        const CLEARANCE: f32 = 0.05;
+        let config = self.content.traversal_profile().controller();
+        let floor = Vec3::from_array(hex_origin(cell)) + Vec3::Y * FLOOR_SLAB_TOP;
+        let centre_height = config.half_height + CLEARANCE;
+        RINGS
+            .into_iter()
+            .flat_map(|radius| {
+                let steps = if radius == 0.0 { 1 } else { STEPS };
+                (0..steps).map(move |step| {
+                    let angle = f32::from(step) * std::f32::consts::TAU / f32::from(STEPS);
+                    Vec3::new(angle.cos() * radius, 0.0, angle.sin() * radius)
+                })
+            })
+            .find_map(|offset| {
+                let centre = floor + offset + Vec3::Y * centre_height;
+                if !self
+                    .physics
+                    .capsule_is_clear(centre, config.radius, config.half_height)
+                {
+                    return None;
+                }
+                // Something to stand on, at the floor's height: not a hole, not a drop.
+                let drop = self
+                    .physics
+                    .ray_distance(centre, Vec3::NEG_Y, centre_height + 0.3)?;
+                ((drop - centre_height).abs() < 0.2).then_some(centre - Vec3::Y * drop)
+            })
     }
 
     /// Commit `placements` to the facility, its geometry and its colliders, together.

@@ -71,6 +71,11 @@ pub(in crate::hex_wfc) struct HoldFill;
 #[derive(Component)]
 pub(in crate::hex_wfc) struct HoldTrack;
 
+/// The prompt's keycaps, taken out when the prompt names no key: a station is stood
+/// at, not pressed.
+#[derive(Component)]
+pub(in crate::hex_wfc) struct PromptKeys;
+
 #[derive(Resource, Default)]
 pub(in crate::hex_wfc) struct HudNotice {
     tick: u64,
@@ -245,11 +250,14 @@ pub(in crate::hex_wfc) fn setup(mut commands: Commands) {
                 ))
                 .with_children(|panel| {
                     panel
-                        .spawn(Node {
-                            column_gap: px(4),
-                            align_items: AlignItems::Center,
-                            ..default()
-                        })
+                        .spawn((
+                            PromptKeys,
+                            Node {
+                                column_gap: px(4),
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                        ))
                         .with_children(|keys| {
                             keys.spawn(keycap(Field::PromptKey, 18.0, TITLE));
                             keys.spawn(keycap(Field::PromptPad, 13.0, DIM));
@@ -347,6 +355,7 @@ pub(in crate::hex_wfc) struct HudContext<'w, 's> {
     accent: Query<'w, 's, &'static mut BorderColor, (With<TeamAccent>, Without<Pip>)>,
     track: HoldTracks<'w, 's>,
     fill: Query<'w, 's, &'static mut Node, With<HoldFill>>,
+    keys: Query<'w, 's, &'static mut Node, (With<PromptKeys>, Without<HoldFill>)>,
 }
 
 #[allow(clippy::too_many_lines)]
@@ -366,6 +375,7 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
         mut accent,
         mut track,
         mut fill,
+        mut keys,
     } = context;
     let game = &runtime.match_state;
     let player = runtime.local();
@@ -409,14 +419,17 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
         )
         .unwrap_or(u8::MAX),
     });
-    // In Ascent the rules own the kinetic tool's charge.
+    // In Ascent the rules own the kinetic tool's charge, and the floor's power.
     let charge = runtime.ascent.as_ref().and_then(|ascent| {
         let observer = ascent.observer_for(runtime.local_player)?;
         Some(ascent.rules().economy.charge(observer))
     });
-    let prompt = game
-        .interaction(runtime.local_player)
-        .map(|prompt| prompt_view(&prompt, &settings, team.objectives.dual_station_ticks));
+    let dark = crate::hex_wfc::power::local_floor_powered(&runtime) == Some(false);
+    // A fixture the body stands at speaks first: it is what the body came for.
+    let prompt = crate::hex_wfc::power::prompt(&runtime, &settings).or_else(|| {
+        game.interaction(runtime.local_player)
+            .map(|prompt| prompt_view(&prompt, &settings, team.objectives.dual_station_ticks))
+    });
     let notice_left = notice.until - now;
     let alpha = if notice_left > 0.0 {
         notice_alpha(notice_left)
@@ -436,7 +449,8 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
             Field::EquipmentCounts => (
                 match charge {
                     Some(charge) => format!(
-                        "CHARGE {charge}   LANTERNS {}   PLATES {}",
+                        "{}CHARGE {charge}   LANTERNS {}   PLATES {}",
+                        if dark { "NO POWER   " } else { "" },
                         game.lanterns.inventory(runtime.local_player),
                         game.pads.inventory(runtime.local_player)
                     ),
@@ -559,5 +573,12 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
     }
     for mut node in &mut fill {
         node.width = percent(progress.unwrap_or(0.0) * 100.0);
+    }
+    let named = prompt.as_ref().is_some_and(|p| !p.key.is_empty());
+    let display = if named { Display::Flex } else { Display::None };
+    for mut node in &mut keys {
+        if node.display != display {
+            node.display = display;
+        }
     }
 }

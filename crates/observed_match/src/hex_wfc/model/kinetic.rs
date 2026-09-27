@@ -228,6 +228,22 @@ impl HexWfcMatch {
         minor.stand_at(position);
     }
 
+    /// Stand `player`'s body at rest with its feet at `feet`, in `cell`.
+    pub(crate) fn stand_body_for_tests(
+        &mut self,
+        player: PlayerId,
+        cell: observed_hex::HexCoord,
+        feet: Vec3,
+    ) {
+        let config = self.content.traversal_profile().controller();
+        let position = feet + Vec3::Y * (config.half_height + 0.02);
+        let yaw = self.bodies[&player].yaw;
+        self.bodies
+            .insert(player, observed_traversal::FpsBody::spawned(position, yaw));
+        self.players.get_mut(&player).expect("a player").cell = cell;
+        self.sync_player_from_body(player);
+    }
+
     /// Where `player`'s body is, its centre.
     pub(crate) fn body_position_for_tests(&self, player: PlayerId) -> Vec3 {
         self.bodies[&player].position

@@ -22,7 +22,7 @@ use crate::flow::MatchResult;
 /// How far below the facility the prison dimension lies, and how far apart each team's
 /// maze is from the next. Only presentation reads these: in the simulation each maze is a
 /// space of its own, and a jailed body's position is in its maze's own frame.
-const PRISON_DEPTH: f32 = 1_000.0;
+pub(super) const PRISON_DEPTH: f32 = 1_000.0;
 const PRISON_SPACING: f32 = 2_000.0;
 
 /// The seat team `team`'s Architect sits in.

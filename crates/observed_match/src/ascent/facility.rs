@@ -25,6 +25,9 @@ use super::sim::{
 };
 use crate::hex_wfc::{HexInputFrame, HexMatchEventKind, HexReleasedKind, HexWfcMatch};
 
+mod power;
+pub use power::{AtFixture, FIXTURE_REACH, Fixture, FixtureKind};
+
 /// The rules' id for the first-person match's own Guardian, the Tumbler: reserved, above
 /// every Guardian the rules release themselves.
 pub const TUMBLER: GuardianId = GuardianId(u16::MAX);
@@ -105,6 +108,8 @@ pub struct AscentRules {
     session: AscentSession,
     /// Which body each Observer is.
     bodies: BTreeMap<PlayerId, ObserverId>,
+    /// Every floor's generator and recharge station, where each stands (`power`).
+    fixtures: Vec<Fixture>,
 }
 
 impl AscentRules {
@@ -149,7 +154,18 @@ impl AscentRules {
             .as_ref()
             .expect("just sent catches to prison");
         let lobby = (prison.lobby.clone(), prison.lobby_anchor);
-        let sim = ArchitectLab::over_facility(physical.facility.clone(), seed, &embodiments, lobby);
+        let mut fixtures = Vec::new();
+        let sim = ArchitectLab::over_facility(
+            physical.facility.clone(),
+            seed,
+            &embodiments,
+            lobby,
+            |world, observers, prison_core| {
+                let (economy, sited) = power::site(world, observers, prison_core, physical);
+                fixtures = sited;
+                economy
+            },
+        );
         let mut roster = seats;
         for (&player, &id) in &bodies {
             roster.insert(
@@ -163,6 +179,7 @@ impl AscentRules {
         let mut rules = Self {
             session: AscentSession::new(sim, seed, roster)?,
             bodies,
+            fixtures,
         };
         rules.observe(physical);
         Ok(rules)
@@ -192,7 +209,9 @@ impl AscentRules {
         physical.step(&self.affordable(bodies));
         self.pay_for_shots(physical);
         self.observe(physical);
+        self.operate_generators(physical, bodies);
         let refusals = self.session.advance(seats)?;
+        self.recharge_at_stations(physical);
         let rewrites = self.session.sim.take_rewrites();
         if !rewrites.is_empty() {
             // Legality admits only tiles the authored corpus builds, and never a room or a

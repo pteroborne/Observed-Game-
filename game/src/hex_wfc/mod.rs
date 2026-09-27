@@ -26,6 +26,7 @@ mod objective_models;
 pub(crate) mod overlay;
 mod pad;
 mod perf;
+mod power;
 mod prison_gate;
 pub(crate) use perf::GPU_PROFILE_ENV;
 pub mod sim;
@@ -155,6 +156,12 @@ impl Plugin for HexWfcPlugin {
                         .chain(),
                     view::sync_projection,
                     view::sync_lighting_and_atmosphere,
+                    (
+                        power::sync_fixtures,
+                        power::sync_practicals,
+                        power::read_changes,
+                    )
+                        .chain(),
                     (hud::sync, hud::play::sync, kinetic::sync_reticle).chain(),
                     view::map::sync,
                     feedback::sync,
@@ -196,6 +203,7 @@ impl Plugin for HexWfcPlugin {
                     guardian::cleanup,
                     pad::cleanup,
                     kinetic::cleanup,
+                    power::cleanup,
                     equipment::cleanup,
                     hud::play::cleanup,
                     sim::cleanup_runtime,

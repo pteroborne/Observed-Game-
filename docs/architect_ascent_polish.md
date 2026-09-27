@@ -361,6 +361,56 @@ production facility after twenty seconds of the team's bots walking):
 - [The request answered](evidence/ascent-architect/architect-answered-1280x800.png)
 - [Through a teammate's eyes](evidence/ascent-architect/architect-eyes-1280x800.png)
 
+### The kinetic tool and floor power
+
+Every body in an Ascent match carries the kinetic Lance (`game/src/hex_wfc/kinetic.rs`) in
+its main hand, the torch moving to the off hand. Left click pushes the minor in the
+crosshair away along the look, right click pulls it back (`hex_wfc::model::kinetic`); a
+shot that lands costs `KINETIC_SHOT_COST` from the Observer's charge, which the rules own,
+and a miss is free. What kills a minor is still the facility: it has to go over an edge.
+
+The charge comes back only at a powered recharge station, and a floor's power is its
+generator's (design sections 5 and 6), so both now stand in the facility
+(`ascent::facility::power`, `game/src/hex_wfc/power.rs`):
+
+- **Sited once, before tick zero, where a body can stand.** A first-person cell is fourteen
+  metres across, so a fixture is not a cell but a point on its cell's floor
+  (`HexWfcMatch::standing_point`: the centre if a body fits there, else the nearest clear,
+  supported spot within four metres). Every floor gets a generator and a station on cells
+  a body can reach from the floor's spine - never a stair or ramp cell, never the prison -
+  and the generator goes in a room wherever the floor has one that qualifies. The lab's
+  choice of cells is kept and only filtered, so a lab board's fixtures are unchanged. The
+  lab's teleport pads are not sited: the first-person match has plates of its own.
+- **Fixed structure.** No play creates or removes a fixture, so a fixture's cell is refused
+  to every card as `FixedStructure` and never retracted, as rooms and stairs are.
+- **Worked in person, within 2.2 m.** Interact at the generator switches the floor's power
+  through the same Observer command a lab Observer uses, so the power policy and its
+  refusals are the rules'. A body standing at a powered station draws `RECHARGE_PER_BEAT`
+  each beat; a dark station gives nothing, and neither does the rest of its cell. The rules
+  no longer charge an embodied Observer for standing anywhere in the station's cell.
+- **What the game draws.** The generator is a squat hexagonal turbine: bronze rotor rings
+  that turn while the floor has power round a core in the powered violet, under a column
+  of its light; cut, the rotor stops and the core burns a low collapse red, dark but still
+  self-lit, because it is what a dark floor sends you looking for. The station is a cradle
+  of three bronze posts round a charge cell in the tool's own push colour, under a violet
+  ring; dead, both go the unpowered grey. A floor without power keeps an eighth of its
+  practicals' light and its diffusers go out; the district key over the runner stays,
+  because darkness costs observation range in the rules and never legibility here.
+- **What the player is told.** The prompt at the generator says what interact will do
+  (cut or restore the floor's power, and what that costs); at the station it says the tool
+  is recharging and fills its bar with the charge, with no keycap, since a station is
+  stood at rather than pressed. The equipment line says NO POWER on a dark floor. The power
+  going off or on is heard at the generator and said when it is the local body's floor, and
+  charge ticks in as the tool fills.
+
+Over LAN nothing new travels - the generator is a body's interact bit - but the same frames
+now step to a different match, so `LAN_PROTOCOL_VERSION` is 7.
+
+Not yet: the game's bot bodies neither recharge nor restore power, so a floor the Rogue
+darkens stays dark until a player walks to its generator; stations are sited by the rules
+rather than placed from the Architect's mixed hand as the design has them; doors,
+teleport plates and ascent are not yet gated by power in the physical match.
+
 ### Not yet joined
 
 - The rules' own Guardians (the lab's cell-level hunters) are not placed; the physical

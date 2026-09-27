@@ -20,7 +20,11 @@ use crate::protocol::WireIntent;
 /// carries a seat command with every body command (`WireSeatCommand`), lets a player claim
 /// their team's Architect desk in the lobby, and names the human Architects in `Launch`.
 /// Version 6 carries the kinetic tool's push and pull among a body's action bits.
-pub const LAN_PROTOCOL_VERSION: u16 = 6;
+/// Version 7 changes no byte, but what the Ascent rules make of one: every floor's generator
+/// and recharge station are sited where a body can stand, interact at a generator switches
+/// its floor, and a body draws charge at a station rather than anywhere in its cell. A
+/// version-6 peer would step the same frames to a different match.
+pub const LAN_PROTOCOL_VERSION: u16 = 7;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;
