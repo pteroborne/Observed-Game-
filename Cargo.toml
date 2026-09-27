@@ -123,6 +123,8 @@ members = [
     "labs/vista_lab",
     "labs/guardian_form_lab",
     "crates/observed_guardian",
+    "crates/observed_tool",
+    "labs/kinetic_tool_lab",
     "labs/kinetic_lab",
     "tools/content_baker",
     "tools/composition_studio",
