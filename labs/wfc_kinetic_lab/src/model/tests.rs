@@ -188,7 +188,14 @@ fn replaying_the_same_commands_reproduces_the_tick_exactly() {
             5 => Action::Push,
             19 => Action::Pull,
             29 => Action::Interact,
+            31 => Action::Arm,
             _ => Action::None,
+        },
+        // Dialled for a few ticks after each arm, as a held Arm would.
+        dial: if (31..35).contains(&(index % 37)) {
+            glam::Vec2::new(((index % 9) as f32 - 4.0) * 3.0, -2.0)
+        } else {
+            glam::Vec2::ZERO
         },
     };
 
@@ -630,6 +637,108 @@ fn the_armed_plumb_turns_with_the_observer() {
 
     world.player.pitch = 1.0;
     assert_eq!(world.armed(), turned, "looking up does not re-aim it");
+}
+
+/// A dial in look units that swings the armed plumb by `radians` of yaw.
+fn dial_yaw(world: &WfcKineticWorld, radians: f32) -> glam::Vec2 {
+    glam::Vec2::new(radians / world.player_config.look_step, 0.0)
+}
+
+/// Holding Arm and moving the mouse swings the plumb sideways, and the sideways lash
+/// stays relative to the way the Observer faces: dial it right, turn round, and it is
+/// still to the right. The view holds still while it is dialled.
+#[test]
+fn a_dialled_plumb_points_to_the_side_and_turns_with_the_observer() {
+    let mut world = world(Mode::Encounter);
+    world.player.yaw = 0.0;
+    world.player.pitch = 0.0;
+    let (yaw, pitch) = (world.player.yaw, world.player.pitch);
+    world.step(Command {
+        action: Action::Arm,
+        dial: dial_yaw(&world, std::f32::consts::FRAC_PI_2),
+        ..idle()
+    });
+    assert_eq!(
+        (world.player.yaw, world.player.pitch),
+        (yaw, pitch),
+        "dialling moved the view"
+    );
+    let right = world.gravity.frame.rotation * Vec3::X;
+    assert!(
+        world.armed().distance(right) < 1e-3,
+        "dialled a quarter right: {}",
+        world.armed()
+    );
+
+    // Turn to face +X: the lash now points right of that, toward +Z.
+    world.player.yaw = std::f32::consts::FRAC_PI_2;
+    let turned = world.gravity.frame.rotation * Vec3::Z;
+    assert!(
+        world.armed().distance(turned) < 1e-3,
+        "still to the right: {}",
+        world.armed()
+    );
+
+    // A fresh press arms along the look again, so the sideways part is gone.
+    world.step(Command {
+        action: Action::Arm,
+        ..idle()
+    });
+    assert!(world.armed_yaw.abs() < 1e-4, "a tap arms ahead");
+}
+
+/// A dial up through straight overhead and back down keeps its heading, rather than
+/// forgetting it at the pole where a direction alone has none.
+#[test]
+fn a_dial_through_straight_up_keeps_its_heading() {
+    let mut world = world(Mode::Practice);
+    world.player.pitch = 0.0;
+    world.step(Command {
+        action: Action::Arm,
+        dial: dial_yaw(&world, -1.0),
+        ..idle()
+    });
+    let step = world.player_config.look_step;
+    // Up well past vertical (it stops there), then back down to level.
+    world.step(Command {
+        dial: glam::Vec2::new(0.0, -3.0 / step),
+        ..idle()
+    });
+    assert!((world.armed_pitch - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+    world.step(Command {
+        dial: glam::Vec2::new(0.0, std::f32::consts::FRAC_PI_2 / step),
+        ..idle()
+    });
+    assert!(world.armed_pitch.abs() < 1e-3, "back to level");
+    assert!(
+        (world.armed_yaw + 1.0).abs() < 1e-4,
+        "the heading survived the pole: {}",
+        world.armed_yaw
+    );
+}
+
+/// A plumb dialled to the side commits sideways: the body falls to the Observer's
+/// right, not the way they are looking.
+#[test]
+fn a_plumb_dialled_right_sends_the_body_right() {
+    let mut world = world(Mode::Practice);
+    let id = staged_target(&mut world, Kind::Prop);
+    world.step(Command {
+        action: Action::Arm,
+        dial: dial_yaw(&world, std::f32::consts::FRAC_PI_2),
+        ..idle()
+    });
+    let right = world.gravity.frame.rotation * Quat::from_rotation_y(-world.player.yaw) * Vec3::X;
+    world.step(Command {
+        action: Action::Plumb,
+        ..idle()
+    });
+    let lash = world.actors[&id].lash.expect("the body carries the plumb");
+    assert!(
+        lash.direction.dot(right) > 0.95,
+        "plumbed {} rather than right {right}",
+        lash.direction
+    );
 }
 
 #[test]

@@ -2,13 +2,14 @@
 //!
 //! Three candidate designs (`observed_tool`) on turntables side by side, and the one
 //! selected held in a first-person hand over a facility floor. Each cycles through what
-//! the tool does, idle, push, pull and lash, while its armed pitch sweeps up and down,
+//! the tool does, idle, push, pull and lash, while its armed direction sweeps round,
 //! because the armed lash turns with the Observer and the tool is where it shows.
 //!
 //! Keys: `1` the lineup, `2` held; `Tab` the next design; `Space` push, `E` pull,
-//! `F` lash; `Up`/`Down` the armed pitch; `A` automatic cycle on or off; `P` pause.
+//! `F` lash; `Up`/`Down` the armed pitch, `Left`/`Right` its yaw; `A` automatic cycle on
+//! or off; `P` pause.
 //! `OBSERVED2_CAPTURE=<dir>` writes the stills and exits.
-use std::f32::consts::FRAC_PI_2;
+use std::f32::consts::{FRAC_PI_2, PI, TAU};
 use std::path::PathBuf;
 
 use bevy::app::AppExit;
@@ -47,6 +48,7 @@ struct Lab {
     beat: Beat,
     since: f32,
     armed_pitch: f32,
+    armed_yaw: f32,
     clock: f32,
     auto: bool,
     paused: bool,
@@ -61,6 +63,7 @@ impl Default for Lab {
             beat: Beat::Idle,
             since: 10.0,
             armed_pitch: 0.4,
+            armed_yaw: 0.0,
             clock: 0.0,
             auto: true,
             paused: false,
@@ -75,6 +78,7 @@ impl Lab {
             beat: self.beat,
             since: self.since,
             armed_pitch: self.armed_pitch,
+            armed_yaw: self.armed_yaw,
             charge: 0.8,
         }
     }
@@ -93,6 +97,7 @@ struct Frame {
     beat: Beat,
     since: f32,
     armed_pitch: f32,
+    armed_yaw: f32,
     clock: f32,
     output: Option<&'static str>,
 }
@@ -104,6 +109,7 @@ fn plan() -> Vec<Frame> {
         beat: Beat::Idle,
         since: 10.0,
         armed_pitch: 0.4,
+        armed_yaw: 0.0,
         clock: 1.0,
         output: None,
     };
@@ -113,6 +119,7 @@ fn plan() -> Vec<Frame> {
         beat,
         since: FIRE_SECONDS * 0.15,
         armed_pitch,
+        armed_yaw: 0.0,
         clock: 1.3,
         output: Some(output),
     };
@@ -152,6 +159,37 @@ fn plan() -> Vec<Frame> {
         -0.9,
         "lineup-armed-down.png",
     ));
+    // Armed up and to the right, and armed back over the shoulder: the yaw reads too.
+    take(Frame {
+        armed_yaw: 1.0,
+        ..shot(
+            View::Lineup,
+            Design::Coil,
+            Beat::Idle,
+            0.35,
+            "lineup-armed-right.png",
+        )
+    });
+    take(Frame {
+        armed_yaw: 1.2,
+        ..shot(
+            View::Held,
+            Design::Lance,
+            Beat::Idle,
+            0.3,
+            "held-lance-right.png",
+        )
+    });
+    take(Frame {
+        armed_yaw: -2.6,
+        ..shot(
+            View::Held,
+            Design::Lance,
+            Beat::Idle,
+            0.2,
+            "held-lance-back.png",
+        )
+    });
     // And a few more, so the last still is written before the lab exits.
     frames.extend(std::iter::repeat_n(settle(View::Lineup, Design::Coil), 10));
     frames
@@ -416,6 +454,9 @@ fn read_input(
     if keys.pressed(KeyCode::ArrowDown) {
         lab.armed_pitch = (lab.armed_pitch - 0.02).max(-FRAC_PI_2);
     }
+    let turn =
+        f32::from(keys.pressed(KeyCode::ArrowRight)) - f32::from(keys.pressed(KeyCode::ArrowLeft));
+    lab.armed_yaw = (lab.armed_yaw + turn * 0.03 + PI).rem_euclid(TAU) - PI;
     if keys.just_pressed(KeyCode::KeyA) {
         lab.auto = !lab.auto;
     }
@@ -435,6 +476,7 @@ fn advance(time: Res<Time>, mut lab: ResMut<Lab>, capture: Option<Res<Capture>>)
     lab.since += dt;
     if lab.auto {
         lab.armed_pitch = 1.1 * (lab.clock * 0.35).sin();
+        lab.armed_yaw = 1.4 * (lab.clock * 0.23).sin();
         let beat = |t: f32| (t / 1.2).floor() as i64;
         if beat(lab.clock) != beat(before) {
             let next = match beat(lab.clock).rem_euclid(4) {
@@ -467,6 +509,7 @@ fn drive_capture(
     lab.beat = frame.beat;
     lab.since = frame.since;
     lab.armed_pitch = frame.armed_pitch;
+    lab.armed_yaw = frame.armed_yaw;
     lab.clock = frame.clock;
     if let Some(output) = frame.output {
         commands
@@ -611,9 +654,10 @@ fn caption(lab: Res<Lab>, mut text: Query<&mut Text, With<Caption>>) {
         View::Held => lab.design.title().to_string(),
     };
     text.0 = format!(
-        "{showing}   {:?}   lash armed {:+.0} deg\n1 lineup  2 held  Tab design  Space push  E pull  F lash  Up/Down pitch  A auto ({})",
+        "{showing}   {:?}   lash armed pitch {:+.0} deg  yaw {:+.0} deg\n1 lineup  2 held  Tab design  Space push  E pull  F lash  Up/Down pitch  Left/Right yaw  A auto ({})",
         lab.beat,
         lab.armed_pitch.to_degrees(),
+        lab.armed_yaw.to_degrees(),
         if lab.auto { "on" } else { "off" },
     );
 }

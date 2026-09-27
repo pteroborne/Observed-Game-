@@ -326,7 +326,11 @@ pub fn command(
         (6, 90) => Action::SelfPlumb,
         _ => Action::None,
     };
-    Command { movement, action }
+    Command {
+        movement,
+        action,
+        ..Command::default()
+    }
 }
 
 /// How long a recorded gameplay loop runs, in fixed ticks.
@@ -666,6 +670,6 @@ fn go(world: &WfcKineticWorld, destination: Vec3, at: Vec3) -> Command {
     }
     Command {
         movement,
-        action: Action::None,
+        ..Command::default()
     }
 }

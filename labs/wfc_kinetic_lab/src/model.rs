@@ -8,7 +8,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use glam::{Quat, Vec3};
+use std::f32::consts::{FRAC_PI_2, PI, TAU};
+
+use glam::{Quat, Vec2, Vec3};
 use kinetic_lab::physics::{Physics, gv, rv};
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{
@@ -55,7 +57,8 @@ pub enum Action {
     Pull,
     /// Impart the armed plumb to whatever the crosshair has.
     Plumb,
-    /// Point the armed plumb along the current look direction.
+    /// Point the armed plumb along the current look direction. Held, the mouse dials it
+    /// round from there ([`Command::dial`]).
     Arm,
     SelfPlumb,
     Release,
@@ -66,6 +69,9 @@ pub enum Action {
 pub struct Command {
     pub movement: PlayerIntent,
     pub action: Action,
+    /// A mouse movement that swings the armed plumb instead of the view, while the
+    /// Observer holds Arm: in look units, so a dial feels like looking there.
+    pub dial: Vec2,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -250,11 +256,14 @@ pub struct WfcKineticWorld {
     pub cooldown: u32,
     /// Ticks before the plumb is ready again.
     pub plumb_cooldown: u32,
-    /// Which way the armed plumb points, in the Observer's facing: its gravity frame
-    /// turned to where the body faces (`facing`). Turn round after arming and the plumb
-    /// turns with you; look up or down and it does not. Read it in the world with
-    /// [`Self::armed`].
-    pub armed_facing: Vec3,
+    /// The armed plumb's pitch, radians up positive, in the Observer's facing: its
+    /// gravity frame turned to where the body faces (`facing`). Turn round after arming
+    /// and the plumb turns with you; look up or down and it does not. Read it in the
+    /// world with [`Self::armed`].
+    pub armed_pitch: f32,
+    /// The armed plumb's yaw, radians from the way the body faces, right positive. Kept
+    /// as an angle beside the pitch so a dial through straight up does not lose it.
+    pub armed_yaw: f32,
     pub wave: u8,
     pub wave_delay: u32,
     /// The live facility. A relayout mutates this rather than the site, which
@@ -351,7 +360,8 @@ impl WfcKineticWorld {
             plumb_cooldown: 0,
             // Armed straight up by default: the most obviously *not* gravity
             // direction, so the first shot reads as the tool doing something.
-            armed_facing: Vec3::Y,
+            armed_pitch: FRAC_PI_2,
+            armed_yaw: 0.0,
             wave: 0,
             wave_delay: 300,
             world: facility,
@@ -615,8 +625,40 @@ impl WfcKineticWorld {
             return;
         }
         let direction = self.look_dir().normalize_or(Vec3::Y);
-        self.armed_facing = self.facing(self.player.yaw).inverse() * direction;
+        self.aim_facing(self.facing(self.player.yaw).inverse() * direction);
         self.events.push(Event::Armed(direction));
+    }
+
+    /// Swing the armed plumb by a mouse movement, as a look would swing the view: right
+    /// turns it right of the way you face, up raises it. The Observer holds Arm to dial,
+    /// so arming chooses any direction round the way you face, not only a pitch.
+    fn dial(&mut self, delta: Vec2) {
+        if self.gravity.transition > 0 {
+            return;
+        }
+        let step = self.player_config.look_step;
+        self.armed_yaw = (self.armed_yaw + delta.x * step + PI).rem_euclid(TAU) - PI;
+        self.armed_pitch = (self.armed_pitch - delta.y * step).clamp(-FRAC_PI_2, FRAC_PI_2);
+    }
+
+    /// Arm `local`, a direction in the Observer's facing.
+    fn aim_facing(&mut self, local: Vec3) {
+        let local = local.normalize_or(Vec3::Y);
+        self.armed_pitch = local.y.clamp(-1.0, 1.0).asin();
+        self.armed_yaw = if local.x.hypot(local.z) > 1e-4 {
+            local.x.atan2(-local.z)
+        } else {
+            0.0
+        };
+    }
+
+    /// Which way the armed plumb points in the Observer's facing: `-Z` ahead, `+Y` up,
+    /// `+X` right.
+    #[must_use]
+    pub fn armed_facing(&self) -> Vec3 {
+        let (sin_pitch, cos_pitch) = self.armed_pitch.sin_cos();
+        let (sin_yaw, cos_yaw) = self.armed_yaw.sin_cos();
+        Vec3::new(cos_pitch * sin_yaw, sin_pitch, -cos_pitch * cos_yaw)
     }
 
     /// The Observer's facing when the body faces `yaw`: its gravity frame, turned about
@@ -634,12 +676,12 @@ impl WfcKineticWorld {
     /// Which way the armed plumb would point were the body to face `yaw`.
     #[must_use]
     pub fn armed_facing_yaw(&self, yaw: f32) -> Vec3 {
-        (self.facing(yaw) * self.armed_facing).normalize_or(self.gravity.frame.up())
+        (self.facing(yaw) * self.armed_facing()).normalize_or(self.gravity.frame.up())
     }
 
     /// Arm `direction` as the world has it, as the Observer faces now.
     pub fn arm_for_tests(&mut self, direction: Vec3) {
-        self.armed_facing = self.facing(self.player.yaw).inverse() * direction.normalize();
+        self.aim_facing(self.facing(self.player.yaw).inverse() * direction);
     }
 
     /// Whether the plumb could be fired right now, and at what.
@@ -1130,6 +1172,10 @@ impl WfcKineticWorld {
             }
             Action::Interact => self.interact(),
             Action::None => {}
+        }
+        // After the action, so the press that arms along the look is dialled from there.
+        if command.dial != Vec2::ZERO {
+            self.dial(command.dial);
         }
         self.think();
         self.physics.step();
@@ -1671,9 +1717,8 @@ impl WfcKineticWorld {
             self.config.minor_speed,
             self.config.minor_accel,
             self.config.plumb_strength,
-            self.armed_facing.x,
-            self.armed_facing.y,
-            self.armed_facing.z,
+            self.armed_pitch,
+            self.armed_yaw,
             self.player.position.x,
             self.player.position.y,
             self.player.position.z,

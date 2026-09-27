@@ -19,6 +19,8 @@ pub struct Runtime {
     pub generation: u32,
     pub movement: PlayerIntent,
     pub pending: VecDeque<Action>,
+    /// Mouse movement dialling the armed plumb while Arm is held, consumed each tick.
+    pub dial: Vec2,
     pub events: Vec<Event>,
     pub previous: BTreeMap<ActorId, Pose>,
     pub previous_player: Vec3,
@@ -48,6 +50,7 @@ impl Runtime {
             generation: 0,
             movement: PlayerIntent::default(),
             pending: VecDeque::new(),
+            dial: Vec2::ZERO,
             events: Vec::new(),
             previous: BTreeMap::new(),
             previous_player,
@@ -92,10 +95,12 @@ impl Runtime {
         let command = Command {
             movement: self.movement,
             action: self.pending.pop_front().unwrap_or_default(),
+            dial: self.dial,
         };
         // Look and jump are edge-triggered: consuming them here stops one press
         // from being replayed across a frame that renders more than once.
         self.movement.look = Vec2::ZERO;
+        self.dial = Vec2::ZERO;
         self.movement.jump_pressed = false;
         self.world.step(command);
         self.events.extend(self.world.events.iter().cloned());
@@ -105,6 +110,7 @@ impl Runtime {
         self.paused = true;
         self.movement = PlayerIntent::default();
         self.pending.clear();
+        self.dial = Vec2::ZERO;
     }
 }
 

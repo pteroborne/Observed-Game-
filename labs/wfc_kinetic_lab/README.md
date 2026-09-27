@@ -101,17 +101,28 @@ Observer: Rapier gives per-body gravity, and its character controller takes
 `up` as a vector rather than an assumption.
 
 Arming is separate from firing, and deliberately so. `Q` points the plumb along
-the current look direction; `F` commits it to whatever the crosshair has. You
+the current look direction, and held, the mouse dials it round from there; `F`
+commits it to whatever the crosshair has. You
 decide which way down will be *before* you commit it to something — fold the two
 together and it is a shove with extra steps.
 
 The armed direction turns with you. It is kept relative to the way you face, not
 fixed in the world. Look up and arm, then face a minor and fire, and it goes up
 and away from you, whichever way you had turned in between. Looking up or down
-after arming changes nothing. Because you always arm along your own look, what
-arming really chooses is a pitch: the lash always drives the way you face, from
-a throw straight up to a slam into the floor. Sideways lashes went with that
-choice. The armed vector is on the HUD and
+after arming changes nothing.
+
+A tap of `Q` arms along your look, so it chooses a pitch: the lash drives the way
+you face, from a throw straight up to a slam into the floor. Hold `Q` and the view
+stops while the mouse swings the plumb instead, as a look would swing the view:
+right turns it right of the way you face, up raises it. Release and it stays there,
+relative to you. Dial it a quarter right, face a minor, fire, and it goes off to your
+right, so a minor can be sent sideways into a hole you are standing beside. The
+dial keeps pitch and yaw as angles, so dialling up through straight overhead does
+not lose which way you were heading.
+
+The held tool is the Lance from `observed_tool`, and its gimbal is the directional
+measure: the outer ring turns to the armed yaw, the inner ring tips to the pitch,
+and the bob hangs along the armed direction. The armed vector is also on the HUD and
 drawn at the muzzle, and every plumbed body carries an arrow along its own down,
 because a body falling sideways is otherwise indistinguishable from a body that
 was thrown.
@@ -185,7 +196,7 @@ feet stay inside the existing collision envelope.
 | WASD / Shift / Space | Move / sprint / jump |
 | Mouse | Look; the crosshair ray selects the first visible body |
 | LMB / RMB | One immediate push / pull per press |
-| Q | Arm the plumb at the current look pitch; it turns with you |
+| Q | Arm the plumb at the current look pitch; hold and move the mouse to dial it round. It turns with you |
 | F / MMB | Commit the armed plumb to whatever the crosshair has |
 | C | Commit the armed plumb to self (wall/ceiling walk) |
 | X | Release self-plumb early (return to upright) |

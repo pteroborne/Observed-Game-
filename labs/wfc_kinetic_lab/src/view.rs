@@ -28,7 +28,9 @@ use observed_facility::hex_wfc::HexArchetype;
 use observed_hex::{HexCoord, face_edge, hex_origin};
 use observed_match::hex_wfc::HexStructurePiece;
 use observed_style::ArchitectureSurfaceRole;
+use observed_style::equipment::{Hardware, finish};
 use observed_style::kinetic::{self, Role};
+use observed_tool::{Beat, Design, Finish, ToolState};
 use observed_traversal::ColliderShape;
 
 use crate::model::{Action, ActorId, Behavior, Event, Kind, Mode, Outcome, Refusal};
@@ -149,6 +151,8 @@ struct ViewState {
     pulse: f32,
     impact: Vec3,
     pull: bool,
+    /// What the held tool last did, and when (seconds of app time).
+    beat: Option<(Beat, f32)>,
     message: String,
     message_until: u64,
 }
@@ -193,6 +197,7 @@ pub fn plugin(app: &mut App) {
                 crate::sound::motion,
                 crate::sound::mix,
                 feedback,
+                pose_tool,
                 labels,
                 hud,
             )
@@ -225,57 +230,68 @@ fn setup(
             })
             .collect(),
     };
-    commands.spawn((
-        Eye,
-        // The ear rides the camera, so a Guardian behind a wall is behind it.
-        bevy::audio::SpatialListener::new(0.3),
-        Camera3d::default(),
-        Hdr,
-        Bloom {
-            intensity: 0.08,
-            ..Bloom::NATURAL
-        },
-        // Atmosphere is not decoration here. The tiles' look was developed in
-        // `daydream_lab` and is shipped by the game's shell, and both light a
-        // facility with district ambient, district fog and one key — the shell
-        // explicitly zeroes the sun. Painting the same hulls with a neutral
-        // ambient and a directional light, which is what this lab did, reads
-        // flat and faintly outdoors and loses the hue that separates one
-        // district from another.
-        DistanceFog {
-            color: color(Role::Panel),
-            falloff: FogFalloff::Linear {
-                start: 10.0,
-                end: 28.0,
+    let looks = ToolLooks::new(&mut materials);
+    commands
+        .spawn((
+            Eye,
+            // The ear rides the camera, so a Guardian behind a wall is behind it.
+            bevy::audio::SpatialListener::new(0.3),
+            Camera3d::default(),
+            Hdr,
+            Bloom {
+                intensity: 0.08,
+                ..Bloom::NATURAL
             },
-            ..default()
-        },
-        // Ambient occlusion, and the prepasses it needs. Without it these
-        // flat-shaded authored hulls have no contact darkening at all and the
-        // whole facility reads as one milky wash — which is exactly what it
-        // did. The game's shell runs it at Low for the same reason and on the
-        // same geometry.
-        Msaa::Off,
-        Fxaa::default(),
-        DepthPrepass,
-        NormalPrepass,
-        ScreenSpaceAmbientOcclusion {
-            quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Low,
-            ..default()
-        },
-        Transform::default(),
-        children![(
-            Tool,
-            Mesh3d(art.cube.clone()),
-            MeshMaterial3d(art.material(Role::Wall)),
-            Transform::from_xyz(0.30, -0.25, -0.65).with_scale(Vec3::new(0.15, 0.15, 0.38)),
-            children![(
-                Mesh3d(art.cube.clone()),
-                MeshMaterial3d(art.material(Role::Powered)),
-                Transform::from_xyz(0., 0., -0.55).with_scale(Vec3::new(0.8, 0.35, 0.1)),
-            )],
-        )],
-    ));
+            // Atmosphere is not decoration here. The tiles' look was developed in
+            // `daydream_lab` and is shipped by the game's shell, and both light a
+            // facility with district ambient, district fog and one key — the shell
+            // explicitly zeroes the sun. Painting the same hulls with a neutral
+            // ambient and a directional light, which is what this lab did, reads
+            // flat and faintly outdoors and loses the hue that separates one
+            // district from another.
+            DistanceFog {
+                color: color(Role::Panel),
+                falloff: FogFalloff::Linear {
+                    start: 10.0,
+                    end: 28.0,
+                },
+                ..default()
+            },
+            // Ambient occlusion, and the prepasses it needs. Without it these
+            // flat-shaded authored hulls have no contact darkening at all and the
+            // whole facility reads as one milky wash — which is exactly what it
+            // did. The game's shell runs it at Low for the same reason and on the
+            // same geometry.
+            Msaa::Off,
+            Fxaa::default(),
+            DepthPrepass,
+            NormalPrepass,
+            ScreenSpaceAmbientOcclusion {
+                quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Low,
+                ..default()
+            },
+            Transform::default(),
+        ))
+        .with_children(|eye| {
+            eye.spawn((
+                Tool,
+                Transform::from_translation(HELD_AT)
+                    .with_rotation(Quat::from_rotation_z(HELD_ROLL))
+                    .with_scale(Vec3::splat(HELD_SCALE)),
+                Visibility::default(),
+            ))
+            .with_children(|tool| {
+                for (index, part) in observed_tool::parts(HELD).into_iter().enumerate() {
+                    tool.spawn((
+                        ToolPart(index),
+                        Mesh3d(meshes.add(observed_guardian::mesh::mesh(part.shape))),
+                        MeshMaterial3d(looks.of(part.finish)),
+                        Transform::IDENTITY,
+                    ));
+                }
+            });
+        });
+    commands.insert_resource(looks);
     for flash in [Flash::Muzzle, Flash::Impact] {
         commands.spawn((
             flash,
@@ -516,7 +532,14 @@ fn input(
         axis(KeyCode::KeyD, KeyCode::KeyA),
         axis(KeyCode::KeyW, KeyCode::KeyS),
     );
-    runtime.movement.look += Vec2::new(motion.delta.x, motion.delta.y) * 0.075;
+    let delta = Vec2::new(motion.delta.x, motion.delta.y) * 0.075;
+    if keys.pressed(KeyCode::KeyQ) {
+        // Holding Arm, the mouse dials the plumb round the way you face and the view
+        // holds still, so you can see what you are choosing against.
+        runtime.dial += delta;
+    } else {
+        runtime.movement.look += delta;
+    }
     runtime.movement.sprint_held = keys.pressed(KeyCode::ShiftLeft);
     runtime.movement.jump_pressed |= keys.just_pressed(KeyCode::Space);
     for (pressed, action) in [
@@ -987,6 +1010,7 @@ fn draw(runtime: Res<Runtime>, mut gizmos: Gizmos) {
 
 fn events(
     mut commands: Commands,
+    time: Res<Time>,
     mut runtime: ResMut<Runtime>,
     mut view: ResMut<ViewState>,
     bank: Res<kinetic_lab::sound::Bank>,
@@ -1004,6 +1028,8 @@ fn events(
                 view.pulse = 1.;
                 view.impact = *point;
                 view.pull = *action == Action::Pull;
+                let beat = if view.pull { Beat::Pull } else { Beat::Push };
+                view.beat = Some((beat, time.elapsed_secs()));
                 None
             }
             Event::Refused(reason) => Some(refusal(*reason).to_string()),
@@ -1025,8 +1051,14 @@ fn events(
                 "plumb armed  {:.2} {:.2} {:.2}",
                 direction.x, direction.y, direction.z
             )),
-            Event::Plumbed(..) => Some("plumb committed".to_string()),
-            Event::SelfPlumbed => Some("self-plumb engaged — wall walk active".to_string()),
+            Event::Plumbed(..) => {
+                view.beat = Some((Beat::Lash, time.elapsed_secs()));
+                Some("plumb committed".to_string())
+            }
+            Event::SelfPlumbed => {
+                view.beat = Some((Beat::Lash, time.elapsed_secs()));
+                Some("self-plumb engaged — wall walk active".to_string())
+            }
             Event::GravityReleased => Some("gravity released — returning upright".to_string()),
             Event::GravityWarning => Some("GRAVITY EXPIRING".to_string()),
             Event::Unplumbed(_) => None,
@@ -1052,17 +1084,109 @@ fn events(
     }
 }
 
+/// The design held in the hand.
+const HELD: Design = Design::Lance;
+/// Where a right hand holds the tool from the eye: the game's hand for the observation
+/// torch, as `kinetic_tool_lab` holds its candidates.
+const HELD_AT: Vec3 = Vec3::new(0.13, -0.095, -0.20);
+const HELD_ROLL: f32 = 0.16;
+const HELD_SCALE: f32 = 0.40;
+
+#[derive(Component)]
+struct ToolPart(usize);
+
+/// The held tool's finishes: the equipment hardware, and a signal lit by the charge.
+#[derive(Resource)]
+struct ToolLooks {
+    body: Handle<StandardMaterial>,
+    trim: Handle<StandardMaterial>,
+    grip: Handle<StandardMaterial>,
+    glass: Handle<StandardMaterial>,
+    signal: Handle<StandardMaterial>,
+}
+
+impl ToolLooks {
+    fn new(materials: &mut Assets<StandardMaterial>) -> Self {
+        let mut hardware = |part: Hardware| {
+            let f = finish(part);
+            materials.add(StandardMaterial {
+                base_color: f.base_color,
+                metallic: f.metallic,
+                perceptual_roughness: f.roughness,
+                alpha_mode: if part == Hardware::Glass {
+                    AlphaMode::Blend
+                } else {
+                    AlphaMode::Opaque
+                },
+                ..default()
+            })
+        };
+        Self {
+            body: hardware(Hardware::Body),
+            trim: hardware(Hardware::Trim),
+            grip: hardware(Hardware::Grip),
+            glass: hardware(Hardware::Glass),
+            signal: materials.add(StandardMaterial {
+                base_color: Color::srgb(0.02, 0.02, 0.03),
+                ..default()
+            }),
+        }
+    }
+
+    fn of(&self, finish: Finish) -> Handle<StandardMaterial> {
+        match finish {
+            Finish::Body => self.body.clone(),
+            Finish::Trim => self.trim.clone(),
+            Finish::Grip | Finish::Pupil => self.grip.clone(),
+            Finish::Glass | Finish::Eye => self.glass.clone(),
+            Finish::Signal => self.signal.clone(),
+        }
+    }
+}
+
+/// Pose the held tool for what it last did and where the plumb is armed, so the
+/// gimbal swings as the Observer dials it.
+fn pose_tool(
+    runtime: Res<Runtime>,
+    view: Res<ViewState>,
+    time: Res<Time>,
+    looks: Res<ToolLooks>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut parts: Query<(&ToolPart, &mut Transform)>,
+) {
+    let world = &runtime.world;
+    let (beat, since) = view.beat.map_or((Beat::Idle, 10.0), |(beat, at)| {
+        (beat, time.elapsed_secs() - at)
+    });
+    let state = ToolState {
+        beat,
+        since,
+        armed_pitch: world.armed_pitch,
+        armed_yaw: world.armed_yaw,
+        charge: world.charge / 100.0,
+    };
+    let pose = observed_tool::pose(HELD, state, time.elapsed_secs());
+    for (part, mut transform) in &mut parts {
+        if let Some(placed) = pose.parts.get(part.0) {
+            *transform = *placed;
+        }
+    }
+    let role = if beat == Beat::Pull {
+        Role::Pull
+    } else {
+        Role::Push
+    };
+    if let Some(mut material) = materials.get_mut(&looks.signal) {
+        material.emissive = LinearRgba::from(color(role)) * (pose.signal * 6.0);
+    }
+}
+
 fn feedback(
     mut view: ResMut<ViewState>,
     time: Res<Time>,
-    mut tool: Query<&mut Transform, With<Tool>>,
-    mut flashes: Query<(&Flash, &mut PointLight, &mut Transform), Without<Tool>>,
+    mut flashes: Query<(&Flash, &mut PointLight, &mut Transform)>,
     camera: Query<&GlobalTransform, With<Eye>>,
 ) {
-    for mut transform in &mut tool {
-        let kick = view.kick * 0.10 * if view.pull { -1. } else { 1. };
-        transform.translation.z = -0.65 + kick;
-    }
     if let Ok(eye) = camera.single() {
         for (flash, mut light, mut transform) in &mut flashes {
             match flash {
@@ -1312,7 +1436,7 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
                     )
                 };
                 format!(
-                    "SEED {}  ({} requested)\nPLAN {}\nCHARGE {}\nWAVE {} / 3    REMOVED {}\nGENERATOR {}\n\nFORCE {:.1} / {:.1}  [ ]\nMINOR SPEED {:.1}  - =\n\nPLUMB  down {:>5.2} {:>5.2} {:>5.2}   Q arms\n       {}\n{}",
+                    "SEED {}  ({} requested)\nPLAN {}\nCHARGE {}\nWAVE {} / 3    REMOVED {}\nGENERATOR {}\n\nFORCE {:.1} / {:.1}  [ ]\nMINOR SPEED {:.1}  - =\n\nPLUMB  down {:>5.2} {:>5.2} {:>5.2}   Q arms, hold to dial\n       {}\n{}",
                     site.seed,
                     site.requested_seed,
                     site.plan(),
