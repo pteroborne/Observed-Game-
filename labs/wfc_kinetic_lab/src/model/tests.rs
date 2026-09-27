@@ -605,6 +605,33 @@ fn staged_target(world: &mut WfcKineticWorld, kind: Kind) -> ActorId {
     id
 }
 
+/// The armed plumb turns with the Observer: arm it pitched down and ahead, turn a
+/// quarter, and it points down and ahead of the new facing. Looking up or down after
+/// arming changes nothing; only arming does.
+#[test]
+fn the_armed_plumb_turns_with_the_observer() {
+    let mut world = world(Mode::Encounter);
+    world.player.yaw = 0.0;
+    world.player.pitch = -0.6;
+    world.step(Command {
+        action: Action::Arm,
+        ..idle()
+    });
+    let armed = world.armed();
+    assert!(armed.y < -0.5 && armed.z < -0.5, "down and ahead: {armed}");
+
+    world.player.yaw = std::f32::consts::FRAC_PI_2;
+    let turned = world.armed();
+    assert!((turned.y - armed.y).abs() < 1e-4, "the pitch is kept");
+    assert!(
+        turned.x > 0.5 && turned.z.abs() < 1e-3,
+        "now ahead is +X: {turned}"
+    );
+
+    world.player.pitch = 1.0;
+    assert_eq!(world.armed(), turned, "looking up does not re-aim it");
+}
+
 #[test]
 fn a_plumb_commits_the_armed_direction_to_what_the_crosshair_has() {
     let mut world = world(Mode::Encounter);
@@ -622,7 +649,7 @@ fn a_plumb_commits_the_armed_direction_to_what_the_crosshair_has() {
         ..idle()
     });
     assert!(
-        world.armed.y > 0.8,
+        world.armed().y > 0.8,
         "arming did not take the look direction"
     );
     // Look back at the target to fire.
@@ -662,7 +689,7 @@ fn a_plumb_commits_the_armed_direction_to_what_the_crosshair_has() {
 fn a_plumb_wears_off_and_hands_the_body_back_to_the_world() {
     let mut world = world(Mode::Practice);
     let id = staged_target(&mut world, Kind::Prop);
-    world.armed = Vec3::Y;
+    world.arm_for_tests(Vec3::Y);
     world.step(Command {
         action: Action::Plumb,
         ..idle()
@@ -751,7 +778,7 @@ fn a_minor_plumbed_toward_a_hole_falls_into_it() {
 
     // Down becomes "through the doorway, and then keep going".
     let toward = (toward_hole * 2.0 + Vec3::NEG_Y).normalize();
-    world.armed = toward;
+    world.arm_for_tests(toward);
     let plumb = Plumb::new(toward, world.config.plumb_strength, 600);
     world.attach_for_tests(id, plumb);
 
@@ -776,7 +803,7 @@ fn self_plumb_lifecycle_warning_and_release() {
     assert_eq!(world.gravity.remaining, 0);
     assert!(world.gravity.frame.is_upright());
 
-    world.armed = Vec3::NEG_Y;
+    world.arm_for_tests(Vec3::NEG_Y);
     world.step(Command {
         action: Action::SelfPlumb,
         ..Default::default()
@@ -830,7 +857,7 @@ fn self_plumb_refusals_and_early_release() {
 
     // Restore charge
     world.charge = 100.0;
-    world.armed = Vec3::NEG_Y;
+    world.arm_for_tests(Vec3::NEG_Y);
     assert!(world.self_plumb_ready().is_ok());
 
     world.step(Command {
@@ -865,7 +892,7 @@ fn self_plumb_determinism_and_digest_sensitivity() {
     assert_eq!(a.digest(), b.digest());
 
     // Only 'a' activates self-plumb
-    a.armed = Vec3::NEG_Y;
+    a.arm_for_tests(Vec3::NEG_Y);
     a.step(Command {
         action: Action::SelfPlumb,
         ..Default::default()
@@ -877,7 +904,7 @@ fn self_plumb_determinism_and_digest_sensitivity() {
     );
 
     // Now 'b' executes the exact same command
-    b.armed = Vec3::NEG_Y;
+    b.arm_for_tests(Vec3::NEG_Y);
     b.step(Command {
         action: Action::SelfPlumb,
         ..Default::default()

@@ -7,8 +7,8 @@ use observed_facility::map_spec::RoomRole;
 use observed_hex::HexCoord;
 
 use super::{
-    HEX_INPUT_VERSION, HexGuardianStatus, HexMapDiscovery, HexMatchStatus, HexThresholdKey,
-    HexWfcMatch,
+    HEX_INPUT_VERSION, HexGuardianStatus, HexMapDiscovery, HexMatchStatus, HexReleasedKind,
+    HexThresholdKey, HexWfcMatch,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -59,6 +59,9 @@ pub struct HexMatchSnapshot {
     /// disagree about whether the next step fires one.
     pub pad_suppression: Vec<(PlayerId, u16)>,
     pub guardian: (HexCoord, HexGuardianStatus),
+    /// Guardians released after tick zero: id, class, cell, and position in millimetres.
+    /// A match that has released none digests exactly as one from before they existed.
+    pub released: Vec<(u16, HexReleasedKind, HexCoord, [i32; 3])>,
     pub map_cells: Vec<HexMapCellSnapshot>,
     pub status: HexMatchStatus,
     pub digest: u64,
@@ -154,6 +157,23 @@ impl HexWfcMatch {
                 .map(|(&player, &remaining)| (player, remaining))
                 .collect(),
             guardian: (self.guardian.cell, self.guardian.status),
+            released: self
+                .released
+                .iter()
+                .map(|(&id, guardian)| {
+                    let position = guardian.position();
+                    (
+                        id,
+                        guardian.kind(),
+                        guardian.cell(),
+                        [
+                            (position.x * 1_000.0).round() as i32,
+                            (position.y * 1_000.0).round() as i32,
+                            (position.z * 1_000.0).round() as i32,
+                        ],
+                    )
+                })
+                .collect(),
             map_cells: self
                 .map_knowledge
                 .iter()
@@ -257,6 +277,17 @@ fn snapshot_digest(snapshot: &HexMatchSnapshot) -> u64 {
         HexGuardianStatus::FrozenByPlayer => 1,
         HexGuardianStatus::FrozenByAnchor => 2,
     });
+    for (id, kind, cell, millimeters) in &snapshot.released {
+        mix(u64::from(*id));
+        mix(match kind {
+            HexReleasedKind::Major => 0,
+            HexReleasedKind::Minor => 1,
+        });
+        mix(pack_cell(*cell));
+        for axis in millimeters {
+            mix(*axis as u64);
+        }
+    }
     for (player, cell, discovery, revision, ports, anchored, room_role) in &snapshot.map_cells {
         mix(u64::from(player.0));
         mix(pack_cell(*cell));

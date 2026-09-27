@@ -250,8 +250,11 @@ pub struct WfcKineticWorld {
     pub cooldown: u32,
     /// Ticks before the plumb is ready again.
     pub plumb_cooldown: u32,
-    /// Which way the armed plumb currently points.
-    pub armed: Vec3,
+    /// Which way the armed plumb points, in the Observer's facing: its gravity frame
+    /// turned to where the body faces (`facing`). Turn round after arming and the plumb
+    /// turns with you; look up or down and it does not. Read it in the world with
+    /// [`Self::armed`].
+    pub armed_facing: Vec3,
     pub wave: u8,
     pub wave_delay: u32,
     /// The live facility. A relayout mutates this rather than the site, which
@@ -348,7 +351,7 @@ impl WfcKineticWorld {
             plumb_cooldown: 0,
             // Armed straight up by default: the most obviously *not* gravity
             // direction, so the first shot reads as the tool doing something.
-            armed: Vec3::Y,
+            armed_facing: Vec3::Y,
             wave: 0,
             wave_delay: 300,
             world: facility,
@@ -532,7 +535,7 @@ impl WfcKineticWorld {
         if self.mode == Mode::Encounter && self.charge < self.config.plumb_cost {
             return Err(Refusal::EmptyCharge);
         }
-        let next = self.gravity.frame.toward(-self.armed);
+        let next = self.gravity.frame.toward(-self.armed());
         observed_traversal::gravity::reorient(
             &self.physics.query(self.player_handle),
             &self.player,
@@ -548,11 +551,12 @@ impl WfcKineticWorld {
             self.events.push(Event::Refused(reason));
             return;
         }
+        let armed = self.armed();
         if self.gravity.activate(
             &self.physics.query(self.player_handle),
             &mut self.player,
             &self.player_config,
-            self.armed,
+            armed,
             480,
         ) {
             if self.mode == Mode::Encounter {
@@ -611,8 +615,31 @@ impl WfcKineticWorld {
             return;
         }
         let direction = self.look_dir().normalize_or(Vec3::Y);
-        self.armed = direction;
+        self.armed_facing = self.facing(self.player.yaw).inverse() * direction;
         self.events.push(Event::Armed(direction));
+    }
+
+    /// The Observer's facing when the body faces `yaw`: its gravity frame, turned about
+    /// that frame's up.
+    fn facing(&self, yaw: f32) -> Quat {
+        self.gravity.frame.rotation * Quat::from_rotation_y(-yaw)
+    }
+
+    /// Which way the armed plumb points in the world, as the Observer faces now.
+    #[must_use]
+    pub fn armed(&self) -> Vec3 {
+        self.armed_facing_yaw(self.player.yaw)
+    }
+
+    /// Which way the armed plumb would point were the body to face `yaw`.
+    #[must_use]
+    pub fn armed_facing_yaw(&self, yaw: f32) -> Vec3 {
+        (self.facing(yaw) * self.armed_facing).normalize_or(self.gravity.frame.up())
+    }
+
+    /// Arm `direction` as the world has it, as the Observer faces now.
+    pub fn arm_for_tests(&mut self, direction: Vec3) {
+        self.armed_facing = self.facing(self.player.yaw).inverse() * direction.normalize();
     }
 
     /// Whether the plumb could be fired right now, and at what.
@@ -636,7 +663,7 @@ impl WfcKineticWorld {
             Err(reason) => self.events.push(Event::Refused(reason)),
             Ok(target) => {
                 let plumb = Plumb::new(
-                    self.armed,
+                    self.armed(),
                     self.config.plumb_strength,
                     self.config.plumb_ticks,
                 );
@@ -1644,9 +1671,9 @@ impl WfcKineticWorld {
             self.config.minor_speed,
             self.config.minor_accel,
             self.config.plumb_strength,
-            self.armed.x,
-            self.armed.y,
-            self.armed.z,
+            self.armed_facing.x,
+            self.armed_facing.y,
+            self.armed_facing.z,
             self.player.position.x,
             self.player.position.y,
             self.player.position.z,

@@ -86,40 +86,40 @@ impl HexWfcMatch {
     /// a body partway up a ramp or stair resolves to one level and stays there.
     pub(super) fn sync_player_from_body(&mut self, id: PlayerId) {
         let body = self.bodies[&id];
+        let cell = self.body_cell(body.position, self.players[&id].cell);
+        let player = self.players.get_mut(&id).expect("player");
+        player.cell = cell;
+        player.position = body.position;
+        player.yaw = body.yaw;
+        player.pitch = body.pitch;
+    }
+
+    /// The cell a body centred at `position` stands in, given the one it stood in: the
+    /// deck under its feet, switching cells only past [`CELL_SWITCH_HYSTERESIS`], and
+    /// keeping `current` where the body is over nothing built.
+    pub(super) fn body_cell(&self, position: Vec3, current: HexCoord) -> HexCoord {
         let half_height = self
             .content
             .traversal_profile()
             .requirements()
             .capsule_half_height;
         let top_level = f32::from(self.facility.config.levels.saturating_sub(1));
-        let current_level = self.players[&id].cell.level;
-        let level = resolve_level(body.position.y - half_height, current_level, top_level);
-        let candidate =
-            horizontal_cell(self.facility.config, body.position, level).filter(|cell| {
-                self.facility
-                    .placements
-                    .get(cell)
-                    .is_some_and(|placement| placement.space.built())
-            });
-        let current = self.players[&id].cell;
-        let current_valid = self
-            .facility
-            .placements
-            .get(&current)
-            .is_some_and(|placement| placement.space.built());
-        let player = self.players.get_mut(&id).expect("player");
-        if let Some(cell) = candidate {
-            let switch = !current_valid
-                || cell.level != current.level
-                || plan_distance_xz(body.position, hex_origin(cell)) + CELL_SWITCH_HYSTERESIS
-                    < plan_distance_xz(body.position, hex_origin(current));
-            if switch {
-                player.cell = cell;
-            }
-        }
-        player.position = body.position;
-        player.yaw = body.yaw;
-        player.pitch = body.pitch;
+        let level = resolve_level(position.y - half_height, current.level, top_level);
+        let built = |cell: &HexCoord| {
+            self.facility
+                .placements
+                .get(cell)
+                .is_some_and(|placement| placement.space.built())
+        };
+        let Some(cell) = horizontal_cell(self.facility.config, position, level).filter(built)
+        else {
+            return current;
+        };
+        let switch = !built(&current)
+            || cell.level != current.level
+            || plan_distance_xz(position, hex_origin(cell)) + CELL_SWITCH_HYSTERESIS
+                < plan_distance_xz(position, hex_origin(current));
+        if switch { cell } else { current }
     }
 
     /// Recover bodies that genuinely leave the arena, and bodies stranded outside

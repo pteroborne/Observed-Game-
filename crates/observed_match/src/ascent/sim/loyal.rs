@@ -25,9 +25,9 @@ use super::{
 
 /// How far from its own Observers the bot looks for a play, in cells. A route is built
 /// where the team is, and the bound keeps a production facility's decision in budget.
-const REACH: u32 = 3;
+pub(super) const REACH: u32 = 3;
 /// What an Observer with no way up costs the score: far more than any real route.
-const NO_WAY_UP: usize = 10_000;
+pub(super) const NO_WAY_UP: usize = 10_000;
 /// How far an Observer's own search runs, in steps: past every cell a candidate within
 /// [`REACH`] can join, with room for the walk to wind.
 const OWN_SEARCH_STEPS: usize = 12;
@@ -174,7 +174,10 @@ impl ArchitectLab {
 
     /// Every legal tile or stair play within reach of the team, with the cells it would
     /// build.
-    fn candidates(&self, own: &[HexCoord]) -> Vec<(ArchitectCommand, Vec<HexPlacement>)> {
+    pub(super) fn candidates(
+        &self,
+        own: &[HexCoord],
+    ) -> Vec<(ArchitectCommand, Vec<HexPlacement>)> {
         let near: BTreeSet<HexCoord> = self
             .known
             .iter()
@@ -213,7 +216,7 @@ impl ArchitectLab {
     /// Mismatched doorways between `cell` and its neighbours: as it stands, and if it
     /// held `placement`. A doorway is mismatched where two built cells' ports disagree, or
     /// where an open port faces a retracted cell.
-    fn mismatches_around(&self, changes: &[HexPlacement]) -> (usize, usize) {
+    pub(super) fn mismatches_around(&self, changes: &[HexPlacement]) -> (usize, usize) {
         changes
             .iter()
             .map(|placement| self.mismatches_of(placement.coord, *placement, changes))
@@ -294,7 +297,7 @@ impl ArchitectLab {
     /// The shortest walk from an Observer to the summit through `cell` holding
     /// `placement`, in steps, given the Observer's and the summit's distances to every
     /// cell as the facility stands.
-    fn through(
+    pub(super) fn through(
         &self,
         cell: HexCoord,
         placement: HexPlacement,
@@ -329,7 +332,11 @@ impl ArchitectLab {
 
     /// Steps from `origin` to every cell a walk of at most `limit` steps reaches, through
     /// the rules' own exits.
-    fn distances_from(&self, origin: HexCoord, limit: usize) -> BTreeMap<HexCoord, usize> {
+    pub(super) fn distances_from(
+        &self,
+        origin: HexCoord,
+        limit: usize,
+    ) -> BTreeMap<HexCoord, usize> {
         let mut distance = BTreeMap::from([(origin, 0)]);
         let mut queue = VecDeque::from([origin]);
         while let Some(cell) = queue.pop_front() {

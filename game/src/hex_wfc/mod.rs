@@ -170,7 +170,7 @@ impl Plugin for HexWfcPlugin {
                         equipment::spin,
                     )
                         .chain(),
-                    (guardian::sync, guardian::play_catches).chain(),
+                    guardian::systems(),
                     sim::finish_runtime,
                 )
                     .chain()

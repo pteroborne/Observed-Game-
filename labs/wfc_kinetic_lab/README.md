@@ -103,7 +103,15 @@ Observer: Rapier gives per-body gravity, and its character controller takes
 Arming is separate from firing, and deliberately so. `Q` points the plumb along
 the current look direction; `F` commits it to whatever the crosshair has. You
 decide which way down will be *before* you commit it to something — fold the two
-together and it is a shove with extra steps. The armed vector is on the HUD and
+together and it is a shove with extra steps.
+
+The armed direction turns with you. It is kept relative to the way you face, not
+fixed in the world. Look up and arm, then face a minor and fire, and it goes up
+and away from you, whichever way you had turned in between. Looking up or down
+after arming changes nothing. Because you always arm along your own look, what
+arming really chooses is a pitch: the lash always drives the way you face, from
+a throw straight up to a slam into the floor. Sideways lashes went with that
+choice. The armed vector is on the HUD and
 drawn at the muzzle, and every plumbed body carries an arrow along its own down,
 because a body falling sideways is otherwise indistinguishable from a body that
 was thrown.
@@ -177,7 +185,7 @@ feet stay inside the existing collision envelope.
 | WASD / Shift / Space | Move / sprint / jump |
 | Mouse | Look; the crosshair ray selects the first visible body |
 | LMB / RMB | One immediate push / pull per press |
-| Q | Arm the plumb along the current look direction |
+| Q | Arm the plumb at the current look pitch; it turns with you |
 | F / MMB | Commit the armed plumb to whatever the crosshair has |
 | C | Commit the armed plumb to self (wall/ceiling walk) |
 | X | Release self-plumb early (return to upright) |

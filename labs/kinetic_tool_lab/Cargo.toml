@@ -1,0 +1,22 @@
+[package]
+name = "kinetic_tool_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.19", default-features = false, features = [
+    "3d",
+    "ui",
+    "default_font",
+    "png",
+] }
+# The designs themselves, shared with the game.
+observed_tool = { path = "../../crates/observed_tool" }
+observed_guardian = { path = "../../crates/observed_guardian" }
+# Colours and finishes come from the production style crate, never invented locally.
+observed_style = { path = "../../crates/observed_style" }
+
+[[bin]]
+name = "kinetic_tool_lab"
+path = "src/main.rs"

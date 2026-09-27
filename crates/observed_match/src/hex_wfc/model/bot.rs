@@ -361,7 +361,7 @@ fn steer_toward(yaw: f32, position: Vec3, target: Vec3) -> PlayerIntent {
     steer_toward_with_speed(yaw, position, target, true, 1.0)
 }
 
-fn steer_toward_with_speed(
+pub(super) fn steer_toward_with_speed(
     yaw: f32,
     position: Vec3,
     target: Vec3,

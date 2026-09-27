@@ -41,7 +41,7 @@ pub(super) struct CueDefinition {
 }
 
 #[cfg(test)]
-pub(super) const ALL_EVENTS: [HexMatchEventKind; 22] = [
+pub(super) const ALL_EVENTS: [HexMatchEventKind; 24] = [
     HexMatchEventKind::MutationWarning,
     HexMatchEventKind::MutationCommitted,
     HexMatchEventKind::MutationNoChange,
@@ -59,6 +59,8 @@ pub(super) const ALL_EVENTS: [HexMatchEventKind; 22] = [
     HexMatchEventKind::PadDeployed,
     HexMatchEventKind::PadTraversed,
     HexMatchEventKind::GuardianCatch,
+    HexMatchEventKind::GuardianReleased,
+    HexMatchEventKind::GuardianLost,
     HexMatchEventKind::PlayerJailed,
     HexMatchEventKind::PlayerReleased,
     HexMatchEventKind::Jailbreak,
@@ -134,6 +136,18 @@ pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
             "GUARDIAN SETBACK",
             MarkerRole::Collapse,
             HexWfcSound::Guardian,
+        ),
+        // A disturbance wave or a requisition puts a Guardian into the facility where it
+        // appears, and the architecture takes one out where it went over.
+        HexMatchEventKind::GuardianReleased => cue(
+            "GUARDIAN RELEASED",
+            MarkerRole::Collapse,
+            HexWfcSound::Guardian,
+        ),
+        HexMatchEventKind::GuardianLost => cue(
+            "GUARDIAN LOST TO THE VOID",
+            MarkerRole::Collapse,
+            HexWfcSound::Reroute,
         ),
         // The prison (Architect Ascent): a catch lands in the maze, and the lobby is
         // where a body comes back into the facility.

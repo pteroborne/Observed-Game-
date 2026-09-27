@@ -937,7 +937,7 @@ fn draw(runtime: Res<Runtime>, mut gizmos: Gizmos) {
     // The armed direction, drawn just in front of the eye so the Observer can
     // see what they are about to commit without opening a menu.
     let muzzle = world.eye() + world.player.look_dir() * 1.4;
-    gizmos.line(muzzle, muzzle + world.armed * 0.6, color(Role::Pull));
+    gizmos.line(muzzle, muzzle + world.armed() * 0.6, color(Role::Pull));
 
     // Unsafe edges are a permanent signal, not a debug one: a face that opens
     // onto void is the tool's answer to the horde and has to be findable.
@@ -1323,9 +1323,9 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
                     world.config.push,
                     world.config.pull,
                     world.config.minor_speed,
-                    world.armed.x,
-                    world.armed.y,
-                    world.armed.z,
+                    world.armed().x,
+                    world.armed().y,
+                    world.armed().z,
                     match world.plumb_ready() {
                         Ok(_) => "ready".to_string(),
                         Err(reason) => refusal(reason).to_string(),

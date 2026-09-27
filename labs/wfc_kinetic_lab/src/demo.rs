@@ -417,32 +417,38 @@ pub fn loop_command(world: &WfcKineticWorld, tick: u32) -> Command {
     // carries a body three metres, while a plumb only has to *reach* the minor
     // and then gravity does the work from wherever it is standing.
     //
-    // Arming is a separate action that reads the look direction, so this is a
-    // short dance: look at the down you want, arm it, look back, fire.
+    // The armed plumb turns with the Observer, so it points the way the Observer
+    // faces, pitched as it was armed. It sends the minor through the hole only from
+    // beyond the minor, with the hole ahead: the shove's own push post. So: arm the
+    // drop's pitch while facing the minor, take the post, fire.
     let wanted_down =
         ((hole - position).with_y(0.).normalize_or(Vec3::X) * 2.0 + Vec3::NEG_Y).normalize();
+    let to_minor = (position - eye).with_y(0.).normalize_or(Vec3::X);
+    let pitched =
+        (to_minor * wanted_down.with_y(0.).length() + Vec3::Y * wanted_down.y).normalize();
+    let facing_minor = to_minor.x.atan2(-to_minor.z);
     // Hysteresis, because the wanted direction drifts as the minor walks. One
     // threshold and the director re-arms every tick chasing a moving target and
     // never gets round to firing, which is exactly what it did.
     const ARM_BELOW: f32 = 0.80;
     const FIRE_ABOVE: f32 = 0.70;
-    let aligned = world.armed.dot(wanted_down);
-    if aligned < ARM_BELOW {
-        // Look at the direction being armed, then arm it.
-        let look_at = eye + wanted_down * 8.0;
-        let mut command = go(world, post_beside(world, hole, Some(position)), look_at);
+    let push_post = snap_post(
+        world,
+        position + (position - hole).with_y(0.).normalize_or(Vec3::X) * 4.6,
+        hole,
+    );
+    if world.armed_facing_yaw(facing_minor).dot(pitched) < ARM_BELOW {
+        // Face the minor, look up or down to the drop's pitch, and arm it.
+        let look_at = eye + pitched * 8.0;
+        let mut command = go(world, push_post, look_at);
         command.movement.movement = Vec2::ZERO;
         if turn_toward(world, look_at).length() < 0.35 {
             command.action = Action::Arm;
         }
         return command;
     }
-    if aligned > FIRE_ABOVE {
-        let mut command = go(
-            world,
-            post_beside(world, hole, Some(position)),
-            position + AIM_LIFT,
-        );
+    if world.armed_facing_yaw(facing_minor).dot(wanted_down) > FIRE_ABOVE {
+        let mut command = go(world, push_post, position + AIM_LIFT);
         if world
             .plumb_ready()
             .is_ok_and(|target| target.id == id && target.distance > 1.6)

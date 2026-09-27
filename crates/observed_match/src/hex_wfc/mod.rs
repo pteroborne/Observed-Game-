@@ -29,9 +29,10 @@ pub use model::{
     HexGuardianState, HexGuardianStatus, HexInputFrame, HexInteraction, HexInteractionAction,
     HexLanternCache, HexLanternState, HexMapCellKnowledge, HexMapCellSnapshot, HexMapDiscovery,
     HexMatchConfig, HexMatchError, HexMatchEvent, HexMatchEventKind, HexMatchSnapshot,
-    HexMatchStatus, HexPadState, HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot,
-    HexPlayerState, HexTeamObjectiveState, HexTeamSnapshot, HexTeamState, HexWfcMatch,
-    KEYSTONES_REQUIRED, MAX_ROSTER, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER,
+    HexMatchStatus, HexMinorState, HexPadState, HexPlayerCommand, HexPlayerMapKnowledge,
+    HexPlayerSnapshot, HexPlayerState, HexReleasedGuardian, HexReleasedKind, HexTeamObjectiveState,
+    HexTeamSnapshot, HexTeamState, HexWfcMatch, KEYSTONES_REQUIRED, MAX_ROSTER, MINOR_SIGHT_STEPS,
+    PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER,
 };
 pub use trim::{HexTrimKind, HexTrimPiece, derive_thresholds, derive_trim, derive_trim_for};
 

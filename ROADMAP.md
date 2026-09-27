@@ -53,6 +53,20 @@ the combined loop.
    `lighting_lab` carry the precedents). Shoves are fixed-tick simulation, never
    authored physics. No direct player damage, and no promotion before step 5.
 
+    **The pressure loop reaches the real facility (2026-09):** every Ascent match, local
+    and LAN, seats a bot Rogue (`ascent::facility::ROGUE_SEAT`) that the corrupted will
+    join. It judges plays locally, near Observers a Guardian has detected: it closes a
+    hunt, or leaves a contradiction in an Observer's path for a loyal Architect to
+    repair. Its disturbance releases **minor Guardians with bodies**
+    (`hex_wfc::HexReleasedGuardian`). A minor walks on the players' own controller, is
+    never frozen by sight, chases the nearest body within six doors on its floor,
+    catches into the prison, and dies only by falling out of the facility. A
+    requisition's major gets a body the same way. The rules follow every released body
+    and never move one. In the game a minor is a small Roller that tips once per stride
+    it walks. Next: the kinetic tool, to put minors into the void on purpose.
+    Open tuning question: waves grow with height and minors only die by falling, so a
+    long match can accumulate a crowd.
+
     **Self-plumb implemented (2026-09):** The plumb on the Observer is now
     proven and playable in `wfc_kinetic_lab` and `observed_traversal::gravity`.
     The shared controller supports `BodyFrame` with arbitrary `up`, `ObserverGravity`

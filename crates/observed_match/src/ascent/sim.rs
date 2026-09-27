@@ -25,6 +25,7 @@ mod objective;
 pub use objective::{DARKNESS_BEATS, RogueObjective, StateHold};
 mod embodied;
 mod loyal;
+mod rogue;
 mod util;
 pub use embodied::{Embodiment, Place};
 use util::{
@@ -268,6 +269,13 @@ pub struct ArchitectLab {
     /// Observers whose cell and facing come from a first-person body. The body is the
     /// authority: no beat moves them, and a body falls physically rather than by rule.
     pub(crate) embodied: BTreeSet<ObserverId>,
+    /// Guardians the host moves and catches with - a first-person match's own - whose
+    /// cells the rules take from it (`embody_guardian`) and never move themselves.
+    pub(crate) embodied_guardians: BTreeSet<GuardianId>,
+    /// Guardians released on a first-person facility since the host last took them
+    /// (`take_releases`): each is given a body there, and comes back to the rules as an
+    /// embodied Guardian rather than hunting in the rules alone.
+    pub(crate) releases: Vec<Guardian>,
 }
 
 /// Everything that differs between one match's rules and another's at tick zero.
@@ -346,6 +354,8 @@ impl ArchitectLab {
             authored: false,
             rewrites: BTreeMap::new(),
             embodied: BTreeSet::new(),
+            embodied_guardians: BTreeSet::new(),
+            releases: Vec::new(),
         }
     }
 
@@ -920,7 +930,13 @@ impl ArchitectLab {
         }
 
         if self.bot_architect {
-            let (command, trace) = self.architect_intent();
+            // On a first-person facility the lab's Rogue, which previews every play on a
+            // copy of the rules, costs seconds a decision; the local one does not.
+            let (command, trace) = if self.authored {
+                self.rogue_intent()
+            } else {
+                self.architect_intent()
+            };
             self.traces.insert("Architect".to_string(), trace);
             if let Some(command) = command {
                 let _ = self.submit(command);
@@ -939,7 +955,12 @@ impl ArchitectLab {
         self.economy.tick_beat(&self.world, &self.observers);
         self.refresh_observation();
 
-        let guardian_ids: Vec<_> = self.guardians.keys().copied().collect();
+        let guardian_ids: Vec<_> = self
+            .guardians
+            .keys()
+            .copied()
+            .filter(|id| !self.embodied_guardians.contains(id))
+            .collect();
         for id in guardian_ids {
             let (intent, trace) = self.guardian_intent(id);
             self.traces.insert(format!("Guardian {}", id.0), trace);
