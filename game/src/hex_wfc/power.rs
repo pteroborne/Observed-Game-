@@ -40,6 +40,7 @@ use super::view::HexPractical;
 use crate::GameState;
 use crate::settings::Settings;
 
+pub(super) mod capture;
 mod words;
 pub(super) use words::{local_floor_powered, prompt};
 

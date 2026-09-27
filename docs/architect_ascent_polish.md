@@ -403,6 +403,22 @@ generator's (design sections 5 and 6), so both now stand in the facility
   going off or on is heard at the generator and said when it is the local body's floor, and
   charge ticks in as the tool fills.
 
+Evidence (`OBSERVED2_CAPTURE_HEX_WFC_POWER=<dir> cargo dev-run -p observed_game`, a
+production facility, the local body stood before the spawn floor's generator and then its
+station and walked up through the match's own input; the capture advances exactly 1/30 s a
+rendered frame, so `<dir>/frames` makes a real-time 30 fps video however slowly it renders,
+and `<dir>/stills.txt` names the frame that is each still):
+
+- [The generator, powered](evidence/ascent-power/power-1-generator-1280x800.png)
+- [In reach: the prompt to cut it](evidence/ascent-power/power-2-generator-prompt-1280x800.png)
+- [Cut: the core burns red, the floor says NO POWER](evidence/ascent-power/power-3-generator-cut-1280x800.png)
+- [Restored](evidence/ascent-power/power-4-generator-restored-1280x800.png)
+- [The station, the tool nearly empty](evidence/ascent-power/power-5-station-1280x800.png)
+- [Recharging](evidence/ascent-power/power-6-station-recharging-1280x800.png)
+- [Charged](evidence/ascent-power/power-7-station-charged-1280x800.png)
+- [A dead station on a floor without power](evidence/ascent-power/power-8-station-dead-1280x800.png)
+- [The whole walkthrough, 16 s](evidence/ascent-power/power-walkthrough-1280x800.mp4)
+
 Over LAN nothing new travels - the generator is a body's interact bit - but the same frames
 now step to a different match, so `LAN_PROTOCOL_VERSION` is 7.
 

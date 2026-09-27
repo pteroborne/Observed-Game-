@@ -173,6 +173,21 @@ impl AscentRules {
         })
     }
 
+    /// Set `player`'s charge. For evidence captures, as `HexWfcMatch::jail` is: play only
+    /// spends charge on shots and restores it at stations.
+    pub fn stage_charge(&mut self, player: PlayerId, charge: u32) {
+        if let Some(&id) = self.bodies.get(&player) {
+            self.session.sim.economy.set_charge(id, charge);
+        }
+    }
+
+    /// Set a floor's power. For evidence captures: play switches it only at the generator,
+    /// or by a play that contests it.
+    pub fn stage_power(&mut self, level: u8, powered: bool) {
+        self.session.sim.economy.set_powered(level, powered);
+        self.session.sim.refresh_observation();
+    }
+
     /// Every body that pressed interact within reach of its floor's generator switches
     /// the floor's power, as the rules allow.
     pub(super) fn operate_generators(&mut self, physical: &HexWfcMatch, bodies: &HexInputFrame) {

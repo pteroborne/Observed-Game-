@@ -56,10 +56,7 @@ impl HexWfcMatch {
     pub fn standing_point(&self, cell: HexCoord) -> Option<Vec3> {
         const RINGS: [f32; 4] = [0.0, 1.5, 3.0, 4.0];
         const STEPS: u8 = 12;
-        const CLEARANCE: f32 = 0.05;
-        let config = self.content.traversal_profile().controller();
         let floor = Vec3::from_array(hex_origin(cell)) + Vec3::Y * FLOOR_SLAB_TOP;
-        let centre_height = config.half_height + CLEARANCE;
         RINGS
             .into_iter()
             .flat_map(|radius| {
@@ -69,20 +66,70 @@ impl HexWfcMatch {
                     Vec3::new(angle.cos() * radius, 0.0, angle.sin() * radius)
                 })
             })
-            .find_map(|offset| {
-                let centre = floor + offset + Vec3::Y * centre_height;
-                if !self
+            .find_map(|offset| self.stands_at(floor + offset))
+    }
+
+    /// Whether a body fits standing with its feet at `feet`, on something solid at that
+    /// height: not in a wall, over a hole or at a drop. Where exactly its feet would rest.
+    fn stands_at(&self, feet: Vec3) -> Option<Vec3> {
+        const CLEARANCE: f32 = 0.05;
+        let config = self.content.traversal_profile().controller();
+        let centre_height = config.half_height + CLEARANCE;
+        let centre = feet + Vec3::Y * centre_height;
+        if !self
+            .physics
+            .capsule_is_clear(centre, config.radius, config.half_height)
+        {
+            return None;
+        }
+        let drop = self
+            .physics
+            .ray_distance(centre, Vec3::NEG_Y, centre_height + 0.3)?;
+        ((drop - centre_height).abs() < 0.2).then_some(centre - Vec3::Y * drop)
+    }
+
+    /// Stand `player`'s body at rest in `cell` with its feet at `feet`, looking at `at`,
+    /// if a body fits there on solid floor and nothing stands between it and `at`, at its
+    /// eye or its waist. Whether it did.
+    ///
+    /// For evidence captures, as [`Self::jail`] is: play never moves a body this way.
+    pub fn stage_body_facing(
+        &mut self,
+        player: PlayerId,
+        cell: HexCoord,
+        feet: Vec3,
+        at: Vec3,
+    ) -> bool {
+        let Some(feet) = self.stands_at(feet) else {
+            return false;
+        };
+        let Some(&before) = self.bodies.get(&player) else {
+            return false;
+        };
+        let config = self.content.traversal_profile().controller();
+        let centre = feet + Vec3::Y * (config.half_height + 0.02);
+        let mut body = observed_traversal::FpsBody::spawned(centre, before.yaw);
+        let eye = body.eye(&config);
+        let blocked = |from: Vec3| {
+            let to = at.with_y(from.y);
+            let span = to - from;
+            let reach = span.length() - 0.8;
+            reach > 0.0
+                && self
                     .physics
-                    .capsule_is_clear(centre, config.radius, config.half_height)
-                {
-                    return None;
-                }
-                // Something to stand on, at the floor's height: not a hole, not a drop.
-                let drop = self
-                    .physics
-                    .ray_distance(centre, Vec3::NEG_Y, centre_height + 0.3)?;
-                ((drop - centre_height).abs() < 0.2).then_some(centre - Vec3::Y * drop)
-            })
+                    .ray_distance(from, span.normalize(), reach)
+                    .is_some()
+        };
+        if blocked(eye) || blocked(centre) {
+            return false;
+        }
+        let offset = at - eye;
+        body.yaw = offset.x.atan2(-offset.z);
+        body.pitch = offset.y.atan2(offset.with_y(0.0).length());
+        self.bodies.insert(player, body);
+        self.players.get_mut(&player).expect("a player").cell = cell;
+        self.sync_player_from_body(player);
+        true
     }
 
     /// Commit `placements` to the facility, its geometry and its colliders, together.
