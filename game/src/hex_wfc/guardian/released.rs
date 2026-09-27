@@ -15,8 +15,8 @@ use observed_guardian::roll::{Rest, Roll};
 use observed_hex::{FLOOR_SLAB_TOP, hex_origin};
 use observed_match::hex_wfc::{HexReleasedGuardian, HexReleasedKind};
 
-use super::guardian::{self, FORM, GLIDE, GuardianArt, GuardianPart, Parts, SNAP};
-use super::sim::{EYE_OFFSET, HexWfcRuntime};
+use super::super::sim::{EYE_OFFSET, HexWfcRuntime};
+use super::{self as guardian, FORM, GLIDE, GuardianArt, GuardianPart, Parts, SNAP};
 use crate::GameState;
 
 /// A minor's size against the major Roller the form was drawn at: about a metre tall,
@@ -48,24 +48,21 @@ pub(super) struct ReleasedVisual {
     heading: Vec3,
 }
 
-pub(super) fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
-    let start = Rest::on_a_face(Vec3::ZERO);
-    let stride = Roll::toward(start, Vec3::X)
-        .at(1.0)
-        .centre
-        .with_y(0.0)
-        .length();
-    commands.insert_resource(ReleasedArt {
-        roller: form::parts(form::Form::Roller)
-            .into_iter()
-            .map(|part| (meshes.add(mesh(part.shape)), part.look))
-            .collect(),
-        stride,
-    });
-}
-
-pub(super) fn cleanup(mut commands: Commands) {
-    commands.remove_resource::<ReleasedArt>();
+impl ReleasedArt {
+    pub(super) fn new(meshes: &mut Assets<Mesh>) -> Self {
+        let start = Rest::on_a_face(Vec3::ZERO);
+        Self {
+            roller: form::parts(form::Form::Roller)
+                .into_iter()
+                .map(|part| (meshes.add(mesh(part.shape)), part.look))
+                .collect(),
+            stride: Roll::toward(start, Vec3::X)
+                .at(1.0)
+                .centre
+                .with_y(0.0)
+                .length(),
+        }
+    }
 }
 
 /// Spawn what has been released, draw it where it is, and clear away what is gone.
@@ -76,7 +73,10 @@ pub(super) fn sync(
     runtime: Res<HexWfcRuntime>,
     guardian_art: Res<GuardianArt>,
     art: Res<ReleasedArt>,
-    mut visuals: Query<(Entity, &mut ReleasedVisual, &mut Transform, &Children)>,
+    mut visuals: Query<
+        (Entity, &mut ReleasedVisual, &mut Transform, &Children),
+        Without<GuardianPart>,
+    >,
     mut parts: Parts,
 ) {
     let clock = time.elapsed_secs();

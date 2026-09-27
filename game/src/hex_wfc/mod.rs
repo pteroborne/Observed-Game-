@@ -24,7 +24,6 @@ pub(crate) mod overlay;
 mod pad;
 mod perf;
 mod prison_gate;
-mod released;
 pub(crate) use perf::GPU_PROFILE_ENV;
 pub mod sim;
 pub(crate) mod view;
@@ -82,7 +81,6 @@ impl Plugin for HexWfcPlugin {
                     equipment::setup,
                     lantern::setup,
                     guardian::setup,
-                    released::setup,
                     pad::setup,
                     input::grab_cursor,
                 )
@@ -172,7 +170,7 @@ impl Plugin for HexWfcPlugin {
                         equipment::spin,
                     )
                         .chain(),
-                    (guardian::sync, guardian::play_catches, released::sync).chain(),
+                    guardian::systems(),
                     sim::finish_runtime,
                 )
                     .chain()
@@ -190,7 +188,6 @@ impl Plugin for HexWfcPlugin {
                     entities::cleanup,
                     lantern::cleanup,
                     guardian::cleanup,
-                    released::cleanup,
                     pad::cleanup,
                     equipment::cleanup,
                     hud::play::cleanup,

@@ -29,6 +29,8 @@ use observed_style::{MarkerRole, marker};
 use super::sim::{EYE_OFFSET, HexWfcRuntime};
 use crate::GameState;
 
+pub(super) mod released;
+
 /// The major Guardian: the Tumbler at four tiers.
 pub(super) const FORM: Form = Form::Tumbler { tiers: 4 };
 /// How fast the drawn Guardian glides toward where the simulation has it, m/s: a
@@ -227,6 +229,7 @@ pub(super) fn setup(
             Transform::IDENTITY,
         ));
     });
+    commands.insert_resource(released::ReleasedArt::new(&mut meshes));
     commands.insert_resource(art);
     commands.insert_resource(GuardianPresentation {
         state: State::Hunting,
@@ -286,6 +289,13 @@ pub(super) fn material(
 pub(super) fn cleanup(mut commands: Commands) {
     commands.remove_resource::<GuardianArt>();
     commands.remove_resource::<GuardianPresentation>();
+    commands.remove_resource::<released::ReleasedArt>();
+}
+
+/// Every Guardian drawn each frame: the match's own, its catches, and those released
+/// since.
+pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleSystem, ()> {
+    (sync, play_catches, released::sync).chain()
 }
 
 /// The drawn state for the simulation's status.
