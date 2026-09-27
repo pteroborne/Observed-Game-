@@ -30,12 +30,12 @@ use super::sim::{EYE_OFFSET, HexWfcRuntime};
 use crate::GameState;
 
 /// The major Guardian: the Tumbler at four tiers.
-const FORM: Form = Form::Tumbler { tiers: 4 };
+pub(super) const FORM: Form = Form::Tumbler { tiers: 4 };
 /// How fast the drawn Guardian glides toward where the simulation has it, m/s: a
 /// cell's 14 m in a little over a second.
-const GLIDE: f32 = 12.0;
+pub(super) const GLIDE: f32 = 12.0;
 /// A jump longer than this is a teleport (a catch sending it home), drawn as one.
-const SNAP: f32 = 30.0;
+pub(super) const SNAP: f32 = 30.0;
 /// The hum's share of the effects volume, and how fast it follows the state.
 const HUM_VOLUME: f32 = 0.55;
 const HUM_FADE: f32 = 14.0;
@@ -91,8 +91,8 @@ pub(super) struct CatchEffect {
 
 #[derive(Component)]
 pub(super) struct GuardianPart {
-    index: usize,
-    look: Look,
+    pub(super) index: usize,
+    pub(super) look: Look,
 }
 
 #[derive(Component)]
@@ -102,7 +102,7 @@ pub(super) struct GuardianHum;
 pub(super) struct GuardianEyeLight;
 
 /// A Tumbler's parts, posed each frame.
-type Parts<'w, 's> = Query<
+pub(super) type Parts<'w, 's> = Query<
     'w,
     's,
     (
@@ -238,7 +238,7 @@ pub(super) fn setup(
 }
 
 /// A Tumbler's root with every part as a child, hidden until posed.
-fn spawn_tumbler(commands: &mut Commands, art: &GuardianArt) -> Entity {
+pub(super) fn spawn_tumbler(commands: &mut Commands, art: &GuardianArt) -> Entity {
     commands
         .spawn((
             DespawnOnExit(GameState::HexWfc),
@@ -262,7 +262,7 @@ fn spawn_tumbler(commands: &mut Commands, art: &GuardianArt) -> Entity {
         .id()
 }
 
-fn material(
+pub(super) fn material(
     art: &GuardianArt,
     look: Look,
     seams_dark: bool,
@@ -466,7 +466,7 @@ pub(super) fn play_catches(
     }
 }
 
-fn apply(art: &GuardianArt, pose: &Pose, children: &Children, parts: &mut Parts) {
+pub(super) fn apply(art: &GuardianArt, pose: &Pose, children: &Children, parts: &mut Parts) {
     for child in children.iter() {
         let Ok((part, mut transform, mut visibility, mut current)) = parts.get_mut(child) else {
             continue;

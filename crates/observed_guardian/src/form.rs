@@ -199,6 +199,21 @@ pub fn parts(form: Form) -> Vec<Part> {
     }
 }
 
+/// A hunting Roller posed about `body`, the rest its own roll has reached, looking at
+/// `toward`: for one that walks through the world, where [`pose`] rolls out and back on
+/// the spot. `body` is at [`crate::roll::VERTEX`] scale; draw it scaled for a smaller one.
+#[must_use]
+pub fn roller_rolling(body: crate::roll::Rest, clock: f32, toward: Vec3) -> Pose {
+    roller::rolling(
+        body,
+        clock,
+        Stage {
+            at: Vec3::new(body.centre.x, 0.0, body.centre.z),
+            toward,
+        },
+    )
+}
+
 #[must_use]
 pub fn pose(form: Form, state: State, t: f32, clock: f32, stage: Stage) -> Pose {
     match form {
@@ -765,6 +780,25 @@ mod roller {
                 )
             }
         };
+        posed(state, t, clock, stage, body, lift, flare)
+    }
+
+    /// A hunting Roller whose body is `body`, wherever its roll has taken it: for one that
+    /// walks somewhere rather than out and back in place.
+    pub(super) fn rolling(body: Rest, clock: f32, stage: Stage) -> Pose {
+        posed(State::Hunting, 0.0, clock, stage, body, 0.0, 0.0)
+    }
+
+    /// Every part placed about `body`, `lift` of the way into a catch's opening.
+    fn posed(
+        state: State,
+        t: f32,
+        clock: f32,
+        stage: Stage,
+        body: Rest,
+        lift: f32,
+        flare: f32,
+    ) -> Pose {
         let frame = Transform::from_translation(body.centre).with_rotation(body.rotation);
         // In a catch the half above the equator lifts off and turns.
         let up = body.rotation.inverse() * Vec3::Y;
