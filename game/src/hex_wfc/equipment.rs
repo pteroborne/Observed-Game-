@@ -372,6 +372,16 @@ mod tests {
                 &crate::hex_wfc::pad::HAND,
                 crate::hex_wfc::pad::REACH,
             ),
+            (
+                "lantern in the off hand",
+                &crate::hex_wfc::lantern::torch::OFF_HAND,
+                crate::hex_wfc::lantern::torch::REACH,
+            ),
+            (
+                "kinetic tool",
+                &crate::hex_wfc::kinetic::HAND,
+                crate::hex_wfc::kinetic::REACH,
+            ),
         ] {
             let corners: Vec<Vec3> = (0..8)
                 .map(|i| {

@@ -13,15 +13,17 @@
 //! director's scheduled relayout is switched off: here the facility changes because an
 //! Architect played a card or a contradiction retracted, and for no other reason.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use observed_core::PlayerId;
 
+use super::economy::KINETIC_SHOT_COST;
 use super::session::{ASCENT_INPUT_VERSION, AscentSession, InputFrame, Refusal, Role, Seat};
 use super::sim::{
     ArchitectLab, Embodiment, GuardianId, GuardianKind, MatchOutcome, ObserverId, TeamId,
 };
-use crate::hex_wfc::{HexInputFrame, HexReleasedKind, HexWfcMatch};
+use crate::hex_wfc::{HexInputFrame, HexMatchEventKind, HexReleasedKind, HexWfcMatch};
 
 /// The rules' id for the first-person match's own Guardian, the Tumbler: reserved, above
 /// every Guardian the rules release themselves.
@@ -187,7 +189,8 @@ impl AscentRules {
         if self.session.sim.outcome != MatchOutcome::Running {
             return Err(Refusal::MatchFinished);
         }
-        physical.step(bodies);
+        physical.step(&self.affordable(bodies));
+        self.pay_for_shots(physical);
         self.observe(physical);
         let refusals = self.session.advance(seats)?;
         let rewrites = self.session.sim.take_rewrites();
@@ -227,6 +230,48 @@ impl AscentRules {
             physical.status = crate::hex_wfc::HexMatchStatus::Finished;
         }
         Ok(refusals)
+    }
+
+    /// `bodies`, less every kinetic shot whose Observer's pool cannot pay for it. The rules
+    /// own charge; the physical match only resolves a shot it is handed.
+    fn affordable<'a>(&self, bodies: &'a HexInputFrame) -> Cow<'a, HexInputFrame> {
+        let broke = |player: &PlayerId| {
+            self.bodies
+                .get(player)
+                .is_some_and(|&id| self.session.sim.economy.charge(id) < KINETIC_SHOT_COST)
+        };
+        let shoots = |actions: &crate::hex_wfc::HexActionButtons| {
+            actions.kinetic_push || actions.kinetic_pull
+        };
+        if !bodies
+            .commands
+            .iter()
+            .any(|(player, command)| shoots(&command.actions) && broke(player))
+        {
+            return Cow::Borrowed(bodies);
+        }
+        let mut frame = bodies.clone();
+        for (player, command) in &mut frame.commands {
+            if broke(player) {
+                command.actions.kinetic_push = false;
+                command.actions.kinetic_pull = false;
+            }
+        }
+        Cow::Owned(frame)
+    }
+
+    /// Spend [`KINETIC_SHOT_COST`] from the pool of every Observer whose shot landed this
+    /// tick. A shot that selected nothing raised no event and costs nothing.
+    fn pay_for_shots(&mut self, physical: &HexWfcMatch) {
+        for event in &physical.recent_events {
+            if matches!(
+                event.kind,
+                HexMatchEventKind::KineticPush | HexMatchEventKind::KineticPull
+            ) && let Some(&id) = event.player.as_ref().and_then(|p| self.bodies.get(p))
+            {
+                self.session.sim.economy.spend_charge(id, KINETIC_SHOT_COST);
+            }
+        }
     }
 
     /// Give the rules the bodies' cells, facings and places: in the facility, jailed, or

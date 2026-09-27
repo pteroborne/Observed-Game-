@@ -258,12 +258,25 @@ pub(in crate::hex_wfc) const HAND: Hand = Hand {
     scale: 0.40,
 };
 
+/// In Architect Ascent the kinetic tool has the main hand, and the torch rides in the off
+/// hand, mirrored: low and to the left, canted in toward the middle of the view.
+pub(in crate::hex_wfc) const OFF_HAND: Hand = Hand {
+    offset: Vec3::new(-0.13, -0.095, -0.20),
+    roll: -0.16,
+    ..HAND
+};
+
 pub(super) fn held_pose(
     runtime: &HexWfcRuntime,
     sway: &HeldSway,
     player: &observed_match::hex_wfc::HexPlayerState,
 ) -> Transform {
-    held_transform(player, sway_for(runtime, sway, player), &HAND)
+    let hand = if crate::hex_wfc::kinetic::carried(runtime) {
+        &OFF_HAND
+    } else {
+        &HAND
+    };
+    held_transform(player, sway_for(runtime, sway, player), hand)
 }
 
 /// How brightly the carried core glows, as a share of its full signal: never below

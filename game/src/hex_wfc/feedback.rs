@@ -107,6 +107,9 @@ pub(super) fn sync(
     state.last_tick = tick;
     let delta = runtime.match_state.last_relayout_delta.as_ref();
     for event in &runtime.match_state.recent_events {
+        if super::cues::presented_by_the_tool(event.kind) {
+            continue;
+        }
         let definition = cue_for(event.kind);
         let material = material_for(&assets, definition.marker);
         for cell in event_cells(event, delta) {

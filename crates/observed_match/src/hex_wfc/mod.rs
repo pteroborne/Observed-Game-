@@ -27,12 +27,14 @@ pub use model::{
     DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION, HexActionButtons, HexAnchorSite, HexBodyPlace,
     HexBotDriver, HexDeployedLantern, HexDeployedPad, HexDirectedError, HexDoorState,
     HexGuardianState, HexGuardianStatus, HexInputFrame, HexInteraction, HexInteractionAction,
-    HexLanternCache, HexLanternState, HexMapCellKnowledge, HexMapCellSnapshot, HexMapDiscovery,
-    HexMatchConfig, HexMatchError, HexMatchEvent, HexMatchEventKind, HexMatchSnapshot,
-    HexMatchStatus, HexMinorState, HexPadState, HexPlayerCommand, HexPlayerMapKnowledge,
-    HexPlayerSnapshot, HexPlayerState, HexReleasedGuardian, HexReleasedKind, HexTeamObjectiveState,
-    HexTeamSnapshot, HexTeamState, HexWfcMatch, KEYSTONES_REQUIRED, MAX_ROSTER, MINOR_SIGHT_STEPS,
-    PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER,
+    HexKineticTarget, HexKineticVerb, HexLanternCache, HexLanternState, HexMapCellKnowledge,
+    HexMapCellSnapshot, HexMapDiscovery, HexMatchConfig, HexMatchError, HexMatchEvent,
+    HexMatchEventKind, HexMatchSnapshot, HexMatchStatus, HexMinorState, HexPadState,
+    HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot, HexPlayerState,
+    HexReleasedGuardian, HexReleasedKind, HexTeamObjectiveState, HexTeamSnapshot, HexTeamState,
+    HexWfcMatch, KEYSTONES_REQUIRED, KINETIC_COOLDOWN_TICKS, KINETIC_PULL_SPEED,
+    KINETIC_PUSH_SPEED, KINETIC_REACH, KINETIC_STAGGER_FRICTION, KINETIC_STAGGER_TICKS, MAX_ROSTER,
+    MINOR_SIGHT_STEPS, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER,
 };
 pub use trim::{HexTrimKind, HexTrimPiece, derive_thresholds, derive_trim, derive_trim_for};
 

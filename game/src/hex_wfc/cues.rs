@@ -41,7 +41,7 @@ pub(super) struct CueDefinition {
 }
 
 #[cfg(test)]
-pub(super) const ALL_EVENTS: [HexMatchEventKind; 24] = [
+pub(super) const ALL_EVENTS: [HexMatchEventKind; 26] = [
     HexMatchEventKind::MutationWarning,
     HexMatchEventKind::MutationCommitted,
     HexMatchEventKind::MutationNoChange,
@@ -65,6 +65,8 @@ pub(super) const ALL_EVENTS: [HexMatchEventKind; 24] = [
     HexMatchEventKind::PlayerReleased,
     HexMatchEventKind::Jailbreak,
     HexMatchEventKind::PlayerLost,
+    HexMatchEventKind::KineticPush,
+    HexMatchEventKind::KineticPull,
     HexMatchEventKind::MatchFinished,
 ];
 
@@ -159,10 +161,26 @@ pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
         HexMatchEventKind::PlayerLost => {
             cue("LOST TO THE VOID", MarkerRole::Collapse, HexWfcSound::Hold)
         }
+        // The kinetic tool: the shove lands where the minor stood.
+        HexMatchEventKind::KineticPush => {
+            cue("MINOR PUSHED", MarkerRole::Control, HexWfcSound::Hold)
+        }
+        HexMatchEventKind::KineticPull => {
+            cue("MINOR PULLED", MarkerRole::Control, HexWfcSound::Hold)
+        }
         HexMatchEventKind::MatchFinished => {
             cue("MATCH COMPLETE", MarkerRole::Exit, HexWfcSound::Complete)
         }
     }
+}
+
+/// Whether the kinetic tool presents this event itself (`kinetic`): a shot is heard at
+/// the tool and seen in its pose, not as a beacon over the cell the minor stood in.
+pub(super) const fn presented_by_the_tool(kind: HexMatchEventKind) -> bool {
+    matches!(
+        kind,
+        HexMatchEventKind::KineticPush | HexMatchEventKind::KineticPull
+    )
 }
 
 const fn cue(label: &'static str, marker: MarkerRole, sound: HexWfcSound) -> CueDefinition {

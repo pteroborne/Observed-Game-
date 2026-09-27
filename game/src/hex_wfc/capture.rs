@@ -1,0 +1,411 @@
+//! Screenshot and video capture automation for hex-WFC evidence.
+
+use bevy::prelude::*;
+use bevy::render::view::screenshot::{Screenshot, save_to_disk};
+
+use super::{ascent_capture, hud, launch, loading, sim, view, vista_capture};
+use crate::GameState;
+
+#[derive(Resource)]
+pub(super) struct HexWfcCapture {
+    pub(super) path: String,
+    pub(super) frame: u16,
+    pub(super) mode: HexWfcCaptureMode,
+    /// Relayout mode only: the last simulation tick at which a GIF frame was captured.
+    pub(super) last_shot_tick: u64,
+    /// Relayout mode only: bitset of which labeled stills (before / warning / after)
+    /// have been taken.
+    pub(super) stills: u8,
+    /// Vista mode only: the open edges to stand in, found once the facility exists.
+    vista: Option<Vec<vista_capture::VistaPose>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum HexWfcCaptureMode {
+    Gameplay,
+    /// Context prompts and text scaling at the Steam Deck viewport.
+    Hud,
+    /// Architect Ascent's prison: a real catch, the maze, and the lobby (`ascent_capture`).
+    Prison,
+    /// The Architect's seat: the board, a play, and what it built (`architect::capture`).
+    Architect,
+    Map,
+    Style,
+    /// The arc headline: a mid-match observation-safe relayout captured before, during
+    /// the warning window, and after the committed re-collapse. Forces the pinned seed
+    /// and the showcase (12×9×4) config so the deterministic warning@546 / commit@666
+    /// timeline (proven by `observed_relayout_commits_mid_match_deterministically`)
+    /// reproduces on the capture path.
+    Relayout,
+    /// Pinned showcase route through ramps and grounded switchback stairs.
+    /// This is evidence-only automation: every frame still advances the authoritative
+    /// match through `PlayerIntent` and the production controller.
+    Traversal,
+    /// Stand in the production facility's open edges and look out (`vista_capture`).
+    Vista,
+    /// The carried and placed equipment, staged in the vista's loggia and moonlit room
+    /// (`vista_capture::equipment_poses`).
+    Equipment,
+    /// The major Guardian, frozen by the runner looking at it, in the loggia and the
+    /// windowed room (`vista_capture::guardian_poses`).
+    Guardian,
+}
+
+/// How many screenshots the style montage takes before exiting; matched to a spectated
+/// walkthrough long enough to descend several levels.
+const STYLE_SHOTS: u16 = 8;
+const STYLE_STRIDE: u16 = 45;
+
+/// The pinned seed whose showcase-config relayout commits deterministically at tick 666
+/// (generation 0 → 1). Shared with the match-layer determinism test.
+const RELAYOUT_CAPTURE_SEED: u64 = 0x3F2B_ECB9_7F4A_7C15;
+/// Route gate: two ramp transitions and two stair transitions on a compact
+/// five-level facility. Reused here so the integration evidence is reproducible.
+const TRAVERSAL_CAPTURE_SEED: u64 = 0xa11c_0000_0000_0000;
+
+pub(super) fn configure(app: &mut App) {
+    let capture = std::env::var("OBSERVED2_CAPTURE_HEX_WFC_HUD")
+        .map(|path| (path, HexWfcCaptureMode::Hud))
+        .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_PRISON")
+                .map(|path| (path, HexWfcCaptureMode::Prison))
+        })
+        .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_ARCHITECT")
+                .map(|path| (path, HexWfcCaptureMode::Architect))
+        })
+        .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_VISTA")
+                .map(|path| (path, HexWfcCaptureMode::Vista))
+        })
+        .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_EQUIPMENT")
+                .map(|path| (path, HexWfcCaptureMode::Equipment))
+        })
+        .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_GUARDIAN")
+                .map(|path| (path, HexWfcCaptureMode::Guardian))
+        })
+        .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_STYLE")
+                .map(|path| (path, HexWfcCaptureMode::Style))
+        })
+        .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_RELAYOUT")
+                .map(|path| (path, HexWfcCaptureMode::Relayout))
+        })
+        .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_TRAVERSAL")
+                .map(|path| (path, HexWfcCaptureMode::Traversal))
+        })
+        .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC")
+                .map(|path| (path, HexWfcCaptureMode::Gameplay))
+        })
+        .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_MAP")
+                .map(|path| (path, HexWfcCaptureMode::Map))
+        });
+    if let Ok((path, mode)) = capture {
+        if matches!(
+            mode,
+            HexWfcCaptureMode::Style
+                | HexWfcCaptureMode::Hud
+                | HexWfcCaptureMode::Prison
+                | HexWfcCaptureMode::Architect
+                | HexWfcCaptureMode::Relayout
+                | HexWfcCaptureMode::Traversal
+                | HexWfcCaptureMode::Vista
+                | HexWfcCaptureMode::Equipment
+                | HexWfcCaptureMode::Guardian
+        ) {
+            std::fs::create_dir_all(&path)
+                .expect("hex-WFC directory-style capture directory must be creatable");
+        }
+        app.insert_resource(HexWfcCapture {
+            path,
+            frame: 0,
+            mode,
+            last_shot_tick: 0,
+            stills: 0,
+            vista: None,
+        })
+        .add_systems(Startup, autostart_capture)
+        .add_systems(
+            Update,
+            capture_progress
+                .after(view::sync_lighting_and_atmosphere)
+                .run_if(in_state(GameState::HexWfc)),
+        );
+    }
+}
+
+fn autostart_capture(
+    mut commands: Commands,
+    capture: Res<HexWfcCapture>,
+    mut next: ResMut<NextState<GameState>>,
+    mut play_setup: ResMut<crate::play_setup::PlaySetupDraft>,
+    mut sequence: ResMut<loading::HexLaunchRequestSequence>,
+) {
+    if matches!(
+        capture.mode,
+        HexWfcCaptureMode::Prison | HexWfcCaptureMode::Architect
+    ) {
+        // A teammate, so one catch is not every loyal Observer jailed at once.
+        *play_setup = crate::play_setup::PlaySetupDraft {
+            rules: crate::play_setup::PlayRules::Ascent,
+            seat: if capture.mode == HexWfcCaptureMode::Architect {
+                crate::play_setup::PlaySeat::Architect
+            } else {
+                crate::play_setup::PlaySeat::Observer
+            },
+            ..crate::play_setup::PlaySetupDraft::for_preset(crate::play_setup::PlayPreset::TeamRace)
+        };
+    }
+    if matches!(
+        capture.mode,
+        HexWfcCaptureMode::Hud | HexWfcCaptureMode::Prison | HexWfcCaptureMode::Architect
+    ) {
+        commands.insert_resource(sequence.issue(
+            crate::play_setup::LaunchContext::Local,
+            sim::LOCAL_PLAYER,
+            false,
+            false,
+            launch::HexLaunchSpec {
+                requested_seed: crate::flow::MATCH_SEED,
+                config: sim::runtime_config_for(&play_setup),
+                seed_policy: launch::HexSeedPolicy::Nearby,
+            },
+        ));
+        next.set(GameState::Loading);
+        return;
+    }
+    // The relayout capture must reproduce the pinned deterministic timeline, so it pins
+    // the seed; `sim::runtime_config` pairs it with the showcase config when this env is
+    // set. Other modes keep the default production seed + 28×20×10 facility.
+    match capture.mode {
+        HexWfcCaptureMode::Relayout => {
+            commands.insert_resource(crate::flow::ActiveMatchSeed(RELAYOUT_CAPTURE_SEED));
+        }
+        HexWfcCaptureMode::Traversal => {
+            commands.insert_resource(crate::flow::ActiveMatchSeed(TRAVERSAL_CAPTURE_SEED));
+        }
+        _ => {}
+    }
+    // Capture always runs autonomously: the objective bot drives the runner so evidence
+    // shows real traversal (ramps, stairs, the exit) rather than a frozen spawn. Traversal
+    // mode also preloads its intent in `drive_traversal_capture`; the retained driver is
+    // same-tick idempotent, and this resource keeps `step_runtime` on the same bot control
+    // path instead of clearing the freshly acquired traversal cursor as human input.
+    commands.insert_resource(crate::sim::state::SpectatorBot::for_seed(
+        crate::flow::MATCH_SEED,
+    ));
+    next.set(GameState::HexWfc);
+}
+
+fn capture_progress(
+    mut request: ResMut<HexWfcCapture>,
+    mut runtime: Option<ResMut<sim::HexWfcRuntime>>,
+    mut commands: Commands,
+    mut exit: MessageWriter<AppExit>,
+) {
+    request.frame = request.frame.saturating_add(1);
+    match request.mode {
+        HexWfcCaptureMode::Map => {
+            // Late enough that the spectator bot has explored a facility worth
+            // photographing: at frame 900 it has barely left spawn and the map
+            // shows five cells, which proves the fog-of-war contract but makes a
+            // useless visual gate.
+            if request.frame == 7_200
+                && let Some(runtime) = runtime.as_deref_mut()
+            {
+                runtime.map_open = true;
+            }
+            if request.frame == 7_260 {
+                commands
+                    .spawn(Screenshot::primary_window())
+                    .observe(save_to_disk(request.path.clone()));
+            } else if request.frame == 7_330 {
+                exit.write(AppExit::Success);
+            }
+        }
+        HexWfcCaptureMode::Vista | HexWfcCaptureMode::Equipment | HexWfcCaptureMode::Guardian => {
+            let which = match request.mode {
+                HexWfcCaptureMode::Vista => vista_capture::poses,
+                HexWfcCaptureMode::Equipment => vista_capture::equipment_poses,
+                _ => vista_capture::guardian_poses,
+            };
+            let HexWfcCapture {
+                frame, path, vista, ..
+            } = &mut *request;
+            vista_capture::progress(
+                *frame,
+                path,
+                runtime.as_deref_mut(),
+                vista,
+                which,
+                &mut commands,
+                &mut exit,
+            );
+        }
+        HexWfcCaptureMode::Architect => {}
+        HexWfcCaptureMode::Prison => {
+            ascent_capture::advance(
+                &mut request,
+                runtime.as_deref_mut(),
+                &mut commands,
+                &mut exit,
+            );
+        }
+        HexWfcCaptureMode::Hud => {
+            hud::capture::advance(
+                &mut request,
+                runtime.as_deref_mut(),
+                &mut commands,
+                &mut exit,
+            );
+        }
+        HexWfcCaptureMode::Gameplay => {
+            if request.frame == 60 {
+                commands
+                    .spawn(Screenshot::primary_window())
+                    .observe(save_to_disk(request.path.clone()));
+            } else if request.frame == 120 {
+                exit.write(AppExit::Success);
+            }
+        }
+        HexWfcCaptureMode::Style => {
+            let shot = request.frame / STYLE_STRIDE;
+            if request.frame % STYLE_STRIDE == STYLE_STRIDE - 10 && shot < STYLE_SHOTS {
+                let path =
+                    std::path::Path::new(&request.path).join(format!("hex_wfc_{shot:03}.png"));
+                commands
+                    .spawn(Screenshot::primary_window())
+                    .observe(save_to_disk(path));
+            } else if request.frame >= STYLE_SHOTS * STYLE_STRIDE + 20 {
+                exit.write(AppExit::Success);
+            }
+        }
+        HexWfcCaptureMode::Relayout => {
+            // Keyed on the simulation tick, never the frame counter: the warning fires at
+            // 546 and the commit at 666, and several FixedUpdate steps can share one
+            // render frame. At most one screenshot entity is spawned per frame so the
+            // async saves never race on the same window.
+            let Some(runtime) = runtime.as_deref() else {
+                return;
+            };
+            let tick = runtime.match_state.tick;
+            // The three headline stills: quiescent, mid-warning banner, post-commit.
+            const STILLS: [(u64, u8, &str); 3] = [
+                (526, 0b001, "relayout_1_before"),
+                (606, 0b010, "relayout_2_warning"),
+                (676, 0b100, "relayout_3_after"),
+            ];
+            for (at, bit, name) in STILLS {
+                if tick >= at && request.stills & bit == 0 {
+                    request.stills |= bit;
+                    let path = std::path::Path::new(&request.path).join(format!("{name}.png"));
+                    commands
+                        .spawn(Screenshot::primary_window())
+                        .observe(save_to_disk(path));
+                    return;
+                }
+            }
+            // Dense GIF frames spanning the whole warning→commit window.
+            const GIF_START: u64 = 511;
+            const GIF_END: u64 = 706;
+            if (GIF_START..=GIF_END).contains(&tick)
+                && tick.saturating_sub(request.last_shot_tick) >= 4
+            {
+                let index = ((tick - GIF_START) / 4) as u16;
+                request.last_shot_tick = tick;
+                let path =
+                    std::path::Path::new(&request.path).join(format!("frame_{index:03}.png"));
+                commands
+                    .spawn(Screenshot::primary_window())
+                    .observe(save_to_disk(path));
+            } else if tick > GIF_END + 5 {
+                exit.write(AppExit::Success);
+            }
+        }
+        HexWfcCaptureMode::Traversal => {
+            let Some(runtime) = runtime.as_deref() else {
+                return;
+            };
+            let tick = runtime.match_state.tick;
+            const STILLS: [(u64, &str); 7] = [
+                (325, "ramp_1_approach"),
+                (450, "ramp_1_upper"),
+                (1_300, "stair_1_approach"),
+                (1_600, "stair_1_lower_flight"),
+                (5_500, "stair_2_upper_flight"),
+                (7_900, "stair_3_second_tower"),
+                (14_200, "ramp_2_upper_route"),
+            ];
+            for (at, name) in STILLS {
+                let bit = 1u8 << STILLS.iter().position(|entry| entry.0 == at).unwrap_or(0);
+                if tick >= at && request.stills & bit == 0 {
+                    request.stills |= bit;
+                    let path = std::path::Path::new(&request.path).join(format!("{name}.png"));
+                    commands
+                        .spawn(Screenshot::primary_window())
+                        .observe(save_to_disk(path));
+                    return;
+                }
+            }
+            if runtime.match_state.players[&runtime.local_player].escaped || tick > 20_000 {
+                exit.write(AppExit::Success);
+            }
+        }
+    }
+}
+
+/// Evidence-only deterministic driver for the pinned traversal montage. Normal play and
+/// every other capture mode return immediately. The objective bot walks the complete
+/// physical route through ramps and switchback stairs with ordinary `PlayerIntent`.
+pub(super) fn drive_traversal_capture(
+    capture: Option<Res<HexWfcCapture>>,
+    mut runtime: Option<ResMut<sim::HexWfcRuntime>>,
+    mut intent: Option<ResMut<sim::HexWfcIntent>>,
+) {
+    let (Some(capture), Some(runtime), Some(intent)) =
+        (capture, runtime.as_deref_mut(), intent.as_deref_mut())
+    else {
+        return;
+    };
+    if capture.mode != HexWfcCaptureMode::Traversal {
+        return;
+    }
+    if runtime.match_state.lanterns.deployed.is_empty() {
+        let blueprint = runtime
+            .match_state
+            .facility
+            .blueprints
+            .iter()
+            .find(|blueprint| blueprint.cells.contains(&runtime.match_state.guardian.cell))
+            .expect("capture Guardian belongs to a room blueprint");
+        let threshold = observed_facility::hex_wfc::HexThresholdKey {
+            room_generation_key: blueprint.generation_key(),
+            port: "traversal-capture-pin",
+        };
+        runtime
+            .match_state
+            .lanterns
+            .deploy(
+                runtime.local_player,
+                threshold,
+                blueprint.anchor,
+                Vec3::ZERO,
+            )
+            .expect("traversal capture starts with one anchor lantern");
+    }
+    let local_player = runtime.local_player;
+    let command = {
+        let runtime = &mut *runtime;
+        runtime
+            .bot_driver
+            .command(&runtime.match_state, local_player)
+    };
+    intent.intent = command.intent;
+    intent.actions = command.actions;
+}

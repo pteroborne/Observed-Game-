@@ -46,6 +46,8 @@ observed_diagnostics = { path = "../crates/observed_diagnostics" }
 observed_style = { path = "../crates/observed_style" }
 # The Guardians' forms, shared with guardian_form_lab.
 observed_guardian = { path = "../crates/observed_guardian" }
+# The Observer's kinetic tool, the Lance, shared with kinetic_tool_lab and wfc_kinetic_lab.
+observed_tool = { path = "../crates/observed_tool" }
 # Shared focusable menu chrome, extracted from this crate in Arc R.
 observed_ui = { path = "../crates/observed_ui" }
 observed_assets = { path = "../crates/observed_assets" }

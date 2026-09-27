@@ -7098,6 +7098,7 @@ dependencies = [
  "observed_progression",
  "observed_server",
  "observed_style",
+ "observed_tool",
  "observed_traversal",
  "observed_ui",
  "player_input",

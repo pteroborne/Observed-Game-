@@ -19,6 +19,11 @@ pub const MAX_CHARGE: u32 = 100;
 /// Charge consumed by one kinetic shove.
 pub const SHOVE_COST: u32 = 25;
 
+/// Charge consumed by one push or pull of the kinetic tool on the real facility, where a
+/// shot moves a minor rather than deciding its fate: the architecture still has to take
+/// it (`hex_wfc::kinetic`). A cell-level shove commits the minor, and costs [`SHOVE_COST`].
+pub const KINETIC_SHOT_COST: u32 = 10;
+
 /// Charge restored per actor beat at a powered recharge station.
 pub const RECHARGE_PER_BEAT: u32 = 25;
 

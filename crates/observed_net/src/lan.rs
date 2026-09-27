@@ -19,7 +19,8 @@ use crate::protocol::WireIntent;
 /// every peer must then step beside the match to stay in step with the server. Version 5
 /// carries a seat command with every body command (`WireSeatCommand`), lets a player claim
 /// their team's Architect desk in the lobby, and names the human Architects in `Launch`.
-pub const LAN_PROTOCOL_VERSION: u16 = 5;
+/// Version 6 carries the kinetic tool's push and pull among a body's action bits.
+pub const LAN_PROTOCOL_VERSION: u16 = 6;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;
@@ -77,11 +78,18 @@ impl WireHexCommand {
     const DEPLOY: u8 = 1 << 1;
     const RECOVER: u8 = 1 << 2;
     const DEPLOY_PAD: u8 = 1 << 3;
+    const KINETIC_PUSH: u8 = 1 << 4;
+    const KINETIC_PULL: u8 = 1 << 5;
     /// Every bit this build understands. The decoder rejects anything outside
     /// it, so this must be derived from the flags rather than written out as a
     /// literal: a hand-maintained mask silently rejects the newest action, and
     /// the symptom is a button that works locally and does nothing over LAN.
-    const KNOWN_ACTIONS: u8 = Self::INTERACT | Self::DEPLOY | Self::RECOVER | Self::DEPLOY_PAD;
+    const KNOWN_ACTIONS: u8 = Self::INTERACT
+        | Self::DEPLOY
+        | Self::RECOVER
+        | Self::DEPLOY_PAD
+        | Self::KINETIC_PUSH
+        | Self::KINETIC_PULL;
 
     #[must_use]
     pub fn from_command(command: HexPlayerCommand) -> Self {
@@ -97,6 +105,12 @@ impl WireHexCommand {
         }
         if command.actions.deploy_pad {
             actions |= Self::DEPLOY_PAD;
+        }
+        if command.actions.kinetic_push {
+            actions |= Self::KINETIC_PUSH;
+        }
+        if command.actions.kinetic_pull {
+            actions |= Self::KINETIC_PULL;
         }
         Self {
             intent: WireIntent::from_player_intent(command.intent.sanitized()),
@@ -121,6 +135,8 @@ impl WireHexCommand {
                 deploy_lantern: self.actions & Self::DEPLOY != 0,
                 recover_lantern: self.actions & Self::RECOVER != 0,
                 deploy_pad: self.actions & Self::DEPLOY_PAD != 0,
+                kinetic_push: self.actions & Self::KINETIC_PUSH != 0,
+                kinetic_pull: self.actions & Self::KINETIC_PULL != 0,
             },
         }
     }
@@ -1364,6 +1380,8 @@ mod tests {
                 // Set so the round trip proves the pad bit survives the wire; a
                 // default here would let an unencoded field pass silently.
                 deploy_pad: true,
+                kinetic_push: true,
+                kinetic_pull: false,
             },
         });
         vec![
@@ -1488,10 +1506,20 @@ mod tests {
                 ..Default::default()
             },
             HexActionButtons {
+                kinetic_push: true,
+                ..Default::default()
+            },
+            HexActionButtons {
+                kinetic_pull: true,
+                ..Default::default()
+            },
+            HexActionButtons {
                 interact: true,
                 deploy_lantern: true,
                 recover_lantern: true,
                 deploy_pad: true,
+                kinetic_push: true,
+                kinetic_pull: true,
             },
         ];
         for actions in buttons {

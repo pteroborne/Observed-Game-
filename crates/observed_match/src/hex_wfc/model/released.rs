@@ -23,7 +23,11 @@ use player_input::PlayerIntent;
 
 use super::{
     FIXED_DT, FLOOR_SLAB_TOP, HexGuardianState, HexMatchEvent, HexMatchEventKind, HexWfcMatch,
+    KINETIC_STAGGER_FRICTION, KINETIC_STAGGER_TICKS,
 };
+
+/// Below this plan-view speed, m/s, a grounded staggered minor has stopped and recovers.
+const STAGGER_RECOVERED_SPEED: f32 = 0.5;
 
 /// How far a minor detects a body, in steps through its floor's open doors: the same
 /// six cells the rules' Guardians see down a line.
@@ -57,7 +61,36 @@ pub struct HexMinorState {
     pub target: Option<PlayerId>,
     /// The next cell on its way to the target, or its own cell once it shares one.
     waypoint: Option<HexCoord>,
+    /// Ticks left sliding from a kinetic shove, when it neither walks nor catches.
+    pub stagger: u16,
     body: FpsBody,
+}
+
+impl HexMinorState {
+    /// Whether it is sliding from a kinetic shove.
+    #[must_use]
+    pub const fn staggered(&self) -> bool {
+        self.stagger > 0
+    }
+
+    /// Set it sliding at `velocity`: it stops walking, forgets its prey, and slides under
+    /// [`KINETIC_STAGGER_FRICTION`] until it stops or the stagger runs out.
+    /// Stand it at rest at `position`.
+    #[cfg(test)]
+    pub(super) fn stand_at(&mut self, position: Vec3) {
+        self.body = FpsBody::spawned(position, self.body.yaw);
+        self.position = position;
+    }
+
+    pub(super) fn shove(&mut self, velocity: Vec3) {
+        self.body.velocity = velocity;
+        if velocity.y > 0.0 {
+            self.body.grounded = false;
+        }
+        self.stagger = KINETIC_STAGGER_TICKS;
+        self.target = None;
+        self.waypoint = None;
+    }
 }
 
 /// A Guardian released after tick zero.
@@ -122,6 +155,7 @@ impl HexWfcMatch {
                     yaw: 0.0,
                     target: None,
                     waypoint: None,
+                    stagger: 0,
                     body: FpsBody::spawned(position, 0.0),
                 })
             }
@@ -165,13 +199,17 @@ impl HexWfcMatch {
         let Some(HexReleasedGuardian::Minor(mut minor)) = self.released.get(&id).cloned() else {
             return;
         };
+        let staggered = minor.staggered();
         let replan = (self.tick + u64::from(id)).is_multiple_of(MINOR_REPLAN_TICKS);
         let lost_target = minor.target.is_none_or(|player| !self.huntable(player));
-        if replan || lost_target {
+        if !staggered && (replan || lost_target) {
             (minor.target, minor.waypoint) = self.minor_plan(minor.cell);
         }
 
-        let intent = minor.target.map_or_else(PlayerIntent::default, |player| {
+        // A shoved minor does not walk: it slides, on the ground and through the air,
+        // under one fixed friction, on the same controller.
+        let target = if staggered { None } else { minor.target };
+        let intent = target.map_or_else(PlayerIntent::default, |player| {
             let prey = self.players[&player].position;
             let aim = match minor.waypoint {
                 Some(next) if next != minor.cell => {
@@ -189,14 +227,24 @@ impl HexWfcMatch {
             )
         });
         let profile = self.content.traversal_profile();
+        let mut controller = profile.controller();
+        if staggered {
+            controller.ground_decel = KINETIC_STAGGER_FRICTION;
+            controller.air_accel = KINETIC_STAGGER_FRICTION;
+        }
         let _ = step_character_with_settings(
             &self.physics,
             &mut minor.body,
             intent,
-            &profile.controller(),
+            &controller,
             profile.rapier(),
             FIXED_DT,
         );
+        if staggered {
+            let stopped = minor.body.grounded
+                && minor.body.velocity.with_y(0.0).length() < STAGGER_RECOVERED_SPEED;
+            minor.stagger = if stopped { 0 } else { minor.stagger - 1 };
+        }
 
         let floor_y = self.geometry.arena.floor_y;
         if !minor.body.position.is_finite() || minor.body.position.y < floor_y - OUT_OF_WORLD_DEPTH
@@ -218,7 +266,7 @@ impl HexWfcMatch {
             minor.waypoint = None;
         }
 
-        if let Some(player) = minor.target {
+        if let Some(player) = minor.target.filter(|_| !staggered) {
             let prey = &self.players[&player];
             let offset = prey.position - minor.position;
             if offset.y.abs() <= MINOR_CATCH_HEIGHT

@@ -27,6 +27,7 @@ pub use directed::HexDirectedError;
 mod equipment;
 mod guardian;
 mod interaction;
+mod kinetic;
 mod knowledge;
 pub mod prison;
 pub use interaction::{HexInteraction, HexInteractionAction};
@@ -44,6 +45,10 @@ mod tests;
 pub use bot::HexBotDriver;
 pub use equipment::{HexAnchorSite, HexDeployedLantern, HexLanternCache, HexLanternState};
 pub use guardian::{HexGuardianState, HexGuardianStatus};
+pub use kinetic::{
+    HexKineticTarget, HexKineticVerb, KINETIC_COOLDOWN_TICKS, KINETIC_PULL_SPEED,
+    KINETIC_PUSH_SPEED, KINETIC_REACH, KINETIC_STAGGER_FRICTION, KINETIC_STAGGER_TICKS,
+};
 pub use knowledge::{HexMapCellKnowledge, HexMapDiscovery, HexPlayerMapKnowledge};
 pub use objectives::{DUAL_STATION_HOLD_TICKS, HexObjectiveState, KEYSTONES_REQUIRED};
 pub use pad::{HexDeployedPad, HexPadState, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER};
@@ -58,10 +63,11 @@ pub(super) const FIXED_DT: f32 = 1.0 / 60.0;
 /// traversal must all agree on this surface or a capsule starts half embedded
 /// in collision.
 pub(super) use observed_hex::FLOOR_SLAB_TOP;
-/// Bumped to 6 when `deploy_pad` joined [`HexActionButtons`]. The handshake
-/// compares this, so a peer built before teleport plates is refused outright
-/// rather than connecting and then disagreeing about a bit it never sends.
-pub const HEX_INPUT_VERSION: u16 = 6;
+/// Bumped to 6 when `deploy_pad` joined [`HexActionButtons`], and to 7 when the kinetic
+/// tool's push and pull did. The handshake compares this, so a peer built before a
+/// button is refused outright rather than connecting and then disagreeing about a bit
+/// it never sends.
+pub const HEX_INPUT_VERSION: u16 = 7;
 
 /// Most players one match may hold. Agrees with `observed_net::lan::MAX_SEATS`
 /// and `observed_progression::session::lan::LAN_MAX_SEATS`; a mismatch shows up
@@ -85,6 +91,10 @@ pub struct HexActionButtons {
     /// fires on contact, so the only button it needs is the one that puts it
     /// down. See [`pad`].
     pub deploy_pad: bool,
+    /// Push with the kinetic tool: shove the minor in the crosshair away (`kinetic`).
+    pub kinetic_push: bool,
+    /// Pull with the kinetic tool: draw the minor in the crosshair back.
+    pub kinetic_pull: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -163,6 +173,10 @@ pub enum HexMatchEventKind {
     Jailbreak,
     /// A body fell out of the facility into true void and has left first-person play.
     PlayerLost,
+    /// `player`'s kinetic tool pushed a minor, standing in `cell`, away.
+    KineticPush,
+    /// `player`'s kinetic tool pulled a minor, standing in `cell`, back.
+    KineticPull,
     MatchFinished,
 }
 
@@ -344,6 +358,9 @@ pub struct HexWfcMatch {
     /// after a fall from an open edge. Omitted from snapshots for the same reason as
     /// [`Self::stuck_ticks`]; it only ever counts toward a recovery.
     pub(super) stranded_ticks: BTreeMap<PlayerId, u16>,
+    /// Ticks before each body's kinetic tool fires again; absent is ready. Omitted from
+    /// snapshots like [`Self::stuck_ticks`]: late joiners replay from tick one.
+    pub(super) kinetic_cooldowns: BTreeMap<PlayerId, u8>,
     /// Immutable content retained so relayout uses the same catalog,
     /// composition, movement profile, and network identity as initial solve.
     pub(super) content: Arc<HexMatchContent>,
@@ -539,6 +556,7 @@ impl HexWfcMatch {
             physics,
             stuck_ticks: BTreeMap::new(),
             stranded_ticks: BTreeMap::new(),
+            kinetic_cooldowns: BTreeMap::new(),
             progress_anchor: BTreeMap::new(),
             content,
             pending_relayout: None,
@@ -588,6 +606,7 @@ impl HexWfcMatch {
             self.move_player(id, command.intent.sanitized());
             self.step_lantern_actions(id, command.actions);
             self.step_pad_actions(id, command.actions);
+            self.step_kinetic_actions(id, command.actions);
         }
         // After every body has moved, so contact is judged where a player ended
         // the tick; the `sync_teleports_to_bodies` below carries any jump into

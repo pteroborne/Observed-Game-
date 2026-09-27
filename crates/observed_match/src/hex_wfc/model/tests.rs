@@ -721,9 +721,13 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // it was 21 touching 14. The note above that this gate never relayouts is out of
     // date; it commits twenty-odd, and the bot's route is tick for tick the same
     // through all of them.
+    //
+    // The kinetic tool bumped HEX_INPUT_VERSION to 7, which folds into the snapshot,
+    // moving the digest (0x6721_adbd_eade_9b9f -> 0x72d6_c076_3eee_2db8) without moving
+    // the tick, again proving bit-level representation change rather than behavioral.
     assert_eq!(
         first.snapshot().digest,
-        0x6721_adbd_eade_9b9f,
+        0x72d6_c076_3eee_2db8,
         "TR-10 pins the declared-ramp final snapshot digest"
     );
 }

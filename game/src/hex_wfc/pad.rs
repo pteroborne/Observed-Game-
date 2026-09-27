@@ -166,7 +166,11 @@ pub(super) fn sync_projection(
 
     for player in runtime.match_state.players.values() {
         let carried = runtime.match_state.pads.inventory(player.id);
-        if carried > 0 && !player.escaped {
+        // In Ascent the torch has the off hand while it is carried: one thing to a hand.
+        // The plates are still counted on the HUD.
+        let hand_free = !crate::hex_wfc::kinetic::carried(&runtime)
+            || runtime.match_state.lanterns.inventory(player.id) == 0;
+        if carried > 0 && !player.escaped && hand_free {
             spawn_plate(
                 &mut commands,
                 &assets,
@@ -352,6 +356,13 @@ fn pad_signature(runtime: &HexWfcRuntime) -> u64 {
         mix(u64::from(id.0));
         mix(u64::from(pad.owner.0));
         mix(u64::from(pad.team.0));
+    }
+    // In Ascent, whether a hand is free for the plates turns on the torch.
+    if crate::hex_wfc::kinetic::carried(runtime) {
+        for (&player, &count) in &runtime.match_state.lanterns.carried {
+            mix(u64::from(player.0));
+            mix(u64::from(count));
+        }
     }
     hash
 }

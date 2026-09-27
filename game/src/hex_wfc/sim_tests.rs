@@ -93,6 +93,8 @@ fn offline_pause_stops_the_authoritative_system_tick() {
                 deploy_lantern: true,
                 recover_lantern: true,
                 deploy_pad: true,
+                kinetic_push: true,
+                kinetic_pull: true,
             },
             browse_map_level: 1,
         })

@@ -79,6 +79,15 @@ pub(in crate::hex_wfc) struct HudNotice {
     tone: Tone,
 }
 
+impl HudNotice {
+    /// Show `text` from `now` (app seconds), as an event's notice would be shown.
+    pub(in crate::hex_wfc) fn show(&mut self, text: &'static str, tone: Tone, now: f64) {
+        self.text = text;
+        self.tone = tone;
+        self.until = now + NOTICE_SECONDS;
+    }
+}
+
 fn text(field: Field, size: f32, color: Color) -> impl Bundle {
     (
         field,
@@ -400,6 +409,11 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
         )
         .unwrap_or(u8::MAX),
     });
+    // In Ascent the rules own the kinetic tool's charge.
+    let charge = runtime.ascent.as_ref().and_then(|ascent| {
+        let observer = ascent.observer_for(runtime.local_player)?;
+        Some(ascent.rules().economy.charge(observer))
+    });
     let prompt = game
         .interaction(runtime.local_player)
         .map(|prompt| prompt_view(&prompt, &settings, team.objectives.dual_station_ticks));
@@ -420,21 +434,36 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
             Field::ObjectiveHeading => (objective.heading.clone(), 13.0, DIM),
             Field::ObjectiveGoal => (objective.goal.clone(), 18.0, TITLE),
             Field::EquipmentCounts => (
-                format!(
-                    "LANTERNS {}   PLATES {}",
-                    game.lanterns.inventory(runtime.local_player),
-                    game.pads.inventory(runtime.local_player)
-                ),
+                match charge {
+                    Some(charge) => format!(
+                        "CHARGE {charge}   LANTERNS {}   PLATES {}",
+                        game.lanterns.inventory(runtime.local_player),
+                        game.pads.inventory(runtime.local_player)
+                    ),
+                    None => format!(
+                        "LANTERNS {}   PLATES {}",
+                        game.lanterns.inventory(runtime.local_player),
+                        game.pads.inventory(runtime.local_player)
+                    ),
+                },
                 15.0,
                 TITLE,
             ),
             Field::EquipmentKeys => (
-                format!(
-                    "[{}] Plate   [{}] Map   [{}] Pause",
-                    key_name(settings.bindings.pad),
-                    key_name(settings.bindings.tac_map),
-                    key_name(settings.bindings.pause)
-                ),
+                if charge.is_some() {
+                    format!(
+                        "[LMB] Push   [RMB] Pull   [{}] Plate   [{}] Map",
+                        key_name(settings.bindings.pad),
+                        key_name(settings.bindings.tac_map),
+                    )
+                } else {
+                    format!(
+                        "[{}] Plate   [{}] Map   [{}] Pause",
+                        key_name(settings.bindings.pad),
+                        key_name(settings.bindings.tac_map),
+                        key_name(settings.bindings.pause)
+                    )
+                },
                 13.0,
                 DIM,
             ),

@@ -100,6 +100,9 @@ pub(super) fn sync(
     let master = settings.effective_sfx_volume();
     let delta = runtime.match_state.last_relayout_delta.as_ref();
     for event in &runtime.match_state.recent_events {
+        if super::cues::presented_by_the_tool(event.kind) {
+            continue;
+        }
         let definition = cue_for(event.kind);
         // One sound per event even when a mutation touches several cells (the first —
         // deterministic, since `changed_cells` is a `BTreeSet` — stands in for the whole
@@ -128,7 +131,7 @@ fn sound(assets: &HexWfcAudioAssets, cue: HexWfcSound) -> Handle<AudioSource> {
     }
 }
 
-fn play(
+pub(super) fn play(
     commands: &mut Commands,
     source: Handle<AudioSource>,
     volume: f32,

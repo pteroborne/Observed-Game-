@@ -218,6 +218,32 @@ impl RapierTraversalScene {
             .any(|(_, collider)| collider.user_data != 0)
     }
 
+    /// How far along `direction` from `origin` the first structural collider is, within
+    /// `reach`, or `None` if the way is clear. `direction` need not be normalised; the
+    /// distance is in its units. Queries only the live stable colliders, as the
+    /// controller does, so it agrees with what a body would walk into.
+    #[must_use]
+    pub fn ray_distance(&self, origin: Vec3, direction: Vec3, reach: f32) -> Option<f32> {
+        let active = |handle: ColliderHandle, collider: &Collider| {
+            self.stable_handles
+                .get(&super::StableColliderId(collider.user_data as u32))
+                == Some(&handle)
+        };
+        let query = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
+            &self.bodies,
+            &self.colliders,
+            QueryFilter::default().predicate(&active),
+        );
+        let ray = Ray::new(
+            Vector::new(origin.x, origin.y, origin.z),
+            Vector::new(direction.x, direction.y, direction.z),
+        );
+        query
+            .cast_ray(&ray, reach, true)
+            .map(|(_, distance)| distance)
+    }
+
     pub fn collider_count(&self) -> usize {
         self.stable_handles.len()
     }

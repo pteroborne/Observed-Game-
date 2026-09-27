@@ -21,6 +21,7 @@ const OVERLAY_TRANSITION_CAPTURE: &str = "hex_overlay_transition";
 pub(super) struct HexInputContext<'w, 's> {
     keyboard: Res<'w, ButtonInput<KeyCode>>,
     mouse: Option<Res<'w, AccumulatedMouseMotion>>,
+    buttons: Option<Res<'w, ButtonInput<MouseButton>>>,
     gamepads: Query<'w, 's, &'static Gamepad>,
     settings: Res<'w, crate::settings::Settings>,
     overlay: Res<'w, MatchOverlayState>,
@@ -34,6 +35,7 @@ pub(super) fn map_input(context: HexInputContext) {
     let HexInputContext {
         keyboard,
         mouse,
+        buttons,
         gamepads,
         settings,
         overlay,
@@ -67,6 +69,8 @@ pub(super) fn map_input(context: HexInputContext) {
     let mut gamepad_deploy = false;
     let mut gamepad_recover = false;
     let mut gamepad_pad = false;
+    let mut gamepad_push = false;
+    let mut gamepad_pull = false;
     for gamepad in &gamepads {
         let (command, items) = crate::screens::input::read_gamepad_match(gamepad);
         gamepad_intent.movement += command.movement;
@@ -81,7 +85,10 @@ pub(super) fn map_input(context: HexInputContext) {
         // stays unread on purpose.
         gamepad_pad |= items.pad_action;
         gamepad_recover |= gamepad.just_pressed(GamepadButton::East);
+        gamepad_push |= gamepad.just_pressed(GamepadButton::RightTrigger2);
+        gamepad_pull |= gamepad.just_pressed(GamepadButton::RightThumb);
     }
+    let clicked = |button: MouseButton| buttons.as_ref().is_some_and(|b| b.just_pressed(button));
     intent.intent = PlayerIntent {
         movement: (movement + gamepad_intent.movement).clamp_length_max(1.0),
         look: mouse_delta * (settings.mouse_sensitivity * 0.018_333)
@@ -104,6 +111,9 @@ pub(super) fn map_input(context: HexInputContext) {
         deploy_lantern: keyboard.just_pressed(bindings.torch) || gamepad_deploy,
         recover_lantern: keyboard.just_pressed(bindings.recover_lantern) || gamepad_recover,
         deploy_pad: keyboard.just_pressed(bindings.pad) || gamepad_pad,
+        // The kinetic tool: left pushes, right pulls, as `wfc_kinetic_lab` fires it.
+        kinetic_push: clicked(MouseButton::Left) || gamepad_push,
+        kinetic_pull: clicked(MouseButton::Right) || gamepad_pull,
     };
     intent.browse_map_level = 0;
 }
@@ -397,6 +407,8 @@ mod tests {
                     deploy_lantern: true,
                     recover_lantern: true,
                     deploy_pad: true,
+                    kinetic_push: true,
+                    kinetic_pull: true,
                 },
                 browse_map_level: 1,
             })
