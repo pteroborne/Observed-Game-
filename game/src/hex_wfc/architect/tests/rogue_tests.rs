@@ -1,6 +1,6 @@
 //! The Rogue board: a player whose body fell into true void plays for the Rogue, from a
-//! Rogue hand of their own, on the facility's truth, through their own seat, and sends the
-//! major Guardians where they point.
+//! Rogue hand of their own, on the facility's truth, through their own seat - its own
+//! deck's directives and sensors among them.
 
 use super::*;
 
@@ -78,18 +78,26 @@ fn a_corrupted_player_plays_for_the_rogue_from_their_own_seat() {
     assert!(log.len() > before && log.iter().any(|&(_, command)| command == play));
 }
 
-/// At the Rogue board the answer key sends the major Guardians to the cell pointed at: the
-/// rules take the directive from the player's own seat, on the player's own clock, and the
-/// Guardians' bodies are told where to walk.
-#[test]
-fn the_rogue_board_sends_the_guardians_where_it_points() {
-    let local = PlayerId(0);
-    let mut runtime = runtime_as_body(local);
-    runtime.match_state.drop_into_void(local);
-    let mut desk = ArchitectDesk::rogue(local, AscentTeam(TEAM.0), 0);
-    tick_rogue(&mut runtime, &mut desk);
-
+/// Stage a card of `kind` into the local Rogue player's hand and play it through the desk
+/// as they would - picked up, aimed at the first cell the rules take it on, confirmed - and
+/// step. Where it went.
+fn play_rogue_card(
+    runtime: &mut HexWfcRuntime,
+    desk: &mut ArchitectDesk,
+    kind: observed_match::ascent::sim::CardKind,
+) -> observed_hex::HexCoord {
+    let card = runtime
+        .ascent
+        .as_mut()
+        .expect("an Ascent match")
+        .stage_card(desk.seat, kind)
+        .expect("the Rogue's deck deals it");
     let ascent = runtime.ascent.as_ref().expect("an Ascent match");
+    let play = |target| ArchitectCommand::Play {
+        card,
+        target,
+        rotation: 0,
+    };
     let target = desk
         .knowledge(ascent.rules())
         .expect("the Rogue board's view")
@@ -99,19 +107,47 @@ fn the_rogue_board_sends_the_guardians_where_it_points() {
         .find(|&cell| {
             ascent
                 .session()
-                .architect_refusal(desk.seat, ArchitectCommand::Direct { target: cell })
+                .architect_refusal(desk.seat, play(cell))
                 .is_none()
         })
-        .expect("somewhere to send the Guardians");
-    let bot_clock = ascent.rules().cooldown;
+        .expect("somewhere the rules take it");
+    let index = desk
+        .hand(ascent.session())
+        .expect("hand")
+        .deck
+        .hand
+        .iter()
+        .position(|held| held.id == card)
+        .expect("staged into the hand");
+    desk.selected = Some(index);
+    desk.rotation = 0;
     desk.look_at(target.level);
     desk.hovered = Some(target);
-    super::super::input::direct_guardians(&mut desk, &runtime);
-    assert_eq!(desk.pending, Some(ArchitectCommand::Direct { target }));
+    assert!(!desk.click_cell(target), "the first click aims");
+    super::super::input::confirm_play(desk, runtime);
+    assert_eq!(desk.pending, Some(play(target)), "{:?}", desk.last_refusal);
+    tick_rogue(runtime, desk);
+    assert_eq!(desk.pending, None, "the desk handed the play over");
+    target
+}
+
+/// A directive card from the Rogue's own hand sends the major Guardians where it is played:
+/// through the player's own seat, on the player's own clock, and to the Guardians' bodies.
+#[test]
+fn the_rogue_board_sends_the_guardians_where_it_points() {
+    let local = PlayerId(0);
+    let mut runtime = runtime_as_body(local);
+    runtime.match_state.drop_into_void(local);
+    let mut desk = ArchitectDesk::rogue(local, AscentTeam(TEAM.0), 0);
     tick_rogue(&mut runtime, &mut desk);
 
+    let bot_clock = runtime.ascent.as_ref().expect("rules").rules().cooldown;
+    let target = play_rogue_card(
+        &mut runtime,
+        &mut desk,
+        observed_match::ascent::sim::CardKind::Directive,
+    );
     let ascent = runtime.ascent.as_ref().expect("an Ascent match");
-    assert_eq!(desk.pending, None, "the desk handed the directive over");
     assert_eq!(
         ascent.rules().directed.map(|directive| directive.cell),
         Some(target)
@@ -124,8 +160,8 @@ fn the_rogue_board_sends_the_guardians_where_it_points() {
     );
 }
 
-/// At the Rogue board the sensor key installs a sensor on the cell pointed at, through the
-/// player's own seat; it hangs in the facility, and the board's orders count it.
+/// A sensor card from the Rogue's own hand installs a sensor where it is played; it hangs
+/// in the facility, and the board's orders count it.
 #[test]
 fn the_rogue_board_installs_a_sensor_where_it_points() {
     let local = PlayerId(0);
@@ -134,26 +170,11 @@ fn the_rogue_board_installs_a_sensor_where_it_points() {
     let mut desk = ArchitectDesk::rogue(local, AscentTeam(TEAM.0), 0);
     tick_rogue(&mut runtime, &mut desk);
 
-    let ascent = runtime.ascent.as_ref().expect("an Ascent match");
-    let target = desk
-        .knowledge(ascent.rules())
-        .expect("the Rogue board's view")
-        .cells
-        .keys()
-        .copied()
-        .find(|&cell| {
-            ascent
-                .session()
-                .architect_refusal(desk.seat, ArchitectCommand::Sense { target: cell })
-                .is_none()
-        })
-        .expect("somewhere to install a sensor");
-    desk.look_at(target.level);
-    desk.hovered = Some(target);
-    super::super::input::install_sensor(&mut desk, &runtime);
-    assert_eq!(desk.pending, Some(ArchitectCommand::Sense { target }));
-    tick_rogue(&mut runtime, &mut desk);
-
+    let target = play_rogue_card(
+        &mut runtime,
+        &mut desk,
+        observed_match::ascent::sim::CardKind::Sensor,
+    );
     let ascent = runtime.ascent.as_ref().expect("an Ascent match");
     assert!(ascent.rules().sensors.contains_key(&target));
     assert!(

@@ -2,7 +2,7 @@
 //! beside each body command so every peer applies it on the same tick.
 //!
 //! A body's movement is a [`WireHexCommand`]; its seat's say in the rules - a card played,
-//! a requisition, a Rogue's directive or sensor, an ask for help, an answer to one - rides along as a
+//! a requisition, an ask for help, an answer to one - rides along as a
 //! [`WireSeatCommand`], nothing on most ticks. The server puts each seat's into the frame,
 //! and every peer maps it to a rules seat the same way (`observed_match::ascent::facility`
 //! `seat_for`).
@@ -33,12 +33,6 @@ pub enum WireSeatCommand {
         author: PlayerId,
         created_at: u64,
     },
-    Direct {
-        target: HexCoord,
-    },
-    Sense {
-        target: HexCoord,
-    },
 }
 
 impl WireSeatCommand {
@@ -60,8 +54,6 @@ impl WireSeatCommand {
                 rotation,
             },
             SeatCommand::Architect(ArchitectCommand::Requisition) => Self::Requisition,
-            SeatCommand::Architect(ArchitectCommand::Direct { target }) => Self::Direct { target },
-            SeatCommand::Architect(ArchitectCommand::Sense { target }) => Self::Sense { target },
             SeatCommand::Request { kind, target } => Self::Request { kind, target },
             SeatCommand::Acknowledge { author, created_at } => {
                 Self::Acknowledge { author, created_at }
@@ -85,8 +77,6 @@ impl WireSeatCommand {
                 rotation,
             }),
             Self::Requisition => SeatCommand::Architect(ArchitectCommand::Requisition),
-            Self::Direct { target } => SeatCommand::Architect(ArchitectCommand::Direct { target }),
-            Self::Sense { target } => SeatCommand::Architect(ArchitectCommand::Sense { target }),
             Self::Request { kind, target } => SeatCommand::Request { kind, target },
             Self::Acknowledge { author, created_at } => {
                 SeatCommand::Acknowledge { author, created_at }
@@ -123,14 +113,6 @@ impl WireSeatCommand {
                 put_u16(out, author.0);
                 put_u64(out, created_at);
             }
-            Self::Direct { target } => {
-                out.push(5);
-                cell(out, target);
-            }
-            Self::Sense { target } => {
-                out.push(6);
-                cell(out, target);
-            }
         }
     }
 
@@ -157,12 +139,6 @@ impl WireSeatCommand {
             4 => Self::Acknowledge {
                 author: PlayerId(cursor.u16()?),
                 created_at: cursor.u64()?,
-            },
-            5 => Self::Direct {
-                target: cell(cursor)?,
-            },
-            6 => Self::Sense {
-                target: cell(cursor)?,
             },
             _ => return Err(LanCodecError::InvalidValue),
         })
@@ -212,8 +188,6 @@ mod tests {
                 rotation: 5,
             },
             WireSeatCommand::Requisition,
-            WireSeatCommand::Direct { target: cell },
-            WireSeatCommand::Sense { target: cell },
             WireSeatCommand::Acknowledge {
                 author: PlayerId(3),
                 created_at: u64::MAX - 1,

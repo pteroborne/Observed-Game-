@@ -555,26 +555,85 @@ fn open_ground(session: &AscentSession) -> HexCoord {
         .0
 }
 
+/// The Rogue's own deck in the hand `player` plays from: a seated Rogue's is the rules',
+/// a joined player's their own, an Architect's their team's.
+fn deal_rogue_deck(session: &mut AscentSession, player: PlayerId) {
+    let deck = crate::ascent::sim::Deck::rogue(
+        7,
+        session.sim.world.config.levels,
+        &crate::ascent::sim::TileShape::ALL,
+    );
+    if let Some(hand) = session.rogue_hands.get_mut(&player) {
+        hand.deck = deck;
+    } else if let Some(team) = session.team(player) {
+        session.hands.get_mut(&team).expect("a team's hand").deck = deck;
+    } else {
+        session.sim.deck = deck;
+    }
+}
+
+/// `player` playing a card of `kind` on `target`, staged into their hand.
+fn order(
+    session: &mut AscentSession,
+    player: PlayerId,
+    kind: crate::ascent::sim::CardKind,
+    target: HexCoord,
+) -> ArchitectCommand {
+    let deck = if let Some(hand) = session.rogue_hands.get_mut(&player) {
+        &mut hand.deck
+    } else if let Some(team) = session.team(player) {
+        &mut session.hands.get_mut(&team).expect("a team's hand").deck
+    } else {
+        &mut session.sim.deck
+    };
+    assert!(deck.stage_kind(kind), "the deck deals {kind:?}");
+    let card = deck
+        .hand
+        .iter()
+        .find(|card| card.kind == kind)
+        .expect("staged")
+        .id;
+    ArchitectCommand::Play {
+        card,
+        target,
+        rotation: 0,
+    }
+}
+
 #[test]
 fn only_the_rogue_directs_the_guardians() {
+    use crate::ascent::sim::CardKind;
     let mut session = session();
+    deal_rogue_deck(&mut session, PlayerId(0));
+    deal_rogue_deck(&mut session, PlayerId(3));
     let target = open_ground(&session);
-    let direct = SeatCommand::Architect(ArchitectCommand::Direct { target });
-    let input = frame(&session, PlayerId(0), direct);
+    let loyal = order(&mut session, PlayerId(0), CardKind::Directive, target);
+    assert_eq!(
+        session.architect_refusal(PlayerId(0), loyal),
+        Some(Refusal::Architect(CommandRefusal::RogueOnly))
+    );
+    let input = frame(&session, PlayerId(0), SeatCommand::Architect(loyal));
     assert_eq!(
         session.advance(&input).unwrap()[&PlayerId(0)],
         Refusal::Architect(CommandRefusal::RogueOnly)
     );
     assert_eq!(session.sim.directed, None);
 
-    let hand = session.sim.deck.hand.clone();
-    let input = frame(&session, PlayerId(3), direct);
+    let direct = order(&mut session, PlayerId(3), CardKind::Directive, target);
+    let ArchitectCommand::Play { card, .. } = direct else {
+        unreachable!("a card play")
+    };
+    let input = frame(&session, PlayerId(3), SeatCommand::Architect(direct));
     assert!(session.advance(&input).unwrap().is_empty());
     let directive = session.sim.directed.expect("the Rogue's directive stands");
     assert_eq!(directive.cell, target);
-    assert_eq!(session.sim.deck.hand, hand, "a directive spends no card");
-    assert!(session.sim.cooldown > 0, "a directive spends the cooldown");
-    let input = frame(&session, PlayerId(3), direct);
+    assert!(
+        session.sim.deck.hand.iter().all(|held| held.id != card),
+        "a directive spends its card"
+    );
+    assert!(session.sim.cooldown > 0, "a directive starts the cooldown");
+    let again = order(&mut session, PlayerId(3), CardKind::Directive, target);
+    let input = frame(&session, PlayerId(3), SeatCommand::Architect(again));
     assert_eq!(
         session.advance(&input).unwrap()[&PlayerId(3)],
         Refusal::Architect(CommandRefusal::Cooldown)
@@ -586,12 +645,15 @@ fn a_directive_nobody_reaches_runs_out() {
     let mut session = session();
     // Out of every Guardian's reach: nothing hunts in this one's rules.
     session.sim.guardians.clear();
+    deal_rogue_deck(&mut session, PlayerId(3));
     let target = open_ground(&session);
-    let input = frame(
-        &session,
+    let direct = order(
+        &mut session,
         PlayerId(3),
-        SeatCommand::Architect(ArchitectCommand::Direct { target }),
+        crate::ascent::sim::CardKind::Directive,
+        target,
     );
+    let input = frame(&session, PlayerId(3), SeatCommand::Architect(direct));
     assert!(session.advance(&input).unwrap().is_empty());
     for _ in 1..crate::ascent::sim::DIRECTIVE_TICKS {
         assert!(session.sim.directed.is_some(), "tick {}", session.sim.tick);
@@ -621,12 +683,16 @@ fn a_player_who_joins_the_rogue_plays_their_own_hand_on_their_own_clock() {
         "the board shows the hand they joined with"
     );
 
+    deal_rogue_deck(&mut session, PlayerId(1));
+    deal_rogue_deck(&mut session, PlayerId(3));
     let target = open_ground(&session);
-    let input = frame(
-        &session,
+    let direct = order(
+        &mut session,
         PlayerId(1),
-        SeatCommand::Architect(ArchitectCommand::Direct { target }),
+        crate::ascent::sim::CardKind::Directive,
+        target,
     );
+    let input = frame(&session, PlayerId(1), SeatCommand::Architect(direct));
     assert!(session.advance(&input).unwrap().is_empty());
     assert!(session.rogue_hands[&PlayerId(1)].cooldown > 0);
     assert_eq!(
@@ -634,8 +700,14 @@ fn a_player_who_joins_the_rogue_plays_their_own_hand_on_their_own_clock() {
         "the rules' own Rogue clock is untouched"
     );
     // The seated Rogue's clock is its own: nothing waits on the joined player's.
+    let other = order(
+        &mut session,
+        PlayerId(3),
+        crate::ascent::sim::CardKind::Sensor,
+        target,
+    );
     assert_ne!(
-        session.architect_refusal(PlayerId(3), ArchitectCommand::Direct { target }),
+        session.architect_refusal(PlayerId(3), other),
         Some(Refusal::Architect(CommandRefusal::Cooldown))
     );
 }
@@ -709,15 +781,17 @@ fn only_the_rogue_installs_sensors_out_of_sight_and_keeps_four() {
         .iter()
         .find(|cell| session.sim.world.placements[cell].space.built())
         .expect("an Observer holds something in view");
-    let refusal = |session: &AscentSession, player, target| {
-        session.architect_refusal(player, ArchitectCommand::Sense { target })
-    };
+    use crate::ascent::sim::CardKind;
+    deal_rogue_deck(&mut session, PlayerId(0));
+    deal_rogue_deck(&mut session, PlayerId(3));
+    let loyal = order(&mut session, PlayerId(0), CardKind::Sensor, seen);
     assert_eq!(
-        refusal(&session, PlayerId(0), seen),
+        session.architect_refusal(PlayerId(0), loyal),
         Some(Refusal::Architect(CommandRefusal::RogueOnly))
     );
+    let watched = order(&mut session, PlayerId(3), CardKind::Sensor, seen);
     assert_eq!(
-        refusal(&session, PlayerId(3), seen),
+        session.architect_refusal(PlayerId(3), watched),
         Some(Refusal::Architect(CommandRefusal::Observed))
     );
 
@@ -738,11 +812,8 @@ fn only_the_rogue_installs_sensors_out_of_sight_and_keeps_four() {
     assert_eq!(unseen.len(), crate::ascent::sim::MAX_SENSORS + 1);
     for &target in &unseen {
         session.sim.cooldown = 0;
-        let input = frame(
-            &session,
-            PlayerId(3),
-            SeatCommand::Architect(ArchitectCommand::Sense { target }),
-        );
+        let sense = order(&mut session, PlayerId(3), CardKind::Sensor, target);
+        let input = frame(&session, PlayerId(3), SeatCommand::Architect(sense));
         let refusals = session.advance(&input).unwrap();
         assert!(refusals.is_empty(), "{target:?}: {refusals:?}");
         assert!(session.sim.cooldown > 0, "a sensor spends the cooldown");

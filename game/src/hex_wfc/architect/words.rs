@@ -18,6 +18,8 @@ pub(super) const fn card_name(kind: CardKind) -> &'static str {
         CardKind::Tile(TileShape::Hall) => "HALL",
         CardKind::Door => "DOOR",
         CardKind::Stair => "STAIR",
+        CardKind::Directive => "DIRECTIVE",
+        CardKind::Sensor => "SENSOR",
     }
 }
 
@@ -32,6 +34,8 @@ pub(super) const fn card_detail(kind: CardKind) -> &'static str {
         CardKind::Tile(TileShape::Hall) => "4 ways",
         CardKind::Door => "on a doorway",
         CardKind::Stair => "climbs a floor",
+        CardKind::Directive => "majors walk here",
+        CardKind::Sensor => "sees 4 cells each way",
     }
 }
 
@@ -131,13 +135,12 @@ pub(super) const fn controls(pad: bool, rogue: bool) -> &'static str {
         (false, false) => {
             "1-5 card  >  click a cell to aim  >  Q/E turn  >  Space play     Esc back   F answer   [ / ] floor   R requisition"
         }
-        // Nobody asks the Rogue for help, and a requisition is a team's; the Rogue sends
-        // its Guardians instead.
+        // Nobody asks the Rogue for help, and a requisition is a team's.
         (true, true) => {
-            "LS point  >  A aim  >  LB/RB turn  >  A again play     B back   Y send Guardians   X sensor   D-pad < > card  ^ v floor"
+            "LS point  >  A aim  >  LB/RB turn  >  A again play     B back   D-pad < > card  ^ v floor"
         }
         (false, true) => {
-            "1-5 card  >  click a cell to aim  >  Q/E turn  >  Space play     Esc back   F send Guardians   G sensor   [ / ] floor"
+            "1-5 card  >  click a cell to aim  >  Q/E turn  >  Space play     Esc back   [ / ] floor"
         }
     }
 }
@@ -148,11 +151,12 @@ mod tests {
 
     #[test]
     fn every_card_has_a_name_and_a_line() {
-        for kind in TileShape::ALL
-            .into_iter()
-            .map(CardKind::Tile)
-            .chain([CardKind::Door, CardKind::Stair])
-        {
+        for kind in TileShape::ALL.into_iter().map(CardKind::Tile).chain([
+            CardKind::Door,
+            CardKind::Stair,
+            CardKind::Directive,
+            CardKind::Sensor,
+        ]) {
             assert!(!card_name(kind).is_empty());
             assert!(!card_detail(kind).is_empty());
         }
@@ -195,11 +199,12 @@ mod tests {
                 printed.push(button_label(action, pad).to_owned());
             }
         }
-        for kind in TileShape::ALL
-            .into_iter()
-            .map(CardKind::Tile)
-            .chain([CardKind::Door, CardKind::Stair])
-        {
+        for kind in TileShape::ALL.into_iter().map(CardKind::Tile).chain([
+            CardKind::Door,
+            CardKind::Stair,
+            CardKind::Directive,
+            CardKind::Sensor,
+        ]) {
             printed.push(card_name(kind).to_owned());
             printed.push(card_detail(kind).to_owned());
         }

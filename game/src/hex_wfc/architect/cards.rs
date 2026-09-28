@@ -155,7 +155,7 @@ pub(super) fn sync(
                 ortho.scale = match card.kind {
                     CardKind::Tile(_) => TILE_SCALE,
                     CardKind::Stair => STAIR_SCALE,
-                    CardKind::Door => DOOR_SCALE,
+                    CardKind::Door | CardKind::Directive | CardKind::Sensor => DOOR_SCALE,
                 };
             }
         }
@@ -240,6 +240,37 @@ pub(super) fn sync(
                     let mut bar = threshold_bar(face);
                     bar.translation += at - drop + Vec3::Y * rise;
                     spawn(Cuboid::new(1.0, 1.0, 1.0).into(), threshold.clone(), bar);
+                }
+            }
+            // The Rogue's orders, in the Guardian's red: a pyramid over the ring it is sent
+            // to, and the sensor's eye in its ring.
+            CardKind::Directive | CardKind::Sensor => {
+                let material = materials.add(StandardMaterial {
+                    base_color: color(Role::Guardian),
+                    unlit: true,
+                    ..default()
+                });
+                let ring = Transform::from_translation(at + Vec3::Y * 0.2)
+                    .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2 * 0.35));
+                if card.kind == CardKind::Directive {
+                    spawn(
+                        Cone::new(1.1, 2.0).mesh().resolution(4).build(),
+                        material.clone(),
+                        Transform::from_translation(at + Vec3::Y * 1.9),
+                    );
+                    spawn(Torus::new(1.3, 1.5).into(), material, ring);
+                } else {
+                    let eye = Transform::from_translation(at + Vec3::Y * 1.6);
+                    spawn(
+                        Sphere::new(0.8).mesh().ico(0).expect("an icosahedron"),
+                        material.clone(),
+                        eye,
+                    );
+                    spawn(
+                        Torus::new(1.3, 1.45).into(),
+                        material,
+                        eye.with_rotation(Quat::from_rotation_x(0.4)),
+                    );
                 }
             }
             CardKind::Door => {

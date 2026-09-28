@@ -329,7 +329,7 @@ pub(super) fn built_by(
             )?;
             vec![foot, head]
         }
-        CardKind::Door => return None,
+        CardKind::Door | CardKind::Directive | CardKind::Sensor => return None,
     };
     observed_match::hex_wfc::project_hypothetical_cells(
         &physical.facility,

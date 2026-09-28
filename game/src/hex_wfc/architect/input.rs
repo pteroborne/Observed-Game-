@@ -109,13 +109,7 @@ pub(super) fn input(
     if keys.just_pressed(KeyCode::KeyR) && !desk.rogue {
         desk.pending = Some(ArchitectCommand::Requisition);
     }
-    // At the Rogue board the answer key directs the Guardians instead: nobody asks it.
-    if keys.just_pressed(KeyCode::KeyG) && desk.rogue {
-        install_sensor(&mut desk, &runtime);
-    }
-    if keys.just_pressed(KeyCode::KeyF) && desk.rogue {
-        direct_guardians(&mut desk, &runtime);
-    } else if keys.just_pressed(KeyCode::KeyF) || pressed(DeskButton::Answer) {
+    if keys.just_pressed(KeyCode::KeyF) || pressed(DeskButton::Answer) {
         super::requests::answer_oldest(&mut desk, &runtime);
     }
     if buttons.just_pressed(MouseButton::Right) {
@@ -165,38 +159,6 @@ pub(super) fn input(
     }
     if confirm {
         confirm_play(&mut desk, &runtime);
-    }
-}
-
-/// Send the major Guardians to the cell the play is about - aimed at, or pointed at - if
-/// the rules would take the directive; otherwise say why. The card in hand stays up.
-pub(super) fn direct_guardians(desk: &mut ArchitectDesk, runtime: &HexWfcRuntime) {
-    rogue_order(desk, runtime, |target| ArchitectCommand::Direct { target });
-}
-
-/// Install a sensor on the cell the play is about, as [`direct_guardians`] sends the
-/// Guardians there.
-pub(super) fn install_sensor(desk: &mut ArchitectDesk, runtime: &HexWfcRuntime) {
-    rogue_order(desk, runtime, |target| ArchitectCommand::Sense { target });
-}
-
-/// Send the Rogue's `order` for the cell the play is about, if the rules would take it;
-/// otherwise say why. It spends no card, so the card in hand stays up.
-fn rogue_order(
-    desk: &mut ArchitectDesk,
-    runtime: &HexWfcRuntime,
-    order: impl FnOnce(observed_hex::HexCoord) -> ArchitectCommand,
-) {
-    let (Some(ascent), Some(target)) = (runtime.ascent.as_ref(), desk.focus()) else {
-        return;
-    };
-    let command = order(target);
-    match ascent.session().architect_refusal(desk.seat, command) {
-        None => {
-            desk.pending = Some(command);
-            desk.last_refusal = None;
-        }
-        Some(refusal) => desk.last_refusal = Some(refusal),
     }
 }
 

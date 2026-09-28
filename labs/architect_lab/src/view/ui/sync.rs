@@ -540,6 +540,8 @@ fn card_title(card: Card) -> String {
         CardKind::Tile(TileShape::Hall) => "HALL",
         CardKind::Door => "DOOR",
         CardKind::Stair => "STAIR",
+        CardKind::Directive => "DIRECTIVE",
+        CardKind::Sensor => "SENSOR",
     }
     .to_string()
 }

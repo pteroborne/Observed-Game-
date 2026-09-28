@@ -548,8 +548,14 @@ its seat a Rogue seat. Its player had nowhere to go; now they take a seat at the
 (`ascent::join_rogue_board`, `ArchitectDesk::rogue`), the same desk a team's Architect
 uses, reading the Rogue's side of the rules:
 
+- **The Rogue's own deck** (`Deck::rogue`, design section 7): tiles and doors, four
+  Guardian directive cards and four sensor cards, and no stairs - the Rogue builds no way
+  up. The directive and sensor cards are played like any card - picked up, aimed,
+  confirmed - start the seat's cooldown, and build and disturb nothing. A team's desk is
+  refused one (`CommandRefusal::RogueOnly`); a team's deck never deals one.
 - **A Rogue hand of their own** (`AscentSession::rogue_hands`, `ArchitectDesk::hand`): a
-  player who joins the Rogue is dealt a deck and a cooldown of their own. The rules' own
+  player who joins the Rogue is dealt a Rogue deck and a cooldown of their own (a user
+  decision, 2026-09-28: the design's one shared hand is amended). The rules' own
   Rogue hand stays the seated operators' - the bot Rogue's - so a player at the board
   never waits on the bot's clock, nor loses the card under the cursor to its play. Each
   corruption adds an operator to the Rogue, as the design's asymmetric faction change
@@ -566,11 +572,9 @@ uses, reading the Rogue's side of the rules:
   it looks through nobody's eyes, and a requisition is a team's. The side panel is headed
   DETECTED (by a Guardian or a sensor), the title says ROGUE AI, and the control strip names neither
   answering nor requisitioning.
-- **Directives** (`ArchitectCommand::Direct`, `ascent::sim::directive`): the answer key
-  (F, or Y on a controller) sends the major Guardians to the cell pointed at. A directive
-  costs the seat's cooldown and no card, only a Rogue seat may give one
-  (`CommandRefusal::RogueOnly`), and it is refused on void, a collapsed floor or the
-  prison. The rules keep it (`ArchitectLab::directed`) until a major Guardian stands on
+- **Directives** (`CardKind::Directive`, `ascent::sim::directive`): a directive card sends
+  the major Guardians to the cell it is played on. It is refused on void, a collapsed
+  floor or the prison. The rules keep it (`ArchitectLab::directed`) until a major Guardian stands on
   the cell or `DIRECTIVE_TICKS` (30 s) pass; the facility hands it to the bodies each tick
   (`HexWfcMatch::direct_guardians`), and a directed major walks there instead of hunting
   the leading body - unless a body shares its cell, which it catches first, or the cell
@@ -593,10 +597,18 @@ the rest is the Architect capture's, from the Rogue board):
 - [Seven seconds on](evidence/ascent-rogue/rogue-directed-walked-1280x800.png): the
   Guardian two cells from the beacon, walking in
 
-Over LAN a directive travels as a seat command (`WireSeatCommand::Direct`, protocol 11).
+Over LAN a directive or sensor card travels as any card play does (protocol 14 dropped
+the separate commands of 11 and 12).
 
-Not yet: the bot Rogue gives no directives; a joined player's hand is not kept live for
-the floors the Rogue can reach, as a team's is.
+**The bot Rogue plays its orders too** (`ascent::sim::rogue`): after closing the hunt with
+a tile, it sends the Guardians - a directive card on the detected Observer nearest a
+major Guardian on its floor - before undermining; and with nobody detected it watches the
+way up with a sensor card (below). It is markedly stronger for it: on the two-floor test
+facility with two bot bodies it now wins at tick 1616 (27 s), where before it had not
+won in 3,000 ticks.
+
+Not yet: a joined player's hand is not kept live for the floors the Rogue can reach, as a
+team's is; the design's instability-effect cards are not in the Rogue deck.
 
 ### Sensors
 
@@ -604,11 +616,10 @@ Design section 7: the Rogue sees a loyal Observer "only while that Observer is d
 a Guardian or an explicit Rogue-controlled sensor". The sensor is now in the rules
 (`ascent::sim::sensor`), in the facility, and at the board:
 
-- **Installed from a Rogue seat** (`ArchitectCommand::Sense`): G at the Rogue board, X on a
-  controller, on the cell pointed at. Like a directive it costs the seat's cooldown and no
-  card, and a team's Architect is refused it (`RogueOnly`). Like any Rogue play it cannot
-  be made where an Observer is looking (`Observed`), nor on void, a collapsed floor, the
-  prison, or a cell that already has one.
+- **Installed by a sensor card** (`CardKind::Sensor`) from a Rogue hand, played on a cell
+  like any card. Like any Rogue play it cannot be made where an Observer is looking
+  (`Observed`), nor on void, a collapsed floor, the prison, or a cell that already has
+  one.
 - **What it sees**: its own cell and `SENSOR_RANGE` (4) cells along each open lateral line
   from it - a wall or a closed door ends the line, as it ends a Guardian's six. It sees
   only while its floor has power: a dark floor blinds its sensors, which gives cutting a
@@ -633,11 +644,11 @@ a Guardian or an explicit Rogue-controlled sensor". The sensor is now in the rul
   blind, and a thin red ring on every cell a live one watches. The orders line counts them
   ("Sensors 2 / 4, 1 seeing someone."). A team's board is not told.
 - **The bot Rogue watches the way up**: with nobody detected it has nobody to play
-  against, so it installs a sensor at the foot of a stair or ramp no sensor watches yet,
+  against, so it plays a sensor card at the foot of a stair or ramp no sensor watches yet,
   on the floor it watches least - every climb passes one.
 
-Over LAN a sensor is a seat command (`WireSeatCommand::Sense`) and a body takes one down
-with its ordinary interact; protocol 12.
+Over LAN a sensor card is a card play and a body takes one down with its ordinary
+interact.
 
 Evidence (`OBSERVED2_CAPTURE_HEX_WFC_SENSORS=<dir> cargo dev-run -p observed_game`: a sensor
 staged one open step from a cell near the body, which is stood a few metres off facing

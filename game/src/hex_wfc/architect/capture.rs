@@ -29,7 +29,7 @@
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
-use observed_match::ascent::sim::{ArchitectCommand, CardKind};
+use observed_match::ascent::sim::{ArchitectCommand, CardId, CardKind};
 
 use super::ArchitectDesk;
 use super::board::Board;
@@ -82,7 +82,7 @@ pub(in crate::hex_wfc) fn capture(
         return;
     }
     // The board frames itself before anything is pointed at.
-    let (Some(runtime), Some(mut desk), Some(_)) = (runtime, desk, board) else {
+    let (Some(mut runtime), Some(mut desk), Some(_)) = (runtime, desk, board) else {
         return;
     };
     let prefix = if rogue { "rogue" } else { "architect" };
@@ -119,6 +119,8 @@ pub(in crate::hex_wfc) fn capture(
                 CardKind::Stair => 0,
                 CardKind::Tile(_) => 1,
                 CardKind::Door => 2,
+                // The Rogue's orders build nothing to show.
+                CardKind::Directive | CardKind::Sensor => 3,
             });
             let found = cards.into_iter().find_map(|(index, card)| {
                 knowledge.cells.keys().find_map(|&target| {
@@ -230,7 +232,13 @@ pub(in crate::hex_wfc) fn capture(
             .hand(ascent.session())
             .is_some_and(|hand| hand.cooldown == 0) =>
         {
-            let Some(target) = directive_target(&runtime, &desk) else {
+            let played = play_order(
+                &mut runtime,
+                &mut desk,
+                CardKind::Directive,
+                directive_target,
+            );
+            let Some(target) = played else {
                 if tick >= request.last_shot_tick + 6_000 {
                     warn!("rogue capture: no major Guardian to direct; no directive stills");
                     request.last_shot_tick = tick + 300;
@@ -238,10 +246,7 @@ pub(in crate::hex_wfc) fn capture(
                 }
                 return;
             };
-            desk.put_down();
-            desk.look_at(target.level);
-            desk.hovered = Some(target);
-            super::input::direct_guardians(&mut desk, &runtime);
+            info!("rogue capture: Guardians directed to {target:?}");
             request.last_shot_tick = tick;
             request.stills = 12;
         }
@@ -260,7 +265,8 @@ pub(in crate::hex_wfc) fn capture(
             .hand(ascent.session())
             .is_some_and(|hand| hand.cooldown == 0) =>
         {
-            let Some(target) = sensor_target(&runtime, &desk) else {
+            let played = play_order(&mut runtime, &mut desk, CardKind::Sensor, sensor_target);
+            let Some(target) = played else {
                 if tick >= request.last_shot_tick + 3_000 {
                     warn!("rogue capture: nowhere to install a sensor; no sensor still");
                     request.last_shot_tick = tick + 300;
@@ -268,9 +274,7 @@ pub(in crate::hex_wfc) fn capture(
                 }
                 return;
             };
-            desk.look_at(target.level);
-            desk.hovered = Some(target);
-            super::input::install_sensor(&mut desk, &runtime);
+            info!("rogue capture: a sensor installed at {target:?}");
             request.last_shot_tick = tick;
             request.stills = 15;
         }
@@ -289,11 +293,47 @@ pub(in crate::hex_wfc) fn capture(
     }
 }
 
+/// Play one of the Rogue's orders through the desk as a player would - the card picked
+/// up, aimed at the cell `pick` chooses, and confirmed - with a card of `kind` staged into
+/// the hand (`AscentRules::stage_card`). Where it was aimed, if anywhere.
+fn play_order(
+    runtime: &mut HexWfcRuntime,
+    desk: &mut ArchitectDesk,
+    kind: CardKind,
+    pick: fn(&HexWfcRuntime, &ArchitectDesk, CardId) -> Option<observed_hex::HexCoord>,
+) -> Option<observed_hex::HexCoord> {
+    let card = runtime.ascent.as_mut()?.stage_card(desk.seat, kind)?;
+    let target = pick(runtime, desk, card)?;
+    let index = desk
+        .hand(runtime.ascent.as_ref()?.session())?
+        .deck
+        .hand
+        .iter()
+        .position(|held| held.id == card)?;
+    desk.selected = Some(index);
+    desk.rotation = 0;
+    desk.look_at(target.level);
+    desk.hovered = Some(target);
+    desk.click_cell(target);
+    super::input::confirm_play(desk, runtime);
+    desk.pending.is_some().then_some(target)
+}
+
+/// The Rogue's order `card` on `target`.
+const fn order(card: CardId, target: observed_hex::HexCoord) -> ArchitectCommand {
+    ArchitectCommand::Play {
+        card,
+        target,
+        rotation: 0,
+    }
+}
+
 /// A cell the rules would take a directive to, four to six steps' walk from a major
 /// Guardian the Rogue board sees: near enough that the still shows it walking there.
 fn directive_target(
     runtime: &HexWfcRuntime,
     desk: &ArchitectDesk,
+    card: CardId,
 ) -> Option<observed_hex::HexCoord> {
     let ascent = runtime.ascent.as_ref()?;
     let rules = ascent.rules();
@@ -312,7 +352,7 @@ fn directive_target(
                 .filter(|&&target| {
                     ascent
                         .session()
-                        .architect_refusal(desk.seat, ArchitectCommand::Direct { target })
+                        .architect_refusal(desk.seat, order(card, target))
                         .is_none()
                 })
                 .find(|&&target| {
@@ -326,7 +366,11 @@ fn directive_target(
 
 /// A cell the rules would take a sensor on whose sight holds a loyal body, or failing that
 /// one beside a loyal body.
-fn sensor_target(runtime: &HexWfcRuntime, desk: &ArchitectDesk) -> Option<observed_hex::HexCoord> {
+fn sensor_target(
+    runtime: &HexWfcRuntime,
+    desk: &ArchitectDesk,
+    card: CardId,
+) -> Option<observed_hex::HexCoord> {
     let ascent = runtime.ascent.as_ref()?;
     let rules = ascent.rules();
     let bodies: Vec<observed_hex::HexCoord> = rules
@@ -338,7 +382,7 @@ fn sensor_target(runtime: &HexWfcRuntime, desk: &ArchitectDesk) -> Option<observ
     let legal = |target: observed_hex::HexCoord| {
         ascent
             .session()
-            .architect_refusal(desk.seat, ArchitectCommand::Sense { target })
+            .architect_refusal(desk.seat, order(card, target))
             .is_none()
     };
     let near = |target: &observed_hex::HexCoord| {

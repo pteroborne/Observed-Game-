@@ -2,6 +2,7 @@
 //! can reach them, seeing for the Rogue, and taken down by a body with interact.
 
 use super::*;
+use crate::ascent::sim::CardKind;
 use crate::hex_wfc::HexActionButtons;
 
 const ROGUE: PlayerId = PlayerId(41);
@@ -71,6 +72,15 @@ fn a_sensor_the_rogue_installs_hangs_in_the_facility_and_sees_the_body() {
     let body = game.rules().observers[&id].cell;
     assert!(!game.rules().rogue_view().known_observers.contains_key(&id));
     // Somewhere out of the body's sight whose own sight reaches the body.
+    let probe = rogue_play(&mut game, CardKind::Sensor, body);
+    let ArchitectCommand::Play { card, .. } = probe else {
+        unreachable!("a card play")
+    };
+    let sense = |target| ArchitectCommand::Play {
+        card,
+        target,
+        rotation: 0,
+    };
     let target = game
         .rules()
         .world
@@ -80,15 +90,11 @@ fn a_sensor_the_rogue_installs_hangs_in_the_facility_and_sees_the_body() {
         .filter(|&cell| game.rules().sensor_sight(cell).contains(&body))
         .find(|&target| {
             game.session()
-                .architect_refusal(ROGUE, ArchitectCommand::Sense { target })
+                .architect_refusal(ROGUE, sense(target))
                 .is_none()
         })
         .expect("a hidden cell that sees the body");
-    let refusals = tick(
-        &mut game,
-        false,
-        SeatCommand::Architect(ArchitectCommand::Sense { target }),
-    );
+    let refusals = tick(&mut game, false, SeatCommand::Architect(sense(target)));
     assert!(refusals.is_empty(), "{refusals:?}");
     assert!(game.physical().sensors().any(|(cell, _)| cell == target));
     assert!(game.rules().sensor_watching(target));

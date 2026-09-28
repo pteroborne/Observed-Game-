@@ -229,16 +229,17 @@ impl AscentSession {
                     .map(Refusal::Architect),
                 None => self.sim.refusal(command).map(Refusal::Architect),
             },
-            Role::Architect(_)
-                if matches!(
-                    command,
-                    ArchitectCommand::Direct { .. } | ArchitectCommand::Sense { .. }
-                ) =>
-            {
-                Some(Refusal::Architect(CommandRefusal::RogueOnly))
-            }
             Role::Architect(team) => {
                 let hand = &self.hands[&team];
+                if let ArchitectCommand::Play { card, .. } = command
+                    && hand
+                        .deck
+                        .hand
+                        .iter()
+                        .any(|held| held.id == card && held.kind.rogue_only())
+                {
+                    return Some(Refusal::Architect(CommandRefusal::RogueOnly));
+                }
                 let known = &self.sim.team_knowledge[&team].discovered_cells;
                 self.sim
                     .refusal_in_context(command, &hand.deck, hand.cooldown, known)
@@ -297,7 +298,7 @@ impl AscentSession {
                     // A player joins with a hand of their own; a bot body's seat plays
                     // nothing, since the bot Rogue already plays the rules' hand.
                     if !seat.bot {
-                        let deck = self.sim.new_deck(
+                        let deck = self.sim.new_rogue_deck(
                             self.seed ^ (u64::from(player.0) + 1).wrapping_mul(0xC2B2_AE3D),
                         );
                         self.rogue_hands

@@ -1,9 +1,9 @@
 //! The Rogue's sensors (design section 7): "They see a loyal Observer only while that
 //! Observer is detected by a Guardian or an explicit Rogue-controlled sensor."
 //!
-//! A Rogue seat installs one on a cell with [`ArchitectCommand::Sense`]. Like a directive
-//! it costs the seat's cooldown and no card, and like any Rogue play it cannot be made
-//! where an Observer is looking. A sensor watches its own cell and [`SENSOR_RANGE`] cells
+//! A Rogue seat installs one by playing a sensor card ([`CardKind::Sensor`](super::CardKind),
+//! dealt only from the Rogue's deck) on a cell. Like any card play it starts the seat's
+//! cooldown, and like any Rogue play it cannot be made where an Observer is looking. A sensor watches its own cell and [`SENSOR_RANGE`] cells
 //! along each open lateral line from it - a closed door or a wall ends the line, as it
 //! ends a Guardian's - but only while its floor has power: sensors are the facility's
 //! infrastructure, and a dark floor blinds them. What a sensor sees joins the Rogue's
@@ -17,10 +17,7 @@ use std::collections::BTreeSet;
 
 use observed_hex::{HexCoord, HexFace, travel_distance};
 
-use super::{
-    ARCHITECT_COOLDOWN_TICKS, ArchitectCommand, ArchitectLab, CommandRefusal, LabEventKind,
-    ObserverId, ObserverState,
-};
+use super::{ArchitectLab, CommandRefusal, LabEventKind, ObserverId, ObserverState};
 
 /// How many sensors the Rogue keeps at once.
 pub const MAX_SENSORS: usize = 4;
@@ -29,11 +26,9 @@ pub const MAX_SENSORS: usize = 4;
 pub const SENSOR_RANGE: u32 = 4;
 
 impl ArchitectLab {
-    /// Why a sensor on `target` would be refused under `cooldown`, if it would.
-    pub(super) fn sense_refusal(&self, target: HexCoord, cooldown: u32) -> Option<CommandRefusal> {
-        if cooldown > 0 {
-            return Some(CommandRefusal::Cooldown);
-        }
+    /// Why a sensor card played on `target` would be refused, if it would; the cooldown
+    /// and the card in hand are the play's own checks.
+    pub(super) fn sense_refusal(&self, target: HexCoord) -> Option<CommandRefusal> {
         if !self
             .world
             .placements
@@ -59,9 +54,9 @@ impl ArchitectLab {
         None
     }
 
-    /// Install the sensor legality has already admitted, retiring the oldest past the cap.
+    /// Install the sensor legality has already admitted, retiring the oldest past the cap:
+    /// its card is spent.
     pub(super) fn sense(&mut self, target: HexCoord) {
-        self.cooldown = ARCHITECT_COOLDOWN_TICKS;
         self.sensors.insert(target, self.tick);
         while self.sensors.len() > MAX_SENSORS {
             let oldest = self
@@ -72,8 +67,6 @@ impl ArchitectLab {
                 .expect("more than the cap");
             self.sensors.remove(&oldest);
         }
-        self.command_log
-            .push((self.tick, ArchitectCommand::Sense { target }));
         self.record_event(
             LabEventKind::Warning,
             Some(target),

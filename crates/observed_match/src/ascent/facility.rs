@@ -357,6 +357,29 @@ impl AscentRules {
         &self.session.sim
     }
 
+    /// Bring a card of `kind` into the hand `seat` plays from - a joined Rogue's own, a
+    /// team's, or the rules' Rogue hand - and say which, if its deck deals one. For
+    /// evidence captures and tests, as `stage_door` is: play draws only by refill.
+    pub fn stage_card(
+        &mut self,
+        seat: PlayerId,
+        kind: crate::ascent::sim::CardKind,
+    ) -> Option<crate::ascent::sim::CardId> {
+        let session = &mut self.session;
+        let deck = if let Some(hand) = session.rogue_hands.get_mut(&seat) {
+            &mut hand.deck
+        } else if let Some(team) = session.team(seat) {
+            &mut session.hands.get_mut(&team)?.deck
+        } else {
+            &mut session.sim.deck
+        };
+        deck.stage_kind(kind).then_some(())?;
+        deck.hand
+            .iter()
+            .find(|card| card.kind == kind)
+            .map(|card| card.id)
+    }
+
     /// The Observer a body is.
     #[must_use]
     pub fn observer_for(&self, player: PlayerId) -> Option<ObserverId> {

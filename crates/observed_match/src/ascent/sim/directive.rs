@@ -1,9 +1,10 @@
 //! The Rogue's directive to the major Guardians (design sections 7 and 10).
 //!
-//! A Rogue seat points at a cell and the major Guardians go there instead of hunting,
-//! until one of them arrives or the directive runs out. It costs the seat's cooldown and
-//! no card, so a directive is a play the Rogue did not make with its hand. Minor Guardians
-//! belong to the facility and never take one.
+//! A Rogue seat plays a directive card ([`CardKind::Directive`](super::CardKind), dealt
+//! only from the Rogue's deck) on a cell, and the major Guardians go there instead of
+//! hunting, until one of them arrives or the directive runs out. It is a card play like any
+//! other - it starts the seat's cooldown - but it builds nothing and disturbs nothing.
+//! Minor Guardians belong to the facility and never take one.
 //!
 //! On a first-person facility the Guardians the directive moves are bodies: the host reads
 //! [`ArchitectLab::directed`] and walks them (`hex_wfc::HexWfcMatch::direct_guardians`).
@@ -11,10 +12,7 @@
 
 use observed_hex::HexCoord;
 
-use super::{
-    ARCHITECT_COOLDOWN_TICKS, ArchitectCommand, ArchitectLab, CommandRefusal, FIXED_HZ,
-    GuardianKind, LabEventKind,
-};
+use super::{ArchitectLab, CommandRefusal, FIXED_HZ, GuardianKind, LabEventKind};
 
 /// How long a directive stands if no major Guardian reaches it: long enough to cross a
 /// floor at a major's walk, short enough that a forgotten one does not hold them forever.
@@ -28,15 +26,9 @@ pub struct RogueDirective {
 }
 
 impl ArchitectLab {
-    /// Why a directive to `target` would be refused under `cooldown`, if it would.
-    pub(super) fn directive_refusal(
-        &self,
-        target: HexCoord,
-        cooldown: u32,
-    ) -> Option<CommandRefusal> {
-        if cooldown > 0 {
-            return Some(CommandRefusal::Cooldown);
-        }
+    /// Why a directive card played on `target` would be refused, if it would; the
+    /// cooldown and the card in hand are the play's own checks.
+    pub(super) fn directive_refusal(&self, target: HexCoord) -> Option<CommandRefusal> {
         if !self
             .world
             .placements
@@ -62,17 +54,14 @@ impl ArchitectLab {
         None
     }
 
-    /// Give the directive legality has already admitted.
+    /// Give the directive legality has already admitted: its card is spent.
     pub(super) fn direct(&mut self, target: HexCoord) {
-        self.cooldown = ARCHITECT_COOLDOWN_TICKS;
         self.directed = Some(RogueDirective {
             cell: target,
             until: self.tick + DIRECTIVE_TICKS,
         });
         // The lab's own Guardians obey the rules' directive too.
         self.rogue_directive = Some(target);
-        self.command_log
-            .push((self.tick, ArchitectCommand::Direct { target }));
         self.record_event(
             LabEventKind::Warning,
             Some(target),

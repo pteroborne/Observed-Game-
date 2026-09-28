@@ -8,15 +8,17 @@
 //! 2. **Close the hunt:** play what shortens a Guardian's way to an Observer the Rogue has
 //!    detected - the Guardian's own search and the Observer's, joined through the cell a
 //!    candidate would build.
-//! 3. **Undermine:** in a detected Observer's path, play what leaves doorways meeting
+//! 3. **Send the Guardians:** a directive card on the detected Observer nearest a major
+//!    Guardian on its floor, while no directive stands.
+//! 4. **Undermine:** in a detected Observer's path, play what leaves doorways meeting
 //!    walls: a contradiction, which the rules retract out from under whoever walks into
 //!    it unless a loyal Architect repairs it first. The cells beside an Observer are in
 //!    its sight and cannot be played, so the path is as near as the Rogue can reach.
-//! 4. Otherwise hold the card.
+//! 5. Otherwise hold the card.
 //!
 //! With nobody detected it has nobody to play against, so it **watches the way up**: a
-//! sensor (`sensor`) at the foot of a stair or ramp, on the floor it watches least - every
-//! climb passes one.
+//! sensor card (`sensor`) at the foot of a stair or ramp, on the floor it watches least -
+//! every climb passes one.
 //!
 //! It never reads where an undetected Observer is: every anchor and every target is a
 //! detected Observer's cell or a Guardian's.
@@ -106,6 +108,12 @@ impl ArchitectLab {
             return (closer.map(|(_, command)| *command), trace);
         }
 
+        // Send the Guardians: a major walks to the detected Observer nearest one.
+        let sent = self.send_the_guardians(&prey);
+        if trace.test("send the Guardians", sent.is_some()) {
+            return (sent, trace);
+        }
+
         // Undermine: in a detected Observer's path, the most doorways left meeting walls,
         // nearest first. Every candidate is already within reach of its prey, and the
         // cells beside it are in its sight, so no nearer bound would leave a play.
@@ -136,9 +144,19 @@ impl ArchitectLab {
         (None, trace)
     }
 
-    /// A sensor at the foot of a climb no sensor watches yet, on the floor with fewest,
-    /// while the Rogue has one to spare.
+    /// The id of a card of `kind` in the hand, if one is held.
+    fn held(&self, kind: super::CardKind) -> Option<super::CardId> {
+        self.deck
+            .hand
+            .iter()
+            .find(|card| card.kind == kind)
+            .map(|card| card.id)
+    }
+
+    /// A sensor card played at the foot of a climb no sensor watches yet, on the floor with
+    /// fewest, while the Rogue holds one and has one to spare.
     fn watch_the_way_up(&self) -> Option<ArchitectCommand> {
+        let card = self.held(super::CardKind::Sensor)?;
         if self.sensors.len() >= super::MAX_SENSORS {
             return None;
         }
@@ -154,13 +172,54 @@ impl ArchitectLab {
             .filter(|(cell, placement)| {
                 placement.up != observed_hex::PortClass::Sealed && !watched.contains(cell)
             })
-            .map(|(&cell, _)| ArchitectCommand::Sense { target: cell })
-            .filter(|&command| self.refusal(command).is_none())
-            .min_by_key(|command| {
-                let ArchitectCommand::Sense { target } = *command else {
-                    unreachable!("sensors only")
-                };
-                (on_floor(target.level), target.level, command_key(*command))
+            .map(|(&target, _)| target)
+            .filter(|&target| {
+                self.refusal(ArchitectCommand::Play {
+                    card,
+                    target,
+                    rotation: 0,
+                })
+                .is_none()
             })
+            .min_by_key(|&target| (on_floor(target.level), target.level, target))
+            .map(|target| ArchitectCommand::Play {
+                card,
+                target,
+                rotation: 0,
+            })
+    }
+
+    /// A directive card played on the detected Observer nearest a major Guardian, while
+    /// the Rogue holds one and no directive stands.
+    fn send_the_guardians(&self, prey: &[HexCoord]) -> Option<ArchitectCommand> {
+        let card = self.held(super::CardKind::Directive)?;
+        if self.directed.is_some() {
+            return None;
+        }
+        let majors: Vec<HexCoord> = self
+            .guardians
+            .values()
+            .filter(|guardian| guardian.kind == super::GuardianKind::Major)
+            .map(|guardian| guardian.cell)
+            .collect();
+        prey.iter()
+            .copied()
+            .filter_map(|target| {
+                let near = majors
+                    .iter()
+                    .filter(|major| major.level == target.level && **major != target)
+                    .map(|&major| travel_distance(major, target))
+                    .min()?;
+                let command = ArchitectCommand::Play {
+                    card,
+                    target,
+                    rotation: 0,
+                };
+                self.refusal(command)
+                    .is_none()
+                    .then_some((near, target, command))
+            })
+            .min_by_key(|&(near, target, _)| (near, target))
+            .map(|(_, _, command)| command)
     }
 }

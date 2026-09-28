@@ -5,6 +5,11 @@ use observed_facility::hex_wfc::HexArchetype;
 
 use super::{HAND_SIZE, Prng};
 
+/// Guardian directives in the Rogue's deck.
+const ROGUE_DIRECTIVES: u8 = 4;
+/// Sensors in the Rogue's deck.
+const ROGUE_SENSORS: u8 = 4;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CardId(pub u32);
 
@@ -109,6 +114,19 @@ pub enum CardKind {
     /// An ascent: a ramp pair climbing from the cell played on to the one above, turned
     /// to the direction of the climb. The only card that builds the way up.
     Stair,
+    /// The Rogue's: send the major Guardians to the cell played on (`sim::directive`).
+    Directive,
+    /// The Rogue's: install a sensor on the cell played on (`sim::sensor`).
+    Sensor,
+}
+
+impl CardKind {
+    /// Whether only the Rogue's deck deals it: an order to the facility's machinery, not
+    /// architecture.
+    #[must_use]
+    pub const fn rogue_only(self) -> bool {
+        matches!(self, Self::Directive | Self::Sensor)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -129,6 +147,8 @@ impl Card {
             (CardKind::Stair, Some(district)) => format!("stair - {}", district.label()),
             (CardKind::Stair, None) => "stair".to_string(),
             (CardKind::Tile(shape), None) => shape.label().to_string(),
+            (CardKind::Directive, _) => "Guardian directive".to_string(),
+            (CardKind::Sensor, _) => "sensor".to_string(),
         }
     }
 }
@@ -161,6 +181,35 @@ impl Deck {
     /// A deck of `shapes` and `stairs` stair cards in each district, and the doors.
     #[must_use]
     pub fn with_stairs(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
+        Self::composed(seed, levels, shapes, stairs, &[(CardKind::Door, 4)])
+    }
+
+    /// The Rogue's deck (design section 7): two of each of `shapes` in each district, the
+    /// doors, and the machinery - Guardian directives and sensors - but no way up.
+    #[must_use]
+    pub fn rogue(seed: u64, levels: u8, shapes: &[TileShape]) -> Self {
+        Self::composed(
+            seed,
+            levels,
+            shapes,
+            0,
+            &[
+                (CardKind::Door, 3),
+                (CardKind::Directive, ROGUE_DIRECTIVES),
+                (CardKind::Sensor, ROGUE_SENSORS),
+            ],
+        )
+    }
+
+    /// Two of each of `shapes` and `stairs` stairs in each district, and `extra` cards of
+    /// no district, shuffled and dealt.
+    fn composed(
+        seed: u64,
+        levels: u8,
+        shapes: &[TileShape],
+        stairs: u8,
+        extra: &[(CardKind, u8)],
+    ) -> Self {
         let mut cards = Vec::new();
         let mut next_id = 0;
         for district in [District::Institutional, District::LiminalGrid]
@@ -186,13 +235,15 @@ impl Deck {
                 next_id += 1;
             }
         }
-        for _ in 0..4 {
-            cards.push(Card {
-                id: CardId(next_id),
-                kind: CardKind::Door,
-                district: None,
-            });
-            next_id += 1;
+        for &(kind, count) in extra {
+            for _ in 0..count {
+                cards.push(Card {
+                    id: CardId(next_id),
+                    kind,
+                    district: None,
+                });
+                next_id += 1;
+            }
         }
         let mut deck = Self {
             hand: Vec::new(),
@@ -213,6 +264,26 @@ impl Deck {
         } else if let Some(index) = self.draw.iter().position(matches) {
             std::mem::swap(&mut self.hand[0], &mut self.draw[index]);
         }
+    }
+
+    /// Bring a card of `kind` into the hand, from the draw pile or failing that the
+    /// discard, in place of the hand's first card, unless one is held already; whether
+    /// the hand now holds one. For evidence captures and tests, as the `stage_*` helpers
+    /// are: play draws only by refill.
+    pub fn stage_kind(&mut self, kind: CardKind) -> bool {
+        if self.hand.iter().any(|card| card.kind == kind) {
+            return true;
+        }
+        if self.hand.is_empty() {
+            return false;
+        }
+        for pile in [&mut self.draw, &mut self.discard] {
+            if let Some(index) = pile.iter().position(|card| card.kind == kind) {
+                std::mem::swap(&mut self.hand[0], &mut pile[index]);
+                return true;
+            }
+        }
+        false
     }
 
     /// Whether the hand holds a tile of `district`.

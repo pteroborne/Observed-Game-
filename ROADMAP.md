@@ -94,14 +94,17 @@ the combined loop.
     over LAN. See [the integration notes](docs/architect_ascent_polish.md#the-rogue-board).
     **The Rogue board gets its own clock and directs the Guardians (2026-09):** a player
     who joins the Rogue plays a hand and cooldown of their own beside the bot Rogue, and
-    sends the major Guardians to a cell (`ArchitectCommand::Direct`), which the Guardians'
+    sends the major Guardians to a cell with a directive card, which the Guardians'
     bodies walk to until one arrives. See
     [the integration notes](docs/architect_ascent_polish.md#the-rogue-board).
     **The Rogue's sensors (2026-09):** a Rogue seat installs a sensor on a cell
-    (`ArchitectCommand::Sense`), which shows the Rogue any Observer it sees while its floor
+    with a sensor card, which shows the Rogue any Observer it sees while its floor
     has power; it hangs in the facility and a loyal body takes it down with interact. The
     bot Rogue watches the foot of each climb with one when it has detected nobody. See
     [the integration notes](docs/architect_ascent_polish.md#sensors).
+    **The Rogue's own deck (2026-09):** directives and sensors are cards in a Rogue deck
+    that deals no stairs; the bot Rogue plays them, and wins much faster for it. A lantern's
+    anchor now holds in the rules too.
     **Deferred until the core features land - one district per floor:** every floor of the
     climb should be its own district, drawn from the original seven, so the ascent reads as
     a descent through distinct circles (Dante's Inferno is the reference). Today the rules

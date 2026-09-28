@@ -619,14 +619,16 @@ impl ArchitectLab {
                 (card, target, rotation)
             }
             ArchitectCommand::Requisition => return None,
-            ArchitectCommand::Direct { target } => {
-                return self.directive_refusal(target, cooldown);
-            }
-            ArchitectCommand::Sense { target } => return self.sense_refusal(target, cooldown),
         };
         let Some(card) = deck.hand.iter().find(|held| held.id == card).copied() else {
             return Some(CommandRefusal::CardNotInHand);
         };
+        // The Rogue's machinery goes where it is sent, by its own rules.
+        match card.kind {
+            CardKind::Directive => return self.directive_refusal(target),
+            CardKind::Sensor => return self.sense_refusal(target),
+            _ => {}
+        }
         if !known.contains(&target) {
             return Some(CommandRefusal::UnknownTarget);
         }
@@ -737,6 +739,9 @@ impl ArchitectLab {
                     .is_some_and(|next| next.space.built() && next.is_open(entrance.opposite()));
                 (!fits).then_some(CommandRefusal::NoLocalAttachment)
             }
+            CardKind::Directive | CardKind::Sensor => {
+                unreachable!("the Rogue's orders are judged above")
+            }
             CardKind::Door => {
                 let Some(key) = self.threshold_key(target, lateral_face(rotation)) else {
                     return Some(CommandRefusal::InvalidThreshold);
@@ -835,20 +840,44 @@ impl ArchitectLab {
         command: ArchitectCommand,
         team: Option<TeamId>,
     ) -> Result<(), CommandRefusal> {
-        if team.is_some()
-            && matches!(
-                command,
-                ArchitectCommand::Direct { .. } | ArchitectCommand::Sense { .. }
-            )
+        if let ArchitectCommand::Play { card, .. } = command
+            && team.is_some()
+            && self
+                .deck
+                .hand
+                .iter()
+                .any(|held| held.id == card && held.kind.rogue_only())
         {
             return Err(CommandRefusal::RogueOnly);
         }
         if let Some(refusal) = self.refusal(command) {
             return Err(refusal);
         }
+        if let ArchitectCommand::Play { card, target, .. } = command
+            && let Some(kind) = self
+                .deck
+                .hand
+                .iter()
+                .find(|held| held.id == card)
+                .map(|held| held.kind)
+                .filter(|kind| kind.rogue_only())
+        {
+            // An order, not architecture: nothing is built, nothing is disturbed.
+            assert!(self.deck.spend(card), "legality proved the card is held");
+            if self.has_setup_allowance() {
+                self.setup_placements_left -= 1;
+            } else {
+                self.cooldown = ARCHITECT_COOLDOWN_TICKS;
+            }
+            self.command_log.push((self.tick, command));
+            if kind == CardKind::Directive {
+                self.direct(target);
+            } else {
+                self.sense(target);
+            }
+            return Ok(());
+        }
         match command {
-            ArchitectCommand::Direct { target } => self.direct(target),
-            ArchitectCommand::Sense { target } => self.sense(target),
             ArchitectCommand::Play {
                 card,
                 target,
@@ -882,6 +911,9 @@ impl ArchitectLab {
                             self.doors
                                 .retain(|key, _| !threshold_touches(*key, cell, &self.world));
                         }
+                    }
+                    CardKind::Directive | CardKind::Sensor => {
+                        unreachable!("the Rogue's orders are played above")
                     }
                 }
                 assert!(self.deck.spend(card), "legality proved the card is held");

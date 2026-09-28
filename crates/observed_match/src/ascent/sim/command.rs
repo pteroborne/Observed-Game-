@@ -24,16 +24,6 @@ pub enum ArchitectCommand {
         rotation: u8,
     },
     Requisition,
-    /// Send the major Guardians to `target`: the Rogue's directive (design section 10).
-    /// Costs the seat's cooldown and no card; only a Rogue seat may give one.
-    Direct {
-        target: HexCoord,
-    },
-    /// Install a sensor on `target` that shows the Rogue the Observers it sees
-    /// (`sim::sensor`). Costs the seat's cooldown and no card; only a Rogue seat may.
-    Sense {
-        target: HexCoord,
-    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,7 +48,7 @@ pub enum CommandRefusal {
     FixedStructure,
     /// The authored tile corpus has no tile of this shape.
     Unbuildable,
-    /// A directive to the Guardians, or a sensor, is the Rogue's to give, not a team's.
+    /// A directive or sensor card is the Rogue's to play, not a team's.
     RogueOnly,
 }
 

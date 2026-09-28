@@ -48,6 +48,10 @@ fn the_bot_rogue_plays_only_against_a_detected_observer() {
 
     let mut rogue_plays = 0;
     for _ in 0..3_000 {
+        // Directed Guardians can jail both bodies before the loop is out: that is the match.
+        if game.rules().outcome != crate::ascent::sim::MatchOutcome::Running {
+            break;
+        }
         let before = game.rules().command_log.len();
         let tick = game.rules().tick + 1;
         let frame = HexInputFrame {
@@ -173,10 +177,8 @@ fn a_directed_tumbler_walks_where_the_rogue_sent_it() {
     };
     tick_with(&mut game, SeatCommand::None);
     let goal = a_walk_from_the_tumbler(&game, 4);
-    let refusals = tick_with(
-        &mut game,
-        SeatCommand::Architect(ArchitectCommand::Direct { target: goal }),
-    );
+    let direct = rogue_play(&mut game, crate::ascent::sim::CardKind::Directive, goal);
+    let refusals = tick_with(&mut game, SeatCommand::Architect(direct));
     assert!(refusals.is_empty(), "{refusals:?}");
     assert_eq!(game.physical().guardian_directive(), Some(goal));
 

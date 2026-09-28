@@ -157,12 +157,32 @@ fn explore_until_playable(
     panic!("walking the facility never uncovered a legal play");
 }
 
+/// A card of `kind` from the seated Rogue's hand (the rules' own), played on `target`:
+/// staged into the hand, as a capture stages what it needs.
+fn rogue_play(
+    game: &mut AscentMatch,
+    kind: crate::ascent::sim::CardKind,
+    target: HexCoord,
+) -> ArchitectCommand {
+    let deck = &mut game.ascent.session.sim.deck;
+    assert!(deck.stage_kind(kind), "the Rogue's deck deals {kind:?}");
+    let card = deck
+        .hand
+        .iter()
+        .find(|card| card.kind == kind)
+        .expect("staged")
+        .id;
+    ArchitectCommand::Play {
+        card,
+        target,
+        rotation: 0,
+    }
+}
+
 fn target_of(command: ArchitectCommand) -> HexCoord {
     match command {
         ArchitectCommand::Play { target, .. } => target,
-        ArchitectCommand::Requisition
-        | ArchitectCommand::Direct { .. }
-        | ArchitectCommand::Sense { .. } => {
+        ArchitectCommand::Requisition => {
             unreachable!("plays only")
         }
     }

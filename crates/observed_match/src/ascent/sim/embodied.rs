@@ -101,7 +101,7 @@ impl ArchitectLab {
             mode: ArchitectMode::FullAscent,
             seed,
             world,
-            deck: Deck::with_shapes(seed, levels, &TileShape::AUTHORED),
+            deck: Deck::rogue(seed, levels, &TileShape::AUTHORED),
             known,
             prison_core,
             prison,
@@ -120,6 +120,17 @@ impl ArchitectLab {
     #[must_use]
     pub const fn is_authored(&self) -> bool {
         self.authored
+    }
+
+    /// A fresh Rogue deck of the shapes this match can build: a player who joins the Rogue
+    /// is dealt one. On a lab board, the lab's deck.
+    #[must_use]
+    pub fn new_rogue_deck(&self, seed: u64) -> Deck {
+        if self.authored {
+            Deck::rogue(seed, self.world.config.levels, &TileShape::AUTHORED)
+        } else {
+            Deck::for_levels(seed, self.world.config.levels)
+        }
     }
 
     /// A fresh deck of the shapes this match can build.

@@ -115,8 +115,9 @@ pub fn sync_previews(
                 &mut materials,
             ),
             CardKind::Door => door_parts(&models, models.ghost.clone(), rotation),
-            // The lab's decks deal no stairs: only the real facility's corpus builds one.
-            CardKind::Stair => Vec::new(),
+            // The lab's decks deal no stairs, directives or sensors: only the real
+            // facility's decks do.
+            CardKind::Stair | CardKind::Directive | CardKind::Sensor => Vec::new(),
         };
         for mut part in parts {
             part.transform.translation += preview_origin(i);
@@ -325,7 +326,7 @@ pub fn rebuild_board(
                     &mut materials,
                 ),
                 CardKind::Door => door_parts(&models, models.ghost.clone(), session.rotation),
-                CardKind::Stair => Vec::new(),
+                CardKind::Stair | CardKind::Directive | CardKind::Sensor => Vec::new(),
             };
             for mut part in parts {
                 part.material = models.ghost.clone();

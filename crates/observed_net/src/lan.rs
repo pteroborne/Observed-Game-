@@ -36,7 +36,9 @@ use crate::protocol::WireIntent;
 /// with interact, and the bot Rogue installs them, so the same frames make a different match.
 /// Version 13 changes no byte: a lantern's anchor holds in the Ascent rules, so a card
 /// the rules took before is refused beside an anchored doorway.
-pub const LAN_PROTOCOL_VERSION: u16 = 13;
+/// Version 14 drops the Rogue's directive and sensor commands (11, 12): they are cards in
+/// the Rogue's own deck now, played like any other, and the bot Rogue plays them.
+pub const LAN_PROTOCOL_VERSION: u16 = 14;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;
