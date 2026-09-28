@@ -9,8 +9,15 @@
 //! - A **minor** is a doing problem. It walks on a body the same controller moves that
 //!   moves the players, so it climbs, collides and falls exactly as they do; it is never
 //!   frozen by sight; it chases the nearest body it can detect on its floor; and it is
-//!   destroyed only by the architecture: a minor that falls out of the facility is gone.
+//!   destroyed only by the architecture: a minor that falls out of the facility is gone,
+//!   and so is one that falls further than [`MINOR_BREAKING_DROP`] onto whatever is below.
 //!   It never enters the prison lobby.
+//!
+//! Measured on production facilities (`kinetic::edges`), a minor that could only be lost
+//! out of the facility was all but unkillable: a push really killed one from under 1% of
+//! cells, none above the fourth floor, because the open edges up there hang over lower
+//! roofs and a retracted hall drops a minor onto the deck below it. The design sends a
+//! minor "off a ledge or unrailed balcony"; a fall is that ledge.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -42,7 +49,11 @@ const MINOR_CATCH_DISTANCE: f32 = 1.2;
 /// Height difference, in metres, beyond which a minor beside its prey is on another deck.
 const MINOR_CATCH_HEIGHT: f32 = 1.5;
 /// How far below the arena floor a body has fallen out of the facility.
-const OUT_OF_WORLD_DEPTH: f32 = 4.0;
+pub(super) const OUT_OF_WORLD_DEPTH: f32 = 4.0;
+/// A minor that lands this far, in metres, below the highest point of its fall breaks:
+/// more than half a storey (`TILE_LEVEL_HEIGHT` is 8), so a drop through a retracted hall
+/// or off a balcony is lethal, and a stair, a ramp or a step down never is.
+pub const MINOR_BREAKING_DROP: f32 = 5.0;
 
 /// Which of the two classes a released Guardian is.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -63,6 +74,8 @@ pub struct HexMinorState {
     waypoint: Option<HexCoord>,
     /// Ticks left sliding from a kinetic shove, when it neither walks nor catches.
     pub stagger: u16,
+    /// The highest it has been since it last stood on something, while it is falling.
+    fall_peak: Option<f32>,
     body: FpsBody,
 }
 
@@ -156,6 +169,7 @@ impl HexWfcMatch {
                     target: None,
                     waypoint: None,
                     stagger: 0,
+                    fall_peak: None,
                     body: FpsBody::spawned(position, 0.0),
                 })
             }
@@ -232,6 +246,7 @@ impl HexWfcMatch {
             controller.ground_decel = KINETIC_STAGGER_FRICTION;
             controller.air_accel = KINETIC_STAGGER_FRICTION;
         }
+        let before = minor.body.position.y;
         let _ = step_character_with_settings(
             &self.physics,
             &mut minor.body,
@@ -246,8 +261,21 @@ impl HexWfcMatch {
             minor.stagger = if stopped { 0 } else { minor.stagger - 1 };
         }
 
+        // A fall is measured from its highest point to where it lands.
+        let broke = if minor.body.grounded {
+            minor
+                .fall_peak
+                .take()
+                .is_some_and(|peak| peak - minor.body.position.y > MINOR_BREAKING_DROP)
+        } else {
+            let peak = minor.fall_peak.unwrap_or(before).max(minor.body.position.y);
+            minor.fall_peak = Some(peak);
+            false
+        };
         let floor_y = self.geometry.arena.floor_y;
-        if !minor.body.position.is_finite() || minor.body.position.y < floor_y - OUT_OF_WORLD_DEPTH
+        if broke
+            || !minor.body.position.is_finite()
+            || minor.body.position.y < floor_y - OUT_OF_WORLD_DEPTH
         {
             // The architecture destroyed it: it went over at the last cell it stood in.
             self.released.remove(&id);

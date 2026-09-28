@@ -1,6 +1,6 @@
 //! Released Guardians in a physical match: a minor hunts on a body, catches into the
-//! prison, is destroyed only by falling out of the facility, and steps identically on
-//! every peer.
+//! prison, is destroyed only by a fall - out of the facility, or further than it survives -
+//! and steps identically on every peer.
 
 use std::collections::BTreeMap;
 
@@ -11,7 +11,7 @@ use observed_hex::{HexCoord, PortClass};
 use super::super::{
     HEX_INPUT_VERSION, HexBodyPlace, HexInputFrame, HexMatchConfig, HexMatchEventKind, HexWfcMatch,
 };
-use super::{HexReleasedGuardian, HexReleasedKind, MINOR_SIGHT_STEPS};
+use super::{HexReleasedGuardian, HexReleasedKind, MINOR_BREAKING_DROP, MINOR_SIGHT_STEPS};
 
 const BODY: PlayerId = PlayerId(0);
 
@@ -206,4 +206,65 @@ fn a_release_is_refused_twice_under_one_id_and_onto_nothing_built() {
     assert!(!game.release_guardian(2, HexReleasedKind::Minor, unbuilt));
     assert!(game.remove_released(1));
     assert!(game.released.is_empty());
+}
+
+/// Drop a minor from `height` metres over a floor with open sky above it, and step until
+/// it has landed: whether it was lost, and the events.
+fn drop_minor(height: f32) -> (bool, Vec<HexMatchEventKind>) {
+    let mut game = prison_match(7);
+    let body = game.players[&BODY].cell;
+    let mut cells: Vec<HexCoord> = game
+        .facility
+        .placements
+        .iter()
+        .filter(|(cell, placement)| placement.space.built() && **cell != body)
+        .map(|(&cell, _)| cell)
+        .collect();
+    cells.sort();
+    // Nothing overhead for the whole drop, so it falls the full height.
+    let (cell, feet) = cells
+        .into_iter()
+        .filter_map(|cell| Some((cell, game.standing_point(cell)?)))
+        .find(|&(_, feet)| {
+            game.physics
+                .ray_distance(feet + glam::Vec3::Y * 0.2, glam::Vec3::Y, height + 3.0)
+                .is_none()
+        })
+        .expect("a floor open to the sky");
+    assert!(game.release_guardian(1, HexReleasedKind::Minor, cell));
+    let config = game.content.traversal_profile().controller();
+    let Some(HexReleasedGuardian::Minor(released)) = game.released.get_mut(&1) else {
+        panic!("a minor");
+    };
+    released.stand_at(feet + glam::Vec3::Y * (config.half_height + 0.02 + height));
+    let mut events = Vec::new();
+    for _ in 0..180 {
+        events.extend(step(&mut game, false));
+        if !game.released.contains_key(&1) {
+            return (true, events);
+        }
+    }
+    (false, events)
+}
+
+#[test]
+fn a_minor_that_falls_further_than_it_survives_breaks_where_it_lands() {
+    let (lost, events) = drop_minor(MINOR_BREAKING_DROP + 1.5);
+    assert!(
+        lost,
+        "a minor survived a {} m fall",
+        MINOR_BREAKING_DROP + 1.5
+    );
+    assert!(events.contains(&HexMatchEventKind::GuardianLost));
+}
+
+#[test]
+fn a_minor_survives_a_drop_shorter_than_half_a_storey() {
+    let (lost, events) = drop_minor(MINOR_BREAKING_DROP - 2.0);
+    assert!(
+        !lost,
+        "a minor broke on a {} m drop",
+        MINOR_BREAKING_DROP - 2.0
+    );
+    assert!(!events.contains(&HexMatchEventKind::GuardianLost));
 }

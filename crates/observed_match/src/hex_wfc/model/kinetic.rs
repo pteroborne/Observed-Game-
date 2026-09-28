@@ -261,4 +261,6 @@ impl HexWfcMatch {
 }
 
 #[cfg(test)]
+mod edges;
+#[cfg(test)]
 mod tests;

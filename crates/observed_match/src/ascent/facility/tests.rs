@@ -623,6 +623,97 @@ fn a_bot_architect_repairs_what_the_rogue_breaks_through_the_human_path() {
     assert_geometry_is_fresh(&game);
 }
 
+/// Evidence, not regression cover: how many minors a production match collects. Ten
+/// minutes of two teams of two, bot bodies, bot Architects and the bot Rogue, counting
+/// the minors alive on each floor, the waves, and how many minors those waves would have
+/// released without `MINORS_PER_FLOOR`. The bots never shove, so every minor that goes is
+/// one that fell or walked off something on its own.
+#[test]
+#[ignore = "ten minutes of production play (about a minute); prints the crowd, asserts nothing"]
+fn production_minor_crowd() {
+    use crate::ascent::economy::MINORS_PER_FLOOR;
+    let content = std::sync::Arc::new(crate::hex_wfc::HexMatchContent::from_runtime_catalog(
+        crate::hex_wfc::test_catalog().clone(),
+    ));
+    for seed in [1u64, 2] {
+        let config = HexMatchConfig {
+            teams: 2,
+            members_per_team: 2,
+            guardian: true,
+            wfc: HexWfcConfig::arc_default(),
+        };
+        let physical = HexWfcMatch::new_with_content(seed, config, content.clone()).unwrap();
+        let seats = super::architect_seats(&physical, None);
+        let mut game = AscentMatch::new(physical, seed, seats).unwrap();
+        let (mut released, mut lost, mut peak_total) = (0usize, 0usize, 0usize);
+        let mut peak_floor: BTreeMap<u8, usize> = BTreeMap::new();
+        let mut at_minute = Vec::new();
+        for tick in 1..=36_000u64 {
+            let commands = game
+                .physical()
+                .players
+                .keys()
+                .map(|&p| (p, game.physical().bot_player_command(p)))
+                .collect();
+            let bodies = HexInputFrame {
+                version: HEX_INPUT_VERSION,
+                tick,
+                commands,
+            };
+            let seats = InputFrame {
+                version: ASCENT_INPUT_VERSION,
+                tick,
+                commands: BTreeMap::new(),
+            };
+            if game.step(&bodies, &seats).is_err() {
+                eprintln!("seed {seed}: the match ended at tick {tick}");
+                break;
+            }
+            for event in &game.physical().recent_events {
+                match event.kind {
+                    HexMatchEventKind::GuardianReleased => released += 1,
+                    HexMatchEventKind::GuardianLost => lost += 1,
+                    _ => {}
+                }
+            }
+            let mut per_floor: BTreeMap<u8, usize> = BTreeMap::new();
+            for guardian in game.physical().released.values() {
+                if guardian.kind() == HexReleasedKind::Minor {
+                    *per_floor.entry(guardian.cell().level).or_default() += 1;
+                }
+            }
+            let total: usize = per_floor.values().sum();
+            peak_total = peak_total.max(total);
+            for (&level, &count) in &per_floor {
+                let peak = peak_floor.entry(level).or_default();
+                *peak = (*peak).max(count);
+            }
+            if tick % 3_600 == 0 {
+                at_minute.push(total);
+            }
+            if game.rules().outcome != crate::ascent::sim::MatchOutcome::Running {
+                eprintln!(
+                    "seed {seed}: decided at tick {tick}: {:?}",
+                    game.rules().outcome
+                );
+                break;
+            }
+        }
+        let economy = &game.rules().economy;
+        let uncapped: u32 = economy
+            .wave_counts
+            .iter()
+            .map(|(&level, &waves)| waves * (1 + u32::from(level)))
+            .sum();
+        eprintln!(
+            "seed {seed}: waves {:?}; released {released} (uncapped the waves would \
+             have released {uncapped}); lost {lost}; alive each minute {at_minute:?}; \
+             peak alive {peak_total}, peak per floor {peak_floor:?} (ceiling {MINORS_PER_FLOOR})",
+            economy.wave_counts,
+        );
+    }
+}
+
 /// Evidence, not regression cover: a production facility with two bot Architects,
 /// printing tick times. Measured 2026-09-26: median about 0.1 ms, a bot's decision beat
 /// about 3 ms, and a Guardian catch's tick about 3-6 ms, its maze carved ahead

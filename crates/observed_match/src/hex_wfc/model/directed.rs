@@ -71,7 +71,7 @@ impl HexWfcMatch {
 
     /// Whether a body fits standing with its feet at `feet`, on something solid at that
     /// height: not in a wall, over a hole or at a drop. Where exactly its feet would rest.
-    fn stands_at(&self, feet: Vec3) -> Option<Vec3> {
+    pub(super) fn stands_at(&self, feet: Vec3) -> Option<Vec3> {
         const CLEARANCE: f32 = 0.05;
         let config = self.content.traversal_profile().controller();
         let centre_height = config.half_height + CLEARANCE;

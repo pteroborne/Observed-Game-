@@ -427,6 +427,45 @@ darkens stays dark until a player walks to its generator; stations are sited by 
 rather than placed from the Architect's mixed hand as the design has them; doors,
 teleport plates and ascent are not yet gated by power in the physical match.
 
+### Where a minor can die
+
+A minor is destroyed only by the architecture, and a push is how an Observer hands it
+over. `hex_wfc::model::kinetic::edges` measures where that can happen on the facility the
+game plays: from every standing point on every walkable, non-stair cell of three
+production facilities, twelve level pushes are walked through the colliders a minor's
+capsule meets, and every cell the probe calls lethal is replayed as up to three real
+shoves. Only a shove that ends in `GuardianLost` counts; the probe alone overcounts
+several times, because a railing often stands just past a slab's edge and a fall carries
+forward onto roofs a straight-down ray misses.
+
+| | seed 1 | seed 2 | seed 3 |
+|---|---|---|---|
+| walkable non-stair cells | 956 | 859 | 825 |
+| cells a push kills from, lost only out of the facility | 3 (0.3%) | 3 (0.3%) | 7 (0.8%) |
+| ...and with `MINOR_BREAKING_DROP` | 101 (10.6%) | 95 (11.1%) | 78 (9.5%) |
+| ...of those on floors 5-7 | 94 | 92 | 69 |
+
+Two findings drove the change:
+
+- **The upper floors' open edges never killed.** They hang over the lower wings' roofs,
+  thirty metres down, and a minor landed there and lived.
+- **A retracted hall above the ground floors is not a pit.** What is under it is the
+  ceiling of the cell below, half a metre down: a minor drops onto that roof and can step
+  back out. On floors 0-3 a retraction still opens onto nothing, and every sampled push
+  through one killed.
+
+So a minor now also breaks on landing from a fall of more than `MINOR_BREAKING_DROP` (5 m,
+over half a storey): the design's "off a ledge or unrailed balcony". A stair, a ramp or a
+step down never comes near it.
+
+Waves grow with height and minors leave only by falling, so a first-person floor holds at
+most `MINORS_PER_FLOOR` (8). A wave that would pass it releases only up to it, and its
+disturbance is spent all the same. A lab board, whose shove commits a minor outright, keeps
+no ceiling; its soak depends on the pressure. `production_minor_crowd` (ten minutes, two
+teams of two, every seat a bot, and bots never shove) filled floors 0 and 1 to the ceiling
+on seed 1 - 18 released where the waves asked for 30 - and that crowd won the Rogue the
+match in four minutes. Floor 0's waves are one minor each, but came fourteen times.
+
 ### Not yet joined
 
 - The rules' own Guardians (the lab's cell-level hunters) are not placed; the physical

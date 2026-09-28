@@ -52,7 +52,9 @@ pub use kinetic::{
 pub use knowledge::{HexMapCellKnowledge, HexMapDiscovery, HexPlayerMapKnowledge};
 pub use objectives::{DUAL_STATION_HOLD_TICKS, HexObjectiveState, KEYSTONES_REQUIRED};
 pub use pad::{HexDeployedPad, HexPadState, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER};
-pub use released::{HexMinorState, HexReleasedGuardian, HexReleasedKind, MINOR_SIGHT_STEPS};
+pub use released::{
+    HexMinorState, HexReleasedGuardian, HexReleasedKind, MINOR_BREAKING_DROP, MINOR_SIGHT_STEPS,
+};
 pub use snapshot::{HexMapCellSnapshot, HexMatchSnapshot, HexPlayerSnapshot, HexTeamSnapshot};
 
 pub(super) const FIXED_DT: f32 = 1.0 / 60.0;

@@ -73,8 +73,18 @@ the combined loop.
     [the integration notes](docs/architect_ascent_polish.md#the-kinetic-tool-and-floor-power).
     Next: bot bodies that recharge and restore power, stations placed from the Architect's
     mixed hand, and power gating doors, plates and ascent physically.
-    Open tuning question: waves grow with height and minors only die by falling, so a
-    long match can accumulate a crowd.
+    **Minors can be killed, and cannot crowd (2026-09):** measured on production
+    facilities (`hex_wfc::model::kinetic::edges`, every candidate replayed as a real shove),
+    a minor that died only out of the facility was all but immortal: a push killed one from
+    0.3-0.8% of cells, none above the fourth floor, because the open edges up there hang
+    over lower roofs and a retracted upper hall is floored by the ceiling of the cell below
+    it, half a metre down. A minor now also breaks on a fall of more than half a storey
+    (`MINOR_BREAKING_DROP`, the design's "off a ledge or unrailed balcony"), which puts a
+    killing push within reach of 9.5-11.1% of cells, most of them on floors 5-7 where waves
+    are largest. A first-person floor holds at most `MINORS_PER_FLOOR` (8); a ten-minute
+    bot soak (`production_minor_crowd`) filled floors 0 and 1 to it, 18 released where the
+    waves asked for 30. Still open: retraction does not make a pit above the ground floors,
+    and floor 0's waves of one came fourteen times in four minutes.
 
     **Self-plumb implemented (2026-09):** The plumb on the Observer is now
     proven and playable in `wfc_kinetic_lab` and `observed_traversal::gravity`.

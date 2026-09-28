@@ -34,7 +34,7 @@ pub use model::{
     HexReleasedGuardian, HexReleasedKind, HexTeamObjectiveState, HexTeamSnapshot, HexTeamState,
     HexWfcMatch, KEYSTONES_REQUIRED, KINETIC_COOLDOWN_TICKS, KINETIC_PULL_SPEED,
     KINETIC_PUSH_SPEED, KINETIC_REACH, KINETIC_STAGGER_FRICTION, KINETIC_STAGGER_TICKS, MAX_ROSTER,
-    MINOR_SIGHT_STEPS, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER,
+    MINOR_BREAKING_DROP, MINOR_SIGHT_STEPS, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER,
 };
 pub use trim::{HexTrimKind, HexTrimPiece, derive_thresholds, derive_trim, derive_trim_for};
 

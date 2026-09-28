@@ -51,6 +51,14 @@ pub const DISTURBANCE_DECAY_PER_BEAT: u32 = 2;
 /// Disturbance decay floor per floor level (level * DECAY_FLOOR_PER_LEVEL).
 pub const DISTURBANCE_DECAY_FLOOR_PER_LEVEL: u32 = 15;
 
+/// The most minor Guardians a floor of a first-person facility holds at once. A wave that
+/// would take a floor past it releases only up to it, and its disturbance is spent all the
+/// same: waves grow with height and minors leave only by falling, so without a ceiling a
+/// long match on a high floor collects a crowd no Observer can answer. One wave from the
+/// top of a production facility (eight levels, `1 + level` a wave) fills it. A lab board,
+/// whose shove commits a minor outright, has none.
+pub const MINORS_PER_FLOOR: usize = 8;
+
 /// State for the cell-level economy on the facility.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EconomyState {
@@ -789,7 +797,20 @@ impl ArchitectLab {
         while self.economy.disturbance(level) >= DISTURBANCE_THRESHOLD {
             self.economy.consume_disturbance_threshold(level);
             let wave_num = self.economy.increment_wave_count(level);
-            let wave_size = 1 + (level as usize);
+            let on_floor = self
+                .guardians
+                .values()
+                .chain(&self.releases)
+                .filter(|g| g.kind == GuardianKind::Minor && g.cell.level == level)
+                .count();
+            // A lab board's shove commits a minor outright, so its floors thin themselves; a
+            // first-person floor's minors leave only by falling, and it keeps the ceiling.
+            let room = if self.authored {
+                MINORS_PER_FLOOR.saturating_sub(on_floor)
+            } else {
+                usize::MAX
+            };
+            let wave_size = (1 + (level as usize)).min(room);
 
             let mut candidates: Vec<HexCoord> = self
                 .world
@@ -1814,6 +1835,59 @@ mod tests {
             lab_a.economy, lab_b.economy,
             "economy state matches exactly"
         );
+    }
+
+    #[test]
+    fn a_floor_holds_no_more_minors_than_its_ceiling_and_the_meter_still_spends() {
+        let mut lab =
+            ArchitectLab::for_mode(ArchitectMode::QuickClimb).expect("quick climb solves");
+        // The ceiling is a first-person facility's; the count is the rules' either way.
+        lab.authored = true;
+        let floor = 1;
+        let minors = |lab: &ArchitectLab| {
+            lab.guardians
+                .values()
+                .filter(|g| g.kind == GuardianKind::Minor && g.cell.level == floor)
+                .count()
+        };
+        // Wave after wave of two: the floor fills to its ceiling and no further.
+        // What the host does with a first-person release: give it a body the rules follow.
+        let embody = |lab: &mut ArchitectLab| {
+            for guardian in lab.take_releases() {
+                lab.guardians.insert(guardian.id, guardian);
+            }
+        };
+        for wave in 1..=10u32 {
+            lab.add_disturbance(floor, DISTURBANCE_THRESHOLD);
+            embody(&mut lab);
+            assert_eq!(
+                lab.economy.wave_count(floor),
+                wave,
+                "every threshold is a wave"
+            );
+            assert!(
+                minors(&lab) <= MINORS_PER_FLOOR,
+                "wave {wave}: {}",
+                minors(&lab)
+            );
+        }
+        assert_eq!(minors(&lab), MINORS_PER_FLOOR);
+        assert!(
+            lab.economy.disturbance(floor) < DISTURBANCE_THRESHOLD,
+            "a full floor still spends its meter"
+        );
+        // One goes; the next wave refills to the ceiling, not past it.
+        let gone = *lab
+            .guardians
+            .iter()
+            .find(|(_, g)| g.kind == GuardianKind::Minor && g.cell.level == floor)
+            .expect("a minor")
+            .0;
+        lab.guardians.remove(&gone);
+        let spawned = lab.add_disturbance(floor, DISTURBANCE_THRESHOLD);
+        embody(&mut lab);
+        assert_eq!(spawned.len(), 1);
+        assert_eq!(minors(&lab), MINORS_PER_FLOOR);
     }
 
     #[test]
