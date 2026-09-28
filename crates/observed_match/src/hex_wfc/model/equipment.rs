@@ -193,6 +193,27 @@ pub struct HexAnchorSite {
 }
 
 impl HexWfcMatch {
+    /// Every cell a deployed lantern holds: the two either side of the doorway it anchors
+    /// (the room's, and the one its port opens onto). An Architect directing the facility
+    /// may not rewrite either (`ascent::facility`), as relayout may not.
+    #[must_use]
+    pub fn anchored_cells(&self) -> std::collections::BTreeSet<HexCoord> {
+        let mut cells = std::collections::BTreeSet::new();
+        if self.lanterns.deployed.is_empty() {
+            return cells;
+        }
+        let doors = self.door_states();
+        let grid = self.facility.config.grid();
+        for lantern in self.lanterns.deployed.values() {
+            cells.insert(lantern.cell);
+            if let Some(door) = doors.iter().find(|door| door.key == lantern.threshold) {
+                cells.insert(door.room_cell);
+                cells.extend(grid.neighbor(door.room_cell, door.face));
+            }
+        }
+        cells
+    }
+
     /// The anchor this player could place right now, or `None`.
     ///
     /// This *is* the deploy precondition rather than a description of it —

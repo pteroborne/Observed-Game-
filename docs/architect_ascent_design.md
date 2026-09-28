@@ -5,6 +5,11 @@ disturbance waves, minor Guardians, floor power, the kinetic tool, and the emerg
 requisition; those additions are canon on the same footing as the original text.
 Amended 2026-09-25: the prison is a lobby in the facility and a maze in a space of its
 own (section 3), replacing the central vertical maze.
+Amended 2026-09-28 (user decisions): each Rogue operator plays a hand and cooldown of
+their own, tuned for fairness rather than shared (section 2); a door closed on a minor
+Guardian separates it and does not destroy it (sections 4 and 6); and without power,
+teleport pads are inert and blast doors seal the stairs rather than the stairs
+themselves failing (section 5).
 
 **Supersedes:** earlier gameplay plans wherever they describe a precomposed race as
 the final game. Their implementation and playtest records remain valid evidence.
@@ -91,6 +96,10 @@ A loyal card play starts that team's one shared Architect cooldown. The initial 
 default is `300` fixed ticks (five seconds at 60 Hz); it remains match configuration
 until playtesting establishes the production value. The Rogue faction has one shared
 hand and an identical shared cooldown regardless of how many Rogue operators exist.
+*Amended 2026-09-28:* each Rogue operator instead holds a hand and a cooldown of their
+own, dealt from the Rogue deck when they join, so a corruption adds an operator to the
+Rogue. The faction's reach grows with it; fairness is a tuning question (cooldown,
+deck composition), not a structural one.
 
 For an ordinary tile card:
 
@@ -247,8 +256,9 @@ pressure, not a commander of units, and minor Guardians are the neutral hazard t
 both factions must route around.
 
 A minor Guardian is destroyed by the environment rather than by damage: the kinetic
-tool (section 6) commits it to void, off unrailed geometry, into a retracting tile, or
-through a threshold that is then closed. Minor Guardians never enter the prison core,
+tool (section 6) commits it to void, off unrailed geometry, or into a retracting tile.
+*Amended 2026-09-28:* a door closed on a minor separates it from its prey and does not
+destroy it. Minor Guardians never enter the prison core,
 and are removed with a floor that becomes permanently collapsed.
 
 ## 5. Power and darkness
@@ -263,6 +273,9 @@ Losing power changes what is true, not merely what is visible:
 - recharge stations (section 6) supply no charge;
 - deployed doors freeze in their current state and cannot be operated;
 - ascent rooms, teleport pads, and station rooms are inert;
+- *amended 2026-09-28:* a stair is architecture, not a machine, so it does not fail:
+  blast doors seal it instead, at its foot and its head, and open again when power
+  returns;
 - **observation fails at range.** What cannot be seen cannot be frozen.
 
 That last consequence is the mechanic's reason to exist. An unpowered floor is a floor
@@ -290,8 +303,8 @@ attempt it never presents itself.
 
 The tool is the Observer's answer to minor Guardians, and it answers them with the
 facility. A shove commits a minor Guardian to void, off a ledge or unrailed balcony,
-into a retracting tile, or through a threshold that an Observer then closes. What
-kills is always architecture. This keeps the Architect central to first-person
+or into a retracting tile. (A threshold an Observer then closes separates it; see the
+2026-09-28 amendment in section 4.) What kills is always architecture. This keeps the Architect central to first-person
 survival — an Observer's best weapon is a hole their Architect built — where a
 direct-damage weapon would make Observers self-sufficient and sideline the Architect
 inside their own information loop.

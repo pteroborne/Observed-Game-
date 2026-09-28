@@ -659,8 +659,11 @@ move one, only install another.
   Guardian is the one that catches.
 - A team's map knowledge exists twice: the rules' (what the Architect targets) and the
   physical match's (what the in-play map shows). They are fed by different sight models.
-- Anchors and torches are rule state and physical state respectively, not one thing.
-  Doors are one thing now ([Doors](#doors)).
+- Anchors are one thing now: a lantern anchoring a room's doorway anchors, in the rules,
+  both cells either side of it (`HexWfcMatch::anchored_cells`), so no card rewrites or
+  retracts them. Before, the rules' anchor set stayed empty on the real facility, and a
+  card could rewrite the corridor a lantern was holding. Doors are one thing too
+  ([Doors](#doors)).
 - Ascent plays over LAN, a human at a team's Architect desk where one claims it in the
   lobby and a bot everywhere else; plays, requisitions, asks and answers travel as seat
   commands in the frames (`docs/lan_integration.md`). A match

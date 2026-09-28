@@ -340,6 +340,8 @@ impl AscentRules {
         self.session
             .sim
             .retire_embodied_guardians(|id| id == TUMBLER || physical.released.contains_key(&id.0));
+        // A lantern's anchor is the rules' anchor: no card rewrites or retracts what it holds.
+        self.session.sim.anchored = physical.anchored_cells();
         self.session.sim.refresh_observation();
     }
 

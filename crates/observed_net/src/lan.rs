@@ -34,7 +34,9 @@ use crate::protocol::WireIntent;
 /// and a player who joins the Rogue plays a hand of their own on their own cooldown.
 /// Version 12 carries a Rogue's sensor (`WireSeatCommand::Sense`); a body takes one down
 /// with interact, and the bot Rogue installs them, so the same frames make a different match.
-pub const LAN_PROTOCOL_VERSION: u16 = 12;
+/// Version 13 changes no byte: a lantern's anchor holds in the Ascent rules, so a card
+/// the rules took before is refused beside an anchored doorway.
+pub const LAN_PROTOCOL_VERSION: u16 = 13;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;
