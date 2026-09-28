@@ -109,7 +109,10 @@ pub(super) fn input(
     if keys.just_pressed(KeyCode::KeyR) && !desk.rogue {
         desk.pending = Some(ArchitectCommand::Requisition);
     }
-    if keys.just_pressed(KeyCode::KeyF) || pressed(DeskButton::Answer) {
+    // At the Rogue board the answer key directs the Guardians instead: nobody asks it.
+    if keys.just_pressed(KeyCode::KeyF) && desk.rogue {
+        direct_guardians(&mut desk, &runtime);
+    } else if keys.just_pressed(KeyCode::KeyF) || pressed(DeskButton::Answer) {
         super::requests::answer_oldest(&mut desk, &runtime);
     }
     if buttons.just_pressed(MouseButton::Right) {
@@ -159,6 +162,22 @@ pub(super) fn input(
     }
     if confirm {
         confirm_play(&mut desk, &runtime);
+    }
+}
+
+/// Send the major Guardians to the cell the play is about - aimed at, or pointed at - if
+/// the rules would take the directive; otherwise say why. The card in hand stays up.
+pub(super) fn direct_guardians(desk: &mut ArchitectDesk, runtime: &HexWfcRuntime) {
+    let (Some(ascent), Some(target)) = (runtime.ascent.as_ref(), desk.focus()) else {
+        return;
+    };
+    let direct = ArchitectCommand::Direct { target };
+    match ascent.session().architect_refusal(desk.seat, direct) {
+        None => {
+            desk.pending = Some(direct);
+            desk.last_refusal = None;
+        }
+        Some(refusal) => desk.last_refusal = Some(refusal),
     }
 }
 

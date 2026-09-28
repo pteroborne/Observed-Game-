@@ -86,7 +86,11 @@ impl HexGuardianState {
         events: &mut Vec<HexMatchEvent>,
         bounds: HexGuardianBounds<'_>,
     ) {
-        let HexGuardianBounds { prison, closed } = bounds;
+        let HexGuardianBounds {
+            prison,
+            closed,
+            directive,
+        } = bounds;
         // A closed door between them hides it, as a wall would.
         let observed = players.values().any(|player| {
             player_sees_guardian(world, player, self) && !closed(player.cell, self.cell)
@@ -101,6 +105,38 @@ impl HexGuardianState {
         };
         if self.status != HexGuardianStatus::Active {
             return;
+        }
+
+        // Where the lobby and closed doors let it step.
+        let may_enter = |from: HexCoord, next: HexCoord| {
+            // The prison lobby is sanctuary: a Guardian waits at its door, never inside.
+            prison.is_none_or(|prison| !prison.lobby.contains(&next))
+                // Nor does it pass a closed door: it waits at that too.
+                && !closed(from, next)
+        };
+
+        // Directed, it walks where the Rogue sent it - unless a body shares its cell, which
+        // it catches first. Where the directive cannot be reached it hunts as ever.
+        if let Some(goal) = directive
+            && goal != self.cell
+            && !players
+                .values()
+                .any(|player| player.in_facility() && player.cell == self.cell)
+        {
+            if !tick.is_multiple_of(MOVE_PERIOD_TICKS) {
+                self.target = None;
+                return;
+            }
+            if let Some(route) = world.route_between_cells(self.cell, goal) {
+                self.target = None;
+                if let Some(&next) = route.cells.get(1)
+                    && may_enter(self.cell, next)
+                {
+                    self.cell = next;
+                    self.position = Vec3::from_array(hex_origin(next)) + Vec3::Y * 0.9;
+                }
+                return;
+            }
         }
 
         // Where a catch means prison, even a lone runner is hunted: the prison is how the
@@ -139,10 +175,7 @@ impl HexGuardianState {
         } else if tick.is_multiple_of(MOVE_PERIOD_TICKS)
             && let Some(route) = world.route_between_cells(self.cell, target_cell)
             && let Some(&next) = route.cells.get(1)
-            // The prison lobby is sanctuary: a Guardian waits at its door, never inside.
-            && prison.is_none_or(|prison| !prison.lobby.contains(&next))
-            // Nor does it pass a closed door: it waits at that too.
-            && !closed(self.cell, next)
+            && may_enter(self.cell, next)
         {
             self.cell = next;
             self.position = Vec3::from_array(hex_origin(next)) + Vec3::Y * 0.9;
@@ -207,12 +240,30 @@ fn recovery_destination(world: &HexWfcWorld, guardian_cell: HexCoord) -> Option<
         .map(|blueprint| blueprint.anchor)
 }
 
-/// Where a Guardian may not go: the prison's lobby, and across a closed door.
+/// Where a Guardian may not go - the prison's lobby, and across a closed door - and where
+/// the Rogue has sent it.
 #[derive(Clone, Copy)]
 pub(super) struct HexGuardianBounds<'a> {
     pub prison: Option<&'a super::prison::HexPrison>,
     /// Whether a closed door stands between two neighbouring cells.
     pub closed: &'a dyn Fn(HexCoord, HexCoord) -> bool,
+    /// The Rogue's directive, which a major Guardian walks to instead of hunting.
+    pub directive: Option<HexCoord>,
+}
+
+impl super::HexWfcMatch {
+    /// Send every major Guardian to `cell` instead of hunting, or back to the hunt with
+    /// `None`. The Ascent rules own the directive and say when it is spent
+    /// (`ascent::sim::ArchitectLab::directed`); this only walks the bodies.
+    pub fn direct_guardians(&mut self, cell: Option<HexCoord>) {
+        self.guardian_directive = cell;
+    }
+
+    /// Where the major Guardians have been sent, if anywhere.
+    #[must_use]
+    pub const fn guardian_directive(&self) -> Option<HexCoord> {
+        self.guardian_directive
+    }
 }
 
 impl HexGuardianBounds<'_> {
@@ -221,6 +272,7 @@ impl HexGuardianBounds<'_> {
     pub(super) const OPEN: HexGuardianBounds<'static> = HexGuardianBounds {
         prison: None,
         closed: &|_, _| false,
+        directive: None,
     };
 }
 

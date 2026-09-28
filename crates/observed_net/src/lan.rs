@@ -30,7 +30,9 @@ use crate::protocol::WireIntent;
 /// bodies and Guardians, and interact at a door opens or closes it.
 /// Version 10 changes no byte: only the ground floor's open edges are railed, so the same
 /// facility builds different colliders.
-pub const LAN_PROTOCOL_VERSION: u16 = 10;
+/// Version 11 carries a Rogue's directive to the major Guardians (`WireSeatCommand::Direct`),
+/// and a player who joins the Rogue plays a hand of their own on their own cooldown.
+pub const LAN_PROTOCOL_VERSION: u16 = 11;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;

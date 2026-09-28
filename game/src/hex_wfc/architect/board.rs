@@ -256,6 +256,12 @@ pub(super) fn draw_marks(
     for request in &requests {
         (request.target, request.created_at, request.acknowledged_by).hash(&mut hasher);
     }
+    // Only the Rogue's own board is told where its Guardians were sent.
+    let directed = rules
+        .directed
+        .filter(|directive| desk.rogue && directive.cell.level == floor)
+        .map(|directive| directive.cell);
+    directed.hash(&mut hasher);
     let signature = hasher.finish();
     if signature == board.marks_signature {
         return;
@@ -381,6 +387,23 @@ pub(super) fn draw_marks(
             Mesh3d(board.ring.clone()),
             MeshMaterial3d(paint(role)),
             Transform::from_translation(on_deck(request.target, 0.12)),
+            layer.clone(),
+        ));
+    }
+
+    // The Rogue's directive: a red beacon over the cell its Guardians are walking to,
+    // breathing until one arrives.
+    if let Some(cell) = directed {
+        commands.spawn((
+            BoardMark,
+            Pulse {
+                role: Role::Guardian,
+                scale: BEACON,
+            },
+            DespawnOnExit(GameState::HexWfc),
+            Mesh3d(board.bar.clone()),
+            MeshMaterial3d(paint(Role::Guardian)),
+            Transform::from_translation(on_deck(cell, 10.0)).with_scale(BEACON),
             layer.clone(),
         ));
     }

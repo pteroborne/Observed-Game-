@@ -371,6 +371,9 @@ pub struct HexWfcMatch {
     pub(super) doors: BTreeMap<(HexCoord, HexFace), doors::HexDoor>,
     /// The next collider id a deployed door takes.
     pub(super) next_door_collider: u32,
+    /// Where the Rogue has sent the major Guardians (`direct_guardians`), which follow
+    /// the rules like the doors and are omitted from snapshots the same way.
+    pub(super) guardian_directive: Option<HexCoord>,
     /// Immutable content retained so relayout uses the same catalog,
     /// composition, movement profile, and network identity as initial solve.
     pub(super) content: Arc<HexMatchContent>,
@@ -568,6 +571,7 @@ impl HexWfcMatch {
             stranded_ticks: BTreeMap::new(),
             kinetic_cooldowns: BTreeMap::new(),
             doors: BTreeMap::new(),
+            guardian_directive: None,
             next_door_collider: 0,
             progress_anchor: BTreeMap::new(),
             content,
@@ -640,6 +644,7 @@ impl HexWfcMatch {
                 guardian::HexGuardianBounds {
                     prison: self.prison.as_ref(),
                     closed: &|a, b| doors::closed_between(doors, grid, a, b),
+                    directive: self.guardian_directive,
                 },
             );
         }

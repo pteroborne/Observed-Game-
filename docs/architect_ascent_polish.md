@@ -544,13 +544,16 @@ Anchors and torches are still rule state and physical state apart.
 ### The Rogue board
 
 A body that falls into true void has corrupted (design section 7): the rules already made
-its seat a Rogue seat, playing from the Rogue's shared deck and cooldown beside the bot
-Rogue. Its player had nowhere to go; now they take a seat at the Rogue board
+its seat a Rogue seat. Its player had nowhere to go; now they take a seat at the Rogue board
 (`ascent::join_rogue_board`, `ArchitectDesk::rogue`), the same desk a team's Architect
 uses, reading the Rogue's side of the rules:
 
-- **The Rogue's hand** (`ArchitectDesk::hand`): the shared Rogue deck and its cooldown,
-  which the bot Rogue plays from too. A card either plays is gone for both.
+- **A Rogue hand of their own** (`AscentSession::rogue_hands`, `ArchitectDesk::hand`): a
+  player who joins the Rogue is dealt a deck and a cooldown of their own. The rules' own
+  Rogue hand stays the seated operators' - the bot Rogue's - so a player at the board
+  never waits on the bot's clock, nor loses the card under the cursor to its play. Each
+  corruption adds an operator to the Rogue, as the design's asymmetric faction change
+  reads.
 - **The facility's truth** (`ArchitectLab::rogue_view`): every cell as it stands, every
   Guardian, and of the loyal Observers only those the Rogue may know - jailed, corrupted,
   or detected by a Guardian (design section 10). The board, the climb and the side panel
@@ -563,6 +566,17 @@ uses, reading the Rogue's side of the rules:
   it looks through nobody's eyes, and a requisition is a team's. The side panel is headed
   DETECTED BY GUARDIANS, the title says ROGUE AI, and the control strip names neither
   answering nor requisitioning.
+- **Directives** (`ArchitectCommand::Direct`, `ascent::sim::directive`): the answer key
+  (F, or Y on a controller) sends the major Guardians to the cell pointed at. A directive
+  costs the seat's cooldown and no card, only a Rogue seat may give one
+  (`CommandRefusal::RogueOnly`), and it is refused on void, a collapsed floor or the
+  prison. The rules keep it (`ArchitectLab::directed`) until a major Guardian stands on
+  the cell or `DIRECTIVE_TICKS` (30 s) pass; the facility hands it to the bodies each tick
+  (`HexWfcMatch::direct_guardians`), and a directed major walks there instead of hunting
+  the leading body - unless a body shares its cell, which it catches first, or the cell
+  cannot be reached, where it hunts as ever. Minors never take one (design section 4).
+  The Rogue's board shows it as a breathing red beacon and a line with the time left;
+  a team's board is not told.
 - **The result**: a corrupted player plays for the Rogue, and wins with it
   (`ascent::result_for`).
 
@@ -574,9 +588,16 @@ the rest is the Architect capture's, from the Rogue board):
 - [A card picked up](evidence/ascent-rogue/rogue-play-1280x800.png)
 - [The play building in](evidence/ascent-rogue/rogue-building-in-1280x800.png)
 - [Built, the Rogue's hand recharging](evidence/ascent-rogue/rogue-built-1280x800.png)
+- [Guardians directed](evidence/ascent-rogue/rogue-directed-1280x800.png): the beacon,
+  and the directive with its time
+- [Seven seconds on](evidence/ascent-rogue/rogue-directed-walked-1280x800.png): the
+  Guardian two cells from the beacon, walking in
 
-Not yet: the bot Rogue keeps playing beside a human, so the two share one cooldown; the
-Rogue's directives to major Guardians and its sensors have no controls at the board.
+Over LAN a directive travels as a seat command (`WireSeatCommand::Direct`, protocol 11).
+
+Not yet: the bot Rogue gives no directives; the Rogue's sensors (design section 7) do not
+exist in the rules, so there is nothing to control; a joined player's hand is not kept
+live for the floors the Rogue can reach, as a team's is.
 
 ### Not yet joined
 

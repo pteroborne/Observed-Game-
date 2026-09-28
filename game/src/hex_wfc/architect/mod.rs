@@ -2,8 +2,9 @@
 //!
 //! A local player who takes their team's Architect seat in Architect Ascent plays from
 //! here. Their team's bodies are bots. A player whose body fell into true void plays from
-//! here too, at the Rogue board (`ArchitectDesk::rogue`): the Rogue's shared hand, and the
-//! facility's truth in place of a team's memory of it (`ArchitectLab::rogue_view`). The desk ([`ArchitectDesk`]) holds what the
+//! here too, at the Rogue board (`ArchitectDesk::rogue`): a Rogue hand of their own, the
+//! major Guardians to direct, and the facility's truth in place of a team's memory of it
+//! (`ArchitectLab::rogue_view`). The desk ([`ArchitectDesk`]) holds what the
 //! player is doing - the card picked up, its rotation, the cell under the cursor, the
 //! floor in view - and the play they have committed, which the Ascent step hands to the
 //! rules as that seat's command. Legality is never decided here: every verdict shown is
@@ -25,7 +26,7 @@ pub(crate) struct ArchitectDesk {
     /// The seat the rules know this player by.
     pub seat: PlayerId,
     pub team: TeamId,
-    /// The Rogue board: a corrupted player's, with the Rogue's shared hand and the
+    /// The Rogue board: a corrupted player's, with a Rogue hand of their own and the
     /// facility's truth rather than a team's hand and memory.
     pub rogue: bool,
     /// What the Rogue board shows, and the rules' tick it was read at (`refresh_rogue`).
@@ -81,14 +82,22 @@ impl ArchitectDesk {
         }
     }
 
-    /// The hand at this desk: the team's, or the Rogue's shared one.
+    /// The hand at this desk: the team's, or the Rogue's.
     #[must_use]
     pub(crate) fn hand<'a>(&self, session: &'a AscentSession) -> Option<HandView<'a>> {
         if self.rogue {
-            Some(HandView {
-                deck: &session.sim.deck,
-                cooldown: session.sim.cooldown,
-            })
+            // A player who joined the Rogue plays the hand they joined with; a seated Rogue
+            // operator, the rules' own.
+            Some(session.rogue_hands.get(&self.seat).map_or(
+                HandView {
+                    deck: &session.sim.deck,
+                    cooldown: session.sim.cooldown,
+                },
+                |hand| HandView {
+                    deck: &hand.deck,
+                    cooldown: hand.cooldown,
+                },
+            ))
         } else {
             session.hands.get(&self.team).map(|hand| HandView {
                 deck: &hand.deck,

@@ -1,10 +1,11 @@
-//! The Rogue board: a player whose body fell into true void plays for the Rogue, from the
-//! Rogue's shared hand, on the facility's truth, through their own seat.
+//! The Rogue board: a player whose body fell into true void plays for the Rogue, from a
+//! Rogue hand of their own, on the facility's truth, through their own seat, and sends the
+//! major Guardians where they point.
 
 use super::*;
 
 /// A body that falls into true void takes a seat at the Rogue board, and a play made there
-/// is the Rogue's: from the Rogue's shared hand, on the facility's truth, through the
+/// is the Rogue's: from the hand they joined with, on the facility's truth, through the
 /// player's own seat.
 #[test]
 fn a_corrupted_player_plays_for_the_rogue_from_their_own_seat() {
@@ -25,7 +26,11 @@ fn a_corrupted_player_plays_for_the_rogue_from_their_own_seat() {
         .expect("the Rogue board's view");
     assert_eq!(knowledge.cells.len(), ascent.rules().world.placements.len());
     let hand = desk.hand(ascent.session()).expect("the Rogue's hand");
-    assert_eq!(hand.deck.hand, ascent.rules().deck.hand);
+    assert_eq!(
+        hand.deck.hand,
+        ascent.session().rogue_hands[&local].deck.hand,
+        "the hand they joined with, not the bot Rogue's"
+    );
     assert!(desk.team_requests_are_none(ascent.session()));
 
     // The first play the rules would take from this seat, played.
@@ -71,6 +76,52 @@ fn a_corrupted_player_plays_for_the_rogue_from_their_own_seat() {
     );
     let log = &runtime.ascent.as_ref().expect("rules").rules().command_log;
     assert!(log.len() > before && log.iter().any(|&(_, command)| command == play));
+}
+
+/// At the Rogue board the answer key sends the major Guardians to the cell pointed at: the
+/// rules take the directive from the player's own seat, on the player's own clock, and the
+/// Guardians' bodies are told where to walk.
+#[test]
+fn the_rogue_board_sends_the_guardians_where_it_points() {
+    let local = PlayerId(0);
+    let mut runtime = runtime_as_body(local);
+    runtime.match_state.drop_into_void(local);
+    let mut desk = ArchitectDesk::rogue(local, AscentTeam(TEAM.0), 0);
+    tick_rogue(&mut runtime, &mut desk);
+
+    let ascent = runtime.ascent.as_ref().expect("an Ascent match");
+    let target = desk
+        .knowledge(ascent.rules())
+        .expect("the Rogue board's view")
+        .cells
+        .keys()
+        .copied()
+        .find(|&cell| {
+            ascent
+                .session()
+                .architect_refusal(desk.seat, ArchitectCommand::Direct { target: cell })
+                .is_none()
+        })
+        .expect("somewhere to send the Guardians");
+    let bot_clock = ascent.rules().cooldown;
+    desk.look_at(target.level);
+    desk.hovered = Some(target);
+    super::super::input::direct_guardians(&mut desk, &runtime);
+    assert_eq!(desk.pending, Some(ArchitectCommand::Direct { target }));
+    tick_rogue(&mut runtime, &mut desk);
+
+    let ascent = runtime.ascent.as_ref().expect("an Ascent match");
+    assert_eq!(desk.pending, None, "the desk handed the directive over");
+    assert_eq!(
+        ascent.rules().directed.map(|directive| directive.cell),
+        Some(target)
+    );
+    assert_eq!(runtime.match_state.guardian_directive(), Some(target));
+    assert!(desk.hand(ascent.session()).expect("hand").cooldown > 0);
+    assert!(
+        ascent.rules().cooldown <= bot_clock,
+        "the bot Rogue's clock is not the player's"
+    );
 }
 
 /// A match with the local player walking as a body, every seat of the rules a bot's.

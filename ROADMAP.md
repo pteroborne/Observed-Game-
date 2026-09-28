@@ -92,6 +92,19 @@ the combined loop.
     seat at the Rogue board - the Architect's desk reading the Rogue's shared hand and the
     facility's truth, detected Observers only - and plays from its own seat, locally and
     over LAN. See [the integration notes](docs/architect_ascent_polish.md#the-rogue-board).
+    **The Rogue board gets its own clock and directs the Guardians (2026-09):** a player
+    who joins the Rogue plays a hand and cooldown of their own beside the bot Rogue, and
+    sends the major Guardians to a cell (`ArchitectCommand::Direct`), which the Guardians'
+    bodies walk to until one arrives. See
+    [the integration notes](docs/architect_ascent_polish.md#the-rogue-board).
+    **Deferred until the core features land - one district per floor:** every floor of the
+    climb should be its own district, drawn from the original seven, so the ascent reads as
+    a descent through distinct circles (Dante's Inferno is the reference). Today the rules
+    know two (`ascent::sim::District`: Institutional on the ground floor, Liminal Grid on
+    every floor above), while the floor titles already name five registers
+    (`floor_title`). Doing it touches card districts and deck dealing, the
+    district-matched hand refill, the railing rule (`RAILED_BELOW_LEVEL`), and each
+    floor's register in the facility solve. Confirm which seven with the user first.
     **Doors stand in the facility (2026-09):** a door card's door is a panel across its
     doorway while closed - it stops bodies, minors, pushes and the Guardians' pursuit - and
     any loyal body opens or closes it with interact unless its floor is dark. Bots open a

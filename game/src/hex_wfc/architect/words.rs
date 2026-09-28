@@ -1,7 +1,7 @@
 //! What the Architect's desk says: pure, so it can be tested without a window.
 
 use observed_match::ascent::session::Refusal;
-use observed_match::ascent::sim::{CardKind, CommandRefusal, TileShape};
+use observed_match::ascent::sim::{CardKind, CommandRefusal, RogueDirective, TileShape};
 
 use super::desk::DeskButton;
 
@@ -64,6 +64,19 @@ pub(super) fn cooldown(ticks: u32) -> String {
     }
 }
 
+/// Where the Rogue has sent its Guardians, and for how long yet, at tick `now`.
+#[must_use]
+pub(super) fn directed(directive: RogueDirective, now: u64) -> String {
+    let cell = directive.cell;
+    format!(
+        "Guardians sent to floor {:02}, cell {}, {}  ({} s left).",
+        cell.level + 1,
+        cell.q,
+        cell.r,
+        directive.until.saturating_sub(now).div_ceil(60)
+    )
+}
+
 /// A desk button's label, naming the key or the controller button that does the same.
 #[must_use]
 pub(super) const fn button_label(action: DeskButton, pad: bool) -> &'static str {
@@ -95,12 +108,13 @@ pub(super) const fn controls(pad: bool, rogue: bool) -> &'static str {
         (false, false) => {
             "1-5 card  >  click a cell to aim  >  Q/E turn  >  Space play     Esc back   F answer   [ / ] floor   R requisition"
         }
-        // Nobody asks the Rogue for help, and a requisition is a team's.
+        // Nobody asks the Rogue for help, and a requisition is a team's; the Rogue sends
+        // its Guardians instead.
         (true, true) => {
-            "LS point  >  A aim  >  LB/RB turn  >  A again play     B back   D-pad < > card  ^ v floor"
+            "LS point  >  A aim  >  LB/RB turn  >  A again play     B back   Y send Guardians   D-pad < > card  ^ v floor"
         }
         (false, true) => {
-            "1-5 card  >  click a cell to aim  >  Q/E turn  >  Space play     Esc back   [ / ] floor"
+            "1-5 card  >  click a cell to aim  >  Q/E turn  >  Space play     Esc back   F send Guardians   [ / ] floor"
         }
     }
 }

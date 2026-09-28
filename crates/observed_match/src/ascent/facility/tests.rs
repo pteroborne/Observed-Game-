@@ -160,7 +160,9 @@ fn explore_until_playable(
 fn target_of(command: ArchitectCommand) -> HexCoord {
     match command {
         ArchitectCommand::Play { target, .. } => target,
-        ArchitectCommand::Requisition => unreachable!("plays only"),
+        ArchitectCommand::Requisition | ArchitectCommand::Direct { .. } => {
+            unreachable!("plays only")
+        }
     }
 }
 

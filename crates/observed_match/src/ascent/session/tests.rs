@@ -538,3 +538,104 @@ fn a_hand_with_nothing_for_its_team_s_floor_draws_something_that_is() {
     session.keep_hands_live();
     assert!(session.hands[&TeamId(0)].deck.has_tile_for(floor));
 }
+
+/// A built cell of the facility no Guardian stands on and the prison does not hold.
+fn open_ground(session: &AscentSession) -> HexCoord {
+    let sim = &session.sim;
+    *sim.world
+        .placements
+        .iter()
+        .find(|(cell, placement)| {
+            placement.space.built()
+                && !sim.prison_core.contains(cell)
+                && !sim.prison.cells.contains(cell)
+                && !sim.guardians.values().any(|g| g.cell == **cell)
+        })
+        .expect("the facility has open ground")
+        .0
+}
+
+#[test]
+fn only_the_rogue_directs_the_guardians() {
+    let mut session = session();
+    let target = open_ground(&session);
+    let direct = SeatCommand::Architect(ArchitectCommand::Direct { target });
+    let input = frame(&session, PlayerId(0), direct);
+    assert_eq!(
+        session.advance(&input).unwrap()[&PlayerId(0)],
+        Refusal::Architect(CommandRefusal::RogueOnly)
+    );
+    assert_eq!(session.sim.directed, None);
+
+    let hand = session.sim.deck.hand.clone();
+    let input = frame(&session, PlayerId(3), direct);
+    assert!(session.advance(&input).unwrap().is_empty());
+    let directive = session.sim.directed.expect("the Rogue's directive stands");
+    assert_eq!(directive.cell, target);
+    assert_eq!(session.sim.deck.hand, hand, "a directive spends no card");
+    assert!(session.sim.cooldown > 0, "a directive spends the cooldown");
+    let input = frame(&session, PlayerId(3), direct);
+    assert_eq!(
+        session.advance(&input).unwrap()[&PlayerId(3)],
+        Refusal::Architect(CommandRefusal::Cooldown)
+    );
+}
+
+#[test]
+fn a_directive_nobody_reaches_runs_out() {
+    let mut session = session();
+    // Out of every Guardian's reach: nothing hunts in this one's rules.
+    session.sim.guardians.clear();
+    let target = open_ground(&session);
+    let input = frame(
+        &session,
+        PlayerId(3),
+        SeatCommand::Architect(ArchitectCommand::Direct { target }),
+    );
+    assert!(session.advance(&input).unwrap().is_empty());
+    for _ in 1..crate::ascent::sim::DIRECTIVE_TICKS {
+        assert!(session.sim.directed.is_some(), "tick {}", session.sim.tick);
+        let input = frame(&session, PlayerId(3), SeatCommand::None);
+        if session.advance(&input).is_err() {
+            return; // The match ended first.
+        }
+    }
+    let input = frame(&session, PlayerId(3), SeatCommand::None);
+    if session.advance(&input).is_ok() {
+        assert_eq!(session.sim.directed, None);
+    }
+}
+
+#[test]
+fn a_player_who_joins_the_rogue_plays_their_own_hand_on_their_own_clock() {
+    let mut session = session();
+    session.sim.observers.get_mut(&ObserverId(0)).unwrap().state = ObserverState::Corrupted;
+    let input = frame(&session, PlayerId(1), SeatCommand::None);
+    session.advance(&input).unwrap();
+    assert_eq!(session.seats()[&PlayerId(1)].role, Role::Rogue);
+    let joined = session.rogue_hands[&PlayerId(1)].clone();
+    assert_eq!(joined.cooldown, 0);
+    assert_eq!(
+        session.snapshot(PlayerId(1)).unwrap().hand,
+        joined.deck.hand,
+        "the board shows the hand they joined with"
+    );
+
+    let target = open_ground(&session);
+    let input = frame(
+        &session,
+        PlayerId(1),
+        SeatCommand::Architect(ArchitectCommand::Direct { target }),
+    );
+    assert!(session.advance(&input).unwrap().is_empty());
+    assert!(session.rogue_hands[&PlayerId(1)].cooldown > 0);
+    assert_eq!(
+        session.sim.cooldown, 0,
+        "the rules' own Rogue clock is untouched"
+    );
+    // The seated Rogue's clock is its own: nothing waits on the joined player's.
+    assert_ne!(
+        session.architect_refusal(PlayerId(3), ArchitectCommand::Direct { target }),
+        Some(Refusal::Architect(CommandRefusal::Cooldown))
+    );
+}

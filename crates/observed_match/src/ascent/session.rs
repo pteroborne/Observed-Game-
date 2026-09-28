@@ -119,6 +119,13 @@ pub struct AscentSession {
     pub sim: ArchitectLab,
     seats: BTreeMap<PlayerId, Seat>,
     pub hands: BTreeMap<TeamId, LoyalHand>,
+    /// The hand and cooldown of each player who joined the Rogue by corruption. The rules'
+    /// own (`sim.deck`, `sim.cooldown`) stay the Rogue's seated operators', the bot's among
+    /// them, so a player at the Rogue board neither waits on the bot's clock nor loses a
+    /// card from under the cursor to its play.
+    pub rogue_hands: BTreeMap<PlayerId, LoyalHand>,
+    /// The match's seed, which a joining Rogue's deck is dealt from.
+    seed: u64,
     pub requests: BTreeMap<PlayerId, TeamRequest>,
     /// Where each Observer has stood since when, for a bot's sense of being stuck.
     stalls: BTreeMap<ObserverId, (HexCoord, u64)>,
@@ -184,6 +191,8 @@ impl AscentSession {
             sim,
             seats,
             hands,
+            rogue_hands: BTreeMap::new(),
+            seed,
             requests: BTreeMap::new(),
             stalls: BTreeMap::new(),
             voiced: std::collections::BTreeSet::new(),
@@ -213,7 +222,16 @@ impl AscentSession {
             return Some(Refusal::UnknownSeat);
         };
         match seat.role {
-            Role::Rogue => self.sim.refusal(command).map(Refusal::Architect),
+            Role::Rogue => match self.rogue_hands.get(&player) {
+                Some(hand) => self
+                    .sim
+                    .refusal_in_context(command, &hand.deck, hand.cooldown, &self.sim.known)
+                    .map(Refusal::Architect),
+                None => self.sim.refusal(command).map(Refusal::Architect),
+            },
+            Role::Architect(_) if matches!(command, ArchitectCommand::Direct { .. }) => {
+                Some(Refusal::Architect(CommandRefusal::RogueOnly))
+            }
             Role::Architect(team) => {
                 let hand = &self.hands[&team];
                 let known = &self.sim.team_knowledge[&team].discovered_cells;
@@ -259,7 +277,7 @@ impl AscentSession {
         }
         self.keep_hands_live();
         self.run_bot_architects();
-        for hand in self.hands.values_mut() {
+        for hand in self.hands.values_mut().chain(self.rogue_hands.values_mut()) {
             hand.cooldown = hand.cooldown.saturating_sub(1);
         }
         self.sim.tick_with_observers(&observers);
@@ -267,10 +285,19 @@ impl AscentSession {
             self.sim.tick.saturating_sub(request.created_at) < REQUEST_LIFETIME_TICKS
         });
         self.run_bot_requests();
-        for seat in self.seats.values_mut() {
+        for (&player, seat) in &mut self.seats {
             match seat.role {
                 Role::Observer(id) if self.sim.observers[&id].state == ObserverState::Corrupted => {
-                    seat.role = Role::Rogue
+                    seat.role = Role::Rogue;
+                    // A player joins with a hand of their own; a bot body's seat plays
+                    // nothing, since the bot Rogue already plays the rules' hand.
+                    if !seat.bot {
+                        let deck = self.sim.new_deck(
+                            self.seed ^ (u64::from(player.0) + 1).wrapping_mul(0xC2B2_AE3D),
+                        );
+                        self.rogue_hands
+                            .insert(player, LoyalHand { deck, cooldown: 0 });
+                    }
                 }
                 Role::Architect(team)
                     if !self
@@ -306,7 +333,7 @@ impl AscentSession {
             }
             SeatCommand::Architect(command) => {
                 match seat.role {
-                    Role::Rogue => self.sim.submit(command).map_err(Refusal::Architect)?,
+                    Role::Rogue => self.submit_rogue(player, command)?,
                     Role::Architect(team) => self.submit_loyal(team, command)?,
                     _ => return Err(Refusal::WrongRole),
                 }
@@ -364,6 +391,19 @@ impl AscentSession {
                 Ok(None)
             }
         }
+    }
+
+    /// A Rogue seat's command, from the hand it joined with if it has one.
+    fn submit_rogue(&mut self, player: PlayerId, command: ArchitectCommand) -> Result<(), Refusal> {
+        let Some(hand) = self.rogue_hands.get_mut(&player) else {
+            return self.sim.submit(command).map_err(Refusal::Architect);
+        };
+        std::mem::swap(&mut self.sim.deck, &mut hand.deck);
+        std::mem::swap(&mut self.sim.cooldown, &mut hand.cooldown);
+        let result = self.sim.submit(command);
+        std::mem::swap(&mut self.sim.deck, &mut hand.deck);
+        std::mem::swap(&mut self.sim.cooldown, &mut hand.cooldown);
+        result.map_err(Refusal::Architect)
     }
 
     fn submit_loyal(&mut self, team: TeamId, command: ArchitectCommand) -> Result<(), Refusal> {

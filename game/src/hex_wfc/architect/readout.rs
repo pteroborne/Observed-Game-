@@ -141,14 +141,22 @@ pub(super) fn sync(
                 }
             }
             Line::Message => (
-                desk.last_refusal
-                    .map(|refusal| {
+                desk.last_refusal.map_or_else(
+                    || {
+                        // The Rogue's standing directive, which only its board is told of.
+                        rules
+                            .directed
+                            .filter(|_| desk.rogue)
+                            .map(|directive| words::directed(directive, rules.tick))
+                            .unwrap_or_default()
+                    },
+                    |refusal| {
                         format!(
                             "The rules refused that play: {}.",
                             words::refusal_words(refusal)
                         )
-                    })
-                    .unwrap_or_default(),
+                    },
+                ),
                 Role::Guardian,
             ),
             Line::CardName => (

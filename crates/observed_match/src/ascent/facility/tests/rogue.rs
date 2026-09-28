@@ -98,3 +98,116 @@ fn the_bot_rogue_plays_only_against_a_detected_observer() {
     assert!(rogue_plays > 0, "the bot Rogue never played");
     assert_geometry_is_fresh(&game);
 }
+
+/// Where the Tumbler has `steps` of walk to go, far from every body.
+fn a_walk_from_the_tumbler(game: &AscentMatch, steps: usize) -> HexCoord {
+    let physical = game.physical();
+    let from = physical.guardian.cell;
+    let rules = game.rules();
+    physical
+        .facility
+        .placements
+        .iter()
+        .filter(|(cell, placement)| {
+            cell.level == from.level
+                && placement.space.built()
+                && !rules.prison.cells.contains(cell)
+                && physical
+                    .players
+                    .values()
+                    .all(|body| observed_hex::travel_distance(body.cell, **cell) >= 6)
+        })
+        .filter_map(|(&cell, _)| {
+            let route = physical.facility.route_between_cells(from, cell)?;
+            (route.cells.len() == steps + 1).then_some(cell)
+        })
+        .min()
+        .expect("somewhere a few steps from the Tumbler, away from the bodies")
+}
+
+#[test]
+fn a_directed_tumbler_walks_where_the_rogue_sent_it() {
+    const ROGUE: PlayerId = PlayerId(41);
+    let config = HexMatchConfig {
+        teams: 1,
+        members_per_team: 2,
+        guardian: true,
+        wfc: HexWfcConfig {
+            levels: 2,
+            ..HexWfcConfig::default()
+        },
+    };
+    let physical = HexWfcMatch::new_with_content(
+        7,
+        config,
+        crate::hex_wfc::compatibility_test_content().clone(),
+    )
+    .expect("a two-level facility solves");
+    let mut seats = super::super::architect_seats(&physical, None);
+    seats.insert(
+        ROGUE,
+        Seat {
+            role: Role::Rogue,
+            bot: false,
+        },
+    );
+    let mut game = AscentMatch::new(physical, 7, seats).expect("the match's seats and a Rogue");
+    let bodies: Vec<PlayerId> = game.physical().players.keys().copied().collect();
+    let tick_with = |game: &mut AscentMatch, command: SeatCommand| {
+        let tick = game.rules().tick + 1;
+        // The bodies stand, turning slowly, where the match put them.
+        let frame = HexInputFrame {
+            version: HEX_INPUT_VERSION,
+            tick,
+            commands: bodies
+                .iter()
+                .map(|&player| (player, HexPlayerCommand::default()))
+                .collect(),
+        };
+        let seats = InputFrame {
+            version: ASCENT_INPUT_VERSION,
+            tick,
+            commands: BTreeMap::from([(ROGUE, command)]),
+        };
+        game.step(&frame, &seats).expect("a well-formed frame")
+    };
+    tick_with(&mut game, SeatCommand::None);
+    let goal = a_walk_from_the_tumbler(&game, 4);
+    let refusals = tick_with(
+        &mut game,
+        SeatCommand::Architect(ArchitectCommand::Direct { target: goal }),
+    );
+    assert!(refusals.is_empty(), "{refusals:?}");
+    assert_eq!(game.physical().guardian_directive(), Some(goal));
+
+    let mut left = game
+        .physical()
+        .facility
+        .route_between_cells(game.physical().guardian.cell, goal)
+        .map_or(usize::MAX, |route| route.cells.len());
+    let mut ticks = 0;
+    while game.rules().directed.is_some() {
+        tick_with(&mut game, SeatCommand::None);
+        ticks += 1;
+        let tumbler = game.physical().guardian.cell;
+        let now = game
+            .physical()
+            .facility
+            .route_between_cells(tumbler, goal)
+            .map_or(usize::MAX, |route| route.cells.len());
+        assert!(
+            now <= left,
+            "tick {ticks}: the Tumbler turned away from {goal:?}"
+        );
+        left = now;
+    }
+    assert_eq!(
+        game.physical().guardian.cell,
+        goal,
+        "the directive is spent by arriving, not by running out"
+    );
+    assert!(ticks < crate::ascent::sim::DIRECTIVE_TICKS as usize);
+    // Spent, it lets the Tumbler go back to hunting.
+    tick_with(&mut game, SeatCommand::None);
+    assert_eq!(game.physical().guardian_directive(), None);
+}

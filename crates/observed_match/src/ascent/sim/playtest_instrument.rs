@@ -357,6 +357,7 @@ pub fn run_mode_playtest(mode: ArchitectMode, policy: PowerPolicy, max_beats: u6
                     ArchitectCommand::Requisition => {
                         stats.requisitions_taken += 1;
                     }
+                    ArchitectCommand::Direct { .. } => {}
                 }
             }
             prev_commands_len = current_commands_len;

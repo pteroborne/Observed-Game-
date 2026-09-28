@@ -35,7 +35,8 @@ the roster marks it ARCHITECT). At launch you sit at the desk and a bot walks yo
 
 **Seat commands** (LAN protocol 5, `observed_net::lan::WireSeatCommand`). Every body
 command carries its seat's say in the rules this tick, nothing on most: a card played, a
-requisition, an ask for help (T), an answer to one. The server puts each into the frame,
+requisition, an ask for help (T), an answer to one, and from a corrupted player at the
+Rogue board a directive to the major Guardians (protocol 11). The server puts each into the frame,
 and every peer maps it to a rules seat the same way (`seat_for`: the team's Architect seat
 for a human at the desk, the player's own otherwise) and applies it on the same tick, so
 the digest keeps them honest exactly as it does movement. A resync rebuilds the rules from

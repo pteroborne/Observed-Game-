@@ -225,6 +225,9 @@ impl AscentRules {
         }
         // After the rewrites, which consume the doors of the cells they took.
         self.place_doors(physical);
+        // The major Guardians' bodies walk where the Rogue sent them, until the rules say
+        // the directive is spent (`ascent::sim::directive`).
+        physical.direct_guardians(self.session.sim.directed.map(|directive| directive.cell));
         // What the rules release - a wave's minors, a requisition's major - is given a
         // body here, under the rules' own id, and the rules follow that body from the next
         // tick (`observe`). A release onto a cell the facility no longer builds is lost.

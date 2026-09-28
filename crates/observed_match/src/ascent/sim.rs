@@ -23,6 +23,8 @@ mod mode;
 pub use mode::ArchitectMode;
 mod objective;
 pub use objective::{DARKNESS_BEATS, RogueObjective, StateHold};
+mod directive;
+pub use directive::{DIRECTIVE_TICKS, RogueDirective};
 mod embodied;
 mod loyal;
 mod rogue;
@@ -225,6 +227,10 @@ pub struct ArchitectLab {
     pub guardians: BTreeMap<GuardianId, Guardian>,
     pub guardian_visits: BTreeMap<(GuardianId, HexCoord), u32>,
     pub rogue_directive: Option<HexCoord>,
+    /// Where a Rogue seat has sent the major Guardians (`directive`). Unlike
+    /// `rogue_directive`, which every card play also sets for the lab's Guardians, only an
+    /// explicit directive sets this, and a first-person host walks its bodies by it.
+    pub directed: Option<RogueDirective>,
     /// What the Rogue wins by this match. `Purge` is the behaviour every match has had
     /// until now, and an unselected objective changes nothing.
     pub objective: RogueObjective,
@@ -338,6 +344,7 @@ impl ArchitectLab {
             guardians,
             guardian_visits: BTreeMap::new(),
             rogue_directive: None,
+            directed: None,
             objective: RogueObjective::default(),
             lit_sightlines: 0,
             active_observers: 0,
@@ -607,6 +614,9 @@ impl ArchitectLab {
                 (card, target, rotation)
             }
             ArchitectCommand::Requisition => return None,
+            ArchitectCommand::Direct { target } => {
+                return self.directive_refusal(target, cooldown);
+            }
         };
         let Some(card) = deck.hand.iter().find(|held| held.id == card).copied() else {
             return Some(CommandRefusal::CardNotInHand);
@@ -819,10 +829,14 @@ impl ArchitectLab {
         command: ArchitectCommand,
         team: Option<TeamId>,
     ) -> Result<(), CommandRefusal> {
+        if team.is_some() && matches!(command, ArchitectCommand::Direct { .. }) {
+            return Err(CommandRefusal::RogueOnly);
+        }
         if let Some(refusal) = self.refusal(command) {
             return Err(refusal);
         }
         match command {
+            ArchitectCommand::Direct { target } => self.direct(target),
             ArchitectCommand::Play {
                 card,
                 target,
@@ -929,6 +943,7 @@ impl ArchitectLab {
             self.refresh_observation();
         }
         self.cooldown = self.cooldown.saturating_sub(1);
+        self.keep_directive();
         self.advance_retraction();
         self.resolve_falls();
         if self.outcome != MatchOutcome::Running {

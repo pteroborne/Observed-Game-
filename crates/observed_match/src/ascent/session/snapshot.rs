@@ -97,7 +97,10 @@ impl AscentSession {
                 let hand = &self.hands[&team];
                 (hand.deck.hand.clone(), hand.cooldown)
             }
-            Role::Rogue => (self.sim.deck.hand.clone(), self.sim.cooldown),
+            Role::Rogue => self.rogue_hands.get(&player).map_or_else(
+                || (self.sim.deck.hand.clone(), self.sim.cooldown),
+                |hand| (hand.deck.hand.clone(), hand.cooldown),
+            ),
             _ => (Vec::new(), 0),
         };
         let team = self.team(player);

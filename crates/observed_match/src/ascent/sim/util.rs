@@ -63,5 +63,6 @@ pub(super) fn command_key(command: ArchitectCommand) -> (u32, u8, u16, u16, u8) 
             rotation,
         } => (card.0, target.level, target.q, target.r, rotation % 6),
         ArchitectCommand::Requisition => (u32::MAX, u8::MAX, u16::MAX, u16::MAX, 0),
+        ArchitectCommand::Direct { target } => (u32::MAX - 1, target.level, target.q, target.r, 0),
     }
 }

@@ -20,7 +20,10 @@
 //! local player walks as a body until their body is dropped into true void (staged:
 //! `HexWfcMatch::drop_into_void`), and takes a seat at the Rogue board as a corrupted
 //! player does. Then the board, a play, building in and built (`rogue-*`); nobody asks the
-//! Rogue for help, and the Rogue looks through nobody's eyes.
+//! Rogue for help, and the Rogue looks through nobody's eyes. Instead, once its clock is
+//! ready, it sends the major Guardians to a cell a short walk from one of them through the
+//! desk as the answer key does (`rogue-directed`), and the board a while later, the
+//! Guardian on its way (`rogue-directed-walked`).
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
@@ -177,8 +180,8 @@ pub(in crate::hex_wfc) fn capture(
             info!("{prefix} capture: the rules have logged {played} plays");
             // Nobody asks the Rogue for help, and it looks through nobody's eyes: it leaves
             // once the still has had frames enough to be written.
-            request.last_shot_tick = if rogue { tick + 300 } else { tick };
-            request.stills = if rogue { 10 } else { 5 };
+            request.last_shot_tick = tick;
+            request.stills = if rogue { 11 } else { 5 };
         }
         // A teammate's request, as the desk shows it, and once it has been answered.
         5 => {
@@ -220,6 +223,37 @@ pub(in crate::hex_wfc) fn capture(
             request.last_shot_tick = tick;
             request.stills = 10;
         }
+        // The Rogue's directive, once its own clock is ready.
+        11 if desk
+            .hand(ascent.session())
+            .is_some_and(|hand| hand.cooldown == 0) =>
+        {
+            let Some(target) = directive_target(&runtime, &desk) else {
+                if tick >= request.last_shot_tick + 6_000 {
+                    warn!("rogue capture: no major Guardian to direct; no directive stills");
+                    request.last_shot_tick = tick + 300;
+                    request.stills = 10;
+                }
+                return;
+            };
+            desk.put_down();
+            desk.look_at(target.level);
+            desk.hovered = Some(target);
+            super::input::direct_guardians(&mut desk, &runtime);
+            request.last_shot_tick = tick;
+            request.stills = 12;
+        }
+        12 if tick >= request.last_shot_tick + 30 => {
+            shoot(&mut commands, "directed");
+            request.last_shot_tick = tick;
+            request.stills = 13;
+        }
+        13 if ascent.rules().directed.is_none() || tick >= request.last_shot_tick + 420 => {
+            shoot(&mut commands, "directed-walked");
+            // It leaves once the still has had frames enough to be written.
+            request.last_shot_tick = tick + 300;
+            request.stills = 10;
+        }
         10 if tick >= request.last_shot_tick + 20 => {
             desk.eyes = None;
             info!("{prefix} capture complete");
@@ -227,4 +261,39 @@ pub(in crate::hex_wfc) fn capture(
         }
         _ => {}
     }
+}
+
+/// A cell the rules would take a directive to, four to six steps' walk from a major
+/// Guardian the Rogue board sees: near enough that the still shows it walking there.
+fn directive_target(
+    runtime: &HexWfcRuntime,
+    desk: &ArchitectDesk,
+) -> Option<observed_hex::HexCoord> {
+    let ascent = runtime.ascent.as_ref()?;
+    let rules = ascent.rules();
+    let knowledge = desk.knowledge(rules)?;
+    let facility = &runtime.match_state.facility;
+    knowledge
+        .visible_guardians
+        .iter()
+        .filter_map(|id| rules.guardians.get(id))
+        .filter(|guardian| guardian.kind == observed_match::ascent::sim::GuardianKind::Major)
+        .find_map(|guardian| {
+            knowledge
+                .cells
+                .keys()
+                .filter(|cell| cell.level == guardian.cell.level)
+                .filter(|&&target| {
+                    ascent
+                        .session()
+                        .architect_refusal(desk.seat, ArchitectCommand::Direct { target })
+                        .is_none()
+                })
+                .find(|&&target| {
+                    facility
+                        .route_between_cells(guardian.cell, target)
+                        .is_some_and(|route| (5..=7).contains(&route.cells.len()))
+                })
+                .copied()
+        })
 }

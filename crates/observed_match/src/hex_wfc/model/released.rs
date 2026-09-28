@@ -204,6 +204,7 @@ impl HexWfcMatch {
                     super::guardian::HexGuardianBounds {
                         prison: self.prison.as_ref(),
                         closed: &|a, b| super::doors::closed_between(&self.doors, grid, a, b),
+                        directive: self.guardian_directive,
                     },
                 ),
                 Some(HexReleasedGuardian::Minor(_)) => self.step_minor(id),
