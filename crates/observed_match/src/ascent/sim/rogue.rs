@@ -14,6 +14,10 @@
 //!    its sight and cannot be played, so the path is as near as the Rogue can reach.
 //! 4. Otherwise hold the card.
 //!
+//! With nobody detected it has nobody to play against, so it **watches the way up**: a
+//! sensor (`sensor`) at the foot of a stair or ramp, on the floor it watches least - every
+//! climb passes one.
+//!
 //! It never reads where an undetected Observer is: every anchor and every target is a
 //! detected Observer's cell or a Guardian's.
 
@@ -38,14 +42,19 @@ impl ArchitectLab {
         if trace.test("wait for cooldown", self.cooldown > 0) {
             return (None, trace);
         }
-        let detected = self.detected_observers();
+        let detected = self.rogue_detected();
         let prey: Vec<HexCoord> = self
             .observers
             .values()
             .filter(|o| o.state == ObserverState::Active && detected.contains(&o.id))
             .map(|o| o.cell)
             .collect();
-        if trace.test("nobody detected", prey.is_empty()) {
+        if prey.is_empty() {
+            let watch = self.watch_the_way_up();
+            if trace.test("watch the way up", watch.is_some()) {
+                return (watch, trace);
+            }
+            trace.test("nobody detected", true);
             return (None, trace);
         }
         let hunters: Vec<HexCoord> = self.guardians.values().map(|g| g.cell).collect();
@@ -125,5 +134,33 @@ impl ArchitectLab {
         }
         trace.test("hold card", true);
         (None, trace)
+    }
+
+    /// A sensor at the foot of a climb no sensor watches yet, on the floor with fewest,
+    /// while the Rogue has one to spare.
+    fn watch_the_way_up(&self) -> Option<ArchitectCommand> {
+        if self.sensors.len() >= super::MAX_SENSORS {
+            return None;
+        }
+        let watched: std::collections::BTreeSet<HexCoord> = self
+            .sensors
+            .keys()
+            .flat_map(|&cell| self.sensor_sight(cell))
+            .collect();
+        let on_floor = |level: u8| self.sensors.keys().filter(|c| c.level == level).count();
+        self.world
+            .placements
+            .iter()
+            .filter(|(cell, placement)| {
+                placement.up != observed_hex::PortClass::Sealed && !watched.contains(cell)
+            })
+            .map(|(&cell, _)| ArchitectCommand::Sense { target: cell })
+            .filter(|&command| self.refusal(command).is_none())
+            .min_by_key(|command| {
+                let ArchitectCommand::Sense { target } = *command else {
+                    unreachable!("sensors only")
+                };
+                (on_floor(target.level), target.level, command_key(*command))
+            })
     }
 }

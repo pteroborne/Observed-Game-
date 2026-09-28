@@ -97,6 +97,11 @@ the combined loop.
     sends the major Guardians to a cell (`ArchitectCommand::Direct`), which the Guardians'
     bodies walk to until one arrives. See
     [the integration notes](docs/architect_ascent_polish.md#the-rogue-board).
+    **The Rogue's sensors (2026-09):** a Rogue seat installs a sensor on a cell
+    (`ArchitectCommand::Sense`), which shows the Rogue any Observer it sees while its floor
+    has power; it hangs in the facility and a loyal body takes it down with interact. The
+    bot Rogue watches the foot of each climb with one when it has detected nobody. See
+    [the integration notes](docs/architect_ascent_polish.md#sensors).
     **Deferred until the core features land - one district per floor:** every floor of the
     climb should be its own district, drawn from the original seven, so the ascent reads as
     a descent through distinct circles (Dante's Inferno is the reference). Today the rules

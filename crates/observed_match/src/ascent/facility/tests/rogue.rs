@@ -211,3 +211,49 @@ fn a_directed_tumbler_walks_where_the_rogue_sent_it() {
     tick_with(&mut game, SeatCommand::None);
     assert_eq!(game.physical().guardian_directive(), None);
 }
+
+#[test]
+fn a_bot_rogue_with_nobody_detected_watches_the_way_up() {
+    let config = HexMatchConfig {
+        teams: 1,
+        members_per_team: 1,
+        guardian: false,
+        wfc: HexWfcConfig {
+            levels: 2,
+            ..HexWfcConfig::default()
+        },
+    };
+    let physical = HexWfcMatch::new_with_content(
+        7,
+        config,
+        crate::hex_wfc::compatibility_test_content().clone(),
+    )
+    .expect("a two-level facility solves");
+    let seats = super::super::architect_seats(&physical, None);
+    let mut game = AscentMatch::new(physical, 7, seats).expect("the match's own seats");
+    for _ in 0..600 {
+        step(&mut game, Body::Turn(0.0), SeatCommand::None);
+        if !game.rules().sensors.is_empty() {
+            break;
+        }
+    }
+    let rules = game.rules();
+    let (&cell, _) = rules
+        .sensors
+        .iter()
+        .next()
+        .expect("the bot Rogue installed a sensor");
+    assert_ne!(
+        rules.world.placements[&cell].up,
+        observed_hex::PortClass::Sealed,
+        "at the foot of a climb"
+    );
+    assert_eq!(
+        rules
+            .traces
+            .get("Architect")
+            .and_then(|trace| trace.selected),
+        Some("watch the way up")
+    );
+    assert!(game.physical().sensors().any(|(hung, _)| hung == cell));
+}

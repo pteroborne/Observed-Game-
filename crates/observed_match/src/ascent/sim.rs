@@ -24,7 +24,9 @@ pub use mode::ArchitectMode;
 mod objective;
 pub use objective::{DARKNESS_BEATS, RogueObjective, StateHold};
 mod directive;
+mod sensor;
 pub use directive::{DIRECTIVE_TICKS, RogueDirective};
+pub use sensor::{MAX_SENSORS, SENSOR_RANGE};
 mod embodied;
 mod loyal;
 mod rogue;
@@ -231,6 +233,8 @@ pub struct ArchitectLab {
     /// `rogue_directive`, which every card play also sets for the lab's Guardians, only an
     /// explicit directive sets this, and a first-person host walks its bodies by it.
     pub directed: Option<RogueDirective>,
+    /// The Rogue's sensors, and the tick each was installed (`sensor`).
+    pub sensors: BTreeMap<HexCoord, u64>,
     /// What the Rogue wins by this match. `Purge` is the behaviour every match has had
     /// until now, and an unselected objective changes nothing.
     pub objective: RogueObjective,
@@ -345,6 +349,7 @@ impl ArchitectLab {
             guardian_visits: BTreeMap::new(),
             rogue_directive: None,
             directed: None,
+            sensors: BTreeMap::new(),
             objective: RogueObjective::default(),
             lit_sightlines: 0,
             active_observers: 0,
@@ -617,6 +622,7 @@ impl ArchitectLab {
             ArchitectCommand::Direct { target } => {
                 return self.directive_refusal(target, cooldown);
             }
+            ArchitectCommand::Sense { target } => return self.sense_refusal(target, cooldown),
         };
         let Some(card) = deck.hand.iter().find(|held| held.id == card).copied() else {
             return Some(CommandRefusal::CardNotInHand);
@@ -829,7 +835,12 @@ impl ArchitectLab {
         command: ArchitectCommand,
         team: Option<TeamId>,
     ) -> Result<(), CommandRefusal> {
-        if team.is_some() && matches!(command, ArchitectCommand::Direct { .. }) {
+        if team.is_some()
+            && matches!(
+                command,
+                ArchitectCommand::Direct { .. } | ArchitectCommand::Sense { .. }
+            )
+        {
             return Err(CommandRefusal::RogueOnly);
         }
         if let Some(refusal) = self.refusal(command) {
@@ -837,6 +848,7 @@ impl ArchitectLab {
         }
         match command {
             ArchitectCommand::Direct { target } => self.direct(target),
+            ArchitectCommand::Sense { target } => self.sense(target),
             ArchitectCommand::Play {
                 card,
                 target,
@@ -944,6 +956,7 @@ impl ArchitectLab {
         }
         self.cooldown = self.cooldown.saturating_sub(1);
         self.keep_directive();
+        self.keep_sensors();
         self.advance_retraction();
         self.resolve_falls();
         if self.outcome != MatchOutcome::Running {
@@ -1390,7 +1403,7 @@ impl ArchitectLab {
         let mut cells: BTreeSet<HexCoord> = self.world.placements.keys().copied().collect();
         cells.extend(&self.prison_core);
         let guardians: BTreeSet<GuardianId> = self.guardians.keys().copied().collect();
-        let detected = self.detected_observers();
+        let detected = self.rogue_detected();
         let known_observers: BTreeMap<ObserverId, HexCoord> = self
             .observers
             .values()
@@ -1411,7 +1424,7 @@ impl ArchitectLab {
     /// What the Rogue board shows, in the shape a team's board reads: the facility's truth,
     /// every cell as it stands now and seen now, every Guardian, and of the loyal Observers
     /// only those [`Self::rogue_knowledge`] allows - jailed, corrupted, or detected by a
-    /// Guardian. A human at the Rogue board reads this, never the teams' knowledge.
+    /// Guardian or a sensor. A human at the Rogue board reads this, never the teams' knowledge.
     #[must_use]
     pub fn rogue_view(&self) -> TeamKnowledge {
         let rogue = self.rogue_knowledge();

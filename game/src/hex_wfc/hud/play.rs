@@ -428,6 +428,7 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
     // A fixture the body stands at speaks first: it is what the body came for.
     let prompt = crate::hex_wfc::power::prompt(&runtime, &settings)
         .or_else(|| crate::hex_wfc::doors::prompt(&runtime, &settings))
+        .or_else(|| crate::hex_wfc::sensors::prompt(&runtime, &settings))
         .or_else(|| {
             game.interaction(runtime.local_player)
                 .map(|prompt| prompt_view(&prompt, &settings, team.objectives.dual_station_ticks))

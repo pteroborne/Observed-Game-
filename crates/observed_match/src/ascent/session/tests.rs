@@ -639,3 +639,150 @@ fn a_player_who_joins_the_rogue_plays_their_own_hand_on_their_own_clock() {
         Some(Refusal::Architect(CommandRefusal::Cooldown))
     );
 }
+
+/// A cell an active Observer of `session` can be seen from along an open line, and that
+/// Observer: where a sensor would watch it.
+fn beside_an_observer(session: &AscentSession) -> (ObserverId, HexCoord) {
+    let sim = &session.sim;
+    sim.observers
+        .values()
+        .filter(|o| o.state == ObserverState::Active)
+        .find_map(|o| {
+            sim.exits(o.cell)
+                .into_iter()
+                .find(|next| next.level == o.cell.level && !sim.prison.cells.contains(next))
+                .map(|next| (o.id, next))
+        })
+        .expect("an Observer with a way out")
+}
+
+#[test]
+fn a_live_sensor_shows_the_rogue_who_it_sees_and_a_dark_one_does_not() {
+    let mut session = session();
+    session.sim.guardians.clear();
+    let (id, beside) = beside_an_observer(&session);
+    assert!(
+        !session
+            .sim
+            .rogue_knowledge()
+            .known_observers
+            .contains_key(&id),
+        "nothing detects it yet"
+    );
+    session.sim.sensors.insert(beside, session.sim.tick);
+    assert!(session.sim.sensor_watching(beside));
+    assert!(
+        session
+            .sim
+            .rogue_knowledge()
+            .known_observers
+            .contains_key(&id)
+    );
+    // The Rogue seat's own snapshot reads the same knowledge.
+    assert!(
+        session
+            .snapshot(PlayerId(3))
+            .unwrap()
+            .observers
+            .iter()
+            .any(|o| o.id == id)
+    );
+
+    session.sim.economy.set_powered(beside.level, false);
+    assert!(!session.sim.sensor_live(beside));
+    assert!(
+        !session
+            .sim
+            .rogue_knowledge()
+            .known_observers
+            .contains_key(&id),
+        "a dark floor blinds its sensors"
+    );
+}
+
+#[test]
+fn only_the_rogue_installs_sensors_out_of_sight_and_keeps_four() {
+    let mut session = session();
+    let seen = *session
+        .sim
+        .observed
+        .iter()
+        .find(|cell| session.sim.world.placements[cell].space.built())
+        .expect("an Observer holds something in view");
+    let refusal = |session: &AscentSession, player, target| {
+        session.architect_refusal(player, ArchitectCommand::Sense { target })
+    };
+    assert_eq!(
+        refusal(&session, PlayerId(0), seen),
+        Some(Refusal::Architect(CommandRefusal::RogueOnly))
+    );
+    assert_eq!(
+        refusal(&session, PlayerId(3), seen),
+        Some(Refusal::Architect(CommandRefusal::Observed))
+    );
+
+    let unseen: Vec<HexCoord> = session
+        .sim
+        .world
+        .placements
+        .iter()
+        .filter(|(cell, placement)| {
+            placement.space.built()
+                && !session.sim.observed.contains(cell)
+                && !session.sim.prison.cells.contains(cell)
+                && !session.sim.prison_core.contains(cell)
+        })
+        .map(|(&cell, _)| cell)
+        .take(crate::ascent::sim::MAX_SENSORS + 1)
+        .collect();
+    assert_eq!(unseen.len(), crate::ascent::sim::MAX_SENSORS + 1);
+    for &target in &unseen {
+        session.sim.cooldown = 0;
+        let input = frame(
+            &session,
+            PlayerId(3),
+            SeatCommand::Architect(ArchitectCommand::Sense { target }),
+        );
+        let refusals = session.advance(&input).unwrap();
+        assert!(refusals.is_empty(), "{target:?}: {refusals:?}");
+        assert!(session.sim.cooldown > 0, "a sensor spends the cooldown");
+    }
+    assert_eq!(session.sim.sensors.len(), crate::ascent::sim::MAX_SENSORS);
+    assert!(
+        !session.sim.sensors.contains_key(&unseen[0]),
+        "the oldest retires past the cap"
+    );
+    assert!(
+        session
+            .sim
+            .sensors
+            .contains_key(&unseen[crate::ascent::sim::MAX_SENSORS])
+    );
+}
+
+#[test]
+fn an_observer_beside_a_sensor_dismantles_it_and_one_away_cannot() {
+    use crate::ascent::sim::{ObserverAction, ObserverRefusal};
+    let mut session = session();
+    let (id, beside) = beside_an_observer(&session);
+    let far = *session
+        .sim
+        .world
+        .placements
+        .keys()
+        .find(|cell| observed_hex::travel_distance(**cell, session.sim.observers[&id].cell) > 3)
+        .expect("somewhere far");
+    session.sim.sensors.insert(beside, 0);
+    session.sim.sensors.insert(far, 0);
+    let dismantle = |cell| ObserverCommand {
+        facing: None,
+        action: ObserverAction::Dismantle(cell),
+    };
+    assert_eq!(
+        session.sim.submit_observer(id, dismantle(far)),
+        Err(ObserverRefusal::OutOfReach)
+    );
+    assert_eq!(session.sim.submit_observer(id, dismantle(beside)), Ok(()));
+    assert!(!session.sim.sensors.contains_key(&beside));
+    assert!(session.sim.sensors.contains_key(&far));
+}

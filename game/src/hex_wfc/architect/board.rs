@@ -262,6 +262,14 @@ pub(super) fn draw_marks(
         .filter(|directive| desk.rogue && directive.cell.level == floor)
         .map(|directive| directive.cell);
     directed.hash(&mut hasher);
+    // Its sensors too: where each is, whether it is live and whether it sees someone.
+    let sensors: Vec<(HexCoord, bool, bool)> = rules
+        .sensors
+        .keys()
+        .filter(|cell| desk.rogue && cell.level == floor)
+        .map(|&cell| (cell, rules.sensor_live(cell), rules.sensor_watching(cell)))
+        .collect();
+    sensors.hash(&mut hasher);
     let signature = hasher.finish();
     if signature == board.marks_signature {
         return;
@@ -406,6 +414,38 @@ pub(super) fn draw_marks(
             Transform::from_translation(on_deck(cell, 10.0)).with_scale(BEACON),
             layer.clone(),
         ));
+    }
+
+    // The Rogue's sensors: a red eye - the Rogue's, against the Observers' cyan - over each,
+    // breathing while it sees someone, grey while its floor is dark; and a thin red ring
+    // on every cell a live one watches.
+    for &(cell, live, watching) in &sensors {
+        let role = if live { Role::Guardian } else { Role::Muted };
+        let mut eye = commands.spawn((
+            BoardMark,
+            DespawnOnExit(GameState::HexWfc),
+            Mesh3d(board.eye.clone()),
+            MeshMaterial3d(paint(role)),
+            Transform::from_translation(on_deck(cell, 4.2)),
+            layer.clone(),
+        ));
+        if watching {
+            eye.insert(Pulse {
+                role,
+                scale: Vec3::ONE,
+            });
+        }
+        if live {
+            let watched = paint(Role::Guardian);
+            for seen in rules.sensor_sight(cell) {
+                spawn(
+                    &mut commands,
+                    &board.thin_ring,
+                    watched.clone(),
+                    Transform::from_translation(on_deck(seen, 0.14)),
+                );
+            }
+        }
     }
 
     // The lab's legend: red is trouble, violet the prison, green the way up, cyan an eye

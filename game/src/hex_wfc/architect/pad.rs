@@ -10,7 +10,7 @@
 //! - **LB / RB** turn the card; **D-pad left / right** go along the hand; **D-pad up /
 //!   down** change floor.
 //! - **Y** answers the team's oldest unanswered request, or at the Rogue board sends the
-//!   major Guardians to the cell pointed at.
+//!   major Guardians to the cell pointed at; **X** there installs a sensor on it.
 //! - **R3** is the emergency requisition, off the fingers' way on purpose.
 //!
 //! The last hand on the desk decides which the prompts name (`ArchitectDesk::pad`).
@@ -150,6 +150,9 @@ pub(super) fn input(
     }
     if pressed(GamepadButton::East) {
         desk.cancel();
+    }
+    if pressed(GamepadButton::West) && desk.rogue {
+        super::input::install_sensor(&mut desk, &runtime);
     }
     if pressed(GamepadButton::North) {
         if desk.rogue {

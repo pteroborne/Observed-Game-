@@ -29,6 +29,11 @@ pub enum ArchitectCommand {
     Direct {
         target: HexCoord,
     },
+    /// Install a sensor on `target` that shows the Rogue the Observers it sees
+    /// (`sim::sensor`). Costs the seat's cooldown and no card; only a Rogue seat may.
+    Sense {
+        target: HexCoord,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -53,7 +58,7 @@ pub enum CommandRefusal {
     FixedStructure,
     /// The authored tile corpus has no tile of this shape.
     Unbuildable,
-    /// A directive to the Guardians is the Rogue's to give, not a team's.
+    /// A directive to the Guardians, or a sensor, is the Rogue's to give, not a team's.
     RogueOnly,
 }
 
@@ -80,7 +85,7 @@ impl CommandRefusal {
             Self::DoorAlreadyPresent => "a deployable door already owns that threshold",
             Self::FixedStructure => "rooms and stairs are built whole and cannot be rewritten",
             Self::Unbuildable => "no authored tile has that shape",
-            Self::RogueOnly => "only the Rogue directs the Guardians",
+            Self::RogueOnly => "only the Rogue directs the Guardians or installs sensors",
         }
     }
 }

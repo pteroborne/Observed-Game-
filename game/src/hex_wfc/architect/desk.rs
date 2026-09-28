@@ -309,7 +309,7 @@ fn side_panel(root: &mut ChildSpawnerCommands) {
         ));
         panel.spawn((
             label(
-                "KEY\nCyan eye     Observer\nRed pyramid  Guardian\nGreen ring   can build\nAmber        your play\nRed ring     contradiction\nViolet ring  prison lobby\nChevron      stair or ramp",
+                "KEY\nCyan eye     Observer\nRed pyramid  Guardian\nRed eye      Rogue sensor\nGreen ring   can build\nAmber        your play\nRed ring     contradiction\nViolet ring  prison lobby\nChevron      stair or ramp",
                 12.0,
                 Role::Muted,
             ),

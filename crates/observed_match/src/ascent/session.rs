@@ -229,7 +229,12 @@ impl AscentSession {
                     .map(Refusal::Architect),
                 None => self.sim.refusal(command).map(Refusal::Architect),
             },
-            Role::Architect(_) if matches!(command, ArchitectCommand::Direct { .. }) => {
+            Role::Architect(_)
+                if matches!(
+                    command,
+                    ArchitectCommand::Direct { .. } | ArchitectCommand::Sense { .. }
+                ) =>
+            {
                 Some(Refusal::Architect(CommandRefusal::RogueOnly))
             }
             Role::Architect(team) => {

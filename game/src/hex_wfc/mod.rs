@@ -29,6 +29,7 @@ mod pad;
 mod perf;
 mod power;
 mod prison_gate;
+mod sensors;
 pub(crate) use perf::GPU_PROFILE_ENV;
 pub mod sim;
 pub(crate) mod view;
@@ -101,6 +102,7 @@ impl Plugin for HexWfcPlugin {
                     power::capture::drive,
                     kinetic::capture::drive,
                     doors::capture::drive,
+                    sensors::capture::drive,
                     sim::step_runtime,
                     perf::end_fixed,
                 )
@@ -171,6 +173,7 @@ impl Plugin for HexWfcPlugin {
                         power::sync_practicals,
                         power::read_changes,
                         doors::sync,
+                        sensors::sync,
                     )
                         .chain(),
                     (hud::sync, hud::play::sync, kinetic::sync_reticle).chain(),
@@ -216,6 +219,7 @@ impl Plugin for HexWfcPlugin {
                     kinetic::cleanup,
                     power::cleanup,
                     doors::cleanup,
+                    sensors::cleanup,
                     equipment::cleanup,
                     hud::play::cleanup,
                     sim::cleanup_runtime,

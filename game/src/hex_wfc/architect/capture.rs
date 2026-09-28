@@ -23,7 +23,9 @@
 //! Rogue for help, and the Rogue looks through nobody's eyes. Instead, once its clock is
 //! ready, it sends the major Guardians to a cell a short walk from one of them through the
 //! desk as the answer key does (`rogue-directed`), and the board a while later, the
-//! Guardian on its way (`rogue-directed-walked`).
+//! Guardian on its way (`rogue-directed-walked`). Last, once its clock is ready again, it
+//! installs a sensor through the desk where one sees a loyal body (`rogue-sensor`): the
+//! board shows every sensor - the bot Rogue's too - and the cells each watches.
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
@@ -250,6 +252,30 @@ pub(in crate::hex_wfc) fn capture(
         }
         13 if ascent.rules().directed.is_none() || tick >= request.last_shot_tick + 420 => {
             shoot(&mut commands, "directed-walked");
+            request.last_shot_tick = tick;
+            request.stills = 14;
+        }
+        // A sensor, once the clock is ready again.
+        14 if desk
+            .hand(ascent.session())
+            .is_some_and(|hand| hand.cooldown == 0) =>
+        {
+            let Some(target) = sensor_target(&runtime, &desk) else {
+                if tick >= request.last_shot_tick + 3_000 {
+                    warn!("rogue capture: nowhere to install a sensor; no sensor still");
+                    request.last_shot_tick = tick + 300;
+                    request.stills = 10;
+                }
+                return;
+            };
+            desk.look_at(target.level);
+            desk.hovered = Some(target);
+            super::input::install_sensor(&mut desk, &runtime);
+            request.last_shot_tick = tick;
+            request.stills = 15;
+        }
+        15 if tick >= request.last_shot_tick + 30 => {
+            shoot(&mut commands, "sensor");
             // It leaves once the still has had frames enough to be written.
             request.last_shot_tick = tick + 300;
             request.stills = 10;
@@ -296,4 +322,44 @@ fn directive_target(
                 })
                 .copied()
         })
+}
+
+/// A cell the rules would take a sensor on whose sight holds a loyal body, or failing that
+/// one beside a loyal body.
+fn sensor_target(runtime: &HexWfcRuntime, desk: &ArchitectDesk) -> Option<observed_hex::HexCoord> {
+    let ascent = runtime.ascent.as_ref()?;
+    let rules = ascent.rules();
+    let bodies: Vec<observed_hex::HexCoord> = rules
+        .observers
+        .values()
+        .filter(|o| o.state == observed_match::ascent::sim::ObserverState::Active)
+        .map(|o| o.cell)
+        .collect();
+    let legal = |target: observed_hex::HexCoord| {
+        ascent
+            .session()
+            .architect_refusal(desk.seat, ArchitectCommand::Sense { target })
+            .is_none()
+    };
+    let near = |target: &observed_hex::HexCoord| {
+        bodies.iter().any(|body| {
+            body.level == target.level && observed_hex::travel_distance(*body, *target) <= 4
+        })
+    };
+    let candidates: Vec<observed_hex::HexCoord> = rules
+        .world
+        .placements
+        .keys()
+        .copied()
+        .filter(near)
+        .filter(|&target| legal(target))
+        .collect();
+    candidates
+        .iter()
+        .copied()
+        .find(|&target| {
+            let sight = rules.sensor_sight(target);
+            bodies.iter().any(|body| sight.contains(body))
+        })
+        .or_else(|| candidates.first().copied())
 }

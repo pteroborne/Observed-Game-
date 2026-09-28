@@ -34,6 +34,8 @@ pub(super) enum HexWfcCaptureMode {
     Minors,
     /// A door deployed in a minor's way, opened, and closed on it again (`doors::capture`).
     Doors,
+    /// A Rogue sensor hung in view, seeing the body, and taken down (`sensors::capture`).
+    Sensors,
     /// The Architect's seat: the board, a play, and what it built (`architect::capture`).
     Architect,
     /// The Rogue board, taken by a player whose body fell into true void, and a play made
@@ -93,6 +95,10 @@ pub(super) fn configure(app: &mut App) {
                 .map(|path| (path, HexWfcCaptureMode::Doors))
         })
         .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_SENSORS")
+                .map(|path| (path, HexWfcCaptureMode::Sensors))
+        })
+        .or_else(|_| {
             std::env::var("OBSERVED2_CAPTURE_HEX_WFC_ROGUE")
                 .map(|path| (path, HexWfcCaptureMode::Rogue))
         })
@@ -141,6 +147,7 @@ pub(super) fn configure(app: &mut App) {
                 | HexWfcCaptureMode::Power
                 | HexWfcCaptureMode::Minors
                 | HexWfcCaptureMode::Doors
+                | HexWfcCaptureMode::Sensors
                 | HexWfcCaptureMode::Rogue
                 | HexWfcCaptureMode::Architect
                 | HexWfcCaptureMode::Relayout
@@ -154,7 +161,10 @@ pub(super) fn configure(app: &mut App) {
         }
         if matches!(
             mode,
-            HexWfcCaptureMode::Power | HexWfcCaptureMode::Minors | HexWfcCaptureMode::Doors
+            HexWfcCaptureMode::Power
+                | HexWfcCaptureMode::Minors
+                | HexWfcCaptureMode::Doors
+                | HexWfcCaptureMode::Sensors
         ) {
             std::fs::create_dir_all(std::path::Path::new(&path).join("frames"))
                 .expect("a video capture's frame directory must be creatable");
@@ -199,6 +209,7 @@ fn autostart_capture(
             | HexWfcCaptureMode::Power
             | HexWfcCaptureMode::Minors
             | HexWfcCaptureMode::Doors
+            | HexWfcCaptureMode::Sensors
             | HexWfcCaptureMode::Rogue
             | HexWfcCaptureMode::Architect
     ) {
@@ -220,6 +231,7 @@ fn autostart_capture(
             | HexWfcCaptureMode::Power
             | HexWfcCaptureMode::Minors
             | HexWfcCaptureMode::Doors
+            | HexWfcCaptureMode::Sensors
             | HexWfcCaptureMode::Rogue
             | HexWfcCaptureMode::Architect
     ) {
@@ -266,6 +278,7 @@ fn capture_progress(
     mut power: Option<ResMut<super::power::capture::PowerCapture>>,
     mut minors: Option<ResMut<super::kinetic::capture::MinorsCapture>>,
     mut doors: Option<ResMut<super::doors::capture::DoorsCapture>>,
+    mut sensors: Option<ResMut<super::sensors::capture::SensorsCapture>>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -337,6 +350,14 @@ fn capture_progress(
             super::doors::capture::advance(
                 &mut request,
                 doors.as_deref_mut(),
+                &mut commands,
+                &mut exit,
+            );
+        }
+        HexWfcCaptureMode::Sensors => {
+            super::sensors::capture::advance(
+                &mut request,
+                sensors.as_deref_mut(),
                 &mut commands,
                 &mut exit,
             );

@@ -143,12 +143,12 @@ pub(super) fn sync(
             Line::Message => (
                 desk.last_refusal.map_or_else(
                     || {
-                        // The Rogue's standing directive, which only its board is told of.
-                        rules
-                            .directed
-                            .filter(|_| desk.rogue)
-                            .map(|directive| words::directed(directive, rules.tick))
-                            .unwrap_or_default()
+                        // The Rogue's standing orders, which only its board is told of.
+                        if desk.rogue {
+                            words::rogue_orders(rules)
+                        } else {
+                            String::new()
+                        }
                     },
                     |refusal| {
                         format!(

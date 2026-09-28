@@ -15,6 +15,8 @@ pub enum ObserverAction {
     Door(ThresholdKey, DoorState),
     Shove(GuardianId),
     ToggleGenerator,
+    /// Take down the Rogue's sensor on this cell, from on it or beside it (`sensor`).
+    Dismantle(HexCoord),
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -93,6 +95,15 @@ impl ArchitectLab {
                     return Err(ObserverRefusal::InvalidTarget);
                 }
                 Some(ObserverIntent::Shove(target))
+            }
+            ObserverAction::Dismantle(sensor) => {
+                if !self.sensors.contains_key(&sensor) {
+                    return Err(ObserverRefusal::InvalidTarget);
+                }
+                if observer.state != ObserverState::Active || !self.beside_sensor(cell, sensor) {
+                    return Err(ObserverRefusal::OutOfReach);
+                }
+                Some(ObserverIntent::Dismantle(sensor))
             }
             ObserverAction::ToggleGenerator => {
                 let powered = self.economy.is_powered(cell.level);

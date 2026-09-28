@@ -1,7 +1,9 @@
 //! What the Architect's desk says: pure, so it can be tested without a window.
 
 use observed_match::ascent::session::Refusal;
-use observed_match::ascent::sim::{CardKind, CommandRefusal, RogueDirective, TileShape};
+use observed_match::ascent::sim::{
+    ArchitectLab, CardKind, CommandRefusal, MAX_SENSORS, RogueDirective, TileShape,
+};
 
 use super::desk::DeskButton;
 
@@ -77,6 +79,27 @@ pub(super) fn directed(directive: RogueDirective, now: u64) -> String {
     )
 }
 
+/// The Rogue's standing orders, for its board: where its Guardians were sent, and its
+/// sensors - how many, and how many see someone now.
+#[must_use]
+pub(super) fn rogue_orders(rules: &ArchitectLab) -> String {
+    let watching = rules
+        .sensors
+        .keys()
+        .filter(|&&cell| rules.sensor_watching(cell))
+        .count();
+    let sensors = match (rules.sensors.len(), watching) {
+        (0, _) => "No sensors.".to_owned(),
+        (installed, 0) => format!("Sensors {installed} / {MAX_SENSORS}."),
+        (installed, watching) => {
+            format!("Sensors {installed} / {MAX_SENSORS}, {watching} seeing someone.")
+        }
+    };
+    rules.directed.map_or(sensors.clone(), |directive| {
+        format!("{}\n{sensors}", directed(directive, rules.tick))
+    })
+}
+
 /// A desk button's label, naming the key or the controller button that does the same.
 #[must_use]
 pub(super) const fn button_label(action: DeskButton, pad: bool) -> &'static str {
@@ -111,10 +134,10 @@ pub(super) const fn controls(pad: bool, rogue: bool) -> &'static str {
         // Nobody asks the Rogue for help, and a requisition is a team's; the Rogue sends
         // its Guardians instead.
         (true, true) => {
-            "LS point  >  A aim  >  LB/RB turn  >  A again play     B back   Y send Guardians   D-pad < > card  ^ v floor"
+            "LS point  >  A aim  >  LB/RB turn  >  A again play     B back   Y send Guardians   X sensor   D-pad < > card  ^ v floor"
         }
         (false, true) => {
-            "1-5 card  >  click a cell to aim  >  Q/E turn  >  Space play     Esc back   F send Guardians   [ / ] floor"
+            "1-5 card  >  click a cell to aim  >  Q/E turn  >  Space play     Esc back   F send Guardians   G sensor   [ / ] floor"
         }
     }
 }

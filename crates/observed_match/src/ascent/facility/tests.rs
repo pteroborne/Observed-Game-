@@ -160,7 +160,9 @@ fn explore_until_playable(
 fn target_of(command: ArchitectCommand) -> HexCoord {
     match command {
         ArchitectCommand::Play { target, .. } => target,
-        ArchitectCommand::Requisition | ArchitectCommand::Direct { .. } => {
+        ArchitectCommand::Requisition
+        | ArchitectCommand::Direct { .. }
+        | ArchitectCommand::Sense { .. } => {
             unreachable!("plays only")
         }
     }
@@ -518,6 +520,7 @@ mod power;
 mod prison;
 mod requests;
 mod rogue;
+mod sensors;
 mod stairs;
 
 #[test]

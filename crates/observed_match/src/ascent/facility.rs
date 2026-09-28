@@ -27,8 +27,10 @@ use crate::hex_wfc::{HexInputFrame, HexMatchEventKind, HexReleasedKind, HexWfcMa
 
 mod doors;
 mod power;
+mod sensors;
 pub use doors::AtDoor;
 pub use power::{AtFixture, FIXTURE_REACH, Fixture, FixtureKind};
+pub use sensors::AtSensor;
 
 /// The rules' id for the first-person match's own Guardian, the Tumbler: reserved, above
 /// every Guardian the rules release themselves.
@@ -213,6 +215,7 @@ impl AscentRules {
         self.observe(physical);
         self.operate_generators(physical, bodies);
         self.operate_doors(physical, bodies);
+        self.operate_sensors(physical, bodies);
         let refusals = self.session.advance(seats)?;
         self.recharge_at_stations(physical);
         let rewrites = self.session.sim.take_rewrites();
@@ -228,6 +231,7 @@ impl AscentRules {
         // The major Guardians' bodies walk where the Rogue sent them, until the rules say
         // the directive is spent (`ascent::sim::directive`).
         physical.direct_guardians(self.session.sim.directed.map(|directive| directive.cell));
+        self.place_sensors(physical);
         // What the rules release - a wave's minors, a requisition's major - is given a
         // body here, under the rules' own id, and the rules follow that body from the next
         // tick (`observe`). A release onto a cell the facility no longer builds is lost.

@@ -595,9 +595,63 @@ the rest is the Architect capture's, from the Rogue board):
 
 Over LAN a directive travels as a seat command (`WireSeatCommand::Direct`, protocol 11).
 
-Not yet: the bot Rogue gives no directives; the Rogue's sensors (design section 7) do not
-exist in the rules, so there is nothing to control; a joined player's hand is not kept
-live for the floors the Rogue can reach, as a team's is.
+Not yet: the bot Rogue gives no directives; a joined player's hand is not kept live for
+the floors the Rogue can reach, as a team's is.
+
+### Sensors
+
+Design section 7: the Rogue sees a loyal Observer "only while that Observer is detected by
+a Guardian or an explicit Rogue-controlled sensor". The sensor is now in the rules
+(`ascent::sim::sensor`), in the facility, and at the board:
+
+- **Installed from a Rogue seat** (`ArchitectCommand::Sense`): G at the Rogue board, X on a
+  controller, on the cell pointed at. Like a directive it costs the seat's cooldown and no
+  card, and a team's Architect is refused it (`RogueOnly`). Like any Rogue play it cannot
+  be made where an Observer is looking (`Observed`), nor on void, a collapsed floor, the
+  prison, or a cell that already has one.
+- **What it sees**: its own cell and `SENSOR_RANGE` (4) cells along each open lateral line
+  from it - a wall or a closed door ends the line, as it ends a Guardian's six. It sees
+  only while its floor has power: a dark floor blinds its sensors, which gives cutting a
+  generator a second edge.
+- **What that is for**: an Observer a live sensor sees joins the Rogue's knowledge
+  (`ArchitectLab::rogue_detected`), so the Rogue board shows it and the bot Rogue hunts
+  it. It never feeds the Guardians' own pursuit: sensors inform the Rogue, the Rogue
+  directs.
+- **At most four** (`MAX_SENSORS`): a fifth retires the oldest. A sensor goes with its
+  cell when the cell is emptied, retracted or its floor collapses.
+- **Counterplay** (`ObserverAction::Dismantle`, `AscentRules::operate_sensors`): a sensor
+  hangs 2.6 m over the floor at its cell's middle (`HexWfcMatch::set_sensors`, found once
+  against the colliders, again when the facility is rebuilt), and a loyal body under it
+  takes it down with interact, after a generator and a door in the interact order. The
+  prompt says so.
+- **In first person** (`game/src/hex_wfc/sensors.rs`): a polyhedral eye in the director's
+  colour, turning inside a ring, with a small light of its own. It burns brighter, turns
+  faster and its ring breathes while it sees someone, and it is the unpowered grey,
+  unlit, while blind. It is heard where it hangs when installed and when taken down.
+- **At the Rogue board**: each sensor on the floor in view is a red eye - the Rogue's,
+  against the Observers' cyan - over its cell, breathing while it sees someone, grey while
+  blind, and a thin red ring on every cell a live one watches. The orders line counts them
+  ("Sensors 2 / 4, 1 seeing someone."). A team's board is not told.
+- **The bot Rogue watches the way up**: with nobody detected it has nobody to play
+  against, so it installs a sensor at the foot of a stair or ramp no sensor watches yet,
+  on the floor it watches least - every climb passes one.
+
+Over LAN a sensor is a seat command (`WireSeatCommand::Sense`) and a body takes one down
+with its ordinary interact; protocol 12.
+
+Evidence (`OBSERVED2_CAPTURE_HEX_WFC_SENSORS=<dir> cargo dev-run -p observed_game`: a sensor
+staged one open step from a cell near the body, which is stood a few metres off facing
+it; the walk and the interact are the match's own):
+
+- [Watching the body](evidence/ascent-sensors/sensors-1-watching-1280x800.png)
+- [Under it, the prompt](evidence/ascent-sensors/sensors-2-prompt-1280x800.png)
+- [Taken down](evidence/ascent-sensors/sensors-3-taken-down-1280x800.png)
+- [The walk up and the take-down](evidence/ascent-sensors/sensors.mp4)
+- [At the Rogue board](evidence/ascent-rogue/rogue-sensor-1280x800.png): the sensor just
+  installed through the desk, the bot Rogue's, and what each watches
+
+Not yet: a sensor seen from across the facility is not on a team's map; the Rogue cannot
+move one, only install another.
 
 ### Not yet joined
 

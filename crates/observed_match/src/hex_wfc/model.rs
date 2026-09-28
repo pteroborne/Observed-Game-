@@ -24,8 +24,10 @@ use super::geometry::{HexGeometryError, HexWfcGeometrySnapshot};
 mod bot;
 mod directed;
 mod doors;
+mod sensors;
 pub use directed::HexDirectedError;
 pub use doors::{DOOR_HALF_WIDTH, DOOR_HEIGHT, DOOR_REACH, HexDoor, door_pose};
+pub use sensors::{SENSOR_HANG, SENSOR_REACH};
 mod equipment;
 mod guardian;
 mod interaction;
@@ -374,6 +376,9 @@ pub struct HexWfcMatch {
     /// Where the Rogue has sent the major Guardians (`direct_guardians`), which follow
     /// the rules like the doors and are omitted from snapshots the same way.
     pub(super) guardian_directive: Option<HexCoord>,
+    /// The Rogue's sensors, where they hang (`sensors`); they follow the rules like the
+    /// doors, and are omitted from snapshots the same way.
+    pub(super) sensors: sensors::HexSensors,
     /// Immutable content retained so relayout uses the same catalog,
     /// composition, movement profile, and network identity as initial solve.
     pub(super) content: Arc<HexMatchContent>,
@@ -572,6 +577,7 @@ impl HexWfcMatch {
             kinetic_cooldowns: BTreeMap::new(),
             doors: BTreeMap::new(),
             guardian_directive: None,
+            sensors: sensors::HexSensors::default(),
             next_door_collider: 0,
             progress_anchor: BTreeMap::new(),
             content,

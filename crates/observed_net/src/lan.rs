@@ -32,7 +32,9 @@ use crate::protocol::WireIntent;
 /// facility builds different colliders.
 /// Version 11 carries a Rogue's directive to the major Guardians (`WireSeatCommand::Direct`),
 /// and a player who joins the Rogue plays a hand of their own on their own cooldown.
-pub const LAN_PROTOCOL_VERSION: u16 = 11;
+/// Version 12 carries a Rogue's sensor (`WireSeatCommand::Sense`); a body takes one down
+/// with interact, and the bot Rogue installs them, so the same frames make a different match.
+pub const LAN_PROTOCOL_VERSION: u16 = 12;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;

@@ -124,6 +124,47 @@ fn the_rogue_board_sends_the_guardians_where_it_points() {
     );
 }
 
+/// At the Rogue board the sensor key installs a sensor on the cell pointed at, through the
+/// player's own seat; it hangs in the facility, and the board's orders count it.
+#[test]
+fn the_rogue_board_installs_a_sensor_where_it_points() {
+    let local = PlayerId(0);
+    let mut runtime = runtime_as_body(local);
+    runtime.match_state.drop_into_void(local);
+    let mut desk = ArchitectDesk::rogue(local, AscentTeam(TEAM.0), 0);
+    tick_rogue(&mut runtime, &mut desk);
+
+    let ascent = runtime.ascent.as_ref().expect("an Ascent match");
+    let target = desk
+        .knowledge(ascent.rules())
+        .expect("the Rogue board's view")
+        .cells
+        .keys()
+        .copied()
+        .find(|&cell| {
+            ascent
+                .session()
+                .architect_refusal(desk.seat, ArchitectCommand::Sense { target: cell })
+                .is_none()
+        })
+        .expect("somewhere to install a sensor");
+    desk.look_at(target.level);
+    desk.hovered = Some(target);
+    super::super::input::install_sensor(&mut desk, &runtime);
+    assert_eq!(desk.pending, Some(ArchitectCommand::Sense { target }));
+    tick_rogue(&mut runtime, &mut desk);
+
+    let ascent = runtime.ascent.as_ref().expect("an Ascent match");
+    assert!(ascent.rules().sensors.contains_key(&target));
+    assert!(
+        runtime
+            .match_state
+            .sensors()
+            .any(|(cell, _)| cell == target)
+    );
+    assert!(super::super::words::rogue_orders(ascent.rules()).starts_with("Sensors "));
+}
+
 /// A match with the local player walking as a body, every seat of the rules a bot's.
 fn runtime_as_body(local: PlayerId) -> HexWfcRuntime {
     assert_eq!(local, PlayerId(0));

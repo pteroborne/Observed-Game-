@@ -18,6 +18,7 @@ pub enum ObserverIntent {
     SetDoor(ThresholdKey, DoorState),
     Shove(GuardianId),
     ToggleGenerator,
+    Dismantle(HexCoord),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -289,6 +290,12 @@ impl ArchitectLab {
                             .insert(format!("Observer {}", id.0), fallback_trace);
                         self.apply_observer_intent(id, fallback_intent);
                     }
+                }
+            }
+            ObserverIntent::Dismantle(sensor) => {
+                self.dismantle(sensor);
+                if let Some(observer) = self.observers.get_mut(&id) {
+                    observer.hold_beats = 0;
                 }
             }
             ObserverIntent::ToggleGenerator => {
