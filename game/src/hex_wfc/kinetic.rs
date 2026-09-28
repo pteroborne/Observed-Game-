@@ -39,6 +39,8 @@ use super::sim::HexWfcRuntime;
 use crate::GameState;
 use crate::view::theme::{DIM, WARNING};
 
+pub(super) mod capture;
+
 /// The design every Observer carries.
 const HELD: Design = Design::Lance;
 

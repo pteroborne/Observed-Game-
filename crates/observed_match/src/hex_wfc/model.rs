@@ -46,7 +46,7 @@ pub use bot::HexBotDriver;
 pub use equipment::{HexAnchorSite, HexDeployedLantern, HexLanternCache, HexLanternState};
 pub use guardian::{HexGuardianState, HexGuardianStatus};
 pub use kinetic::{
-    HexKineticTarget, HexKineticVerb, KINETIC_COOLDOWN_TICKS, KINETIC_PULL_SPEED,
+    HexKillingPush, HexKineticTarget, HexKineticVerb, KINETIC_COOLDOWN_TICKS, KINETIC_PULL_SPEED,
     KINETIC_PUSH_SPEED, KINETIC_REACH, KINETIC_STAGGER_FRICTION, KINETIC_STAGGER_TICKS,
 };
 pub use knowledge::{HexMapCellKnowledge, HexMapDiscovery, HexPlayerMapKnowledge};

@@ -98,6 +98,7 @@ impl Plugin for HexWfcPlugin {
                     hud::capture::drive,
                     ascent_capture::drive,
                     power::capture::drive,
+                    kinetic::capture::drive,
                     sim::step_runtime,
                     perf::end_fixed,
                 )

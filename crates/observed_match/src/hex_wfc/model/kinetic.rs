@@ -260,6 +260,8 @@ impl HexWfcMatch {
     }
 }
 
+mod drops;
+pub use drops::HexKillingPush;
 #[cfg(test)]
 mod edges;
 #[cfg(test)]

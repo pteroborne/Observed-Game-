@@ -13,35 +13,22 @@
 //! The probe only nominates: every cell it calls lethal is replayed as up to three real
 //! shoves on the simulation, and only a shove that ends in `GuardianLost` counts. (The
 //! probe alone overcounts several times over: a railing just past a slab's edge, or a
-//! fall that carries forward onto a roof the straight-down ray missed.) A retraction is measured the same way: a hall is retracted as the rules
-//! retract one, and the doorways into it are probed from the halls beside it.
+//! fall that carries forward onto a roof the straight-down ray missed.)
+//!
+//! A retraction is measured the same way: a hall is retracted as the rules retract one,
+//! and the doorways into it are probed from the halls beside it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use glam::Vec3;
-use observed_facility::hex_wfc::{HexArchetype, HexPlacement, HexSpace, HexWfcConfig, HexWfcWorld};
+use observed_facility::hex_wfc::{HexArchetype, HexPlacement, HexSpace, HexWfcConfig};
 use observed_hex::{FLOOR_SLAB_TOP, HexCoord, HexFace, PortClass, hex_origin};
 
-use super::super::released::HexReleasedGuardian;
+use super::drops::{
+    DIRECTIONS, PushEnd as Push, PushTrials as Trials, direction, linked_vertically as vertical,
+};
 use super::*;
-use crate::hex_wfc::model::{HEX_INPUT_VERSION, HexInputFrame, HexMatchConfig, HexReleasedKind};
-
-/// How far a level push slides a minor on the flat (`KINETIC_STAGGER_FRICTION`).
-const SLIDE: f32 = 5.5;
-const STEP: f32 = 0.25;
-const DIRECTIONS: u8 = 12;
-const MINOR: u16 = 60_000;
-
-/// What a level push from a point meets first.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Push {
-    /// A wall or railing, or it stops on the floor.
-    Held,
-    /// It goes over onto a lower deck.
-    Landing,
-    /// It goes over, and nothing catches it: out of the facility.
-    Lethal,
-}
+use crate::hex_wfc::model::HexMatchConfig;
 
 fn production(seed: u64) -> HexWfcMatch {
     let content = std::sync::Arc::new(crate::hex_wfc::HexMatchContent::from_runtime_catalog(
@@ -56,128 +43,12 @@ fn production(seed: u64) -> HexWfcMatch {
     HexWfcMatch::new_with_content(seed, config, content).expect("a production facility solves")
 }
 
-/// Standing points in `cell`: its middle and two rings round it.
 fn stands(game: &HexWfcMatch, cell: HexCoord) -> Vec<Vec3> {
-    let floor = Vec3::from_array(hex_origin(cell)) + Vec3::Y * FLOOR_SLAB_TOP;
-    std::iter::once(Vec3::ZERO)
-        .chain([3.0f32, 5.5].into_iter().flat_map(|radius| {
-            (0..6u8).map(move |step| {
-                let angle = f32::from(step) * std::f32::consts::TAU / 6.0;
-                Vec3::new(angle.cos(), 0.0, angle.sin()) * radius
-            })
-        }))
-        .filter_map(|offset| game.stands_at(floor + offset))
-        .collect()
+    game.standing_points(cell)
 }
 
-fn direction(step: u8) -> Vec3 {
-    let angle = f32::from(step) * std::f32::consts::TAU / f32::from(DIRECTIONS);
-    Vec3::new(angle.cos(), 0.0, angle.sin())
-}
-
-/// Walk a minor's capsule from `feet` along `direction` for a push's slide.
 fn probe(game: &HexWfcMatch, feet: Vec3, direction: Vec3) -> Push {
-    let config = game.content.traversal_profile().controller();
-    let lift = config.half_height + 0.05;
-    let mut travelled = STEP;
-    while travelled <= SLIDE {
-        let centre = feet + direction * travelled + Vec3::Y * lift;
-        if !game
-            .physics
-            .capsule_is_clear(centre, config.radius, config.half_height)
-        {
-            return Push::Held;
-        }
-        if game
-            .physics
-            .ray_distance(centre, Vec3::NEG_Y, lift + 0.4)
-            .is_none()
-        {
-            // Over the edge only if the whole capsule clears it: a railing standing just
-            // beyond a slab's edge stops a body whose rim is still on the floor.
-            let clears = (1..=4).all(|i| {
-                let past = centre + direction * (config.radius * f32::from(i as u8) * 0.5 + 0.1);
-                game.physics
-                    .capsule_is_clear(past, config.radius, config.half_height)
-            });
-            if !clears {
-                return Push::Held;
-            }
-            let beyond = centre + direction * (config.radius + 0.1);
-            let lost_below =
-                game.geometry.arena.floor_y - super::super::released::OUT_OF_WORLD_DEPTH;
-            return match game.physics.ray_distance(beyond, Vec3::NEG_Y, 400.0) {
-                // Caught by a lower deck: a landing, unless the fall breaks it.
-                Some(drop)
-                    if beyond.y - drop > lost_below
-                        && drop - lift <= super::super::released::MINOR_BREAKING_DROP =>
-                {
-                    Push::Landing
-                }
-                _ => Push::Lethal,
-            };
-        }
-        travelled += STEP;
-    }
-    Push::Held
-}
-
-/// Replays shoves as the simulation plays them, one minor at a time, on one copy of a
-/// match: release a minor, stand it, push it, and see whether the fall takes it.
-struct Trials {
-    game: HexWfcMatch,
-    next: u16,
-}
-
-impl Trials {
-    fn new(game: &HexWfcMatch) -> Self {
-        Self {
-            game: game.clone(),
-            next: MINOR,
-        }
-    }
-
-    fn kills(&mut self, cell: HexCoord, feet: Vec3, direction: Vec3) -> bool {
-        let id = self.next;
-        self.next += 1;
-        let game = &mut self.game;
-        if !game.release_guardian(id, HexReleasedKind::Minor, cell) {
-            return false;
-        }
-        let config = game.content.traversal_profile().controller();
-        let Some(HexReleasedGuardian::Minor(minor)) = game.released.get_mut(&id) else {
-            return false;
-        };
-        minor.cell = cell;
-        minor.stand_at(feet + Vec3::Y * (config.half_height + 0.02));
-        minor.shove(direction * KINETIC_PUSH_SPEED);
-        for _ in 0..150 {
-            let frame = HexInputFrame {
-                version: HEX_INPUT_VERSION,
-                tick: game.tick + 1,
-                commands: BTreeMap::new(),
-            };
-            game.step(&frame);
-            if !game.released.contains_key(&id) {
-                return true;
-            }
-        }
-        game.remove_released(id);
-        false
-    }
-}
-
-/// Cells a stair or ramp links to another floor, where a push is a climb, not a drop.
-fn vertical(world: &HexWfcWorld, cell: HexCoord) -> bool {
-    let grid = world.config.grid();
-    let links = |at: Option<HexCoord>, face: HexFace| {
-        at.and_then(|at| world.placements.get(&at))
-            .is_some_and(|p| p.ports().port(face) != PortClass::Sealed)
-    };
-    links(Some(cell), HexFace::Up)
-        || links(Some(cell), HexFace::Down)
-        || links(grid.neighbor(cell, HexFace::Down), HexFace::Up)
-        || links(grid.neighbor(cell, HexFace::Up), HexFace::Down)
+    game.push_end(feet, direction)
 }
 
 #[derive(Default, Debug)]

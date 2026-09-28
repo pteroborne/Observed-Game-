@@ -30,6 +30,8 @@ pub(super) enum HexWfcCaptureMode {
     /// Floor power: the generator cut and restored, and the station filling the tool,
     /// as stills and 30 fps video frames (`power::capture`).
     Power,
+    /// Minors closing in, and one pushed over an edge to its death (`kinetic::capture`).
+    Minors,
     /// The Architect's seat: the board, a play, and what it built (`architect::capture`).
     Architect,
     Map,
@@ -78,6 +80,10 @@ pub(super) fn configure(app: &mut App) {
                 .map(|path| (path, HexWfcCaptureMode::Power))
         })
         .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_MINORS")
+                .map(|path| (path, HexWfcCaptureMode::Minors))
+        })
+        .or_else(|_| {
             std::env::var("OBSERVED2_CAPTURE_HEX_WFC_ARCHITECT")
                 .map(|path| (path, HexWfcCaptureMode::Architect))
         })
@@ -120,6 +126,7 @@ pub(super) fn configure(app: &mut App) {
                 | HexWfcCaptureMode::Hud
                 | HexWfcCaptureMode::Prison
                 | HexWfcCaptureMode::Power
+                | HexWfcCaptureMode::Minors
                 | HexWfcCaptureMode::Architect
                 | HexWfcCaptureMode::Relayout
                 | HexWfcCaptureMode::Traversal
@@ -130,12 +137,17 @@ pub(super) fn configure(app: &mut App) {
             std::fs::create_dir_all(&path)
                 .expect("hex-WFC directory-style capture directory must be creatable");
         }
-        if mode == HexWfcCaptureMode::Power {
+        if matches!(mode, HexWfcCaptureMode::Power | HexWfcCaptureMode::Minors) {
             std::fs::create_dir_all(std::path::Path::new(&path).join("frames"))
-                .expect("the power capture's frame directory must be creatable");
+                .expect("a video capture's frame directory must be creatable");
             // Every rendered frame is one video frame, however long it takes to render.
+            let frame = if mode == HexWfcCaptureMode::Power {
+                super::power::capture::FRAME_SECONDS
+            } else {
+                super::kinetic::capture::FRAME_SECONDS
+            };
             app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
-                std::time::Duration::from_secs_f32(super::power::capture::FRAME_SECONDS),
+                std::time::Duration::from_secs_f32(frame),
             ));
         }
         app.insert_resource(HexWfcCapture {
@@ -165,7 +177,10 @@ fn autostart_capture(
 ) {
     if matches!(
         capture.mode,
-        HexWfcCaptureMode::Prison | HexWfcCaptureMode::Power | HexWfcCaptureMode::Architect
+        HexWfcCaptureMode::Prison
+            | HexWfcCaptureMode::Power
+            | HexWfcCaptureMode::Minors
+            | HexWfcCaptureMode::Architect
     ) {
         // A teammate, so one catch is not every loyal Observer jailed at once.
         *play_setup = crate::play_setup::PlaySetupDraft {
@@ -183,6 +198,7 @@ fn autostart_capture(
         HexWfcCaptureMode::Hud
             | HexWfcCaptureMode::Prison
             | HexWfcCaptureMode::Power
+            | HexWfcCaptureMode::Minors
             | HexWfcCaptureMode::Architect
     ) {
         commands.insert_resource(sequence.issue(
@@ -226,6 +242,7 @@ fn capture_progress(
     mut request: ResMut<HexWfcCapture>,
     mut runtime: Option<ResMut<sim::HexWfcRuntime>>,
     mut power: Option<ResMut<super::power::capture::PowerCapture>>,
+    mut minors: Option<ResMut<super::kinetic::capture::MinorsCapture>>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -281,6 +298,14 @@ fn capture_progress(
             super::power::capture::advance(
                 &mut request,
                 power.as_deref_mut(),
+                &mut commands,
+                &mut exit,
+            );
+        }
+        HexWfcCaptureMode::Minors => {
+            super::kinetic::capture::advance(
+                &mut request,
+                minors.as_deref_mut(),
                 &mut commands,
                 &mut exit,
             );

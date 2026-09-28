@@ -466,6 +466,19 @@ teams of two, every seat a bot, and bots never shove) filled floors 0 and 1 to t
 on seed 1 - 18 released where the waves asked for 30 - and that crowd won the Rogue the
 match in four minutes. Floor 0's waves are one minor each, but came fourteen times.
 
+Evidence (`OBSERVED2_CAPTURE_HEX_WFC_MINORS=<dir> cargo dev-run -p observed_game`): the
+capture finds a push that kills on a production facility, the highest floor first and
+proven by playing it on a copy of the match (`HexWfcMatch::killing_push`), stages three
+minors there and the body a few metres behind the first, and plays the rest through the
+match's own input at one tick a frame. On this seed it found the top floor's open edge; a
+second minor was staged ahead, and the third found no room in view.
+
+- [Minors closing in](evidence/ascent-minors/minors-1-closing-1280x800.png)
+- [The push, charge 90](evidence/ascent-minors/minors-2-pushed-1280x800.png)
+- [Over the edge and broken: "Minor sent into the void"](evidence/ascent-minors/minors-3-broken-1280x800.png)
+- [The whole push, 3 s](evidence/ascent-minors/minors-push-1280x800.mp4) and
+  [at quarter speed](evidence/ascent-minors/minors-push-quarter-speed-1280x800.mp4)
+
 ### Not yet joined
 
 - The rules' own Guardians (the lab's cell-level hunters) are not placed; the physical

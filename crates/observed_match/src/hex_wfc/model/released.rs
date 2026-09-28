@@ -86,15 +86,14 @@ impl HexMinorState {
         self.stagger > 0
     }
 
-    /// Set it sliding at `velocity`: it stops walking, forgets its prey, and slides under
-    /// [`KINETIC_STAGGER_FRICTION`] until it stops or the stagger runs out.
-    /// Stand it at rest at `position`.
-    #[cfg(test)]
+    /// Stand it at rest at `position`, its body's centre.
     pub(super) fn stand_at(&mut self, position: Vec3) {
         self.body = FpsBody::spawned(position, self.body.yaw);
         self.position = position;
     }
 
+    /// Set it sliding at `velocity`: it stops walking, forgets its prey, and slides under
+    /// [`KINETIC_STAGGER_FRICTION`] until it stops or the stagger runs out.
     pub(super) fn shove(&mut self, velocity: Vec3) {
         self.body.velocity = velocity;
         if velocity.y > 0.0 {
