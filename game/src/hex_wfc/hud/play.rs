@@ -426,10 +426,12 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
     });
     let dark = crate::hex_wfc::power::local_floor_powered(&runtime) == Some(false);
     // A fixture the body stands at speaks first: it is what the body came for.
-    let prompt = crate::hex_wfc::power::prompt(&runtime, &settings).or_else(|| {
-        game.interaction(runtime.local_player)
-            .map(|prompt| prompt_view(&prompt, &settings, team.objectives.dual_station_ticks))
-    });
+    let prompt = crate::hex_wfc::power::prompt(&runtime, &settings)
+        .or_else(|| crate::hex_wfc::doors::prompt(&runtime, &settings))
+        .or_else(|| {
+            game.interaction(runtime.local_player)
+                .map(|prompt| prompt_view(&prompt, &settings, team.objectives.dual_station_ticks))
+        });
     let notice_left = notice.until - now;
     let alpha = if notice_left > 0.0 {
         notice_alpha(notice_left)

@@ -192,6 +192,7 @@ impl HexWfcMatch {
     /// One fixed step of every released Guardian, after the match's own.
     pub(super) fn step_released(&mut self) {
         let ids: Vec<u16> = self.released.keys().copied().collect();
+        let grid = self.facility.config.grid();
         for id in ids {
             match self.released.get_mut(&id) {
                 Some(HexReleasedGuardian::Major(major)) => major.step(
@@ -200,7 +201,10 @@ impl HexWfcMatch {
                     &self.lanterns,
                     &mut self.players,
                     &mut self.recent_events,
-                    self.prison.as_ref(),
+                    super::guardian::HexGuardianBounds {
+                        prison: self.prison.as_ref(),
+                        closed: &|a, b| super::doors::closed_between(&self.doors, grid, a, b),
+                    },
                 ),
                 Some(HexReleasedGuardian::Minor(_)) => self.step_minor(id),
                 None => {}
@@ -296,8 +300,10 @@ impl HexWfcMatch {
         if let Some(player) = minor.target.filter(|_| !staggered) {
             let prey = &self.players[&player];
             let offset = prey.position - minor.position;
+            // A closed door between them is a door between them, however close.
             if offset.y.abs() <= MINOR_CATCH_HEIGHT
                 && offset.with_y(0.0).length() <= MINOR_CATCH_DISTANCE
+                && !self.closed_door_between(minor.cell, prey.cell)
             {
                 self.recent_events.push(HexMatchEvent {
                     tick: self.tick,
@@ -365,7 +371,8 @@ impl HexWfcMatch {
                         .facility
                         .placements
                         .get(&neighbour)
-                        .is_some_and(|other| other.space.built() && other.is_open(face.opposite()));
+                        .is_some_and(|other| other.space.built() && other.is_open(face.opposite()))
+                    && !self.closed_door_between(cell, neighbour);
                 if !open
                     || came_from.contains_key(&neighbour)
                     || lobby.is_some_and(|lobby: &BTreeSet<HexCoord>| lobby.contains(&neighbour))

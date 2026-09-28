@@ -25,7 +25,9 @@ use super::sim::{
 };
 use crate::hex_wfc::{HexInputFrame, HexMatchEventKind, HexReleasedKind, HexWfcMatch};
 
+mod doors;
 mod power;
+pub use doors::AtDoor;
 pub use power::{AtFixture, FIXTURE_REACH, Fixture, FixtureKind};
 
 /// The rules' id for the first-person match's own Guardian, the Tumbler: reserved, above
@@ -210,6 +212,7 @@ impl AscentRules {
         self.pay_for_shots(physical);
         self.observe(physical);
         self.operate_generators(physical, bodies);
+        self.operate_doors(physical, bodies);
         let refusals = self.session.advance(seats)?;
         self.recharge_at_stations(physical);
         let rewrites = self.session.sim.take_rewrites();
@@ -220,6 +223,8 @@ impl AscentRules {
                 .apply_directed_change(rewrites)
                 .expect("the rules rewrite only what the facility can build");
         }
+        // After the rewrites, which consume the doors of the cells they took.
+        self.place_doors(physical);
         // What the rules release - a wave's minors, a requisition's major - is given a
         // body here, under the rules' own id, and the rules follow that body from the next
         // tick (`observe`). A release onto a cell the facility no longer builds is lost.

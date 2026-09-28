@@ -11,6 +11,7 @@ mod audio;
 mod capture;
 pub(in crate::hex_wfc) use capture::{HexWfcCapture, HexWfcCaptureMode};
 mod cues;
+mod doors;
 mod entities;
 mod equipment;
 mod feedback;
@@ -99,6 +100,7 @@ impl Plugin for HexWfcPlugin {
                     ascent_capture::drive,
                     power::capture::drive,
                     kinetic::capture::drive,
+                    doors::capture::drive,
                     sim::step_runtime,
                     perf::end_fixed,
                 )
@@ -162,6 +164,7 @@ impl Plugin for HexWfcPlugin {
                         power::sync_fixtures,
                         power::sync_practicals,
                         power::read_changes,
+                        doors::sync,
                     )
                         .chain(),
                     (hud::sync, hud::play::sync, kinetic::sync_reticle).chain(),
@@ -206,6 +209,7 @@ impl Plugin for HexWfcPlugin {
                     pad::cleanup,
                     kinetic::cleanup,
                     power::cleanup,
+                    doors::cleanup,
                     equipment::cleanup,
                     hud::play::cleanup,
                     sim::cleanup_runtime,

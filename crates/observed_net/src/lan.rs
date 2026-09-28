@@ -26,7 +26,9 @@ use crate::protocol::WireIntent;
 /// version-6 peer would step the same frames to a different match.
 /// Version 8 changes no byte either: a minor Guardian breaks on a fall of more than half a
 /// storey, and a first-person floor holds at most `MINORS_PER_FLOOR` of them.
-pub const LAN_PROTOCOL_VERSION: u16 = 8;
+/// Version 9 changes no byte: a deployed door stands in the facility, a closed one blocks
+/// bodies and Guardians, and interact at a door opens or closes it.
+pub const LAN_PROTOCOL_VERSION: u16 = 9;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;

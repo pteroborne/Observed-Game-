@@ -161,6 +161,12 @@ impl AscentRules {
         Some((fixture, at))
     }
 
+    /// Whether `player`'s body stands within reach of its floor's generator.
+    pub(super) fn at_generator(&self, physical: &HexWfcMatch, player: PlayerId) -> bool {
+        self.fixture_in_reach(physical, player)
+            .is_some_and(|fixture| fixture.kind == FixtureKind::Generator)
+    }
+
     fn fixture_in_reach(&self, physical: &HexWfcMatch, player: PlayerId) -> Option<&Fixture> {
         let body = physical.players.get(&player)?;
         if !body.in_facility() {

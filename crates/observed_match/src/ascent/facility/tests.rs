@@ -509,6 +509,7 @@ fn a_retraction_cannot_open_a_window_beside_a_watched_room() {
     panic!("the body never stood where a neighbour's retraction would redraw it");
 }
 
+mod doors;
 mod guardians;
 mod kinetic;
 mod power;

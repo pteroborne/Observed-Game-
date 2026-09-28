@@ -105,7 +105,9 @@ impl HexBotDriver {
         }
         let target = game.objective_target(id);
         self.invalidate_from_match(game, id, target);
-        let actions = game.bot_action_buttons_for_target(id, target);
+        let mut actions = game.bot_action_buttons_for_target(id, target);
+        // A bot walking into a closed door opens it rather than stand against it.
+        actions.interact |= game.walking_into_closed_door(id);
         let intent = target.map_or_else(PlayerIntent::default, |target| {
             self.cached_bot_command(game, id, target)
         });

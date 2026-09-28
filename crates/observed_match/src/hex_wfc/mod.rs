@@ -24,17 +24,18 @@ pub use model::prison::{
     HexPrison, HexPrisonMaze, LOBBY_HOLD_TICKS, MAZE_COLS, MAZE_REGISTER, MAZE_ROWS,
 };
 pub use model::{
-    DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION, HexActionButtons, HexAnchorSite, HexBodyPlace,
-    HexBotDriver, HexDeployedLantern, HexDeployedPad, HexDirectedError, HexDoorState,
-    HexGuardianState, HexGuardianStatus, HexInputFrame, HexInteraction, HexInteractionAction,
-    HexKillingPush, HexKineticTarget, HexKineticVerb, HexLanternCache, HexLanternState,
-    HexMapCellKnowledge, HexMapCellSnapshot, HexMapDiscovery, HexMatchConfig, HexMatchError,
-    HexMatchEvent, HexMatchEventKind, HexMatchSnapshot, HexMatchStatus, HexMinorState, HexPadState,
-    HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot, HexPlayerState,
-    HexReleasedGuardian, HexReleasedKind, HexTeamObjectiveState, HexTeamSnapshot, HexTeamState,
-    HexWfcMatch, KEYSTONES_REQUIRED, KINETIC_COOLDOWN_TICKS, KINETIC_PULL_SPEED,
-    KINETIC_PUSH_SPEED, KINETIC_REACH, KINETIC_STAGGER_FRICTION, KINETIC_STAGGER_TICKS, MAX_ROSTER,
-    MINOR_BREAKING_DROP, MINOR_SIGHT_STEPS, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER,
+    DOOR_HALF_WIDTH, DOOR_HEIGHT, DOOR_REACH, DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION,
+    HexActionButtons, HexAnchorSite, HexBodyPlace, HexBotDriver, HexDeployedLantern,
+    HexDeployedPad, HexDirectedError, HexDoor, HexDoorState, HexGuardianState, HexGuardianStatus,
+    HexInputFrame, HexInteraction, HexInteractionAction, HexKillingPush, HexKineticTarget,
+    HexKineticVerb, HexLanternCache, HexLanternState, HexMapCellKnowledge, HexMapCellSnapshot,
+    HexMapDiscovery, HexMatchConfig, HexMatchError, HexMatchEvent, HexMatchEventKind,
+    HexMatchSnapshot, HexMatchStatus, HexMinorState, HexPadState, HexPlayerCommand,
+    HexPlayerMapKnowledge, HexPlayerSnapshot, HexPlayerState, HexReleasedGuardian, HexReleasedKind,
+    HexTeamObjectiveState, HexTeamSnapshot, HexTeamState, HexWfcMatch, KEYSTONES_REQUIRED,
+    KINETIC_COOLDOWN_TICKS, KINETIC_PULL_SPEED, KINETIC_PUSH_SPEED, KINETIC_REACH,
+    KINETIC_STAGGER_FRICTION, KINETIC_STAGGER_TICKS, MAX_ROSTER, MINOR_BREAKING_DROP,
+    MINOR_SIGHT_STEPS, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER, door_pose,
 };
 pub use trim::{HexTrimKind, HexTrimPiece, derive_thresholds, derive_trim, derive_trim_for};
 

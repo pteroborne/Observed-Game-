@@ -23,7 +23,9 @@ use super::geometry::{HexGeometryError, HexWfcGeometrySnapshot};
 
 mod bot;
 mod directed;
+mod doors;
 pub use directed::HexDirectedError;
+pub use doors::{DOOR_HALF_WIDTH, DOOR_HEIGHT, DOOR_REACH, HexDoor, door_pose};
 mod equipment;
 mod guardian;
 mod interaction;
@@ -363,6 +365,12 @@ pub struct HexWfcMatch {
     /// Ticks before each body's kinetic tool fires again; absent is ready. Omitted from
     /// snapshots like [`Self::stuck_ticks`]: late joiners replay from tick one.
     pub(super) kinetic_cooldowns: BTreeMap<PlayerId, u8>,
+    /// Doors an Architect has deployed on thresholds, open or closed (`doors`). Empty in a
+    /// match without Architects. Omitted from snapshots: they follow the rules, which a
+    /// late joiner replays.
+    pub(super) doors: BTreeMap<(HexCoord, HexFace), doors::HexDoor>,
+    /// The next collider id a deployed door takes.
+    pub(super) next_door_collider: u32,
     /// Immutable content retained so relayout uses the same catalog,
     /// composition, movement profile, and network identity as initial solve.
     pub(super) content: Arc<HexMatchContent>,
@@ -559,6 +567,8 @@ impl HexWfcMatch {
             stuck_ticks: BTreeMap::new(),
             stranded_ticks: BTreeMap::new(),
             kinetic_cooldowns: BTreeMap::new(),
+            doors: BTreeMap::new(),
+            next_door_collider: 0,
             progress_anchor: BTreeMap::new(),
             content,
             pending_relayout: None,
@@ -620,13 +630,17 @@ impl HexWfcMatch {
         self.observation = self.build_observation();
         self.step_mutation();
         if self.guardian_active {
+            let (doors, grid) = (&self.doors, self.facility.config.grid());
             self.guardian.step(
                 self.tick,
                 &self.facility,
                 &self.lanterns,
                 &mut self.players,
                 &mut self.recent_events,
-                self.prison.as_ref(),
+                guardian::HexGuardianBounds {
+                    prison: self.prison.as_ref(),
+                    closed: &|a, b| doors::closed_between(doors, grid, a, b),
+                },
             );
         }
         self.step_released();

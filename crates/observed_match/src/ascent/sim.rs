@@ -747,6 +747,15 @@ impl ArchitectLab {
                 if !open {
                     return Some(CommandRefusal::InvalidThreshold);
                 }
+                // Two cells of one room share no doorway, only open floor: a first-person
+                // door there would be a panel standing in the middle of the room.
+                if self.authored
+                    && self.world.blueprints.iter().any(|blueprint| {
+                        blueprint.cells.contains(&target) && blueprint.cells.contains(&next)
+                    })
+                {
+                    return Some(CommandRefusal::InvalidThreshold);
+                }
                 if self.observed.contains(&next) {
                     return Some(CommandRefusal::Observed);
                 }

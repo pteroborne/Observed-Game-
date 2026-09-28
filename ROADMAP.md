@@ -85,6 +85,11 @@ the combined loop.
     bot soak (`production_minor_crowd`) filled floors 0 and 1 to it, 18 released where the
     waves asked for 30. Still open: retraction does not make a pit above the ground floors,
     and floor 0's waves of one came fourteen times in four minutes.
+    **Doors stand in the facility (2026-09):** a door card's door is a panel across its
+    doorway while closed - it stops bodies, minors, pushes and the Guardians' pursuit - and
+    any loyal body opens or closes it with interact unless its floor is dark. Bots open a
+    closed door they walk into. See
+    [the integration notes](docs/architect_ascent_polish.md#doors).
 
     **Self-plumb implemented (2026-09):** The plumb on the Observer is now
     proven and playable in `wfc_kinetic_lab` and `observed_traversal::gravity`.

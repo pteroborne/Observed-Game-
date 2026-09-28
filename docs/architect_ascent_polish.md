@@ -479,14 +479,62 @@ second minor was staged ahead, and the third found no room in view.
 - [The whole push, 3 s](evidence/ascent-minors/minors-push-1280x800.mp4) and
   [at quarter speed](evidence/ascent-minors/minors-push-quarter-speed-1280x800.mp4)
 
+### Doors
+
+A door card has always been playable at the desk; until now the door it deployed was the
+rules' alone, and nothing in the world stood in the doorway. It stands there now
+(`hex_wfc::model::doors`, `ascent::facility::doors`, `game/src/hex_wfc/doors.rs`):
+
+- **The rules own every door** (design section 4) and hand the whole set to the physical
+  match after every step, after the tick's rewrites, so a door whose cell was rewritten or
+  retracted is gone in the same tick. A door card deploys a door closed.
+- **A closed door is a panel across the doorway**: a collider the size of the corpus's
+  doorway (4.5 m wide, 4 m to the lintel) in a collider id range of its own. It stops a
+  body, a minor and a kinetic push. A minor does not plan a way through it or catch across
+  it; the major Guardian does not step, see or catch across it either, and waits at it as
+  it waits at the prison lobby. An open door is its frame alone.
+- **A body works a door with interact** within 2.5 m of the doorway's middle, through the
+  rules' own Observer command: any loyal Observer, any team's door, and never on a floor
+  without power, which freezes its doors. A body at its floor's generator works the
+  generator, not a door beside it.
+- **Bot bodies open a closed door they walk into**, rather than stand against it.
+- **No door between two cells of one room**: they share open floor rather than a doorway,
+  and a door there would be a panel standing in the middle of the room. The rules refuse it
+  on the real facility as `InvalidThreshold`.
+- **What the game draws**: a bronze frame (two posts and a lintel) and a dark shutter that
+  rolls down to close and up to open, deployed rolled up so that a door deployed closed
+  rolls down into place. A strip along the lintel says the state from either side: the
+  exit green open, the collapse red closed, the unpowered grey when its floor is dark and
+  the door is frozen. The door is heard where it stands when it is deployed, opened or
+  closed, and the prompt at it says what interact will do, or why it will not.
+
+Evidence (`OBSERVED2_CAPTURE_HEX_WFC_DOORS=<dir> cargo dev-run -p observed_game`): a door
+deployed closed in front of the body (staged into the rules, `AscentRules::stage_door`),
+the body walking up and opening it, a minor waiting beyond it (staged) coming through, the
+body pushing it back through the doorway and closing the door on it.
+
+- [Deployed, rolled down](evidence/ascent-doors/doors-1-deployed-1280x800.png)
+- [At the door: "Open the door"](evidence/ascent-doors/doors-2-prompt-1280x800.png)
+- [Opened, the minor coming through](evidence/ascent-doors/doors-3-opened-1280x800.png)
+- [Pushed back through](evidence/ascent-doors/doors-4-pushed-1280x800.png)
+- [Closed on it again](evidence/ascent-doors/doors-5-closed-1280x800.png)
+- [The whole scene, 5 s](evidence/ascent-doors/doors-1280x800.mp4) and
+  [at half speed](evidence/ascent-doors/doors-half-speed-1280x800.mp4)
+
+Sight: the rules' cell sight already stopped at a closed door, and the physical match's
+Guardian now does too - a body does not freeze the major Guardian, or get caught by it,
+across a closed door. Not yet: a door shut on a minor only separates it; the design's
+"through a threshold an Observer then closes" still needs the minor to go over something.
+Anchors and torches are still rule state and physical state apart.
+
 ### Not yet joined
 
 - The rules' own Guardians (the lab's cell-level hunters) are not placed; the physical
   Guardian is the one that catches.
 - A team's map knowledge exists twice: the rules' (what the Architect targets) and the
   physical match's (what the in-play map shows). They are fed by different sight models.
-- Doors, anchors and torches are rule state and physical state respectively, not one
-  thing.
+- Anchors and torches are rule state and physical state respectively, not one thing.
+  Doors are one thing now ([Doors](#doors)).
 - Ascent plays over LAN, a human at a team's Architect desk where one claims it in the
   lobby and a bot everywhere else; plays, requisitions, asks and answers travel as seat
   commands in the frames (`docs/lan_integration.md`). A match

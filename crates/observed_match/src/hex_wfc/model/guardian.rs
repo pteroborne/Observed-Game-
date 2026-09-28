@@ -77,18 +77,20 @@ impl HexGuardianState {
             })
     }
 
-    pub fn step(
+    pub(super) fn step(
         &mut self,
         tick: u64,
         world: &HexWfcWorld,
         lanterns: &HexLanternState,
         players: &mut BTreeMap<PlayerId, HexPlayerState>,
         events: &mut Vec<HexMatchEvent>,
-        prison: Option<&super::prison::HexPrison>,
+        bounds: HexGuardianBounds<'_>,
     ) {
-        let observed = players
-            .values()
-            .any(|player| player_sees_guardian(world, player, self));
+        let HexGuardianBounds { prison, closed } = bounds;
+        // A closed door between them hides it, as a wall would.
+        let observed = players.values().any(|player| {
+            player_sees_guardian(world, player, self) && !closed(player.cell, self.cell)
+        });
         let anchored = lanterns.anchors_blueprint_cell(world, self.cell);
         self.status = if observed {
             HexGuardianStatus::FrozenByPlayer
@@ -114,6 +116,7 @@ impl HexGuardianState {
             self.position +=
                 (target_position - self.position).normalize_or_zero() * GUARDIAN_SPEED * FIXED_DT;
             if self.position.distance(target_position) <= CATCH_DISTANCE
+                && !closed(players[&target_id].cell, self.cell)
                 && let Some(destination) = recovery_destination(world, self.cell)
             {
                 let player = players.get_mut(&target_id).expect("target exists");
@@ -138,6 +141,8 @@ impl HexGuardianState {
             && let Some(&next) = route.cells.get(1)
             // The prison lobby is sanctuary: a Guardian waits at its door, never inside.
             && prison.is_none_or(|prison| !prison.lobby.contains(&next))
+            // Nor does it pass a closed door: it waits at that too.
+            && !closed(self.cell, next)
         {
             self.cell = next;
             self.position = Vec3::from_array(hex_origin(next)) + Vec3::Y * 0.9;
@@ -200,6 +205,23 @@ fn recovery_destination(world: &HexWfcWorld, guardian_cell: HexCoord) -> Option<
             )
         })
         .map(|blueprint| blueprint.anchor)
+}
+
+/// Where a Guardian may not go: the prison's lobby, and across a closed door.
+#[derive(Clone, Copy)]
+pub(super) struct HexGuardianBounds<'a> {
+    pub prison: Option<&'a super::prison::HexPrison>,
+    /// Whether a closed door stands between two neighbouring cells.
+    pub closed: &'a dyn Fn(HexCoord, HexCoord) -> bool,
+}
+
+impl HexGuardianBounds<'_> {
+    /// No prison and no doors.
+    #[cfg(test)]
+    pub(super) const OPEN: HexGuardianBounds<'static> = HexGuardianBounds {
+        prison: None,
+        closed: &|_, _| false,
+    };
 }
 
 fn player_sees_guardian(
@@ -294,7 +316,14 @@ mod tests {
         let mut players =
             BTreeMap::from([(id, player(id, cell, guardian.position + Vec3::Z * 5.0, 0.0))]);
         let lanterns = HexLanternState::new([id], &world);
-        guardian.step(120, &world, &lanterns, &mut players, &mut Vec::new(), None);
+        guardian.step(
+            120,
+            &world,
+            &lanterns,
+            &mut players,
+            &mut Vec::new(),
+            HexGuardianBounds::OPEN,
+        );
         assert_eq!(guardian.status, HexGuardianStatus::FrozenByPlayer);
         assert_eq!(guardian.position, before);
     }
@@ -326,7 +355,14 @@ mod tests {
             id,
             player(id, far, Vec3::from_array(hex_origin(far)) + Vec3::Y, 0.0),
         )]);
-        guardian.step(120, &world, &lanterns, &mut players, &mut Vec::new(), None);
+        guardian.step(
+            120,
+            &world,
+            &lanterns,
+            &mut players,
+            &mut Vec::new(),
+            HexGuardianBounds::OPEN,
+        );
         assert_eq!(guardian.status, HexGuardianStatus::FrozenByAnchor);
     }
 
@@ -359,7 +395,14 @@ mod tests {
         ]);
         let lanterns = HexLanternState::new([id, rival_id], &world);
         let mut events = Vec::new();
-        guardian.step(1, &world, &lanterns, &mut players, &mut events, None);
+        guardian.step(
+            1,
+            &world,
+            &lanterns,
+            &mut players,
+            &mut events,
+            HexGuardianBounds::OPEN,
+        );
         assert_ne!(players[&id].cell, cell);
         assert_eq!(guardian.cell, guardian_home(&world));
         assert_eq!(guardian.target, None);
