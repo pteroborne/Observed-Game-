@@ -79,7 +79,12 @@ mod tests {
         for shape in TileShape::ALL {
             let pixels = rasterize(source(shape), 128)
                 .unwrap_or_else(|| panic!("{shape:?} did not rasterize"));
-            let visible = pixels.chunks_exact(4).filter(|pixel| pixel[3] > 32).count();
+            let visible = pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|pixel| pixel[3] > 32)
+                .count();
             assert!(visible > 128 * 128 / 10, "{shape:?} is nearly empty");
         }
     }
