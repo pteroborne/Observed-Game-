@@ -564,7 +564,7 @@ uses, reading the Rogue's side of the rules:
   own seat, and a corrupted peer takes the board the same way.
 - **What a team has and the Rogue does not** is taken out: nobody asks the Rogue for help,
   it looks through nobody's eyes, and a requisition is a team's. The side panel is headed
-  DETECTED BY GUARDIANS, the title says ROGUE AI, and the control strip names neither
+  DETECTED (by a Guardian or a sensor), the title says ROGUE AI, and the control strip names neither
   answering nor requisitioning.
 - **Directives** (`ArchitectCommand::Direct`, `ascent::sim::directive`): the answer key
   (F, or Y on a controller) sends the major Guardians to the cell pointed at. A directive

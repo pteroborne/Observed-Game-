@@ -81,7 +81,8 @@ pub(super) fn sync(
     let playable = desk.aimed.is_some() && refusal == Some(None);
     for (line, mut text, mut tint) in &mut lines {
         let (said, role) = match line {
-            Line::Heading if desk.rogue => ("DETECTED BY GUARDIANS".to_owned(), Role::Muted),
+            // By a Guardian or a sensor.
+            Line::Heading if desk.rogue => ("DETECTED".to_owned(), Role::Muted),
             Line::Heading => ("THE TEAM".to_owned(), Role::Muted),
             Line::Team if desk.rogue => ("ROGUE AI".to_owned(), Role::Guardian),
             Line::Team => (format!("TEAM {}", desk.team.0 + 1), Role::Muted),

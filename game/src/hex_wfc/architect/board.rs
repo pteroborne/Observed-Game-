@@ -28,6 +28,8 @@ use crate::hex_wfc::sim::HexWfcRuntime;
 pub(super) const BOARD_LAYER: usize = 3;
 /// A request's beacon: a pillar over the cell, tall enough to find from across a floor.
 const BEACON: Vec3 = Vec3::new(1.8, 20.0, 1.8);
+/// A Rogue sensor's eye: larger than an Observer's, so it reads from across a floor.
+const SENSOR_EYE: Vec3 = Vec3::splat(2.2);
 /// How fast the board glides to a new framing: the share of the gap closed per second.
 const GLIDE: f32 = 4.0;
 /// Above the world and the survivor map.
@@ -426,13 +428,13 @@ pub(super) fn draw_marks(
             DespawnOnExit(GameState::HexWfc),
             Mesh3d(board.eye.clone()),
             MeshMaterial3d(paint(role)),
-            Transform::from_translation(on_deck(cell, 4.2)),
+            Transform::from_translation(on_deck(cell, 4.2)).with_scale(SENSOR_EYE),
             layer.clone(),
         ));
         if watching {
             eye.insert(Pulse {
                 role,
-                scale: Vec3::ONE,
+                scale: SENSOR_EYE,
             });
         }
         if live {

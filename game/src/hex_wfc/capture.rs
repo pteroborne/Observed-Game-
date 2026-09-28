@@ -272,13 +272,18 @@ fn autostart_capture(
     next.set(GameState::HexWfc);
 }
 
+/// The video captures' scene state, each present only while its capture runs.
+type VideoCaptures<'w> = (
+    Option<ResMut<'w, super::power::capture::PowerCapture>>,
+    Option<ResMut<'w, super::kinetic::capture::MinorsCapture>>,
+    Option<ResMut<'w, super::doors::capture::DoorsCapture>>,
+    Option<ResMut<'w, super::sensors::capture::SensorsCapture>>,
+);
+
 fn capture_progress(
     mut request: ResMut<HexWfcCapture>,
     mut runtime: Option<ResMut<sim::HexWfcRuntime>>,
-    mut power: Option<ResMut<super::power::capture::PowerCapture>>,
-    mut minors: Option<ResMut<super::kinetic::capture::MinorsCapture>>,
-    mut doors: Option<ResMut<super::doors::capture::DoorsCapture>>,
-    mut sensors: Option<ResMut<super::sensors::capture::SensorsCapture>>,
+    (mut power, mut minors, mut doors, mut sensors): VideoCaptures,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
