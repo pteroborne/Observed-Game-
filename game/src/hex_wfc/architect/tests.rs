@@ -19,6 +19,11 @@ use crate::hex_wfc::sim::HexWfcRuntime;
 const TEAM: TeamId = TeamId(0);
 
 fn runtime() -> HexWfcRuntime {
+    runtime_seated(Some(TEAM))
+}
+
+/// A match with the local player at `human`'s desk, or walking as a body for `None`.
+fn runtime_seated(human: Option<TeamId>) -> HexWfcRuntime {
     let config = HexMatchConfig {
         teams: 2,
         members_per_team: 1,
@@ -30,7 +35,7 @@ fn runtime() -> HexWfcRuntime {
     };
     let prototypes = crate::hex_wfc::sim::load_prototypes();
     let mut match_state = HexWfcMatch::new(7, config, &prototypes).expect("solves");
-    let ascent = ascent::rules_for(&mut match_state, PlayerId(0), Some(TEAM));
+    let ascent = ascent::rules_for(&mut match_state, PlayerId(0), human);
     HexWfcRuntime {
         presented_revisions: match_state.facility.cell_revisions.clone(),
         match_state,
@@ -358,10 +363,8 @@ fn a_request_answered_at_the_desk_is_acknowledged_by_the_rules() {
     let mut asked = None;
     for _ in 0..6_000 {
         tick(&mut runtime, &mut desk);
-        asked = super::requests::oldest_unanswered(
-            runtime.ascent.as_ref().unwrap().session(),
-            desk.team,
-        );
+        asked =
+            super::requests::oldest_unanswered(runtime.ascent.as_ref().unwrap().session(), &desk);
         if asked.is_some() {
             break;
         }
@@ -579,3 +582,5 @@ fn a_stair_played_at_the_desk_is_built_and_believed_on_both_floors() {
         .expect("the corpus builds a stair");
     assert!(pieces.iter().any(|piece| piece.source_cell == target));
 }
+
+mod rogue_tests;

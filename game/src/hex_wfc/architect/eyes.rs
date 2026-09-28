@@ -61,7 +61,11 @@ pub(super) fn eyes_for(runtime: &HexWfcRuntime, desk: &ArchitectDesk) -> Vec<Pla
                 .observer_for(player)
                 .and_then(|id| rules.observers.get(&id))
                 .is_some_and(|observer| {
-                    observer.team == desk.team && observer.state != ObserverState::Corrupted
+                    // The Rogue sees a loyal Observer only where a Guardian does: never
+                    // through its eyes.
+                    !desk.rogue
+                        && observer.team == desk.team
+                        && observer.state != ObserverState::Corrupted
                 })
         })
         .collect()

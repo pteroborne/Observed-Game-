@@ -53,7 +53,7 @@ pub(super) fn draw(
         .hash(&mut hasher);
     board.marks_signature.hash(&mut hasher);
     runtime.match_state.geometry.generation.hash(&mut hasher);
-    let hand = ascent.session().hands.get(&desk.team);
+    let hand = desk.hand(ascent.session());
     hand.map(|hand| (hand.cooldown == 0, hand.deck.hand.len()))
         .hash(&mut hasher);
     let signature = hasher.finish();
@@ -90,7 +90,7 @@ pub(super) fn draw(
         return;
     };
     let rules = ascent.rules();
-    let Some(knowledge) = rules.team_knowledge.get(&desk.team) else {
+    let Some(knowledge) = desk.knowledge(rules) else {
         return;
     };
     let legal = legal_targets(

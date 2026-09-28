@@ -15,6 +15,12 @@
 //!
 //! The only staging is choosing the play and where it points; the play itself goes
 //! through the desk, the rules and the physical facility like any other.
+//!
+//! `OBSERVED2_CAPTURE_HEX_WFC_ROGUE=<dir>` is the same capture from the Rogue board: the
+//! local player walks as a body until their body is dropped into true void (staged:
+//! `HexWfcMatch::drop_into_void`), and takes a seat at the Rogue board as a corrupted
+//! player does. Then the board, a play, building in and built (`rogue-*`); nobody asks the
+//! Rogue for help, and the Rogue looks through nobody's eyes.
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
@@ -27,13 +33,15 @@ use crate::hex_wfc::{HexWfcCapture, HexWfcCaptureMode, sim::HexWfcRuntime};
 
 /// Ticks the bots walk before the first still: time to map a floor.
 const MAPPING_TICKS: u64 = 1_200;
+/// Ticks before the Rogue capture's body is dropped into the void.
+const FALL_TICK: u64 = 150;
 const GIVE_UP_FRAMES: u16 = 12_000;
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::hex_wfc) fn capture(
     mut commands: Commands,
     request: Option<ResMut<HexWfcCapture>>,
-    runtime: Option<Res<HexWfcRuntime>>,
+    runtime: Option<ResMut<HexWfcRuntime>>,
     desk: Option<ResMut<ArchitectDesk>>,
     board: Option<Res<Board>>,
     mut windows: Query<&mut Window>,
@@ -43,7 +51,8 @@ pub(in crate::hex_wfc) fn capture(
     let Some(mut request) = request else {
         return;
     };
-    if request.mode != HexWfcCaptureMode::Architect {
+    let rogue = request.mode == HexWfcCaptureMode::Rogue;
+    if request.mode != HexWfcCaptureMode::Architect && !rogue {
         return;
     }
     if request.frame == 12
@@ -56,33 +65,47 @@ pub(in crate::hex_wfc) fn capture(
         exit.write(AppExit::error());
         return;
     }
+    // The Rogue board is taken, not given: the body falls first.
+    if rogue
+        && desk.is_none()
+        && let Some(mut runtime) = runtime
+    {
+        if runtime.match_state.tick >= FALL_TICK {
+            let local = runtime.local_player;
+            runtime.match_state.drop_into_void(local);
+        }
+        return;
+    }
     // The board frames itself before anything is pointed at.
     let (Some(runtime), Some(mut desk), Some(_)) = (runtime, desk, board) else {
         return;
     };
+    let prefix = if rogue { "rogue" } else { "architect" };
+    let mapping = if rogue { FALL_TICK + 90 } else { MAPPING_TICKS };
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
     };
     let tick = runtime.match_state.tick;
     let path = std::path::PathBuf::from(&request.path);
     let shoot = |commands: &mut Commands, name: &str| {
+        let name = format!("{prefix}-{name}-1280x800.png");
         commands
             .spawn(Screenshot::primary_window())
             .observe(save_to_disk(path.join(name)));
     };
     match request.stills {
-        0 if tick >= MAPPING_TICKS => {
-            shoot(&mut commands, "architect-board-1280x800.png");
+        0 if tick >= mapping => {
+            shoot(&mut commands, "board");
             request.stills = 1;
         }
         1 => {
             // Pick up the first card with a play the rules would take on a known cell,
             // on any floor, and look at that floor: a tile if one can be played, so the
             // still shows its ghost.
-            let Some(knowledge) = ascent.rules().team_knowledge.get(&desk.team) else {
+            let Some(knowledge) = desk.knowledge(ascent.rules()) else {
                 return;
             };
-            let Some(hand) = ascent.session().hands.get(&desk.team) else {
+            let Some(hand) = desk.hand(ascent.session()) else {
                 return;
             };
             let mut cards: Vec<_> = hand.deck.hand.iter().enumerate().collect();
@@ -122,14 +145,12 @@ pub(in crate::hex_wfc) fn capture(
             request.stills = 2;
         }
         2 if tick >= request.last_shot_tick + 20 => {
-            shoot(&mut commands, "architect-play-1280x800.png");
+            shoot(&mut commands, "play");
             // Confirm it as PLAY does.
             if let (Some(index), Some(target)) = (desk.selected, desk.aimed)
-                && let Some(card) = ascent
-                    .session()
-                    .hands
-                    .get(&desk.team)
-                    .and_then(|hand| hand.deck.hand.get(index))
+                && let Some(card) = desk
+                    .hand(ascent.session())
+                    .and_then(|hand| hand.deck.hand.get(index).copied())
             {
                 let play = ArchitectCommand::Play {
                     card: card.id,
@@ -146,20 +167,22 @@ pub(in crate::hex_wfc) fn capture(
         3 if building_in.iter().any(|room| room.age > 0.25)
             || tick >= request.last_shot_tick + 120 =>
         {
-            shoot(&mut commands, "architect-building-in-1280x800.png");
+            shoot(&mut commands, "building-in");
             request.last_shot_tick = tick;
             request.stills = 4;
         }
         4 if tick >= request.last_shot_tick + 90 => {
-            shoot(&mut commands, "architect-built-1280x800.png");
+            shoot(&mut commands, "built");
             let played = ascent.rules().command_log.len();
-            info!("architect capture: the rules have logged {played} plays");
-            request.last_shot_tick = tick;
-            request.stills = 5;
+            info!("{prefix} capture: the rules have logged {played} plays");
+            // Nobody asks the Rogue for help, and it looks through nobody's eyes: it leaves
+            // once the still has had frames enough to be written.
+            request.last_shot_tick = if rogue { tick + 300 } else { tick };
+            request.stills = if rogue { 10 } else { 5 };
         }
         // A teammate's request, as the desk shows it, and once it has been answered.
         5 => {
-            let asked = super::requests::oldest_unanswered(ascent.session(), desk.team);
+            let asked = super::requests::oldest_unanswered(ascent.session(), &desk);
             if let Some(asked) = asked {
                 desk.look_at(asked.target.level);
                 request.last_shot_tick = tick;
@@ -170,13 +193,13 @@ pub(in crate::hex_wfc) fn capture(
             }
         }
         6 if tick >= request.last_shot_tick + 10 => {
-            shoot(&mut commands, "architect-request-1280x800.png");
+            shoot(&mut commands, "request");
             super::requests::answer_oldest(&mut desk, &runtime);
             request.last_shot_tick = tick;
             request.stills = 7;
         }
         7 if tick >= request.last_shot_tick + 20 => {
-            shoot(&mut commands, "architect-answered-1280x800.png");
+            shoot(&mut commands, "answered");
             request.last_shot_tick = tick;
             request.stills = 8;
         }
@@ -193,13 +216,13 @@ pub(in crate::hex_wfc) fn capture(
             request.stills = 9;
         }
         9 if tick >= request.last_shot_tick + 150 => {
-            shoot(&mut commands, "architect-eyes-1280x800.png");
+            shoot(&mut commands, "eyes");
             request.last_shot_tick = tick;
             request.stills = 10;
         }
         10 if tick >= request.last_shot_tick + 20 => {
             desk.eyes = None;
-            info!("architect capture complete");
+            info!("{prefix} capture complete");
             exit.write(AppExit::Success);
         }
         _ => {}

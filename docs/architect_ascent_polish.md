@@ -541,6 +541,43 @@ across a closed door. Not yet: a door shut on a minor only separates it; the des
 "through a threshold an Observer then closes" still needs the minor to go over something.
 Anchors and torches are still rule state and physical state apart.
 
+### The Rogue board
+
+A body that falls into true void has corrupted (design section 7): the rules already made
+its seat a Rogue seat, playing from the Rogue's shared deck and cooldown beside the bot
+Rogue. Its player had nowhere to go; now they take a seat at the Rogue board
+(`ascent::join_rogue_board`, `ArchitectDesk::rogue`), the same desk a team's Architect
+uses, reading the Rogue's side of the rules:
+
+- **The Rogue's hand** (`ArchitectDesk::hand`): the shared Rogue deck and its cooldown,
+  which the bot Rogue plays from too. A card either plays is gone for both.
+- **The facility's truth** (`ArchitectLab::rogue_view`): every cell as it stands, every
+  Guardian, and of the loyal Observers only those the Rogue may know - jailed, corrupted,
+  or detected by a Guardian (design section 10). The board, the climb and the side panel
+  all read it through `ArchitectDesk::knowledge` and `ArchitectDesk::shows`, so nothing
+  there reads a team's memory.
+- **Its own seat**: a play goes out from the player's own seat, which the rules now know as
+  a Rogue seat. Over LAN that needs nothing new: a body's seat commands already map to its
+  own seat, and a corrupted peer takes the board the same way.
+- **What a team has and the Rogue does not** is taken out: nobody asks the Rogue for help,
+  it looks through nobody's eyes, and a requisition is a team's. The side panel is headed
+  DETECTED BY GUARDIANS, the title says ROGUE AI, and the control strip names neither
+  answering nor requisitioning.
+- **The result**: a corrupted player plays for the Rogue, and wins with it
+  (`ascent::result_for`).
+
+Evidence (`OBSERVED2_CAPTURE_HEX_WFC_ROGUE=<dir> cargo dev-run -p observed_game`: the local
+body walks until it is dropped into true void - staged, `HexWfcMatch::drop_into_void` - and
+the rest is the Architect capture's, from the Rogue board):
+
+- [The Rogue board](evidence/ascent-rogue/rogue-board-1280x800.png)
+- [A card picked up](evidence/ascent-rogue/rogue-play-1280x800.png)
+- [The play building in](evidence/ascent-rogue/rogue-building-in-1280x800.png)
+- [Built, the Rogue's hand recharging](evidence/ascent-rogue/rogue-built-1280x800.png)
+
+Not yet: the bot Rogue keeps playing beside a human, so the two share one cooldown; the
+Rogue's directives to major Guardians and its sensors have no controls at the board.
+
 ### Not yet joined
 
 - The rules' own Guardians (the lab's cell-level hunters) are not placed; the physical

@@ -42,6 +42,8 @@ pub(super) struct DeskUi;
 /// A text the desk keeps current.
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Line {
+    /// The side panel's heading: the team, or at the Rogue board who it can see.
+    Heading,
     Team,
     Phase,
     Floor,
@@ -53,6 +55,10 @@ pub(super) enum Line {
     CardWhere,
     Verdict,
 }
+
+/// Part of the desk only a team's Architect has: taken out at the Rogue board.
+#[derive(Component)]
+pub(super) struct TeamOnly;
 
 /// One card's place in the hand.
 #[derive(Component)]
@@ -261,18 +267,30 @@ fn side_panel(root: &mut ChildSpawnerCommands) {
         BorderColor::all(color(Role::Border)),
     ))
     .with_children(|panel| {
-        panel.spawn(label("THE TEAM", 12.0, Role::Muted));
+        panel.spawn((Line::Heading, label("THE TEAM", 12.0, Role::Muted)));
         panel.spawn((Line::Observers, label("", 13.0, Role::Text)));
-        button(panel, DeskButton::Look, false);
-        panel.spawn((
-            label("REQUESTS", 12.0, Role::Muted),
-            Node {
-                margin: UiRect::top(px(8)),
-                ..default()
-            },
-        ));
-        panel.spawn((Line::Requests, label("", 12.0, Role::Text)));
-        button(panel, DeskButton::Answer, false);
+        // A team's alone: its eyes and its requests. The Rogue board has neither.
+        panel
+            .spawn((
+                TeamOnly,
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(10),
+                    ..default()
+                },
+            ))
+            .with_children(|team| {
+                button(team, DeskButton::Look, false);
+                team.spawn((
+                    label("REQUESTS", 12.0, Role::Muted),
+                    Node {
+                        margin: UiRect::top(px(8)),
+                        ..default()
+                    },
+                ));
+                team.spawn((Line::Requests, label("", 12.0, Role::Text)));
+                button(team, DeskButton::Answer, false);
+            });
         panel.spawn((
             label("THE CLIMB  (click a floor)", 12.0, Role::Muted),
             Node {
@@ -371,7 +389,7 @@ fn hand(root: &mut ChildSpawnerCommands, art: &CardArt) {
     });
     root.spawn((
         ControlStrip,
-        label(super::words::controls(false), 12.0, Role::Muted),
+        label(super::words::controls(false, false), 12.0, Role::Muted),
         Node {
             position_type: PositionType::Absolute,
             left: px(PANEL_WIDTH),

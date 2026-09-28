@@ -61,7 +61,7 @@ pub(super) fn sync(
         return;
     };
     let rules = ascent.rules();
-    let Some(hand) = ascent.session().hands.get(&desk.team) else {
+    let Some(hand) = desk.hand(ascent.session()) else {
         return;
     };
     let lifted = desk
@@ -81,6 +81,9 @@ pub(super) fn sync(
     let playable = desk.aimed.is_some() && refusal == Some(None);
     for (line, mut text, mut tint) in &mut lines {
         let (said, role) = match line {
+            Line::Heading if desk.rogue => ("DETECTED BY GUARDIANS".to_owned(), Role::Muted),
+            Line::Heading => ("THE TEAM".to_owned(), Role::Muted),
+            Line::Team if desk.rogue => ("ROGUE AI".to_owned(), Role::Guardian),
             Line::Team => (format!("TEAM {}", desk.team.0 + 1), Role::Muted),
             Line::Phase => (
                 words::cooldown(hand.cooldown),
@@ -103,7 +106,10 @@ pub(super) fn sync(
                 rules
                     .observers
                     .values()
-                    .filter(|observer| observer.team == desk.team)
+                    .filter(|observer| {
+                        desk.knowledge(rules)
+                            .is_some_and(|knowledge| desk.shows(observer, knowledge))
+                    })
                     .map(|observer| {
                         let doing = match observer.state {
                             ObserverState::Active => {
@@ -119,7 +125,7 @@ pub(super) fn sync(
                 Role::Text,
             ),
             Line::Requests => {
-                let requests = super::requests::team_requests(ascent.session(), desk.team);
+                let requests = super::requests::team_requests(ascent.session(), &desk);
                 if requests.is_empty() {
                     ("None.".to_owned(), Role::Muted)
                 } else {
@@ -276,12 +282,24 @@ pub(super) fn sync(
     }
 }
 
-/// Name the keys or the controller's buttons, whichever the last hand on the desk used.
+/// Name the keys or the controller's buttons, whichever the last hand on the desk used,
+/// and take out what only a team's Architect has at the Rogue board.
 pub(super) fn prompts(
     desk: Res<ArchitectDesk>,
     mut labels: Query<(&ButtonLabel, &mut Text)>,
     mut strip: Query<&mut Text, (With<ControlStrip>, Without<ButtonLabel>)>,
+    mut team_only: Query<&mut Node, With<super::desk::TeamOnly>>,
 ) {
+    let display = if desk.rogue {
+        Display::None
+    } else {
+        Display::Flex
+    };
+    for mut node in &mut team_only {
+        if node.display != display {
+            node.display = display;
+        }
+    }
     for (label, mut text) in &mut labels {
         let said = words::button_label(label.0, desk.pad);
         if **text != said {
@@ -289,7 +307,7 @@ pub(super) fn prompts(
         }
     }
     for mut text in &mut strip {
-        let said = words::controls(desk.pad);
+        let said = words::controls(desk.pad, desk.rogue);
         if **text != said {
             said.clone_into(&mut **text);
         }

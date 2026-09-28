@@ -90,7 +90,7 @@ pub(super) fn input(
     let Some(held) = runtime
         .ascent
         .as_ref()
-        .and_then(|ascent| ascent.session().hands.get(&desk.team))
+        .and_then(|ascent| desk.hand(ascent.session()))
         .map(|hand| hand.deck.hand.len())
     else {
         return;
@@ -144,7 +144,7 @@ pub(super) fn input(
         let floor = desk.floor.saturating_sub(1);
         desk.look_at(floor);
     }
-    if pressed(GamepadButton::RightThumb) {
+    if pressed(GamepadButton::RightThumb) && !desk.rogue {
         desk.pending = Some(ArchitectCommand::Requisition);
     }
     if pressed(GamepadButton::East) {

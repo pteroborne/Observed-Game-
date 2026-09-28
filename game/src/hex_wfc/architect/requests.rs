@@ -9,15 +9,18 @@
 use observed_match::ascent::session::{
     AscentSession, REQUEST_LIFETIME_TICKS, RequestKind, TeamRequest,
 };
-use observed_match::ascent::sim::TeamId;
 use observed_style::architect::Role;
 
 use super::ArchitectDesk;
 use crate::hex_wfc::sim::HexWfcRuntime;
 
-/// `team`'s live requests, oldest first.
+/// The live requests of the desk's team, oldest first. Nobody asks the Rogue for help.
 #[must_use]
-pub(super) fn team_requests(session: &AscentSession, team: TeamId) -> Vec<TeamRequest> {
+pub(super) fn team_requests(session: &AscentSession, desk: &ArchitectDesk) -> Vec<TeamRequest> {
+    if desk.rogue {
+        return Vec::new();
+    }
+    let team = desk.team;
     let mut requests: Vec<TeamRequest> = session
         .requests
         .values()
@@ -28,10 +31,21 @@ pub(super) fn team_requests(session: &AscentSession, team: TeamId) -> Vec<TeamRe
     requests
 }
 
-/// The oldest of `team`'s requests the Architect has not answered.
+impl ArchitectDesk {
+    /// Whether nobody's requests reach this desk: the Rogue board's.
+    #[cfg(test)]
+    pub(super) fn team_requests_are_none(&self, session: &AscentSession) -> bool {
+        team_requests(session, self).is_empty()
+    }
+}
+
+/// The oldest of the desk's team's requests the Architect has not answered.
 #[must_use]
-pub(super) fn oldest_unanswered(session: &AscentSession, team: TeamId) -> Option<TeamRequest> {
-    team_requests(session, team)
+pub(super) fn oldest_unanswered(
+    session: &AscentSession,
+    desk: &ArchitectDesk,
+) -> Option<TeamRequest> {
+    team_requests(session, desk)
         .into_iter()
         .find(|request| request.acknowledged_by.is_none())
 }
@@ -41,7 +55,7 @@ pub(super) fn answer_oldest(desk: &mut ArchitectDesk, runtime: &HexWfcRuntime) {
     if let Some(request) = runtime
         .ascent
         .as_ref()
-        .and_then(|ascent| oldest_unanswered(ascent.session(), desk.team))
+        .and_then(|ascent| oldest_unanswered(ascent.session(), desk))
     {
         desk.answer(&request);
     }
@@ -84,6 +98,7 @@ mod tests {
     use super::*;
     use observed_core::PlayerId;
     use observed_hex::HexCoord;
+    use observed_match::ascent::sim::TeamId;
 
     fn request(author: u16, created_at: u64, answered: bool) -> TeamRequest {
         TeamRequest {

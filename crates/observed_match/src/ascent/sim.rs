@@ -1393,6 +1393,37 @@ impl ArchitectLab {
         }
     }
 
+    /// What the Rogue board shows, in the shape a team's board reads: the facility's truth,
+    /// every cell as it stands now and seen now, every Guardian, and of the loyal Observers
+    /// only those [`Self::rogue_knowledge`] allows - jailed, corrupted, or detected by a
+    /// Guardian. A human at the Rogue board reads this, never the teams' knowledge.
+    #[must_use]
+    pub fn rogue_view(&self) -> TeamKnowledge {
+        let rogue = self.rogue_knowledge();
+        let cells: BTreeMap<HexCoord, KnownCell> = self
+            .world
+            .placements
+            .iter()
+            .map(|(&cell, &placement)| {
+                (
+                    cell,
+                    KnownCell {
+                        placement,
+                        seen_at: self.tick,
+                    },
+                )
+            })
+            .collect();
+        TeamKnowledge {
+            visible_cells: cells.keys().copied().collect(),
+            discovered_cells: rogue.cells,
+            cells,
+            team: TeamId(u8::MAX),
+            known_observers: rogue.known_observers,
+            visible_guardians: rogue.guardians,
+        }
+    }
+
     /// Cells an Observer at `from` can see looking along `face`.
     ///
     /// Sight is **not** movement. `step_through` answers "where could I walk", and using

@@ -36,6 +36,9 @@ pub(super) enum HexWfcCaptureMode {
     Doors,
     /// The Architect's seat: the board, a play, and what it built (`architect::capture`).
     Architect,
+    /// The Rogue board, taken by a player whose body fell into true void, and a play made
+    /// there (`architect::capture`).
+    Rogue,
     Map,
     Style,
     /// The arc headline: a mid-match observation-safe relayout captured before, during
@@ -90,6 +93,10 @@ pub(super) fn configure(app: &mut App) {
                 .map(|path| (path, HexWfcCaptureMode::Doors))
         })
         .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_ROGUE")
+                .map(|path| (path, HexWfcCaptureMode::Rogue))
+        })
+        .or_else(|_| {
             std::env::var("OBSERVED2_CAPTURE_HEX_WFC_ARCHITECT")
                 .map(|path| (path, HexWfcCaptureMode::Architect))
         })
@@ -134,6 +141,7 @@ pub(super) fn configure(app: &mut App) {
                 | HexWfcCaptureMode::Power
                 | HexWfcCaptureMode::Minors
                 | HexWfcCaptureMode::Doors
+                | HexWfcCaptureMode::Rogue
                 | HexWfcCaptureMode::Architect
                 | HexWfcCaptureMode::Relayout
                 | HexWfcCaptureMode::Traversal
@@ -191,6 +199,7 @@ fn autostart_capture(
             | HexWfcCaptureMode::Power
             | HexWfcCaptureMode::Minors
             | HexWfcCaptureMode::Doors
+            | HexWfcCaptureMode::Rogue
             | HexWfcCaptureMode::Architect
     ) {
         // A teammate, so one catch is not every loyal Observer jailed at once.
@@ -211,6 +220,7 @@ fn autostart_capture(
             | HexWfcCaptureMode::Power
             | HexWfcCaptureMode::Minors
             | HexWfcCaptureMode::Doors
+            | HexWfcCaptureMode::Rogue
             | HexWfcCaptureMode::Architect
     ) {
         commands.insert_resource(sequence.issue(
@@ -298,7 +308,7 @@ fn capture_progress(
                 &mut exit,
             );
         }
-        HexWfcCaptureMode::Architect => {}
+        HexWfcCaptureMode::Architect | HexWfcCaptureMode::Rogue => {}
         HexWfcCaptureMode::Prison => {
             ascent_capture::advance(
                 &mut request,

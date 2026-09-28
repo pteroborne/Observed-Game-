@@ -59,7 +59,7 @@ pub(super) fn input(
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
     };
-    let Some(hand) = ascent.session().hands.get(&desk.team) else {
+    let Some(hand) = desk.hand(ascent.session()) else {
         return;
     };
     let held = hand.deck.hand.len();
@@ -106,7 +106,7 @@ pub(super) fn input(
         let floor = (desk.floor + 1).min(levels.saturating_sub(1));
         desk.look_at(floor);
     }
-    if keys.just_pressed(KeyCode::KeyR) {
+    if keys.just_pressed(KeyCode::KeyR) && !desk.rogue {
         desk.pending = Some(ArchitectCommand::Requisition);
     }
     if keys.just_pressed(KeyCode::KeyF) || pressed(DeskButton::Answer) {
@@ -167,7 +167,7 @@ pub(super) fn confirm_play(desk: &mut ArchitectDesk, runtime: &HexWfcRuntime) {
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
     };
-    let Some(hand) = ascent.session().hands.get(&desk.team) else {
+    let Some(hand) = desk.hand(ascent.session()) else {
         return;
     };
     if let (Some(index), Some(target)) = (desk.selected, desk.aimed)

@@ -158,10 +158,8 @@ pub(super) fn apply(
                 if cell == head && placement.archetype != HexArchetype::RampHead {
                     continue;
                 }
-                let known = rules
-                    .rules()
-                    .team_knowledge
-                    .get(&desk.team)
+                let known = desk
+                    .knowledge(rules.rules())
                     .and_then(|knowledge| knowledge.cells.get(&cell))
                     .map(|known| known.placement);
                 if known != Some(placement) {
@@ -238,7 +236,40 @@ pub(super) fn seat(
     Some(rules)
 }
 
-/// The local player's result from the rules' outcome.
+/// A body that fell into true void has corrupted into the Rogue AI (design section 7):
+/// its player leaves first-person play and takes a seat at the Rogue board, beside the bot
+/// Rogue and every player corrupted before them. Their seat was a body's and is the
+/// Rogue's now, so the plays they make there are the Rogue's (`AscentSession::advance`).
+pub(super) fn join_rogue_board(
+    mut commands: Commands,
+    runtime: Res<HexWfcRuntime>,
+    desk: Option<Res<ArchitectDesk>>,
+) {
+    let Some(ascent) = runtime.ascent.as_ref() else {
+        return;
+    };
+    if desk.is_some() || !corrupted(ascent, runtime.local_player) {
+        return;
+    }
+    let body = runtime.local();
+    commands.insert_resource(ArchitectDesk::rogue(
+        runtime.local_player,
+        AscentTeam(body.team.0),
+        body.cell.level,
+    ));
+}
+
+/// Whether `player`'s body has corrupted: fallen into true void, for good.
+fn corrupted(rules: &AscentRules, player: PlayerId) -> bool {
+    rules.observer_for(player).is_some_and(|id| {
+        rules.rules().observers.get(&id).is_some_and(|observer| {
+            observer.state == observed_match::ascent::sim::ObserverState::Corrupted
+        })
+    })
+}
+
+/// The local player's result from the rules' outcome. A player who corrupted plays for the
+/// Rogue, and wins with it.
 pub(crate) fn result_for(rules: &AscentRules, game: &HexWfcMatch, local: PlayerId) -> MatchResult {
     let local_team = game
         .players
@@ -254,7 +285,11 @@ pub(crate) fn result_for(rules: &AscentRules, game: &HexWfcMatch, local: PlayerI
         escaped: usize::from(winner.is_some()),
         absorbed: game.teams.len() - usize::from(winner.is_some()),
         winner,
-        local_won: winner == Some(local_team),
+        local_won: if corrupted(rules, local) {
+            rules.rules().outcome == MatchOutcome::RogueVictory
+        } else {
+            winner == Some(local_team)
+        },
     }
 }
 

@@ -107,7 +107,7 @@ pub(super) fn draw(
         return;
     };
     let rules = ascent.rules();
-    let Some(knowledge) = rules.team_knowledge.get(&desk.team) else {
+    let Some(knowledge) = desk.knowledge(rules) else {
         return;
     };
     let physical = &runtime.match_state;

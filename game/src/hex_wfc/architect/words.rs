@@ -87,11 +87,21 @@ pub(super) const fn button_label(action: DeskButton, pad: bool) -> &'static str 
 
 /// The line of controls under the hand.
 #[must_use]
-pub(super) const fn controls(pad: bool) -> &'static str {
-    if pad {
-        "LS point  >  A aim  >  LB/RB turn  >  A again play     B back   Y answer   D-pad < > card  ^ v floor   R3 requisition"
-    } else {
-        "1-5 card  >  click a cell to aim  >  Q/E turn  >  Space play     Esc back   F answer   [ / ] floor   R requisition"
+pub(super) const fn controls(pad: bool, rogue: bool) -> &'static str {
+    match (pad, rogue) {
+        (true, false) => {
+            "LS point  >  A aim  >  LB/RB turn  >  A again play     B back   Y answer   D-pad < > card  ^ v floor   R3 requisition"
+        }
+        (false, false) => {
+            "1-5 card  >  click a cell to aim  >  Q/E turn  >  Space play     Esc back   F answer   [ / ] floor   R requisition"
+        }
+        // Nobody asks the Rogue for help, and a requisition is a team's.
+        (true, true) => {
+            "LS point  >  A aim  >  LB/RB turn  >  A again play     B back   D-pad < > card  ^ v floor"
+        }
+        (false, true) => {
+            "1-5 card  >  click a cell to aim  >  Q/E turn  >  Space play     Esc back   [ / ] floor"
+        }
     }
 }
 
@@ -133,7 +143,8 @@ mod tests {
     fn everything_it_prints_is_in_the_shipped_font() {
         let mut printed = vec![verdict(None), cooldown(90)];
         for pad in [false, true] {
-            printed.push(controls(pad).to_owned());
+            printed.push(controls(pad, false).to_owned());
+            printed.push(controls(pad, true).to_owned());
             for action in [
                 DeskButton::FloorDown,
                 DeskButton::FloorUp,

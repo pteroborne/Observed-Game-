@@ -211,6 +211,19 @@ impl HexWfcMatch {
         self.push_prison_event(kind, id, anchor);
     }
 
+    /// Lose a body to true void, as a fall through the whole facility does. Public so that
+    /// evidence captures and tests can stage a corruption without walking a body off an
+    /// edge, as [`Self::jail`] stages a catch.
+    pub fn drop_into_void(&mut self, id: PlayerId) {
+        if self
+            .players
+            .get(&id)
+            .is_some_and(super::HexPlayerState::in_facility)
+        {
+            self.lose(id);
+        }
+    }
+
     /// A body fell through the whole facility. It stays where it is, out of play.
     pub(super) fn lose(&mut self, id: PlayerId) {
         let cell = self.players[&id].cell;

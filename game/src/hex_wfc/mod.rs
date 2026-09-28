@@ -109,6 +109,12 @@ impl Plugin for HexWfcPlugin {
             )
             .add_systems(
                 Update,
+                ascent::join_rogue_board
+                    .before(input::mode_hotkeys)
+                    .run_if(in_state(GameState::HexWfc)),
+            )
+            .add_systems(
+                Update,
                 (architect::systems(), architect::capture::capture)
                     .chain()
                     // After the match's hotkeys, which read whether the desk holds a card.

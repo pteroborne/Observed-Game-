@@ -159,11 +159,12 @@ pub(super) fn frame(
     let margins = margins(desk.selected.is_some());
     let known = runtime.ascent.as_ref().and_then(|ascent| {
         let rules = ascent.rules();
-        let cells = rules.team_knowledge.get(&desk.team)?.cells.keys();
+        let knowledge = desk.knowledge(rules)?;
+        let cells = knowledge.cells.keys();
         let observers = rules
             .observers
             .values()
-            .filter(|observer| observer.team == desk.team)
+            .filter(|observer| desk.shows(observer, knowledge))
             .map(|observer| &observer.cell);
         pick::frame(
             cells
@@ -229,7 +230,7 @@ pub(super) fn draw_marks(
         return;
     };
     let rules = ascent.rules();
-    let Some(knowledge) = rules.team_knowledge.get(&desk.team) else {
+    let Some(knowledge) = desk.knowledge(rules) else {
         return;
     };
     let floor = desk.floor;
@@ -251,7 +252,7 @@ pub(super) fn draw_marks(
     for (key, state) in &rules.doors {
         (key.cell, key.face, *state == DoorState::Open).hash(&mut hasher);
     }
-    let requests = super::requests::team_requests(ascent.session(), desk.team);
+    let requests = super::requests::team_requests(ascent.session(), &desk);
     for request in &requests {
         (request.target, request.created_at, request.acknowledged_by).hash(&mut hasher);
     }
@@ -417,7 +418,7 @@ pub(super) fn draw_marks(
     }
     let eye = paint(Role::Observer);
     for observer in rules.observers.values() {
-        if observer.team == desk.team
+        if desk.shows(observer, knowledge)
             && observer.state == ObserverState::Active
             && observer.cell.level == floor
         {

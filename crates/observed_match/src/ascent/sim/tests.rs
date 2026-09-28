@@ -510,6 +510,34 @@ fn team_scoped_knowledge_filtering() {
 }
 
 #[test]
+fn the_rogue_board_sees_the_facility_and_only_detected_observers() {
+    let lab = ArchitectLab::for_mode_with_team_size(ArchitectMode::Pocket, 2).unwrap();
+    let view = lab.rogue_view();
+    // Every cell, as it stands, and all of it in view.
+    assert_eq!(view.cells.len(), lab.world.placements.len());
+    for (cell, known) in &view.cells {
+        assert_eq!(known.placement, lab.world.placements[cell]);
+        assert!(view.visible_cells.contains(cell));
+    }
+    // Every Guardian; of the Observers, only those the Rogue may know.
+    assert_eq!(
+        view.visible_guardians,
+        lab.guardians.keys().copied().collect::<BTreeSet<_>>()
+    );
+    assert_eq!(view.known_observers, lab.rogue_knowledge().known_observers);
+    for id in lab.observers.keys() {
+        if !lab.detected_observers().contains(id)
+            && lab.observers[id].state == ObserverState::Active
+        {
+            assert!(
+                !view.known_observers.contains_key(id),
+                "an undetected Observer leaked onto the Rogue board"
+            );
+        }
+    }
+}
+
+#[test]
 fn bot_played_loyal_victory_is_reachable() {
     let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).unwrap();
     // In pocket mode, bot observers advance toward summit.

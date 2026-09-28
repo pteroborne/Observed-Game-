@@ -223,7 +223,7 @@ pub(super) fn sounds(
         .ascent
         .as_ref()
         .map(|ascent| {
-            super::requests::team_requests(ascent.session(), desk.team)
+            super::requests::team_requests(ascent.session(), &desk)
                 .into_iter()
                 .map(|request| (request.author, request.created_at))
                 .collect()

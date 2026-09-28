@@ -1,7 +1,9 @@
 //! The Architect's seat: no body, a map of what the team knows, and a hand of cards.
 //!
 //! A local player who takes their team's Architect seat in Architect Ascent plays from
-//! here. Their team's bodies are bots. The desk ([`ArchitectDesk`]) holds what the
+//! here. Their team's bodies are bots. A player whose body fell into true void plays from
+//! here too, at the Rogue board (`ArchitectDesk::rogue`): the Rogue's shared hand, and the
+//! facility's truth in place of a team's memory of it (`ArchitectLab::rogue_view`). The desk ([`ArchitectDesk`]) holds what the
 //! player is doing - the card picked up, its rotation, the cell under the cursor, the
 //! floor in view - and the play they have committed, which the Ascent step hands to the
 //! rules as that seat's command. Legality is never decided here: every verdict shown is
@@ -12,8 +14,10 @@ use observed_core::PlayerId;
 use std::collections::BTreeMap;
 
 use observed_facility::hex_wfc::{HexCoord, HexPlacement};
-use observed_match::ascent::session::{Refusal, TeamRequest};
-use observed_match::ascent::sim::{ArchitectCommand, TeamId};
+use observed_match::ascent::session::{AscentSession, Refusal, TeamRequest};
+use observed_match::ascent::sim::{
+    ArchitectCommand, ArchitectLab, Deck, Observer, TeamId, TeamKnowledge,
+};
 
 /// What the local Architect is doing.
 #[derive(Resource, Debug)]
@@ -21,6 +25,11 @@ pub(crate) struct ArchitectDesk {
     /// The seat the rules know this player by.
     pub seat: PlayerId,
     pub team: TeamId,
+    /// The Rogue board: a corrupted player's, with the Rogue's shared hand and the
+    /// facility's truth rather than a team's hand and memory.
+    pub rogue: bool,
+    /// What the Rogue board shows, and the rules' tick it was read at (`refresh_rogue`).
+    pub rogue_sight: Option<(u64, TeamKnowledge)>,
     /// The card in hand picked up, by its place in the hand.
     pub selected: Option<usize>,
     /// Sixths of a turn clockwise.
@@ -53,7 +62,52 @@ pub(crate) struct ArchitectDesk {
     pub built: BTreeMap<HexCoord, (HexPlacement, u64)>,
 }
 
+/// A hand as the desk reads it: a team's, or the Rogue's.
+#[derive(Clone, Copy)]
+pub(crate) struct HandView<'a> {
+    pub deck: &'a Deck,
+    pub cooldown: u32,
+}
+
 impl ArchitectDesk {
+    /// What the board is drawn from: the team's knowledge, or at the Rogue board the view
+    /// the rules allow the Rogue.
+    #[must_use]
+    pub(crate) fn knowledge<'a>(&'a self, rules: &'a ArchitectLab) -> Option<&'a TeamKnowledge> {
+        if self.rogue {
+            self.rogue_sight.as_ref().map(|(_, sight)| sight)
+        } else {
+            rules.team_knowledge.get(&self.team)
+        }
+    }
+
+    /// The hand at this desk: the team's, or the Rogue's shared one.
+    #[must_use]
+    pub(crate) fn hand<'a>(&self, session: &'a AscentSession) -> Option<HandView<'a>> {
+        if self.rogue {
+            Some(HandView {
+                deck: &session.sim.deck,
+                cooldown: session.sim.cooldown,
+            })
+        } else {
+            session.hands.get(&self.team).map(|hand| HandView {
+                deck: &hand.deck,
+                cooldown: hand.cooldown,
+            })
+        }
+    }
+
+    /// Whether the board shows `observer`: the team's own, or at the Rogue board those the
+    /// Rogue may know of (`knowledge`).
+    #[must_use]
+    pub(crate) fn shows(&self, observer: &Observer, knowledge: &TeamKnowledge) -> bool {
+        if self.rogue {
+            knowledge.known_observers.contains_key(&observer.id)
+        } else {
+            observer.team == self.team
+        }
+    }
+
     /// What this Architect believes stands at `cell`: what they built there, unless the
     /// team has seen the cell since, and otherwise what the team saw.
     pub(crate) fn believed(
@@ -159,11 +213,22 @@ impl ArchitectDesk {
         }
     }
 
+    /// The Rogue board, for the corrupted player in `seat`, once of `team`, looking at
+    /// `floor`, where they fell.
+    pub(crate) fn rogue(seat: PlayerId, team: TeamId, floor: u8) -> Self {
+        Self {
+            rogue: true,
+            ..Self::new(seat, team, floor)
+        }
+    }
+
     /// A desk for `team`'s Architect, looking at `floor`, where the team starts.
     pub(crate) fn new(seat: PlayerId, team: TeamId, floor: u8) -> Self {
         Self {
             seat,
             team,
+            rogue: false,
+            rogue_sight: None,
             selected: None,
             rotation: 0,
             hovered: None,
@@ -205,7 +270,7 @@ pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleS
             feedback::setup,
             init_building,
         ),
-        (desk::spawn, eyes::spawn),
+        (desk::spawn, eyes::spawn, refresh_rogue),
         stack::click,
         input::input,
         pad::input,
@@ -232,6 +297,20 @@ pub(super) fn systems() -> impl IntoScheduleConfigs<bevy::ecs::system::ScheduleS
 
 #[cfg(test)]
 mod tests;
+
+/// Read the Rogue board's view again when the rules have ticked.
+fn refresh_rogue(
+    mut desk: ResMut<ArchitectDesk>,
+    runtime: Res<crate::hex_wfc::sim::HexWfcRuntime>,
+) {
+    let Some(ascent) = runtime.ascent.as_ref() else {
+        return;
+    };
+    let tick = ascent.rules().tick;
+    if desk.rogue && desk.rogue_sight.as_ref().is_none_or(|(at, _)| *at != tick) {
+        desk.rogue_sight = Some((tick, ascent.rules().rogue_view()));
+    }
+}
 
 fn init_building(mut commands: Commands, building: Option<Res<building::Building>>) {
     if building.is_none() {

@@ -194,7 +194,7 @@ pub(super) fn draw(
         return;
     };
     let rules = ascent.rules();
-    let Some(knowledge) = rules.team_knowledge.get(&desk.team) else {
+    let Some(knowledge) = desk.knowledge(rules) else {
         return;
     };
     let mut hasher = std::hash::DefaultHasher::new();
@@ -206,7 +206,7 @@ pub(super) fn draw(
     for observer in rules.observers.values() {
         (observer.cell, observer.state == ObserverState::Active).hash(&mut hasher);
     }
-    let requests = super::requests::team_requests(ascent.session(), desk.team);
+    let requests = super::requests::team_requests(ascent.session(), &desk);
     for request in &requests {
         (request.target, request.kind as u8).hash(&mut hasher);
     }
@@ -284,7 +284,7 @@ pub(super) fn draw(
         }
     }
     for observer in rules.observers.values() {
-        if observer.team == desk.team && observer.state == ObserverState::Active {
+        if desk.shows(observer, knowledge) && observer.state == ObserverState::Active {
             pin_at(&mut commands, MarkerRole::Teammate, observer.cell);
         }
     }

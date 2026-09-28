@@ -126,7 +126,7 @@ pub(super) fn sync(
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
     };
-    let Some(hand) = ascent.session().hands.get(&desk.team) else {
+    let Some(hand) = desk.hand(ascent.session()) else {
         return;
     };
     for slot in 0..HAND {
