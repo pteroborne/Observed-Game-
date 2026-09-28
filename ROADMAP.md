@@ -85,6 +85,9 @@ the combined loop.
     bot soak (`production_minor_crowd`) filled floors 0 and 1 to it, 18 released where the
     waves asked for 30. Still open: retraction does not make a pit above the ground floors,
     and floor 0's waves of one came fourteen times in four minutes.
+    **The Liminal Grid loses its railings (2026-09):** only the ground floor's open edges
+    are railed now (`RAILED_BELOW_LEVEL` 5 -> 1), which puts a killing push within reach
+    of 28-31% of a production facility's cells, up from 10-11%.
     **Doors stand in the facility (2026-09):** a door card's door is a panel across its
     doorway while closed - it stops bodies, minors, pushes and the Guardians' pursuit - and
     any loyal body opens or closes it with interact unless its floor is dark. Bots open a

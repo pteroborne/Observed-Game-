@@ -31,10 +31,15 @@ pub use observed_facility::hex_wfc::exposure::can_open;
 
 use super::HexPiecePart;
 
-/// Open edges on this level and above carry no railing. The top three storeys of the
-/// production lattice: the design's "higher floors draw increasingly unsafe
-/// architecture", told the way a first-person eye cannot miss.
-pub const RAILED_BELOW_LEVEL: u8 = 5;
+/// Open edges on this level and above carry no railing: only the ground floor is railed.
+/// The design's "higher floors draw increasingly unsafe architecture", told the way a
+/// first-person eye cannot miss, and drawn at the Ascent's district line: the ground
+/// floor is the Institutional district and every floor above it the Liminal Grid.
+///
+/// Was 5, the top three storeys. Lowered so that the kinetic tool has edges to push a
+/// minor off wherever the waves are (`kinetic::edges`): an unrailed edge is lethal to a
+/// body too, which is the price.
+pub const RAILED_BELOW_LEVEL: u8 = 1;
 /// A walkway's deck width, metres.
 pub const WALKWAY_WIDTH: f32 = 2.6;
 /// Railing height above the walking surface, metres.
@@ -621,7 +626,7 @@ mod tests {
 
     #[test]
     fn an_opened_hall_keeps_floor_ceiling_and_doors_and_gains_a_lit_edge_per_face() {
-        for level in [1, RAILED_BELOW_LEVEL] {
+        for level in [0, RAILED_BELOW_LEVEL] {
             let world = lone_hall(level);
             let at = *world.placements.keys().next().expect("one cell");
             let open = open_edges(&world, at).expect("a lone hall opens");
@@ -686,7 +691,7 @@ mod tests {
 
     #[test]
     fn a_railed_open_edge_holds_a_body_and_a_bare_one_lets_it_fall() {
-        let (floor, lowest) = walk_out(1);
+        let (floor, lowest) = walk_out(0);
         assert!(
             lowest > floor - 0.3,
             "railed: fell to {lowest} from {floor}"

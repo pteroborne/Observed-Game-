@@ -458,6 +458,20 @@ So a minor now also breaks on landing from a fall of more than `MINOR_BREAKING_D
 over half a storey): the design's "off a ledge or unrailed balcony". A stair, a ramp or a
 step down never comes near it.
 
+Then the railings came off. Open edges were railed below the top three storeys
+(`RAILED_BELOW_LEVEL` was 5); now only the ground floor, the Institutional district, is
+railed, and every floor of the Liminal Grid above it stands open. The same measurement:
+
+| | seed 1 | seed 2 | seed 3 |
+|---|---|---|---|
+| cells a push kills from, railed below floor 6 | 101 (10.6%) | 95 (11.1%) | 78 (9.5%) |
+| ...railed on the ground floor only | 295 (30.9%) | 254 (29.6%) | 230 (27.9%) |
+
+The new ground is floors 2-5 (floor 2 alone gained 73, 41 and 46 cells). The price is
+paid by bodies as well: an unrailed edge takes a body into true void, which in Ascent is
+corruption. In the ten-minute bot soak no bot body fell, and minors walked off edges on
+their own a little more often (5 lost where 2 were).
+
 Waves grow with height and minors leave only by falling, so a first-person floor holds at
 most `MINORS_PER_FLOOR` (8). A wave that would pass it releases only up to it, and its
 disturbance is spent all the same. A lab board, whose shove commits a minor outright, keeps

@@ -647,6 +647,8 @@ fn production_minor_crowd() {
         let seats = super::architect_seats(&physical, None);
         let mut game = AscentMatch::new(physical, seed, seats).unwrap();
         let (mut released, mut lost, mut peak_total) = (0usize, 0usize, 0usize);
+        // Bodies that fell into true void: the price of an unrailed edge, to them too.
+        let mut fell = Vec::new();
         let mut peak_floor: BTreeMap<u8, usize> = BTreeMap::new();
         let mut at_minute = Vec::new();
         for tick in 1..=36_000u64 {
@@ -674,6 +676,7 @@ fn production_minor_crowd() {
                 match event.kind {
                     HexMatchEventKind::GuardianReleased => released += 1,
                     HexMatchEventKind::GuardianLost => lost += 1,
+                    HexMatchEventKind::PlayerLost => fell.push((tick, event.cell)),
                     _ => {}
                 }
             }
@@ -709,7 +712,8 @@ fn production_minor_crowd() {
         eprintln!(
             "seed {seed}: waves {:?}; released {released} (uncapped the waves would \
              have released {uncapped}); lost {lost}; alive each minute {at_minute:?}; \
-             peak alive {peak_total}, peak per floor {peak_floor:?} (ceiling {MINORS_PER_FLOOR})",
+             peak alive {peak_total}, peak per floor {peak_floor:?} (ceiling {MINORS_PER_FLOOR}); \
+             bodies lost to the void (tick, cell) {fell:?}",
             economy.wave_counts,
         );
     }

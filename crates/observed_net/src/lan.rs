@@ -28,7 +28,9 @@ use crate::protocol::WireIntent;
 /// storey, and a first-person floor holds at most `MINORS_PER_FLOOR` of them.
 /// Version 9 changes no byte: a deployed door stands in the facility, a closed one blocks
 /// bodies and Guardians, and interact at a door opens or closes it.
-pub const LAN_PROTOCOL_VERSION: u16 = 9;
+/// Version 10 changes no byte: only the ground floor's open edges are railed, so the same
+/// facility builds different colliders.
+pub const LAN_PROTOCOL_VERSION: u16 = 10;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;

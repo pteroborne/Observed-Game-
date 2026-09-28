@@ -303,9 +303,7 @@ pub(super) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
     let mut poses = Vec::new();
     let top = world.config.levels.saturating_sub(1);
     // Off the rim, over the cloud sea.
-    if let Some((at, _, face, _)) =
-        best(&|at, _| (2..RAILED_BELOW_LEVEL).contains(&at.level), false)
-    {
+    if let Some((at, _, face, _)) = best(&|at, _| at.level < RAILED_BELOW_LEVEL, false) {
         poses.push(pose("railed_loggia", at, face, 1.4, -0.3));
     }
     // Between towers: the deepest drop with building on the far side of it.
