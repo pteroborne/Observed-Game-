@@ -236,7 +236,7 @@ mod tests {
                 return;
             };
             let local = runtime.local_player;
-            let command = runtime.bot_driver.command(&runtime.match_state, local);
+            let command = runtime.bot_command(local);
             let seats = (self.desk.as_mut(), Some(&mut self.ask));
             let leave = step(runtime, &mut self.lan, None, command, seats);
             assert!(!leave, "a client was dropped: {}", runtime.status);

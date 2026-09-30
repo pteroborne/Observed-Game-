@@ -647,7 +647,12 @@ impl AuthoritativeServer {
                 self.bot_driver.clear_player(seat.player);
                 input.map_or_else(HexPlayerCommand::default, WireHexCommand::to_command)
             } else {
-                self.bot_driver.command(game, seat.player)
+                match self.ascent.as_ref() {
+                    Some(ascent) => {
+                        ascent.bot_body_command(game, &mut self.bot_driver, seat.player)
+                    }
+                    None => self.bot_driver.command(game, seat.player),
+                }
             };
             let said = input.map_or(WireSeatCommand::None, |input| input.seat);
             // The canonical command is the one on the wire. Encoding rounds a command

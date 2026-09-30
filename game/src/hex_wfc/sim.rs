@@ -60,6 +60,17 @@ impl HexWfcRuntime {
     pub fn local(&self) -> &observed_match::hex_wfc::HexPlayerState {
         &self.match_state.players[&self.local_player]
     }
+
+    /// The physical bot's command, with Ascent's generator and recharge
+    /// priorities when those rules govern this match.
+    pub(in crate::hex_wfc) fn bot_command(&mut self, player: PlayerId) -> HexPlayerCommand {
+        match self.ascent.as_ref() {
+            Some(ascent) => {
+                ascent.bot_body_command(&self.match_state, &mut self.bot_driver, player)
+            }
+            None => self.bot_driver.command(&self.match_state, player),
+        }
+    }
 }
 
 /// Resolve the workspace tile directory without involving presentation.
@@ -389,10 +400,7 @@ pub(super) fn step_runtime(
         HexPlayerCommand::default()
     } else if spectator_bot.is_some() || control.desk.is_some() {
         // A spectator watches a bot, and an Architect has no body: the team's is a bot.
-        let runtime = &mut *runtime;
-        runtime
-            .bot_driver
-            .command(&runtime.match_state, local_player)
+        runtime.bot_command(local_player)
     } else {
         runtime.bot_driver.clear_player(local_player);
         HexPlayerCommand {
@@ -429,10 +437,7 @@ pub(super) fn step_runtime(
         .collect::<Vec<_>>()
     {
         if id != runtime.local_player {
-            let command = {
-                let runtime = &mut *runtime;
-                runtime.bot_driver.command(&runtime.match_state, id)
-            };
+            let command = runtime.bot_command(id);
             frame.commands.insert(id, command);
         }
     }

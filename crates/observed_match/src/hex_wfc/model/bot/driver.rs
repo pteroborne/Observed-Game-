@@ -16,6 +16,23 @@ use super::super::{HexMatchEventKind, HexPlayerCommand, HexWfcMatch};
 use super::leg::{self, ExternalTransition};
 use super::{BotBehaviour, STUCK_ENTER_TICKS, steer_toward};
 
+/// A physical point the bot can route to, independent of the old hex objective
+/// vocabulary. Ascent fixtures use the same route follower as those objectives.
+#[derive(Clone, Copy, Debug)]
+struct BotDestination {
+    cell: HexCoord,
+    position: Vec3,
+}
+
+impl From<HexObjectiveTarget> for BotDestination {
+    fn from(target: HexObjectiveTarget) -> Self {
+        Self {
+            cell: target.cell,
+            position: target.position,
+        }
+    }
+}
+
 /// One held graph leg and the objective it was committed to.
 ///
 /// The objective lives here rather than in [`HexTraversalLease`] because a lease
@@ -91,6 +108,53 @@ impl HexBotDriver {
     /// domain data, so same-tick consumers receive the same command.
     #[must_use]
     pub fn command(&mut self, game: &HexWfcMatch, id: PlayerId) -> HexPlayerCommand {
+        let target = game.objective_target(id);
+        let mut command = self.command_to_destination(game, id, target.map(Into::into));
+        command.actions.interact |= game.bot_action_buttons_for_target(id, target).interact;
+        command
+    }
+
+    /// Follow a point chosen by another ruleset, such as an Ascent generator or
+    /// recharge station. The bot still uses the same physical graph legs, route
+    /// cache, prison escape, and closed-door interaction as its usual objective.
+    #[must_use]
+    pub fn command_to(
+        &mut self,
+        game: &HexWfcMatch,
+        id: PlayerId,
+        cell: HexCoord,
+        position: Vec3,
+    ) -> HexPlayerCommand {
+        self.command_to_destination(game, id, Some(BotDestination { cell, position }))
+    }
+
+    /// Length of a reachable route to a candidate physical destination. Reuses
+    /// the route that `command_to` will follow while this layout stays current.
+    #[must_use]
+    pub fn route_len_to(
+        &mut self,
+        game: &HexWfcMatch,
+        id: PlayerId,
+        target: HexCoord,
+    ) -> Option<usize> {
+        let body = game.players.get(&id)?;
+        if !body.in_facility() {
+            return None;
+        }
+        if body.cell == target {
+            return Some(1);
+        }
+        self.cache_route(game, id, body.cell, target)
+            .and_then(|cache| cache.route.as_ref())
+            .map(|route| route.cells.len())
+    }
+
+    fn command_to_destination(
+        &mut self,
+        game: &HexWfcMatch,
+        id: PlayerId,
+        target: Option<BotDestination>,
+    ) -> HexPlayerCommand {
         if game
             .players
             .get(&id)
@@ -103,9 +167,8 @@ impl HexBotDriver {
                 ..HexPlayerCommand::default()
             };
         }
-        let target = game.objective_target(id);
-        self.invalidate_from_match(game, id, target);
-        let mut actions = game.bot_action_buttons_for_target(id, target);
+        self.invalidate_from_match(game, id, target.map(|target| target.cell));
+        let mut actions = super::super::HexActionButtons::default();
         // A bot walking into a closed door opens it rather than stand against it.
         actions.interact |= game.walking_into_closed_door(id);
         let intent = target.map_or_else(PlayerIntent::default, |target| {
@@ -118,7 +181,7 @@ impl HexBotDriver {
         &mut self,
         game: &HexWfcMatch,
         id: PlayerId,
-        target: Option<HexObjectiveTarget>,
+        target: Option<HexCoord>,
     ) {
         let was_displaced = game.recent_events.iter().any(|event| {
             event.player == Some(id)
@@ -140,7 +203,7 @@ impl HexBotDriver {
             return;
         }
 
-        let objective = target.map(|target| target.cell);
+        let objective = target;
         if self
             .legs
             .get(&id)
@@ -173,7 +236,7 @@ impl HexBotDriver {
         &mut self,
         game: &HexWfcMatch,
         id: PlayerId,
-        target: HexObjectiveTarget,
+        target: BotDestination,
     ) -> PlayerIntent {
         let Some(player) = game.players.get(&id) else {
             return PlayerIntent::default();
@@ -194,10 +257,30 @@ impl HexBotDriver {
             };
         }
         let current = player.cell;
+        let route = self
+            .cache_route(game, id, current, target.cell)
+            .and_then(|cache| cache.route.clone());
+        let behaviour = if route.as_ref().is_none_or(|route| route.cells.len() <= 1) {
+            BotBehaviour::Explore
+        } else if game.stuck_ticks.get(&id).copied().unwrap_or(0) >= STUCK_ENTER_TICKS {
+            BotBehaviour::Recover
+        } else {
+            BotBehaviour::Seek
+        };
+        self.command_for_behaviour(game, id, target.cell, behaviour, route.as_ref())
+    }
+
+    fn cache_route(
+        &mut self,
+        game: &HexWfcMatch,
+        id: PlayerId,
+        current: HexCoord,
+        target: HexCoord,
+    ) -> Option<&BotRouteCache> {
         let generation = game.facility.generation;
         let cache_is_usable = self.routes.get(&id).is_some_and(|cache| {
             cache.generation == generation
-                && cache.target == target.cell
+                && cache.target == target
                 && match &cache.route {
                     Some(route) => route
                         .cells
@@ -208,26 +291,18 @@ impl HexBotDriver {
                 }
         });
         if !cache_is_usable {
-            let route = game.facility.route_between_cells(current, target.cell);
+            let route = game.facility.route_between_cells(current, target);
             self.routes.insert(
                 id,
                 BotRouteCache {
                     generation,
-                    target: target.cell,
+                    target,
                     from: current,
                     route,
                 },
             );
         }
-        let route = self.routes.get(&id).and_then(|cache| cache.route.clone());
-        let behaviour = if route.as_ref().is_none_or(|route| route.cells.len() <= 1) {
-            BotBehaviour::Explore
-        } else if game.stuck_ticks.get(&id).copied().unwrap_or(0) >= STUCK_ENTER_TICKS {
-            BotBehaviour::Recover
-        } else {
-            BotBehaviour::Seek
-        };
-        self.command_for_behaviour(game, id, target.cell, behaviour, route.as_ref())
+        self.routes.get(&id)
     }
 
     fn command_for_behaviour(
@@ -483,7 +558,11 @@ mod tests {
         assert!(driver.leg(id).is_some(), "unrelated relayout keeps lease");
 
         game.last_relayout_delta = Some(delta(BTreeSet::from([source]), game.facility.generation));
-        driver.invalidate_from_match(&game, id, game.objective_target(id));
+        driver.invalidate_from_match(
+            &game,
+            id,
+            game.objective_target(id).map(|target| target.cell),
+        );
         assert!(driver.leg(id).is_none(), "source relayout revokes lease");
     }
 
@@ -517,7 +596,11 @@ mod tests {
             1,
             "the controller reset must be reported exactly once"
         );
-        driver.invalidate_from_match(&game, id, game.objective_target(id));
+        driver.invalidate_from_match(
+            &game,
+            id,
+            game.objective_target(id).map(|target| target.cell),
+        );
         assert!(driver.leg(id).is_none(), "recovery revokes the old lease");
         assert!(
             !driver.has_cached_route(id),
@@ -542,14 +625,22 @@ mod tests {
                 player: Some(id),
                 cell: Some(game.players[&id].cell),
             }];
-            driver.invalidate_from_match(&game, id, game.objective_target(id));
+            driver.invalidate_from_match(
+                &game,
+                id,
+                game.objective_target(id).map(|target| target.cell),
+            );
             assert!(driver.leg(id).is_none(), "{kind:?} revokes affected bot");
             assert!(driver.leg(other).is_some(), "{kind:?} preserves other bot");
         }
 
         let (game, mut driver, id, _source, _to, _first) = leased_fixture();
         driver.legs.get_mut(&id).expect("leg").objective.q += 1;
-        driver.invalidate_from_match(&game, id, game.objective_target(id));
+        driver.invalidate_from_match(
+            &game,
+            id,
+            game.objective_target(id).map(|target| target.cell),
+        );
         assert!(driver.leg(id).is_none(), "target change revokes lease");
     }
 
@@ -776,7 +867,11 @@ mod tests {
                 player: Some(id),
                 cell: Some(game.players[&id].cell),
             }];
-            driver.invalidate_from_match(&game, id, game.objective_target(id));
+            driver.invalidate_from_match(
+                &game,
+                id,
+                game.objective_target(id).map(|target| target.cell),
+            );
             assert!(
                 driver.leg(id).is_none(),
                 "{kind:?} must revoke the graph leg"
@@ -788,7 +883,11 @@ mod tests {
         let (game, mut driver, id, _from, _to) = graph_module_fixture();
         let _ = driver.command(&game, id);
         driver.legs.get_mut(&id).expect("leased").objective.q += 1;
-        driver.invalidate_from_match(&game, id, game.objective_target(id));
+        driver.invalidate_from_match(
+            &game,
+            id,
+            game.objective_target(id).map(|target| target.cell),
+        );
         assert!(driver.leg(id).is_none(), "a new objective revokes the leg");
     }
 

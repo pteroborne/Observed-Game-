@@ -7,7 +7,7 @@ use glam::Vec3;
 use super::*;
 use crate::ascent::economy::{MAX_CHARGE, RECHARGE_PER_BEAT};
 use crate::ascent::sim::ACTOR_BEAT_TICKS;
-use crate::hex_wfc::HexActionButtons;
+use crate::hex_wfc::{HexActionButtons, HexBotDriver};
 
 const INTERACT: HexActionButtons = HexActionButtons {
     interact: true,
@@ -38,6 +38,24 @@ fn press(game: &mut AscentMatch, actions: HexActionButtons) {
         commands: BTreeMap::from([(ARCHITECT, SeatCommand::None)]),
     };
     game.step(&bodies, &seats).expect("a well-formed frame");
+}
+
+/// One tick using the same body command the game and server request for a bot.
+fn drive_bot(game: &mut AscentMatch, driver: &mut HexBotDriver) -> HexPlayerCommand {
+    let command = game.ascent.bot_body_command(&game.physical, driver, BODY);
+    let tick = game.rules().tick + 1;
+    let bodies = HexInputFrame {
+        version: HEX_INPUT_VERSION,
+        tick,
+        commands: BTreeMap::from([(BODY, command)]),
+    };
+    let seats = InputFrame {
+        version: ASCENT_INPUT_VERSION,
+        tick,
+        commands: BTreeMap::from([(ARCHITECT, SeatCommand::None)]),
+    };
+    game.step(&bodies, &seats).expect("a well-formed bot frame");
+    command
 }
 
 fn fixture(game: &AscentMatch, kind: FixtureKind, level: u8) -> Fixture {
@@ -209,6 +227,54 @@ fn a_dark_station_and_one_out_of_reach_supply_nothing() {
         0,
         "a dark station charged"
     );
+}
+
+#[test]
+fn bot_body_walks_to_a_dark_floors_generator_and_restores_power() {
+    let mut game = game(7);
+    let mut driver = HexBotDriver::default();
+    let station = fixture(&game, FixtureKind::Station, 0);
+    stand_at(&mut game, station, Vec3::ZERO);
+    game.ascent.stage_power(0, false);
+    let mut interacted = false;
+    for _ in 0..3_000 {
+        let command = drive_bot(&mut game, &mut driver);
+        interacted |= command.actions.interact;
+        if powered(&game, 0) {
+            break;
+        }
+    }
+    assert!(interacted, "the bot never worked the generator");
+    assert!(powered(&game, 0), "the bot did not restore its floor");
+    assert!(powered(&game, 1), "the bot changed the adjacent floor");
+}
+
+#[test]
+fn bot_body_walks_to_a_powered_station_and_waits_until_full() {
+    let mut game = game(7);
+    let mut driver = HexBotDriver::default();
+    let observer = game.observer_for(BODY).expect("an Observer");
+    let generator = fixture(&game, FixtureKind::Generator, 0);
+    stand_at(&mut game, generator, Vec3::ZERO);
+    game.ascent.stage_charge(BODY, 0);
+    let mut recharging = false;
+    for _ in 0..3_000 {
+        let command = drive_bot(&mut game, &mut driver);
+        let charge = game.rules().economy.charge(observer);
+        if charge > 0 && charge < MAX_CHARGE {
+            recharging = true;
+            assert_eq!(
+                command.intent,
+                player_input::PlayerIntent::default(),
+                "the bot left the station before it was full"
+            );
+        }
+        if charge == MAX_CHARGE {
+            break;
+        }
+    }
+    assert!(recharging, "the bot never waited at the station");
+    assert_eq!(game.rules().economy.charge(observer), MAX_CHARGE);
 }
 
 #[test]

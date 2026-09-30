@@ -422,10 +422,15 @@ and `<dir>/stills.txt` names the frame that is each still):
 Over LAN nothing new travels - the generator is a body's interact bit - but the same frames
 now step to a different match, so `LAN_PROTOCOL_VERSION` is 7.
 
-Not yet: the game's bot bodies neither recharge nor restore power, so a floor the Rogue
-darkens stays dark until a player walks to its generator; stations are sited by the rules
-rather than placed from the Architect's mixed hand as the design has them; doors,
-teleport plates and ascent are not yet gated by power in the physical match.
+Bot bodies now take a physical route to their floor's generator when its power is out,
+press interact within reach to restore it, and take a route to a powered station when
+their Lance has less charge than one shot. At the station they wait through the recharge
+beats until full. Both local and authoritative LAN bots make these choices through the
+same body command path, and match tests walk a bot to each fixture and check the result.
+
+Still open: stations are sited by the rules rather than placed from the Architect's
+mixed hand as the design has them; doors, teleport plates and ascent are not yet gated
+by power in the physical match.
 
 ### Where a minor can die
 

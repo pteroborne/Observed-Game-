@@ -25,6 +25,7 @@ use super::sim::{
 };
 use crate::hex_wfc::{HexInputFrame, HexMatchEventKind, HexReleasedKind, HexWfcMatch};
 
+mod bots;
 mod doors;
 mod power;
 mod sensors;

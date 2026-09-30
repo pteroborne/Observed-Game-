@@ -71,8 +71,11 @@ the combined loop.
     generator switches the floor, a powered station refills the tool of whoever stands in
     its cradle, and a dark floor's practicals fall away. See
     [the integration notes](docs/architect_ascent_polish.md#the-kinetic-tool-and-floor-power).
-    Next: bot bodies that recharge and restore power, stations placed from the Architect's
-    mixed hand, and power gating doors, plates and ascent physically.
+    Bot bodies now walk to a reachable generator on a dark floor, restore its power with
+    the same interact command as a player, and seek a powered station when the Lance
+    cannot pay for a shot. They stay there until full. Local and server bots use the
+    same physical route follower and command path. Next: stations placed from the
+    Architect's mixed hand, and power gating doors, plates and ascent physically.
     **Minors can be killed, and cannot crowd (2026-09):** measured on production
     facilities (`hex_wfc::model::kinetic::edges`, every candidate replayed as a real shove),
     a minor that died only out of the facility was all but immortal: a push killed one from
