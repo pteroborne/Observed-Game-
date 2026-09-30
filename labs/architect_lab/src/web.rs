@@ -223,10 +223,15 @@ impl RogueGame {
                         "Rewrite or extend a route",
                     ),
                     CardKind::Door => ("door", 0, "Block a threshold; Observers can reopen it"),
+                    CardKind::Stair => ("stair", 0, "Build a way up"),
+                    CardKind::Directive => ("directive", 0, "Send major Guardians"),
+                    CardKind::Sensor => ("sensor", 0, "Watch a floor"),
+                    CardKind::Surge => ("surge", 0, "Raise floor pressure"),
                 };
                 let rotations: Vec<_> = (0..6).map(|rotation| match card.kind {
                     CardKind::Tile(shape) => shape.doors(rotation),
                     CardKind::Door => 1 << rotation,
+                    _ => 0,
                 }).collect();
                 json!({"id": card.id.0, "name": name, "doors": doors, "rotations": rotations, "purpose": purpose,
                 "district": card.district.map(|district| district.label())})

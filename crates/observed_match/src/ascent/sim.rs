@@ -28,6 +28,7 @@ mod sensor;
 pub use directive::{DIRECTIVE_TICKS, RogueDirective};
 pub use sensor::{MAX_SENSORS, SENSOR_RANGE};
 mod embodied;
+mod instability;
 mod loyal;
 mod rogue;
 mod util;
@@ -742,6 +743,8 @@ impl ArchitectLab {
             CardKind::Directive | CardKind::Sensor => {
                 unreachable!("the Rogue's orders are judged above")
             }
+            CardKind::Surge => (!placement.space.built() || self.retracted.contains(&target))
+                .then_some(CommandRefusal::VoidTarget),
             CardKind::Door => {
                 let Some(key) = self.threshold_key(target, lateral_face(rotation)) else {
                     return Some(CommandRefusal::InvalidThreshold);
@@ -870,10 +873,11 @@ impl ArchitectLab {
                 self.cooldown = ARCHITECT_COOLDOWN_TICKS;
             }
             self.command_log.push((self.tick, command));
-            if kind == CardKind::Directive {
-                self.direct(target);
-            } else {
-                self.sense(target);
+            match kind {
+                CardKind::Directive => self.direct(target),
+                CardKind::Sensor => self.sense(target),
+                CardKind::Surge => self.surge(target),
+                _ => unreachable!("only Rogue effects reach this branch"),
             }
             return Ok(());
         }
@@ -912,7 +916,7 @@ impl ArchitectLab {
                                 .retain(|key, _| !threshold_touches(*key, cell, &self.world));
                         }
                     }
-                    CardKind::Directive | CardKind::Sensor => {
+                    CardKind::Directive | CardKind::Sensor | CardKind::Surge => {
                         unreachable!("the Rogue's orders are played above")
                     }
                 }

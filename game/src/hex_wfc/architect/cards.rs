@@ -155,7 +155,9 @@ pub(super) fn sync(
                 ortho.scale = match card.kind {
                     CardKind::Tile(_) => TILE_SCALE,
                     CardKind::Stair => STAIR_SCALE,
-                    CardKind::Door | CardKind::Directive | CardKind::Sensor => DOOR_SCALE,
+                    CardKind::Door | CardKind::Directive | CardKind::Sensor | CardKind::Surge => {
+                        DOOR_SCALE
+                    }
                 };
             }
         }
@@ -244,7 +246,7 @@ pub(super) fn sync(
             }
             // The Rogue's orders, in the Guardian's red: a pyramid over the ring it is sent
             // to, and the sensor's eye in its ring.
-            CardKind::Directive | CardKind::Sensor => {
+            CardKind::Directive | CardKind::Sensor | CardKind::Surge => {
                 let material = materials.add(StandardMaterial {
                     base_color: color(Role::Guardian),
                     unlit: true,
@@ -259,7 +261,7 @@ pub(super) fn sync(
                         Transform::from_translation(at + Vec3::Y * 1.9),
                     );
                     spawn(Torus::new(1.3, 1.5).into(), material, ring);
-                } else {
+                } else if card.kind == CardKind::Sensor {
                     let eye = Transform::from_translation(at + Vec3::Y * 1.6);
                     spawn(
                         Sphere::new(0.8).mesh().ico(0).expect("an icosahedron"),
@@ -271,6 +273,16 @@ pub(super) fn sync(
                         material,
                         eye.with_rotation(Quat::from_rotation_x(0.4)),
                     );
+                } else {
+                    // Two crossed rings make the pressure wave distinct from the
+                    // directive pyramid and the sensor eye in a five-card hand.
+                    for turn in [0.0, std::f32::consts::FRAC_PI_2] {
+                        spawn(
+                            Torus::new(1.1, 1.4).into(),
+                            material.clone(),
+                            ring.with_rotation(Quat::from_rotation_y(turn) * ring.rotation),
+                        );
+                    }
                 }
             }
             CardKind::Door => {

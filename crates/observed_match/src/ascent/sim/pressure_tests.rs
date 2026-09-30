@@ -14,6 +14,155 @@ fn unstable() -> ArchitectLab {
 }
 
 #[test]
+fn rogue_surge_raises_visible_pressure_and_hastens_only_an_exposed_warning() {
+    let mut sim = unstable();
+    let floor = sim.next_retraction().unwrap().level;
+    let before_world = sim.world.clone();
+    let before_contradictions = sim.contradictions.clone();
+    let before_due = sim.next_retraction_tick.unwrap();
+    sim.cooldown = 0;
+    sim.deck = Deck::rogue(91, sim.world.config.levels, &TileShape::ALL);
+    assert!(sim.deck.stage_kind(CardKind::Surge));
+    sim.economy.set_disturbance(floor, 0);
+    let card = sim
+        .deck
+        .hand
+        .iter()
+        .find(|card| card.kind == CardKind::Surge)
+        .unwrap()
+        .id;
+    let target = sim
+        .mutable_targets()
+        .into_iter()
+        .find(|target| {
+            target.level == floor
+                && sim
+                    .refusal(ArchitectCommand::Play {
+                        card,
+                        target: *target,
+                        rotation: 0,
+                    })
+                    .is_none()
+        })
+        .expect("surge has an unprotected built target on the unstable floor");
+    sim.submit(ArchitectCommand::Play {
+        card,
+        target,
+        rotation: 0,
+    })
+    .unwrap();
+    assert_eq!(sim.world, before_world, "a surge changes no geometry");
+    assert_eq!(sim.contradictions, before_contradictions);
+    assert_eq!(sim.economy.disturbance(floor), 50);
+    assert_eq!(sim.next_retraction_tick, Some(sim.tick + 90));
+    assert!(before_due > sim.next_retraction_tick.unwrap());
+    assert_eq!(sim.cooldown, ARCHITECT_COOLDOWN_TICKS);
+    assert!(sim.deck.hand.iter().all(|held| held.id != card));
+    assert!(sim.events.iter().any(|event| {
+        event.cell == Some(target)
+            && event.kind == LabEventKind::Warning
+            && event.message.contains("Instability surge")
+    }));
+}
+
+#[test]
+fn surge_cannot_touch_warded_or_void_cells_and_does_not_bypass_protection() {
+    let mut sim = unstable();
+    sim.cooldown = 0;
+    sim.deck = Deck::rogue(92, sim.world.config.levels, &TileShape::ALL);
+    assert!(sim.deck.stage_kind(CardKind::Surge));
+    let card = sim
+        .deck
+        .hand
+        .iter()
+        .find(|card| card.kind == CardKind::Surge)
+        .unwrap()
+        .id;
+    let target = sim.next_retraction().unwrap();
+    let play = ArchitectCommand::Play {
+        card,
+        target,
+        rotation: 0,
+    };
+    sim.observed.insert(target);
+    assert_eq!(sim.refusal(play), Some(CommandRefusal::Observed));
+    sim.observed.remove(&target);
+    sim.anchored.insert(target);
+    assert_eq!(sim.refusal(play), Some(CommandRefusal::Anchored));
+    sim.anchored.remove(&target);
+    let void = *sim
+        .mutable_targets()
+        .iter()
+        .find(|cell| sim.world.placements[cell].space.unbuilt())
+        .expect("an unbuilt mutable target");
+    assert_eq!(
+        sim.refusal(ArchitectCommand::Play {
+            card,
+            target: void,
+            rotation: 0,
+        }),
+        Some(CommandRefusal::VoidTarget)
+    );
+    sim.observed.extend(sim.contradictions.iter().copied());
+    let before_due = sim.next_retraction_tick;
+    let other = sim
+        .mutable_targets()
+        .into_iter()
+        .find(|cell| {
+            sim.refusal(ArchitectCommand::Play {
+                card,
+                target: *cell,
+                rotation: 0,
+            })
+            .is_none()
+        })
+        .expect("another unprotected target");
+    // Keep the pressure below wave threshold so no new Guardian refreshes the
+    // synthetic observation mask used to exercise retraction protection.
+    sim.economy.set_disturbance(other.level, 0);
+    assert_eq!(sim.next_retraction(), None);
+    sim.submit(ArchitectCommand::Play {
+        card,
+        target: other,
+        rotation: 0,
+    })
+    .unwrap();
+    assert_eq!(sim.next_retraction_tick, before_due);
+    assert_eq!(sim.next_retraction(), None);
+}
+
+#[test]
+fn rogue_bot_uses_a_surge_only_when_it_detects_prey() {
+    let mut sim = ArchitectLab::for_mode(ArchitectMode::QuickClimb).unwrap();
+    sim.guardians.clear();
+    sim.deck = Deck::rogue(93, sim.world.config.levels, &TileShape::ALL);
+    assert!(sim.deck.stage_kind(CardKind::Surge));
+    sim.deck.hand.retain(|card| card.kind == CardKind::Surge);
+    let (blind, _) = sim.rogue_intent();
+    assert_eq!(blind, None);
+
+    let prey = sim.observers.values().next().unwrap().cell;
+    sim.sensors.insert(prey, sim.tick);
+    let (sighted, _) = sim.rogue_intent();
+    let ArchitectCommand::Play { card, target, .. } =
+        sighted.expect("the Rogue can surge near prey")
+    else {
+        panic!("the Rogue must play its surge card");
+    };
+    assert_eq!(sim.deck.hand[0].id, card);
+    assert_eq!(target.level, prey.level);
+    assert!(observed_hex::travel_distance(target, prey) <= 6);
+    assert_eq!(
+        sim.refusal(ArchitectCommand::Play {
+            card,
+            target,
+            rotation: 0,
+        }),
+        None
+    );
+}
+
+#[test]
 fn warning_precedes_retraction_and_retractions_are_spaced() {
     let mut sim = unstable();
     let first = sim.next_retraction().unwrap();
@@ -149,6 +298,25 @@ fn empty_floor_closes_permanently_but_prison_survives() {
             .iter()
             .any(|card| card.district == Some(District::for_level(target.level)))
     );
+}
+
+#[test]
+fn one_lost_upper_floor_does_not_retire_cards_for_the_other_upper_floors() {
+    let mut sim = ArchitectLab::for_mode(ArchitectMode::DeepStack).unwrap();
+    let deck = sim.deck.clone();
+    sim.collapsed_floors.insert(1);
+    sim.retire_closed_district(1);
+    assert_eq!(
+        sim.deck, deck,
+        "four upper floors still use Liminal Grid cards"
+    );
+
+    for level in 2..sim.world.config.levels {
+        sim.collapsed_floors.insert(level);
+    }
+    sim.retire_closed_district(sim.world.config.levels - 1);
+    assert_ne!(sim.deck, deck);
+    assert!(!sim.deck.offer_any_tile(District::LiminalGrid));
 }
 
 #[test]

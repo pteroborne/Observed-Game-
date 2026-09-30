@@ -559,7 +559,9 @@ uses, reading the Rogue's side of the rules:
   Rogue hand stays the seated operators' - the bot Rogue's - so a player at the board
   never waits on the bot's clock, nor loses the card under the cursor to its play. Each
   corruption adds an operator to the Rogue, as the design's asymmetric faction change
-  reads.
+  reads. Once a beat, the seated Rogue and every joined player whose hand has no tile
+  for a district with a mutable target draw one in from their own deck. Losing one
+  upper floor does not retire Liminal Grid tiles while another upper floor remains.
 - **The facility's truth** (`ArchitectLab::rogue_view`): every cell as it stands, every
   Guardian, and of the loyal Observers only those the Rogue may know - jailed, corrupted,
   or detected by a Guardian (design section 10). The board, the climb and the side panel
@@ -607,8 +609,16 @@ way up with a sensor card (below). It is markedly stronger for it: on the two-fl
 facility with two bot bodies it now wins at tick 1616 (27 s), where before it had not
 won in 3,000 ticks.
 
-Not yet: a joined player's hand is not kept live for the floors the Rogue can reach, as a
-team's is; the design's instability-effect cards are not in the Rogue deck.
+**Instability surge** (`CardKind::Surge`, `ascent::sim::instability`): three cards in
+the seeded Rogue deck raise disturbance by 50 on the chosen floor. When an exposed
+contradiction on that floor is already warning, the surge shortens its pending
+retraction to at most 90 ticks from the play. It cannot be played on observed,
+occupied, anchored, void, collapsed, or prison cells, and it never retracts a
+protected tile directly. The warning event identifies where the surge happened;
+the existing disturbance wave and collapse systems carry the result into the
+facility. The board shows the current floor's pressure and any exposed
+retraction countdown. The bot Rogue uses a surge near a detected Observer when neither a
+route-closing play nor a fresh contradiction is available.
 
 ### Sensors
 
@@ -627,7 +637,8 @@ a Guardian or an explicit Rogue-controlled sensor". The sensor is now in the rul
 - **What that is for**: an Observer a live sensor sees joins the Rogue's knowledge
   (`ArchitectLab::rogue_detected`), so the Rogue board shows it and the bot Rogue hunts
   it. It never feeds the Guardians' own pursuit: sensors inform the Rogue, the Rogue
-  directs.
+  directs. When nobody is detected, the bot's beat refill offers a sensor if its
+  seeded hand lacks one, keeping its required district tile in hand.
 - **At most four** (`MAX_SENSORS`): a fifth retires the oldest. A sensor goes with its
   cell when the cell is emptied, retracted or its floor collapses.
 - **Counterplay** (`ObserverAction::Dismantle`, `AscentRules::operate_sensors`): a sensor

@@ -36,19 +36,36 @@ The game discovers hosts by LAN broadcast and also accepts direct `IP:port` entr
 See [docs/lan_integration.md](docs/lan_integration.md) for protocol and deployment details.
 
 ### Verifying Changes
-Run these commands before claiming completion of any task (warnings must be resolved, not suppressed):
+For Rust source, tests, build configuration, or other code changes, run these
+commands before claiming completion (warnings must be resolved, not suppressed):
 ```powershell
 cargo fmt --all
 cargo dev-clippy
 cargo dev-test
 ```
 
-The gate deliberately skips a few long instrumentation tests. Each is marked
-`#[ignore = "..."]` with its cost and the reason, and they are **evidence rather than
-regression cover** — they print playtest measurements and assert nothing. Left in the
-gate they cost ~25 minutes a run, and a gate nobody runs protects nothing.
+For documentation-only changes, run `git diff --check` and verify any links or
+commands you changed. No Cargo gate is needed unless the documentation change
+also changes generated code or configuration; then run its relevant check.
 
-Run everything periodically, and whenever you change the simulation they measure:
+During code iteration, run focused tests for the crate or behavior you changed. For
+example, `cargo test -p observed_match --lib seated_and_joined_rogue_hands` runs
+that test without compiling and executing the entire workspace. Run the full
+`fmt` / `dev-clippy` / `dev-test` gate above before claiming code completion.
+
+The gate deliberately skips long instrumentation tests. Each is marked
+`#[ignore = "..."]` with its cost and reason. These should print playtest
+measurements and assert nothing; they are evidence rather than regression cover. When a
+simulation change affects a measurement, run that ignored test directly with a
+name filter and record its result, for example:
+
+```powershell
+cargo test -p observed_match --lib how_much_of_the_hand_is_playable -- --ignored --nocapture
+```
+
+Run the complete extended suite periodically (for example, weekly during active
+simulation work) and before milestone or release gates. Unrelated changes do
+not need to repeat every measurement:
 
 ```powershell
 cargo dev-test-all
@@ -56,6 +73,9 @@ cargo dev-test-all
 
 Anything that *asserts* belongs in `dev-test`, however slow. If you find yourself
 wanting to `#[ignore]` a test with assertions in it, make the test faster instead.
+Known exception as of 2026-09-29: `hex_full_match_soak` is ignored despite asserting,
+and fails identically on clean `origin/main`. Fix it and bring its assertion into
+`dev-test`; until then, report `dev-test-all` as red rather than treating it as green.
 *Note: Make sure resetting the lab removes all of its Bevy entities/resources without leaking state.*
 
 ### The shared build cache, and why builds cannot overlap

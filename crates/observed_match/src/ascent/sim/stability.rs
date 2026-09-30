@@ -176,7 +176,7 @@ impl ArchitectLab {
             });
             if floor_empty && self.collapsed_floors.insert(cell.level) {
                 self.cut_floor_power(cell.level);
-                self.deck.retire_district(District::for_level(cell.level));
+                self.retire_closed_district(cell.level);
                 self.guardians
                     .retain(|_, g| !(g.kind == GuardianKind::Minor && g.cell.level == cell.level));
                 self.record_event(
@@ -190,5 +190,16 @@ impl ArchitectLab {
         // Protection delays collapse; it never consumes the protected tile.
         self.next_retraction_tick = Some(self.tick + RETRACTION_TICKS);
         self.sync_retraction_clock();
+    }
+
+    /// Upper floors share the Liminal Grid deck. Losing one floor must not retire
+    /// cards that can still be played on another floor in the same district.
+    pub(super) fn retire_closed_district(&mut self, level: u8) {
+        let district = District::for_level(level);
+        if (0..self.world.config.levels).all(|other| {
+            District::for_level(other) != district || self.collapsed_floors.contains(&other)
+        }) {
+            self.deck.retire_district(district);
+        }
     }
 }

@@ -539,6 +539,41 @@ fn a_hand_with_nothing_for_its_team_s_floor_draws_something_that_is() {
     assert!(session.hands[&TeamId(0)].deck.has_tile_for(floor));
 }
 
+#[test]
+fn seated_and_joined_rogue_hands_draw_a_tile_for_a_placeable_floor() {
+    use crate::ascent::sim::{CardKind, District};
+
+    let mut session = session();
+    session.sim.observers.get_mut(&ObserverId(0)).unwrap().state = ObserverState::Corrupted;
+    let input = frame(&session, PlayerId(1), SeatCommand::None);
+    session.advance(&input).unwrap();
+    assert_eq!(session.seats()[&PlayerId(1)].role, Role::Rogue);
+    assert!(session.sim.mutable_targets().iter().any(|c| c.level == 0));
+
+    // Both Rogue hands have only the other district's tiles and districtless cards.
+    // Neither player can repair the one-floor facility with this hand.
+    for deck in [
+        &mut session.sim.deck,
+        &mut session.rogue_hands.get_mut(&PlayerId(1)).unwrap().deck,
+    ] {
+        for card in &mut deck.hand {
+            if matches!(card.kind, CardKind::Tile(_)) {
+                card.district = Some(District::LiminalGrid);
+            }
+        }
+        assert!(!deck.has_tile_for(District::Institutional));
+    }
+
+    session.sim.tick = 3 * u64::from(crate::ascent::sim::ACTOR_BEAT_TICKS);
+    session.keep_hands_live();
+    assert!(session.sim.deck.has_tile_for(District::Institutional));
+    assert!(
+        session.rogue_hands[&PlayerId(1)]
+            .deck
+            .has_tile_for(District::Institutional)
+    );
+}
+
 /// A built cell of the facility no Guardian stands on and the prison does not hold.
 fn open_ground(session: &AscentSession) -> HexCoord {
     let sim = &session.sim;
@@ -638,6 +673,26 @@ fn only_the_rogue_directs_the_guardians() {
         session.advance(&input).unwrap()[&PlayerId(3)],
         Refusal::Architect(CommandRefusal::Cooldown)
     );
+}
+
+#[test]
+fn only_the_rogue_can_play_an_instability_surge() {
+    use crate::ascent::sim::CardKind;
+    let mut session = session();
+    deal_rogue_deck(&mut session, PlayerId(0));
+    deal_rogue_deck(&mut session, PlayerId(3));
+    let target = open_ground(&session);
+    let loyal = order(&mut session, PlayerId(0), CardKind::Surge, target);
+    assert_eq!(
+        session.architect_refusal(PlayerId(0), loyal),
+        Some(Refusal::Architect(CommandRefusal::RogueOnly))
+    );
+    let before = session.sim.economy.disturbance(target.level);
+    let rogue = order(&mut session, PlayerId(3), CardKind::Surge, target);
+    let input = frame(&session, PlayerId(3), SeatCommand::Architect(rogue));
+    assert!(session.advance(&input).unwrap().is_empty());
+    assert_eq!(session.sim.economy.disturbance(target.level), before + 50);
+    assert!(session.sim.cooldown > 0);
 }
 
 #[test]

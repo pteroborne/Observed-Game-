@@ -120,7 +120,7 @@ pub(in crate::hex_wfc) fn capture(
                 CardKind::Tile(_) => 1,
                 CardKind::Door => 2,
                 // The Rogue's orders build nothing to show.
-                CardKind::Directive | CardKind::Sensor => 3,
+                CardKind::Directive | CardKind::Sensor | CardKind::Surge => 3,
             });
             let found = cards.into_iter().find_map(|(index, card)| {
                 knowledge.cells.keys().find_map(|&target| {

@@ -20,6 +20,7 @@ pub(super) const fn card_name(kind: CardKind) -> &'static str {
         CardKind::Stair => "STAIR",
         CardKind::Directive => "DIRECTIVE",
         CardKind::Sensor => "SENSOR",
+        CardKind::Surge => "SURGE",
     }
 }
 
@@ -36,6 +37,7 @@ pub(super) const fn card_detail(kind: CardKind) -> &'static str {
         CardKind::Stair => "climbs a floor",
         CardKind::Directive => "majors walk here",
         CardKind::Sensor => "sees 4 cells each way",
+        CardKind::Surge => "raises floor pressure",
     }
 }
 
@@ -156,6 +158,7 @@ mod tests {
             CardKind::Stair,
             CardKind::Directive,
             CardKind::Sensor,
+            CardKind::Surge,
         ]) {
             assert!(!card_name(kind).is_empty());
             assert!(!card_detail(kind).is_empty());
@@ -204,6 +207,7 @@ mod tests {
             CardKind::Stair,
             CardKind::Directive,
             CardKind::Sensor,
+            CardKind::Surge,
         ]) {
             printed.push(card_name(kind).to_owned());
             printed.push(card_detail(kind).to_owned());

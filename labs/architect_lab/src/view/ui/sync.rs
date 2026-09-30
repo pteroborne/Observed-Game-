@@ -542,6 +542,7 @@ fn card_title(card: Card) -> String {
         CardKind::Stair => "STAIR",
         CardKind::Directive => "DIRECTIVE",
         CardKind::Sensor => "SENSOR",
+        CardKind::Surge => "SURGE",
     }
     .to_string()
 }

@@ -103,6 +103,24 @@ pub(super) fn sync(
                 ),
                 Role::Text,
             ),
+            Line::Pressure => {
+                let pressure = rules.economy.disturbance(desk.floor);
+                let warning = rules
+                    .next_retraction()
+                    .filter(|cell| cell.level == desk.floor)
+                    .and(rules.next_retraction_tick)
+                    .map(|due| {
+                        format!(
+                            "  /  RETRACTS IN {:.1} S",
+                            due.saturating_sub(rules.tick) as f64 / 60.0
+                        )
+                    })
+                    .unwrap_or_default();
+                (
+                    format!("FLOOR PRESSURE {pressure} / 100{warning}"),
+                    Role::Guardian,
+                )
+            }
             Line::Observers => (
                 rules
                     .observers

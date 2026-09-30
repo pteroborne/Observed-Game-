@@ -212,12 +212,20 @@ To optimize build and link times during active development (especially with mult
   linker = "rust-lld.exe"
   ```
 * **Dynamic Linking**: Use the `.cargo/config.toml` development aliases (`cargo dev-run`, `cargo dev-test`, and `cargo dev-clippy`) to enable Bevy's `dynamic_linking` feature without enabling it in release builds.
+* **Match verification to the change.** For code changes, use focused tests while
+  iterating, then run `cargo fmt --all`, `cargo dev-clippy`, and `cargo dev-test`
+  before completion. For documentation-only changes, run `git diff --check` and
+  verify changed links or commands; no Cargo gate is needed unless generated code
+  or configuration also changes.
 * **The gate skips long instrumentation tests.** `cargo dev-test` excludes a few tests
-  marked `#[ignore = "..."]`, each carrying its cost and reason. They are evidence, not
-  regression cover: they print playtest measurements and assert nothing, and leaving them
-  in cost ~25 minutes a run, which meant the gate stopped being run. `cargo dev-test-all`
-  includes them — run it periodically, and whenever you change the simulation they
-  measure. **Anything that asserts stays in `dev-test`, however slow**; if you want to
+  marked `#[ignore = "..."]`, each carrying its cost and reason. They are intended as
+  evidence, not regression cover: they should print measurements and assert nothing. Leaving them
+  in cost ~25 minutes a run, which meant the gate stopped being run. When a
+  simulation change affects an ignored measurement, run that test by name with
+  `cargo test -p <crate> --lib <test-name> -- --ignored --nocapture` and record its
+  result. Run `cargo dev-test-all` periodically (for example, weekly during active
+  simulation work) and before milestone or release gates, rather than for unrelated
+  changes. **Anything that asserts stays in `dev-test`, however slow**; if you want to
   `#[ignore]` a test with assertions in it, make the test faster instead.
 
 ## Core Architectural Rules

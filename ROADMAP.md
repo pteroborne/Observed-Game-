@@ -105,6 +105,9 @@ the combined loop.
     **The Rogue's own deck (2026-09):** directives and sensors are cards in a Rogue deck
     that deals no stairs; the bot Rogue plays them, and wins much faster for it. A lantern's
     anchor now holds in the rules too.
+    **Instability surge (2026-09):** the Rogue deck also deals a card that raises one
+    floor's disturbance and hastens a pending exposed retraction there. The bot uses it
+    near detected Observers; the board shows floor pressure and the warning countdown.
     **Deferred until the core features land - one district per floor:** every floor of the
     climb should be its own district, drawn from the original seven, so the ascent reads as
     a descent through distinct circles (Dante's Inferno is the reference). Today the rules

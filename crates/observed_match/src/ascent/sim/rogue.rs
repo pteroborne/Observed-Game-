@@ -14,7 +14,9 @@
 //!    walls: a contradiction, which the rules retract out from under whoever walks into
 //!    it unless a loyal Architect repairs it first. The cells beside an Observer are in
 //!    its sight and cannot be played, so the path is as near as the Rogue can reach.
-//! 5. Otherwise hold the card.
+//! 5. **Surge:** raise pressure near detected prey, and hasten an exposed contradiction
+//!    on that floor if one is already warning.
+//! 6. Otherwise hold the card.
 //!
 //! With nobody detected it has nobody to play against, so it **watches the way up**: a
 //! sensor card (`sensor`) at the foot of a stair or ramp, on the floor it watches least -
@@ -63,6 +65,10 @@ impl ArchitectLab {
         // A Rogue play matters beside its prey: every candidate is near a detected Observer.
         let candidates = self.candidates(&prey);
         if candidates.is_empty() {
+            let surge = self.surge_near_prey(&prey);
+            if trace.test("surge near prey", surge.is_some()) {
+                return (surge, trace);
+            }
             trace.test("hold card", true);
             return (None, trace);
         }
@@ -140,6 +146,10 @@ impl ArchitectLab {
         if trace.test("undermine", undermine.is_some()) {
             return (undermine.map(|(_, _, command)| *command), trace);
         }
+        let surge = self.surge_near_prey(&prey);
+        if trace.test("surge near prey", surge.is_some()) {
+            return (surge, trace);
+        }
         trace.test("hold card", true);
         (None, trace)
     }
@@ -151,6 +161,39 @@ impl ArchitectLab {
             .iter()
             .find(|card| card.kind == kind)
             .map(|card| card.id)
+    }
+
+    /// Use an instability card only on a floor where a detected Observer stands.
+    /// Prefer an exposed contradiction whose warning it can hasten, then the
+    /// nearest legal cell. The bot never reads an undetected Observer's position.
+    fn surge_near_prey(&self, prey: &[HexCoord]) -> Option<ArchitectCommand> {
+        let card = self.held(super::CardKind::Surge)?;
+        let warning = self.next_retraction();
+        self.mutable_targets()
+            .into_iter()
+            .filter_map(|target| {
+                let near = prey
+                    .iter()
+                    .filter(|cell| cell.level == target.level)
+                    .map(|&cell| travel_distance(cell, target))
+                    .min()?;
+                if near > super::loyal::REACH + 3 {
+                    return None;
+                }
+                let command = ArchitectCommand::Play {
+                    card,
+                    target,
+                    rotation: 0,
+                };
+                self.refusal(command).is_none().then_some((
+                    warning == Some(target),
+                    near,
+                    target,
+                    command,
+                ))
+            })
+            .min_by_key(|&(warning, near, target, _)| (!warning, near, target))
+            .map(|(_, _, _, command)| command)
     }
 
     /// A sensor card played at the foot of a climb no sensor watches yet, on the floor with

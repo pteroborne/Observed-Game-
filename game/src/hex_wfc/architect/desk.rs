@@ -47,6 +47,7 @@ pub(super) enum Line {
     Team,
     Phase,
     Floor,
+    Pressure,
     Observers,
     Requests,
     Message,
@@ -269,6 +270,7 @@ fn side_panel(root: &mut ChildSpawnerCommands) {
     .with_children(|panel| {
         panel.spawn((Line::Heading, label("THE TEAM", 12.0, Role::Muted)));
         panel.spawn((Line::Observers, label("", 13.0, Role::Text)));
+        panel.spawn((Line::Pressure, label("", 12.0, Role::Guardian)));
         // A team's alone: its eyes and its requests. The Rogue board has neither.
         panel
             .spawn((

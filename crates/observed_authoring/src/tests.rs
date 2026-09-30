@@ -726,6 +726,12 @@ fn climb_a_stacked_column_turned(lower: &str, upper: &str, turn: u8) -> Walk {
             max_feet = ended.y;
             highest = ended;
         }
+        // This harness only asks whether the lower tower's climb can finish.
+        // Successful pairs need no more physics ticks; failed pairs still use
+        // the full budget so their highest point remains useful diagnostics.
+        if max_feet - floor >= wanted - 0.6 {
+            break;
+        }
     }
     Walk {
         rise: max_feet - floor,

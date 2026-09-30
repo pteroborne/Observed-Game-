@@ -444,9 +444,8 @@ impl AscentSession {
     /// Refill "must leave at least one card with a legal target in a currently placeable
     /// district" (`docs/architect_ascent_design.md`, section 2): once a beat, a loyal hand
     /// holding no tile for any floor its team stands on draws one in, in place of its
-    /// first card, from its own deck. Otherwise a hand of the wrong district's tiles, stairs
-    /// and doors is dead until something else is played - which, if nothing can be, is
-    /// never.
+    /// first card, from its own deck. The Rogue can play throughout the facility, so its
+    /// seated and joined players' hands use districts with mutable targets instead.
     fn keep_hands_live(&mut self) {
         let beat = u64::from(super::sim::ACTOR_BEAT_TICKS);
         if !self.sim.tick.is_multiple_of(beat) {
@@ -465,6 +464,35 @@ impl AscentSession {
             {
                 hand.deck.offer_any_tile(district);
             }
+        }
+        let rogue_districts: Vec<District> = self
+            .sim
+            .mutable_targets()
+            .into_iter()
+            .map(|cell| District::for_level(cell.level))
+            .collect();
+        let offer_if_dead = |deck: &mut Deck| {
+            if let Some(&district) = rogue_districts.first()
+                && !rogue_districts.iter().any(|&d| deck.has_tile_for(d))
+            {
+                deck.offer_any_tile(district);
+            }
+        };
+        offer_if_dead(&mut self.sim.deck);
+        for hand in self.rogue_hands.values_mut() {
+            offer_if_dead(&mut hand.deck);
+        }
+        // With nobody detected, the bot Rogue's only useful opening is a sensor
+        // at a climb. A seeded hand can have none; offer one on the same beat as
+        // the tile guarantee, preserving that tile in the five-card hand.
+        if self
+            .seats
+            .values()
+            .any(|seat| seat.bot && seat.role == Role::Rogue)
+            && self.sim.rogue_detected().is_empty()
+            && self.sim.sensors.len() < super::sim::MAX_SENSORS
+        {
+            self.sim.deck.offer_kind(super::sim::CardKind::Sensor);
         }
     }
 

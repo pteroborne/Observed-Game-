@@ -9,6 +9,8 @@ use super::{HAND_SIZE, Prng};
 const ROGUE_DIRECTIVES: u8 = 4;
 /// Sensors in the Rogue's deck.
 const ROGUE_SENSORS: u8 = 4;
+/// Instability surges in the Rogue's deck.
+const ROGUE_SURGES: u8 = 3;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CardId(pub u32);
@@ -118,6 +120,8 @@ pub enum CardKind {
     Directive,
     /// The Rogue's: install a sensor on the cell played on (`sim::sensor`).
     Sensor,
+    /// The Rogue's: raise floor disturbance and hasten a pending retraction (`sim::instability`).
+    Surge,
 }
 
 impl CardKind {
@@ -125,7 +129,7 @@ impl CardKind {
     /// architecture.
     #[must_use]
     pub const fn rogue_only(self) -> bool {
-        matches!(self, Self::Directive | Self::Sensor)
+        matches!(self, Self::Directive | Self::Sensor | Self::Surge)
     }
 }
 
@@ -149,6 +153,7 @@ impl Card {
             (CardKind::Tile(shape), None) => shape.label().to_string(),
             (CardKind::Directive, _) => "Guardian directive".to_string(),
             (CardKind::Sensor, _) => "sensor".to_string(),
+            (CardKind::Surge, _) => "instability surge".to_string(),
         }
     }
 }
@@ -185,7 +190,7 @@ impl Deck {
     }
 
     /// The Rogue's deck (design section 7): two of each of `shapes` in each district, the
-    /// doors, and the machinery - Guardian directives and sensors - but no way up.
+    /// doors, and the machinery - Guardian directives, sensors and surges - but no way up.
     #[must_use]
     pub fn rogue(seed: u64, levels: u8, shapes: &[TileShape]) -> Self {
         Self::composed(
@@ -197,6 +202,7 @@ impl Deck {
                 (CardKind::Door, 3),
                 (CardKind::Directive, ROGUE_DIRECTIVES),
                 (CardKind::Sensor, ROGUE_SENSORS),
+                (CardKind::Surge, ROGUE_SURGES),
             ],
         )
     }
@@ -280,6 +286,30 @@ impl Deck {
         for pile in [&mut self.draw, &mut self.discard] {
             if let Some(index) = pile.iter().position(|card| card.kind == kind) {
                 std::mem::swap(&mut self.hand[0], &mut pile[index]);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Offer an effect to a live bot hand, preserving a tile when there is a
+    /// non-tile card to exchange. A bot with nobody detected needs a sensor to
+    /// watch for prey, even when the shuffled five cards dealt it none.
+    pub(crate) fn offer_kind(&mut self, kind: CardKind) -> bool {
+        if self.hand.iter().any(|card| card.kind == kind) {
+            return true;
+        }
+        let Some(replace) = self
+            .hand
+            .iter()
+            .position(|card| !matches!(card.kind, CardKind::Tile(_)))
+            .or_else(|| (!self.hand.is_empty()).then_some(0))
+        else {
+            return false;
+        };
+        for pile in [&mut self.draw, &mut self.discard] {
+            if let Some(index) = pile.iter().position(|card| card.kind == kind) {
+                std::mem::swap(&mut self.hand[replace], &mut pile[index]);
                 return true;
             }
         }
