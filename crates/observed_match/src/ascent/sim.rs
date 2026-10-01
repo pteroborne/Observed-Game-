@@ -1249,7 +1249,13 @@ impl ArchitectLab {
                         return None;
                     }
                 } else {
-                    if !self.economy.is_powered(from.level) || !self.economy.is_powered(next.level)
+                    // A lab board's ascent rooms are powered lifts, inert on a dark floor
+                    // (design section 5). A first-person facility is climbed by walked
+                    // stairs and ramps, which no power failure stops, so its routes keep
+                    // them: the rules agree with the bodies.
+                    if !self.authored
+                        && (!self.economy.is_powered(from.level)
+                            || !self.economy.is_powered(next.level))
                     {
                         return None;
                     }

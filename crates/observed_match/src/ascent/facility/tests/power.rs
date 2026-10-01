@@ -537,3 +537,33 @@ fn a_floor_without_power_leaves_its_plates_inert() {
         "a plate linked to a dark floor carried the body"
     );
 }
+
+/// The real facility is climbed by walked stairs and ramps, which no power failure stops,
+/// so the rules' routes keep a dark floor's way up and down, as the bodies do. (A lab
+/// board's ascent rooms are powered lifts, and a dark floor stops them.)
+#[test]
+fn a_dark_floor_keeps_its_stairs_in_the_rules_routes() {
+    let mut game = game(7);
+    let rules = game.rules();
+    let (foot, head) = rules
+        .world
+        .placements
+        .keys()
+        .filter(|cell| cell.level == 0)
+        .find_map(|&cell| {
+            rules
+                .exits(cell)
+                .into_iter()
+                .find(|next| next.level != cell.level)
+                .map(|next| (cell, next))
+        })
+        .expect("a way up from the ground floor");
+    for (dark, why) in [(0, "the foot's floor dark"), (1, "the head's floor dark")] {
+        game.ascent.stage_power(dark, false);
+        assert!(
+            game.rules().exits(foot).contains(&head),
+            "the way up is gone with {why}"
+        );
+        game.ascent.stage_power(dark, true);
+    }
+}

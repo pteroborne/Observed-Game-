@@ -80,8 +80,8 @@ the combined loop.
     Architect deploys one on a floor its team stands on that has none. Bot bodies only
     take an errand to a generator or station they can reach without leaving the floor.
     A dark floor's doors freeze and its teleport plates go inert, at either end of a link.
-    Next: decide what "ascent rooms are inert" means on a facility climbed by walked
-    stairs (see the integration notes).
+    Its stairs stay walkable, in the rules as for the bodies: the real facility has no
+    powered lifts, and barring stairs could strand a body away from its own generator.
     **Minors can be killed, and cannot crowd (2026-09):** measured on production
     facilities (`hex_wfc::model::kinetic::edges`, every candidate replayed as a real shove),
     a minor that died only out of the facility was all but immortal: a push killed one from

@@ -451,10 +451,14 @@ before the bodies move, the rules tell the physical match which floors are dark
 floor, carries nobody until the power comes back. The game draws such a plate as a lone
 one, unlit and still, the same reading as a plate with no partner.
 
-Still open: the design's "ascent rooms are inert" has no physical counterpart yet. The
-real facility climbs by walked stair towers and stair-card ramps, not powered lifts, so
-bodies climb a dark floor's stairs freely while the rules' own routes (`ArchitectLab::exits`)
-refuse vertical travel when either floor is dark.
+**The way up stays open in the dark** (decided 2026-10-01). The design's "ascent rooms are
+inert" was written for powered lifts. The real facility climbs by walked stair towers and
+stair-card ramps, so a dark floor's stairs stay walkable, and the rules' own routes
+(`ArchitectLab::exits`) keep them on a first-person facility so the rules agree with the
+bodies; a lab board's ascent rooms still stop on a dark floor. Barring the stairs was
+weighed and set aside: parts of a floor reach their own generator only through another
+floor, and a body there with its floor dark and its stairs barred could never restore it.
+Darkness still costs a floor its doors, plates, recharge and sight range.
 
 ### Where a minor can die
 
