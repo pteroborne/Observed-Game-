@@ -42,6 +42,7 @@ mod pad;
 #[cfg(test)]
 mod pad_tests;
 mod released;
+mod sight;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -59,6 +60,7 @@ pub use pad::{HexDeployedPad, HexPadState, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, 
 pub use released::{
     HexMinorState, HexReleasedGuardian, HexReleasedKind, MINOR_BREAKING_DROP, MINOR_SIGHT_STEPS,
 };
+pub use sight::{HexSight, SIGHT_REACH, SIGHT_REFRESH_TICKS};
 pub use snapshot::{HexMapCellSnapshot, HexMatchSnapshot, HexPlayerSnapshot, HexTeamSnapshot};
 
 pub(super) const FIXED_DT: f32 = 1.0 / 60.0;
@@ -375,6 +377,9 @@ pub struct HexWfcMatch {
     /// one, or linked to one, carries nobody. Empty in a match without the rules. Omitted
     /// from snapshots for the same reason as the doors.
     pub(super) dark_floors: BTreeSet<u8>,
+    /// What each body walking the facility sees (`sight`), refreshed on a fixed cadence.
+    /// Derived from positions and colliders, so snapshots leave it out.
+    pub(super) sight: BTreeMap<PlayerId, sight::HexSight>,
     /// The next collider id a deployed door takes.
     pub(super) next_door_collider: u32,
     /// Where the Rogue has sent the major Guardians (`direct_guardians`), which follow
@@ -581,6 +586,7 @@ impl HexWfcMatch {
             kinetic_cooldowns: BTreeMap::new(),
             doors: BTreeMap::new(),
             dark_floors: BTreeSet::new(),
+            sight: BTreeMap::new(),
             guardian_directive: None,
             sensors: sensors::HexSensors::default(),
             next_door_collider: 0,
@@ -595,6 +601,7 @@ impl HexWfcMatch {
         game.objectives = HexObjectiveState::new(&game);
         game.refresh_spawn_to_exit_cost();
         game.observation = game.build_observation();
+        game.refresh_sight();
         game.update_map_knowledge();
         Ok(game)
     }
@@ -662,6 +669,7 @@ impl HexWfcMatch {
         self.step_released();
         self.step_prison();
         self.sync_teleports_to_bodies();
+        self.refresh_sight();
         self.update_map_knowledge();
         // In a match the Architects direct, the Ascent rules decide who has won.
         if !self.directed {
@@ -830,6 +838,7 @@ impl HexWfcMatch {
                 &self.facility,
                 players,
                 &self.lanterns,
+                &self.sight,
             );
         }
     }

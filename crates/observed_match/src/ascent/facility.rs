@@ -329,6 +329,7 @@ impl AscentRules {
                 && let Some(place) = physical.body_place(player)
             {
                 self.session.sim.embody(id, cell, facing, place);
+                self.session.sim.see(id, physical.sight(player).cloned());
             }
         }
         // The match's own Guardian, the Tumbler, is the rules' too: where it stands, in a

@@ -249,6 +249,20 @@ impl ArchitectLab {
         );
     }
 
+    /// What an embodied Observer's body sees (`hex_wfc::sight`), or `None` for a body that
+    /// sees nothing of the facility. It wards and knows by this rather than by lines along
+    /// its facing.
+    pub(crate) fn see(&mut self, id: ObserverId, sight: Option<BTreeMap<HexCoord, f32>>) {
+        match sight {
+            Some(sight) => {
+                self.sight.insert(id, sight);
+            }
+            None => {
+                self.sight.remove(&id);
+            }
+        }
+    }
+
     /// Put an Observer where its body is, in the state its body's place implies.
     ///
     /// A jailed body is in the prison, which the rules see as the lobby it will come out

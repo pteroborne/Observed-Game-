@@ -141,7 +141,9 @@ fn find_play(
     None
 }
 
-/// Walk the body until the Architect has a play `wanted` accepts.
+/// Walk the body until the Architect has a play `wanted` accepts. Every so often it stops
+/// and looks round, as a player does: the rules know only what a body has seen, and a body
+/// the bot has parked sees little beyond the cells it is warding.
 fn explore_until_playable(
     game: &mut AscentMatch,
     wanted: impl Fn(&AscentMatch, HexCoord, u8, usize) -> bool + Copy,
@@ -152,7 +154,12 @@ fn explore_until_playable(
         {
             return command;
         }
-        step(game, Body::Explore, SeatCommand::None);
+        let body = if (tick / 300) % 3 == 2 {
+            Body::Turn(0.6)
+        } else {
+            Body::Explore
+        };
+        step(game, body, SeatCommand::None);
     }
     panic!("walking the facility never uncovered a legal play");
 }
@@ -403,7 +410,9 @@ fn a_directed_facility_changes_only_when_an_architect_changes_it() {
 #[test]
 fn the_same_commands_build_the_same_facility() {
     let run = || {
-        let mut game = game(11);
+        // Seed 11's bot parks its body in the start rooms, and a body sees only what is in
+        // front of it: rooms and a stair, which no card may touch.
+        let mut game = game(7);
         let command = explore_until_playable(&mut game, |_, _, _, _| true);
         step(&mut game, Body::Turn(0.0), SeatCommand::Architect(command));
         for _ in 0..RETRACTION_TICKS * 2 {
@@ -542,6 +551,7 @@ mod prison;
 mod requests;
 mod rogue;
 mod sensors;
+mod sight;
 mod stairs;
 
 #[test]
@@ -790,7 +800,10 @@ fn production_ascent_tick_times() {
             commands: BTreeMap::new(),
         };
         let started = std::time::Instant::now();
-        game.step(&bodies, &seats).unwrap();
+        // The rules may decide the match before the soak ends; what decided it is printed.
+        if game.step(&bodies, &seats) == Err(Refusal::MatchFinished) {
+            break;
+        }
         times.push(started.elapsed());
         if game
             .physical()
@@ -813,6 +826,11 @@ fn production_ascent_tick_times() {
             );
         }
     }
+    eprintln!(
+        "outcome {:?} at tick {}",
+        game.rules().outcome,
+        game.rules().tick
+    );
     let mut sorted = times.clone();
     sorted.sort();
     let plays = game.rules().command_log.len();

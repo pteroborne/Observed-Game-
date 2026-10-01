@@ -99,11 +99,24 @@ breaks, because a locally valid contradiction is play (design section 3).
 
 ### Decisions this made
 
-- **Sight is still the rules' cell sight.** The physical match has no field of view: its
-  observation frame is where players stand, which room door they face, and their torches.
-  So an embodied Observer sees and wards by the rules' existing model, four cells along the
-  way its body faces and one warded step ahead, now driven by the real body. Real
-  field-of-view sampling is its own piece of work.
+- **Sight is the body's real sight** (2026-10-01; it was the rules' cell sight). The
+  physical match casts a fan from every body's eye against its own colliders
+  (`hex_wfc::model::sight`): eleven rays across about ninety degrees, in five rows about
+  the look's pitch, out to four cells (56 m), each body refreshed every sixth tick on a
+  turn spread by id. Walls, floors, ceilings and closed doors stop it; open air does not,
+  so a body sees across an atrium and down a stairwell onto other floors. An embodied
+  Observer wards its own cell and whatever it sees within one cell (`WARD_REACH`, 14 m),
+  and its team sees everything in the fan; a dark floor still costs it everything beyond
+  its own cell. A cell seen from beyond the ward stays playable, so a team can watch an
+  Architect rebuild the far end of a hall it is looking down; only what is near is held.
+  The in-play survivor map records the same sight in place of every
+  unsealed neighbour, so what the Architect targets and what the map shows are one
+  knowledge. A lab board's Observers keep the lines along their facing. Measured over
+  five two-minute bot soaks on production facilities, teams know two to three times the
+  cells they did (61 -> 111, 16 -> 40, 11 -> 20, 31 -> 77, 25 -> 77), the tick costs a
+  median 0.25 ms (0.14 before) and a p95 0.53 ms (0.32), and one seed of five turned into
+  a Rogue victory (2 Rogue wins in 5, from 1): worth watching, not yet a finding. The
+  Guardian's frozen-by-sight test is unchanged, and still has no occlusion.
 - **What would redraw is warded too.** In a built facility a hall's open edges and a room's
   windows are drawn from its neighbours, so retracting the cell beside a watched room would
   open a window in front of whoever is in it. Those neighbours are warded. A lab board draws
@@ -712,8 +725,9 @@ move one, only install another.
 
 - The rules' own Guardians (the lab's cell-level hunters) are not placed; the physical
   Guardian is the one that catches.
-- A team's map knowledge exists twice: the rules' (what the Architect targets) and the
-  physical match's (what the in-play map shows). They are fed by different sight models.
+- A team's map knowledge still exists twice, the rules' (what the Architect targets) and
+  the physical match's (what the in-play map shows), but both are now fed by one sight
+  (`hex_wfc::model::sight`) and hold the same cells.
 - Anchors are one thing now: a lantern anchoring a room's doorway anchors, in the rules,
   both cells either side of it (`HexWfcMatch::anchored_cells`), so no card rewrites or
   retracts them. Before, the rules' anchor set stayed empty on the real facility, and a
@@ -730,10 +744,9 @@ move one, only install another.
 
 1. ~~Reserve and generate a physically connected prison core.~~ Done differently: the
    design moved the maze out of the facility ([The prison](#the-prison)).
-2. Replace the rules' cell sight with real field of view for embodied Observers. Bodies,
-   card plays, the prison, falls and corruption are connected
-   ([above](#the-rules-on-the-real-facility)); do not run a second race simulation beside
-   the rules or convert cell steps into teleporting FPS movement.
+2. ~~Replace the rules' cell sight with real field of view for embodied Observers.~~
+   Done ([Decisions this made](#decisions-this-made)). Still open: the major Guardian's
+   frozen-by-sight test has no occlusion.
 3. Add the dedicated Architect role, mixed ascent/station hand, map placement
    UX, team request UI, power/tool HUD, role transitions, summit/results, and
    controller navigation in the main game. Architect bot seats are not driven

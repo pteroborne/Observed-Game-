@@ -569,10 +569,15 @@ fn a_stair_played_at_the_desk_is_built_and_believed_on_both_floors() {
     let physical = &runtime.match_state.facility.placements;
     assert_eq!(physical[&target].archetype, HexArchetype::RampUp);
     assert_eq!(physical[&head].archetype, HexArchetype::RampHead);
-    // The Architect knows both halves stand, the head on a floor nobody has reached.
+    // The Architect knows both halves stand, the head on a floor nobody has reached: from
+    // what it built, or from what the team has seen of it since (a body may be looking at
+    // the foot from beyond its ward), as the board reads it.
+    let rules = runtime.ascent.as_ref().expect("Ascent rules").rules();
+    let knowledge = desk.knowledge(rules).expect("the team's knowledge");
     for cell in [target, head] {
         assert_eq!(
-            desk.believed(cell, None).map(|p| p.archetype),
+            desk.believed(cell, knowledge.cells.get(&cell))
+                .map(|p| p.archetype),
             Some(physical[&cell].archetype),
             "{cell:?}"
         );

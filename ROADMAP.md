@@ -82,6 +82,12 @@ the combined loop.
     A dark floor's doors freeze and its teleport plates go inert, at either end of a link.
     Its stairs stay walkable, in the rules as for the bodies: the real facility has no
     powered lifts, and barring stairs could strand a body away from its own generator.
+    **Real sight (2026-10):** an embodied Observer now wards and knows by what its body
+    actually sees - a fan of rays from its eye against the match's colliders
+    (`hex_wfc::model::sight`) - warding its own cell and what it sees within one cell, in
+    place of the rules' six-way cell lines. The in-play map records the same sight, so the
+    Architect's knowledge and the map agree. Teams know two to three times the cells they
+    did. Still open: occlusion for the Guardian's frozen-by-sight test.
     **Minors can be killed, and cannot crowd (2026-09):** measured on production
     facilities (`hex_wfc::model::kinetic::edges`, every candidate replayed as a real shove),
     a minor that died only out of the facility was all but immortal: a push killed one from

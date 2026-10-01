@@ -725,9 +725,14 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // The kinetic tool bumped HEX_INPUT_VERSION to 7, which folds into the snapshot,
     // moving the digest (0x6721_adbd_eade_9b9f -> 0x72d6_c076_3eee_2db8) without moving
     // the tick, again proving bit-level representation change rather than behavioral.
+    //
+    // Real sight moved it again (0x72d6_c076_3eee_2db8 -> 0x5e11_e0e4_8938_4db7), once more
+    // without moving the tick: the survivor map now records what each body actually sees
+    // (`sight`) in place of every unsealed neighbour, and the map folds into the snapshot.
+    // This bot never reads the map, so its route is tick for tick the same.
     assert_eq!(
         first.snapshot().digest,
-        0x72d6_c076_3eee_2db8,
+        0x5e11_e0e4_8938_4db7,
         "TR-10 pins the declared-ramp final snapshot digest"
     );
 }

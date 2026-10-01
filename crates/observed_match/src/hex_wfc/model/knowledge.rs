@@ -2,10 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use observed_core::TeamId;
+use observed_core::{PlayerId, TeamId};
 use observed_facility::hex_wfc::{HexWfcWorld, PortSignature};
 use observed_facility::map_spec::RoomRole;
-use observed_hex::{HexCoord, HexFace};
+use observed_hex::HexCoord;
 
 use super::{HexLanternState, HexPlayerState};
 
@@ -45,6 +45,7 @@ impl HexPlayerMapKnowledge {
         world: &HexWfcWorld,
         players: impl Iterator<Item = &'a HexPlayerState>,
         lanterns: &HexLanternState,
+        sight: &BTreeMap<PlayerId, super::HexSight>,
     ) {
         let players = players.collect::<Vec<_>>();
         let member_ids = players.iter().map(|player| player.id).collect::<Vec<_>>();
@@ -56,12 +57,15 @@ impl HexPlayerMapKnowledge {
             .filter(|player| player.team == team && player.in_facility())
         {
             self.record(world, player.cell, HexMapDiscovery::Traversed, false, true);
-            let placement = &world.placements[&player.cell];
-            for face in HexFace::ALL {
-                if placement.ports().port(face) != observed_hex::PortClass::Sealed
-                    && let Some(cell) = world.config.grid().neighbor(player.cell, face)
-                    && world.placements[&cell].space.built()
-                {
+            // What the body actually sees (`sight`), the same cells the Ascent rules know
+            // by, so the team's two maps agree. Seen is not entered: a glimpse does not
+            // tell a room's function.
+            for &cell in sight
+                .get(&player.id)
+                .into_iter()
+                .flat_map(|seen| seen.keys())
+            {
+                if cell != player.cell && world.placements[&cell].space.built() {
                     self.record(world, cell, HexMapDiscovery::Glimpsed, false, false);
                 }
             }
@@ -156,7 +160,13 @@ mod tests {
         };
         let lanterns = HexLanternState::new([player.id], &world);
         let mut map = HexPlayerMapKnowledge::default();
-        map.observe_team(TeamId(0), &world, [&player].into_iter(), &lanterns);
+        map.observe_team(
+            TeamId(0),
+            &world,
+            [&player].into_iter(),
+            &lanterns,
+            &BTreeMap::new(),
+        );
         assert_eq!(
             map.cells[&cell].room_role,
             Some(observed_facility::map_spec::RoomRole::Start)
@@ -172,7 +182,13 @@ mod tests {
         assert!(!map.cells[&cell].is_stale(&world, cell));
         *world.cell_revisions.entry(cell).or_default() += 1;
         assert!(map.cells[&cell].is_stale(&world, cell));
-        map.observe_team(TeamId(0), &world, [&player].into_iter(), &lanterns);
+        map.observe_team(
+            TeamId(0),
+            &world,
+            [&player].into_iter(),
+            &lanterns,
+            &BTreeMap::new(),
+        );
         assert!(!map.cells[&cell].is_stale(&world, cell));
 
         let survey = world

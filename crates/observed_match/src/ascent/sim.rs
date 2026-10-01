@@ -51,6 +51,13 @@ pub const ARCHITECT_COOLDOWN_TICKS: u32 = 300;
 /// travels far, so a short range is nearly as powerful as an unlimited one and much
 /// easier to read on a board. See `labs/suspension_lab`.
 pub const OBSERVER_SIGHT_RANGE: u32 = 4;
+
+/// How near a cell an embodied Observer sees must be to be warded by the look, metres from
+/// the eye: one cell across. On a first-person facility the body's real sight
+/// (`hex_wfc::sight`) stands in for the lab's lines; it wards its own cell and what it
+/// sees this close, close to the lab's own cell and one step on, and knows everything it
+/// sees.
+pub const WARD_REACH: f32 = 14.0;
 pub const HAND_SIZE: usize = 5;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -283,6 +290,10 @@ pub struct ArchitectLab {
     /// Observers whose cell and facing come from a first-person body. The body is the
     /// authority: no beat moves them, and a body falls physically rather than by rule.
     pub(crate) embodied: BTreeSet<ObserverId>,
+    /// What each embodied Observer's body actually sees, each cell with the nearest
+    /// distance it is seen at (`see`). An Observer with an entry wards and knows by it in
+    /// place of the lab's lines along its facing.
+    pub(crate) sight: BTreeMap<ObserverId, BTreeMap<HexCoord, f32>>,
     /// Guardians the host moves and catches with - a first-person match's own - whose
     /// cells the rules take from it (`embody_guardian`) and never move themselves.
     pub(crate) embodied_guardians: BTreeSet<GuardianId>,
@@ -371,6 +382,7 @@ impl ArchitectLab {
             authored: false,
             rewrites: BTreeMap::new(),
             embodied: BTreeSet::new(),
+            sight: BTreeMap::new(),
             embodied_guardians: BTreeSet::new(),
             releases: Vec::new(),
         }
@@ -1345,16 +1357,32 @@ impl ArchitectLab {
         self.seen.clear();
         let mut active = 0usize;
         let mut lit = 0usize;
-        let watchers: Vec<(HexCoord, HexFace)> = self
+        let watchers: Vec<(ObserverId, HexCoord, HexFace)> = self
             .observers
             .values()
             .filter(|observer| observer.state == ObserverState::Active)
-            .map(|observer| (observer.cell, observer.facing))
+            .map(|observer| (observer.id, observer.cell, observer.facing))
             .collect();
-        for (cell, facing) in watchers {
+        for (id, cell, facing) in watchers {
             active += 1;
             self.observed.insert(cell);
             self.seen.insert(cell);
+            if let Some(sight) = self.sight.get(&id) {
+                // A body's real sight: what it sees near enough wards, all of it is seen.
+                // A dark floor still costs it everything beyond its own cell.
+                if self.economy.is_powered(cell.level) {
+                    let mut warded = false;
+                    for (&at, &distance) in sight {
+                        self.seen.insert(at);
+                        if distance <= WARD_REACH && at != cell {
+                            self.observed.insert(at);
+                            warded = true;
+                        }
+                    }
+                    lit += usize::from(warded);
+                }
+                continue;
+            }
             if self.economy.is_powered(cell.level) {
                 // Warding: the short set, unchanged. This is what stops a retraction.
                 if let Some(next) = self.step_through(cell, facing) {
@@ -1402,7 +1430,12 @@ impl ArchitectLab {
             }) {
                 team_observed.insert(observer.cell);
                 if self.economy.is_powered(observer.cell.level) {
-                    team_observed.extend(self.sight_along(observer.cell, observer.facing));
+                    match self.sight.get(&observer.id) {
+                        Some(sight) => team_observed.extend(sight.keys().copied()),
+                        None => {
+                            team_observed.extend(self.sight_along(observer.cell, observer.facing));
+                        }
+                    }
                 }
             }
             let known_obs = self
