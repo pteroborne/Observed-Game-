@@ -443,8 +443,18 @@ moment the body arrived on a powered floor, and the bot stalled there
 The power capture deploys a station near the body (`AscentRules::stage_station`) if the
 team's bot Architect has not yet played one on the spawn floor.
 
-Still open: doors, teleport plates and ascent are not yet gated by power in the physical
-match.
+**What a dark floor stops** (design section 5). Its doors freeze: the rules refuse to
+operate a door on a floor without power, and the physical panel follows the rules
+(`a_floor_without_power_freezes_its_doors`). Its teleport plates are inert: every tick,
+before the bodies move, the rules tell the physical match which floors are dark
+(`HexWfcMatch::set_dark_floors`), and a plate on a dark floor, or linked to one on a dark
+floor, carries nobody until the power comes back. The game draws such a plate as a lone
+one, unlit and still, the same reading as a plate with no partner.
+
+Still open: the design's "ascent rooms are inert" has no physical counterpart yet. The
+real facility climbs by walked stair towers and stair-card ramps, not powered lifts, so
+bodies climb a dark floor's stairs freely while the rules' own routes (`ArchitectLab::exits`)
+refuse vertical travel when either floor is dark.
 
 ### Where a minor can die
 

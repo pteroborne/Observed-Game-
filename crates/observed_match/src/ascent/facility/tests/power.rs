@@ -474,3 +474,66 @@ fn a_rewritten_tile_takes_its_station_with_it() {
         "the station still stands in the facility"
     );
 }
+
+/// A linked pair of the body's team's plates, one where the body stands on `from_level`'s
+/// open site and one on `to_level`'s.
+fn plates(game: &mut AscentMatch, from_level: u8, to_level: u8) -> (Fixture, Fixture) {
+    let from = open_site(game, from_level);
+    let to = game
+        .ascent
+        .station_points
+        .iter()
+        .find(|(cell, _)| cell.level == to_level && **cell != from.cell)
+        .map(|(&cell, &floor)| Fixture {
+            kind: FixtureKind::Station,
+            cell,
+            floor,
+        })
+        .expect("a second site");
+    let team = game.physical().players[&BODY].team;
+    for site in [from, to] {
+        game.physical
+            .pads
+            .deploy(BODY, team, site.cell, site.floor)
+            .expect("a plate to deploy");
+    }
+    stand_at(game, from, Vec3::ZERO);
+    (from, to)
+}
+
+/// Whether standing still on a plate, past the re-arm a deployed plate gives its owner,
+/// carries the body anywhere.
+fn carried(game: &mut AscentMatch) -> bool {
+    (0..u64::from(crate::hex_wfc::PAD_REARM_TICKS) + 30).any(|_| {
+        press(game, HexActionButtons::default());
+        game.physical()
+            .recent_events
+            .iter()
+            .any(|event| event.kind == HexMatchEventKind::PadTraversed)
+    })
+}
+
+/// A dark floor's plates are inert (design section 5): a body standing on one goes
+/// nowhere, and nor does one whose link ends on a dark floor. With the power back, the
+/// same plate carries it.
+#[test]
+fn a_floor_without_power_leaves_its_plates_inert() {
+    let mut game = game(7);
+    plates(&mut game, 0, 0);
+    game.ascent.stage_power(0, false);
+    assert!(!carried(&mut game), "a dark floor's plate carried the body");
+
+    game.ascent.stage_power(0, true);
+    assert!(
+        carried(&mut game),
+        "the restored plate did not carry the body"
+    );
+
+    let mut game = super::game(7);
+    plates(&mut game, 0, 1);
+    game.ascent.stage_power(1, false);
+    assert!(
+        !carried(&mut game),
+        "a plate linked to a dark floor carried the body"
+    );
+}

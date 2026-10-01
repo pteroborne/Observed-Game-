@@ -371,6 +371,10 @@ pub struct HexWfcMatch {
     /// match without Architects. Omitted from snapshots: they follow the rules, which a
     /// late joiner replays.
     pub(super) doors: BTreeMap<(HexCoord, HexFace), doors::HexDoor>,
+    /// Floors without power, as the Ascent rules last said (`set_dark_floors`): a plate on
+    /// one, or linked to one, carries nobody. Empty in a match without the rules. Omitted
+    /// from snapshots for the same reason as the doors.
+    pub(super) dark_floors: BTreeSet<u8>,
     /// The next collider id a deployed door takes.
     pub(super) next_door_collider: u32,
     /// Where the Rogue has sent the major Guardians (`direct_guardians`), which follow
@@ -576,6 +580,7 @@ impl HexWfcMatch {
             stranded_ticks: BTreeMap::new(),
             kinetic_cooldowns: BTreeMap::new(),
             doors: BTreeMap::new(),
+            dark_floors: BTreeSet::new(),
             guardian_directive: None,
             sensors: sensors::HexSensors::default(),
             next_door_collider: 0,

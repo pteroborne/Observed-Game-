@@ -7,6 +7,10 @@
 //! not. That reading has to survive with the HUD off, since HUD-off is the
 //! shipped default.
 //!
+//! In Architect Ascent a floor without power leaves its plates inert, at either end of a
+//! link, so such a plate is drawn as a lone one: the same reading, "this goes nowhere",
+//! until the floor's generator is restored.
+//!
 //! Geometry follows the drop-in convention — [`observed_assets::PAD`] if an
 //! author has supplied one, a procedural hexagonal plate otherwise — and every
 //! material comes from `observed_style`: the signal parts from the same semantics
@@ -183,13 +187,17 @@ pub(super) fn sync_projection(
     }
 
     for pad in runtime.match_state.pads.deployed.values() {
+        let game = &runtime.match_state;
+        // A plate on a floor without power, or linked to one, carries nobody (Architect
+        // Ascent), so it reads as a lone plate until the power comes back.
+        let live = |cell: observed_hex::HexCoord| !game.floor_dark(cell.level);
         let face = if local_team != Some(pad.team) {
             Face::Rival
-        } else if runtime
-            .match_state
-            .pads
-            .link_target(pad.team, pad.id)
-            .is_some()
+        } else if live(pad.cell)
+            && game
+                .pads
+                .link_target(pad.team, pad.id)
+                .is_some_and(|other| live(other.cell))
         {
             Face::Linked
         } else {
@@ -356,6 +364,10 @@ fn pad_signature(runtime: &HexWfcRuntime) -> u64 {
         mix(u64::from(id.0));
         mix(u64::from(pad.owner.0));
         mix(u64::from(pad.team.0));
+    }
+    // In Ascent a floor's power decides whether its plates are live.
+    for level in 0..runtime.match_state.facility.config.levels {
+        mix(u64::from(runtime.match_state.floor_dark(level)));
     }
     // In Ascent, whether a hand is free for the plates turns on the torch.
     if crate::hex_wfc::kinetic::carried(runtime) {

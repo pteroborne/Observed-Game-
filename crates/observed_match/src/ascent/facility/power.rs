@@ -18,6 +18,10 @@
 //! - A body within reach of a powered station draws [`RECHARGE_PER_BEAT`] each beat. A
 //!   station on a dark floor supplies nothing.
 //!
+//! - Every tick, before the bodies move, the physical match is told which floors are dark
+//!   (`HexWfcMatch::set_dark_floors`): a plate on a dark floor, or linked to one, carries
+//!   nobody until the power comes back. Doors freeze by the rules' own refusal.
+//!
 //! The lab's teleport pads are not sited: the first-person match has plates of its own.
 
 use std::cell::RefCell;
@@ -261,6 +265,14 @@ impl AscentRules {
             .iter()
             .copied()
             .find(|fixture| fixture.kind == FixtureKind::Station && fixture.cell == cell)
+    }
+
+    /// Tell the physical match which floors have no power, so their plates carry nobody.
+    pub(super) fn hand_over_power(&self, physical: &mut HexWfcMatch) {
+        let economy = &self.session.sim.economy;
+        physical.set_dark_floors(
+            (0..self.session.sim.world.config.levels).filter(|&level| !economy.is_powered(level)),
+        );
     }
 
     /// Set a floor's power. For evidence captures: play switches it only at the generator,

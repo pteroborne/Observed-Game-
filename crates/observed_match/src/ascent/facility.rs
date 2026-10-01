@@ -218,6 +218,9 @@ impl AscentRules {
         if self.session.sim.outcome != MatchOutcome::Running {
             return Err(Refusal::MatchFinished);
         }
+        // The bodies move under the power the rules hold now: a dark floor's plates are
+        // inert (`power`).
+        self.hand_over_power(physical);
         physical.step(&self.affordable(bodies));
         self.pay_for_shots(physical);
         self.observe(physical);

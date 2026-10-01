@@ -220,6 +220,18 @@ impl HexWfcMatch {
     /// against where they ended up rather than where they started; the existing
     /// `sync_teleports_to_bodies` later in the step carries the jump into the
     /// physics body exactly as a spawn does.
+    /// Set which floors have no power, as the Ascent rules have it: their plates carry
+    /// nobody until it is restored.
+    pub fn set_dark_floors(&mut self, levels: impl IntoIterator<Item = u8>) {
+        self.dark_floors = levels.into_iter().collect();
+    }
+
+    /// Whether `level` has no power, as the rules last said.
+    #[must_use]
+    pub fn floor_dark(&self, level: u8) -> bool {
+        self.dark_floors.contains(&level)
+    }
+
     pub(super) fn step_pad_contacts(&mut self) {
         self.pads.tick_suppression();
         // Plates are stored on the deck; a body is positioned by its centre. The
@@ -250,6 +262,11 @@ impl HexWfcMatch {
             else {
                 continue;
             };
+            // A floor without power leaves its plates inert, at either end of the link
+            // (design section 5).
+            if self.floor_dark(cell.level) || self.floor_dark(target.0.level) {
+                continue;
+            }
             let player = self.players.get_mut(&id).expect("stepped player");
             player.cell = target.0;
             player.position = target.1 + Vec3::Y * half_height;
