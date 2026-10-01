@@ -777,7 +777,11 @@ move one, only install another.
   lobby and a bot everywhere else; plays, requisitions, asks and answers travel as seat
   commands in the frames (`docs/lan_integration.md`). A match
   snapshot still does not carry where each body is or the prison's mazes, so a late
-  joiner replays history from tick one, which rebuilds both.
+  joiner replays history from tick one, which rebuilds both. That replay runs at about
+  fifty ticks of match a second, and the server now streams a joiner behind the live tick
+  as fast as it can replay (several bundles a tick, where it was one), so a joiner catches
+  up in seconds rather than minutes; a full state snapshot was weighed and set aside as
+  far more state to keep digest-equal than the replay costs.
 - A replay tape of an Ascent match samples jailed bodies at their maze coordinates.
 
 ## Remaining integration

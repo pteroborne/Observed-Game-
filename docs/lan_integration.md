@@ -60,7 +60,13 @@ connected, and every peer must agree.
    tick 2 (`server` test `replays_in_step`).
 4. Missing/disconnected human commands immediately fall back to bot control. A seat is
    reserved for 30 seconds; reconnecting and late-joining clients replay history from
-   tick one before control transfers back.
+   tick one before control transfers back. A client behind the live tick is streamed up
+   to twelve bundles a tick, consecutive from what it has applied, and replays frames
+   for up to 6 ms a tick rather than a fixed window of sixteen, so it catches up at the
+   rate it can replay (about fifty ticks of match a second): a joiner 1,500 ticks behind
+   comes into step in about 55 ticks, where it took 138. One bundle a tick held it to a
+   datagram's worth of frames a tick, three at sixteen seats, which would have taken ten
+   minutes to bring a joiner at minute twenty into step.
 5. A digest mismatch triggers one complete deterministic history replay. A repeated
    mismatch disconnects the incompatible client. After the match, the server returns
    connected players to the lobby for another ready cycle.

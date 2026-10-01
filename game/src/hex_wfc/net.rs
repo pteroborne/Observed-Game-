@@ -12,6 +12,12 @@ use observed_net::lan::WireSeatCommand;
 
 use super::sim::{HexWfcRuntime, match_from_launch, record_generation_changes};
 
+/// How long one networked tick may spend replaying frames when this machine is behind -
+/// joining late, reconnecting or resyncing - before it lets the frame be drawn. It replays
+/// about fifty ticks of match a second of this, so a joiner catches up at a dozen or more
+/// ticks a tick, where a fixed window of sixteen frames let it gain only fifteen at best.
+const CATCH_UP_BUDGET: std::time::Duration = std::time::Duration::from_millis(6);
+
 /// One networked tick. Returns whether the player must leave: the server is gone for
 /// good, or this machine cannot stay in step with it.
 pub(super) fn step(
@@ -43,59 +49,68 @@ pub(super) fn step(
         runtime.status = format!("LAN input error: {error}");
     }
     let launch = client.launch;
-    let frames = client.take_ready_frames(observed_net::lan::FRAME_WINDOW);
+    let started = std::time::Instant::now();
     let mut request_resync = false;
     let mut repeated_desync = false;
-    for frame in frames {
-        let previous_generation = runtime.match_state.facility.generation;
-        let input = frame.to_input_frame();
-        // Through the rules when the match plays them, as the server steps it, with every
-        // seat's say mapped to its rules seat the way the server maps it.
-        let seats = frame
-            .seat_commands()
-            .into_iter()
-            .map(|(player, command)| {
-                let at_desk = launch.is_some_and(|launch| launch.is_architect(player));
-                (
-                    observed_match::ascent::facility::seat_for(
-                        &runtime.match_state,
-                        player,
-                        at_desk,
-                    ),
-                    command,
-                )
-            })
-            .collect();
-        if !super::ascent::apply(
-            runtime,
-            &input,
-            seats,
-            desk.as_deref_mut(),
-            ask.as_deref_mut(),
-        ) {
-            runtime.match_state.step(&input);
-        }
-        let digest = runtime.match_state.snapshot().digest;
-        if digest != frame.digest {
-            if runtime.resync_attempts == 0 {
-                runtime.status = format!(
-                    "DESYNC at tick {}; replaying authoritative history",
-                    frame.tick
-                );
-                request_resync = true;
-            } else {
-                runtime.status = format!(
-                    "Repeated DESYNC at tick {}: local {digest:016x}, server {:016x}",
-                    frame.tick, frame.digest
-                );
-                repeated_desync = true;
+    // A window of frames at a time, and another while there are more and the budget lasts:
+    // in step there is a frame or two; behind, the history the server streams.
+    'replay: loop {
+        let frames = client.take_ready_frames(observed_net::lan::FRAME_WINDOW);
+        let more = frames.len() == observed_net::lan::FRAME_WINDOW;
+        for frame in frames {
+            let previous_generation = runtime.match_state.facility.generation;
+            let input = frame.to_input_frame();
+            // Through the rules when the match plays them, as the server steps it, with every
+            // seat's say mapped to its rules seat the way the server maps it.
+            let seats = frame
+                .seat_commands()
+                .into_iter()
+                .map(|(player, command)| {
+                    let at_desk = launch.is_some_and(|launch| launch.is_architect(player));
+                    (
+                        observed_match::ascent::facility::seat_for(
+                            &runtime.match_state,
+                            player,
+                            at_desk,
+                        ),
+                        command,
+                    )
+                })
+                .collect();
+            if !super::ascent::apply(
+                runtime,
+                &input,
+                seats,
+                desk.as_deref_mut(),
+                ask.as_deref_mut(),
+            ) {
+                runtime.match_state.step(&input);
             }
+            let digest = runtime.match_state.snapshot().digest;
+            if digest != frame.digest {
+                if runtime.resync_attempts == 0 {
+                    runtime.status = format!(
+                        "DESYNC at tick {}; replaying authoritative history",
+                        frame.tick
+                    );
+                    request_resync = true;
+                } else {
+                    runtime.status = format!(
+                        "Repeated DESYNC at tick {}: local {digest:016x}, server {:016x}",
+                        frame.tick, frame.digest
+                    );
+                    repeated_desync = true;
+                }
+                break 'replay;
+            }
+            if let Some(replay) = replay.as_deref_mut() {
+                replay.record_hex_wfc(&runtime.match_state);
+            }
+            record_generation_changes(runtime, previous_generation);
+        }
+        if !more || started.elapsed() >= CATCH_UP_BUDGET {
             break;
         }
-        if let Some(replay) = replay.as_deref_mut() {
-            replay.record_hex_wfc(&runtime.match_state);
-        }
-        record_generation_changes(runtime, previous_generation);
     }
     if request_resync {
         let launch = client.launch;
@@ -305,6 +320,7 @@ mod tests {
         );
 
         let mut joined_late = false;
+        let mut caught_up: Option<usize> = None;
         let mut played = 0;
         for _ in 0..8_000 {
             drive(&mut server, &mut peers);
@@ -319,6 +335,16 @@ mod tests {
                 && late.client().launch.is_some()
             {
                 late.prepare();
+            }
+            // How long the joiner takes to come into step: instrumentation, timed, so
+            // printed rather than asserted (the server streams a lagging client several
+            // bundles a tick, which `observed_server` tests deterministically).
+            if let (Some(late), Some(game)) = (peers.get(2), server.match_state())
+                && let Some(runtime) = late.runtime.as_ref()
+                && caught_up.is_none()
+                && runtime.match_state.tick + observed_net::lan::INPUT_LEAD_TICKS >= game.tick
+            {
+                caught_up = Some(played - 1_500);
             }
             let finished = server.match_state().is_none_or(|game| {
                 game.status == observed_match::hex_wfc::HexMatchStatus::Finished
@@ -353,7 +379,8 @@ mod tests {
             assert!(runtime.ascent.is_some(), "peer {index} plays the rules");
         }
         eprintln!(
-            "LAN soak: {server_tick} ticks, {} peers in step, catches {}",
+            "LAN soak: {server_tick} ticks, {} peers in step, catches {}, the late joiner in \
+             step {caught_up:?} ticks after joining 1500 behind",
             peers.len(),
             server.match_state().map_or(0, |game| game
                 .prison

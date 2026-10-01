@@ -29,6 +29,9 @@ use observed_progression::session::{AccountId, LanPhase, LanSeatOccupant, LanSes
 
 pub const SERVER_HZ: u64 = 60;
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(2);
+/// Bundles a tick a client behind the live tick is sent, at most: twelve datagrams a tick,
+/// about 700 kB/s on a LAN, comfortably ahead of how fast a client replays.
+const CATCH_UP_BUNDLES: usize = 12;
 
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
@@ -776,15 +779,35 @@ impl AuthoritativeServer {
                 self.send_launch_start_to(client.token);
             }
             let start = client.ack_through.saturating_add(1);
-            let frames = self
+            let per_bundle = frames_per_bundle(self.session.seats.len());
+            // A client in step needs one bundle a tick. One behind - joining late,
+            // reconnecting, resyncing - gets several, consecutive from what it has applied,
+            // so it catches up at the rate it can replay rather than a datagram's worth a
+            // tick: at sixteen seats a bundle holds three frames, and one a tick took ten
+            // minutes to bring a joiner at minute twenty into step.
+            let behind = self
                 .frames
+                .last()
+                .map_or(0, |last| last.tick.saturating_sub(client.ack_through));
+            let bundles = if behind > per_bundle as u64 {
+                CATCH_UP_BUNDLES
+            } else {
+                1
+            };
+            // History is kept in tick order; find where the client is, not scan to it.
+            let from = self.frames.partition_point(|frame| frame.tick < start);
+            let pending: Vec<_> = self.frames[from..]
                 .iter()
-                .filter(|frame| frame.tick >= start)
-                .take(frames_per_bundle(self.session.seats.len()))
+                .take(per_bundle * bundles)
                 .cloned()
-                .collect::<Vec<_>>();
-            if !frames.is_empty() {
-                let _ = self.send_to(client.address, &LanPacket::FrameBundle { frames });
+                .collect();
+            for frames in pending.chunks(per_bundle) {
+                let _ = self.send_to(
+                    client.address,
+                    &LanPacket::FrameBundle {
+                        frames: frames.to_vec(),
+                    },
+                );
             }
         }
     }
@@ -1231,6 +1254,42 @@ mod tests {
         assert!(
             replayed >= 180,
             "three seconds of frames replayed, got {replayed}"
+        );
+    }
+
+    /// A client behind the live tick - joining late, reconnecting, resyncing - is streamed
+    /// many bundles a tick, so it catches up as fast as it can replay. One a tick held a
+    /// joiner to a datagram's worth of frames a tick: at sixteen seats, three.
+    #[test]
+    fn a_client_behind_is_streamed_many_bundles_a_tick() {
+        let config = ServerConfig {
+            bind: "127.0.0.1:0".parse().expect("loopback address"),
+            discovery: false,
+            match_config: HexMatchConfig::default(),
+            ..ServerConfig::default()
+        };
+        let mut server = AuthoritativeServer::bind(config).expect("server binds");
+        let hash = server.content.simulation_content_hash();
+        let address = server.local_addr().expect("server address");
+        let mut client = LanClient::connect(address, 79, None, None, hash).expect("client binds");
+        drive_until(&mut server, &mut client, |client| client.token.is_some());
+        client.set_ready(true).expect("ready");
+        drive_until(&mut server, &mut client, |client| client.launch.is_some());
+        let launch = client.launch.expect("launch descriptor");
+        client
+            .mark_launch_ready(launch.match_number)
+            .expect("prepared client announces readiness");
+        // The match runs on while this client applies nothing: it falls behind.
+        for _ in 0..400 {
+            server.fixed_tick().expect("server tick");
+            client.poll();
+            thread::yield_now();
+        }
+        let per_bundle = frames_per_bundle(server.session.seats.len());
+        let buffered = client.take_ready_frames(usize::MAX).len();
+        assert!(
+            buffered >= per_bundle * CATCH_UP_BUNDLES,
+            "a client behind was streamed {buffered} frames, a bundle being {per_bundle}"
         );
     }
 
