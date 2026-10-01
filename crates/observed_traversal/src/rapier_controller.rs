@@ -218,6 +218,17 @@ impl RapierTraversalScene {
             .any(|(_, collider)| collider.user_data != 0)
     }
 
+    /// Whether nothing solid stands on the straight line from `from` to `to`.
+    #[must_use]
+    pub fn line_is_clear(&self, from: Vec3, to: Vec3) -> bool {
+        let offset = to - from;
+        let length = offset.length();
+        if length < 1e-4 {
+            return true;
+        }
+        self.ray_distance(from, offset / length, length).is_none()
+    }
+
     /// Run `query` against the live stable colliders, as the controller sees them: for a
     /// caller that moves a body itself, such as `gravity::step` for a body whose up is not
     /// the world's.

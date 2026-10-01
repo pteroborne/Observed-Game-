@@ -696,6 +696,8 @@ impl HexWfcMatch {
         self.step_mutation();
         if self.guardian_active {
             let (doors, grid) = (&self.doors, self.facility.config.grid());
+            let physics = &self.physics;
+            let eye_height = self.eye_height();
             self.guardian.step(
                 self.tick,
                 &self.facility,
@@ -706,6 +708,8 @@ impl HexWfcMatch {
                     prison: self.prison.as_ref(),
                     closed: &|a, b| doors::closed_between(doors, grid, a, b),
                     directive: self.guardian_directive,
+                    clear: &|from, to| physics.line_is_clear(from, to),
+                    eye_height,
                 },
             );
         }

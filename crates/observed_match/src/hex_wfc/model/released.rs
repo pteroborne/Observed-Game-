@@ -238,6 +238,7 @@ impl HexWfcMatch {
     pub(super) fn step_released(&mut self) {
         let ids: Vec<u16> = self.released.keys().copied().collect();
         let grid = self.facility.config.grid();
+        let eye_height = self.eye_height();
         for id in ids {
             match self.released.get_mut(&id) {
                 Some(HexReleasedGuardian::Major(major)) => major.step(
@@ -250,6 +251,8 @@ impl HexWfcMatch {
                         prison: self.prison.as_ref(),
                         closed: &|a, b| super::doors::closed_between(&self.doors, grid, a, b),
                         directive: self.guardian_directive,
+                        clear: &|from, to| self.physics.line_is_clear(from, to),
+                        eye_height,
                     },
                 ),
                 Some(HexReleasedGuardian::Minor(_)) => self.step_minor(id),

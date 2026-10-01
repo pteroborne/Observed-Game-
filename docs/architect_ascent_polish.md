@@ -115,8 +115,13 @@ breaks, because a locally valid contradiction is play (design section 3).
   five two-minute bot soaks on production facilities, teams know two to three times the
   cells they did (61 -> 111, 16 -> 40, 11 -> 20, 31 -> 77, 25 -> 77), the tick costs a
   median 0.25 ms (0.14 before) and a p95 0.53 ms (0.32), and one seed of five turned into
-  a Rogue victory (2 Rogue wins in 5, from 1): worth watching, not yet a finding. The
-  Guardian's frozen-by-sight test is unchanged, and still has no occlusion.
+  a Rogue victory (2 Rogue wins in 5, from 1): worth watching, not yet a finding.
+- **A Guardian is frozen only by what is in plain view.** Its frozen-by-sight test kept
+  its range, facing and adjacent-cell checks and now also needs a clear line from the
+  body's eye to some point of the Guardian's body, low, middle or high, through the
+  match's colliders (`RapierTraversalScene::line_is_clear`): a wall between them hides it
+  as a closed door already did. It saw through walls before. The same five soaks changed
+  by one outcome's timing: seed 2's Rogue victory came at tick 2,852 instead of 2,940.
 - **What would redraw is warded too.** In a built facility a hall's open edges and a room's
   windows are drawn from its neighbours, so retracting the cell beside a watched room would
   open a window in front of whoever is in it. Those neighbours are warded. A lab board draws
@@ -780,8 +785,8 @@ move one, only install another.
 1. ~~Reserve and generate a physically connected prison core.~~ Done differently: the
    design moved the maze out of the facility ([The prison](#the-prison)).
 2. ~~Replace the rules' cell sight with real field of view for embodied Observers.~~
-   Done ([Decisions this made](#decisions-this-made)). Still open: the major Guardian's
-   frozen-by-sight test has no occlusion.
+   Done ([Decisions this made](#decisions-this-made)), and a Guardian is frozen only by
+   what is in plain view.
 3. Add the dedicated Architect role, mixed ascent/station hand, map placement
    UX, team request UI, power/tool HUD, role transitions, summit/results, and
    controller navigation in the main game. Architect bot seats are not driven

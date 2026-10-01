@@ -90,10 +90,15 @@ impl HexGuardianState {
             prison,
             closed,
             directive,
+            clear,
+            eye_height,
         } = bounds;
-        // A closed door between them hides it, as a wall would.
+        // A closed door between them hides it, and so does anything else solid: some point
+        // of its body has to be in plain view of the eye.
         let observed = players.values().any(|player| {
-            player_sees_guardian(world, player, self) && !closed(player.cell, self.cell)
+            player_sees_guardian(world, player, self)
+                && !closed(player.cell, self.cell)
+                && in_plain_view(player.position + Vec3::Y * eye_height, self.position, clear)
         });
         let anchored = lanterns.anchors_blueprint_cell(world, self.cell);
         self.status = if observed {
@@ -249,6 +254,20 @@ pub(super) struct HexGuardianBounds<'a> {
     pub closed: &'a dyn Fn(HexCoord, HexCoord) -> bool,
     /// The Rogue's directive, which a major Guardian walks to instead of hunting.
     pub directive: Option<HexCoord>,
+    /// Whether nothing solid stands between two points: the match's colliders.
+    pub clear: &'a dyn Fn(Vec3, Vec3) -> bool,
+    /// How far above a body's centre its eye is.
+    pub eye_height: f32,
+}
+
+/// Heights above a Guardian's centre that an eye may see of it: low, middle and high.
+const SEEN_AT: [f32; 3] = [-0.5, 0.3, 1.1];
+
+/// Whether `eye` has a clear line to some point of the Guardian standing at `centre`.
+fn in_plain_view(eye: Vec3, centre: Vec3, clear: &dyn Fn(Vec3, Vec3) -> bool) -> bool {
+    SEEN_AT
+        .into_iter()
+        .any(|height| clear(eye, centre + Vec3::Y * height))
 }
 
 impl super::HexWfcMatch {
@@ -267,12 +286,14 @@ impl super::HexWfcMatch {
 }
 
 impl HexGuardianBounds<'_> {
-    /// No prison and no doors.
+    /// No prison, no doors, and nothing solid in the way.
     #[cfg(test)]
     pub(super) const OPEN: HexGuardianBounds<'static> = HexGuardianBounds {
         prison: None,
         closed: &|_, _| false,
         directive: None,
+        clear: &|_, _| true,
+        eye_height: 0.7,
     };
 }
 

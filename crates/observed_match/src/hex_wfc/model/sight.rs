@@ -307,4 +307,92 @@ mod tests {
             assert_eq!(a.sights(), b.sights(), "tick {tick}");
         }
     }
+
+    /// The Guardian is frozen only by what is in plain view. Over the neighbouring cells
+    /// round the spawn, a body facing the Guardian from within range freezes it where some
+    /// line from its eye reaches the Guardian's body, and not where a wall stands across
+    /// every one: there must be at least one of each, and each must come out so.
+    #[test]
+    fn the_guardian_is_frozen_only_by_what_is_in_plain_view() {
+        use crate::hex_wfc::model::HexGuardianStatus;
+
+        let config = HexMatchConfig {
+            teams: 1,
+            members_per_team: 1,
+            guardian: true,
+            wfc: HexWfcConfig {
+                levels: 2,
+                ..HexWfcConfig::default()
+            },
+        };
+        let base = HexWfcMatch::new_with_content(
+            7,
+            config,
+            crate::hex_wfc::compatibility_test_content().clone(),
+        )
+        .expect("a two-level facility solves");
+        let grid = base.facility.config.grid();
+        let mut cells: Vec<HexCoord> = base
+            .facility
+            .placements
+            .iter()
+            .filter(|(cell, placement)| cell.level == 0 && placement.space.built())
+            .map(|(&cell, _)| cell)
+            .collect();
+        cells.sort();
+        let (mut blocked, mut clear) = (0, 0);
+        'search: for from in cells {
+            for face in HexFace::LATERAL {
+                let Some(to) = grid.neighbor(from, face) else {
+                    continue;
+                };
+                let open =
+                    base.facility.placements[&from].is_open(face)
+                        && base.facility.placements.get(&to).is_some_and(|other| {
+                            other.space.built() && other.is_open(face.opposite())
+                        });
+                if !open {
+                    continue;
+                }
+                let centre = Vec3::from_array(hex_origin(to)) + Vec3::Y * 0.9;
+                for feet in base.standing_points(from) {
+                    let mut game = base.clone();
+                    game.stand_body_for_tests(BODY, from, feet);
+                    game.aim_body_for_tests(BODY, centre);
+                    let (eye, _) = game.eye_and_look(BODY).expect("a body");
+                    if !(2.0..13.0).contains(&eye.distance(centre)) {
+                        continue;
+                    }
+                    game.guardian.cell = to;
+                    game.guardian.position = centre;
+                    let seen = [-0.5, 0.3, 1.1]
+                        .into_iter()
+                        .any(|height| game.physics.line_is_clear(eye, centre + Vec3::Y * height));
+                    if seen && clear >= 1 || !seen && blocked >= 1 {
+                        continue;
+                    }
+                    let frame = HexInputFrame {
+                        version: HEX_INPUT_VERSION,
+                        tick: game.tick + 1,
+                        commands: BTreeMap::new(),
+                    };
+                    game.step(&frame);
+                    let frozen = game.guardian.status == HexGuardianStatus::FrozenByPlayer;
+                    assert_eq!(frozen, seen, "{from:?} -> {to:?} from {feet}");
+                    if seen {
+                        clear += 1;
+                    } else {
+                        blocked += 1;
+                    }
+                    if clear >= 1 && blocked >= 1 {
+                        break 'search;
+                    }
+                }
+            }
+        }
+        assert!(
+            clear >= 1 && blocked >= 1,
+            "clear {clear}, blocked {blocked}"
+        );
+    }
 }

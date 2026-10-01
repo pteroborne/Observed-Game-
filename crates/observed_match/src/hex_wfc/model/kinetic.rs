@@ -126,6 +126,13 @@ impl HexWfcMatch {
         }
     }
 
+    /// How far above a body's centre its eye is.
+    #[must_use]
+    pub fn eye_height(&self) -> f32 {
+        let config = self.content.traversal_profile().controller();
+        config.eye_height - config.half_height
+    }
+
     /// Radians a unit of look turns a body: what a dial of the plumb turns it by too, so
     /// dialling feels like looking.
     #[must_use]
