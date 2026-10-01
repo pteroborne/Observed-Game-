@@ -49,6 +49,11 @@ pub struct KeyBindings {
     /// In Architect Ascent, asks the team's Architect for help with what the body needs
     /// (`hex_wfc::ask`). Absent from older saves, which take the default.
     pub ask: KeyCode,
+    /// In Architect Ascent, arms the kinetic tool's plumb along the look; held, the mouse
+    /// dials it round (`hex_wfc::kinetic`). Absent from older saves.
+    pub arm_plumb: KeyCode,
+    /// In Architect Ascent, fires the armed plumb at the minor in the crosshair.
+    pub plumb: KeyCode,
 }
 
 impl Default for KeyBindings {
@@ -75,6 +80,8 @@ impl Default for KeyBindings {
             tac_map: KeyCode::Tab,
             pause: KeyCode::Escape,
             ask: KeyCode::KeyT,
+            arm_plumb: KeyCode::KeyQ,
+            plumb: KeyCode::KeyG,
         }
     }
 }
@@ -98,10 +105,12 @@ pub enum BindingSlot {
     TacMap,
     Pause,
     Ask,
+    ArmPlumb,
+    Plumb,
 }
 
 impl BindingSlot {
-    pub const ALL: [BindingSlot; 16] = [
+    pub const ALL: [BindingSlot; 18] = [
         BindingSlot::MoveLeft,
         BindingSlot::MoveRight,
         BindingSlot::MoveBack,
@@ -118,6 +127,8 @@ impl BindingSlot {
         BindingSlot::TacMap,
         BindingSlot::Pause,
         BindingSlot::Ask,
+        BindingSlot::ArmPlumb,
+        BindingSlot::Plumb,
     ];
 
     pub fn label(self) -> &'static str {
@@ -138,6 +149,8 @@ impl BindingSlot {
             BindingSlot::TacMap => "Survivor map",
             BindingSlot::Pause => "Pause",
             BindingSlot::Ask => "Ask the Architect",
+            BindingSlot::ArmPlumb => "Arm the plumb (hold to dial)",
+            BindingSlot::Plumb => "Fire the plumb",
         }
     }
 
@@ -159,6 +172,8 @@ impl BindingSlot {
             BindingSlot::TacMap => bindings.tac_map,
             BindingSlot::Pause => bindings.pause,
             BindingSlot::Ask => bindings.ask,
+            BindingSlot::ArmPlumb => bindings.arm_plumb,
+            BindingSlot::Plumb => bindings.plumb,
         }
     }
 
@@ -186,6 +201,8 @@ impl BindingSlot {
             BindingSlot::TacMap => bindings.tac_map = key,
             BindingSlot::Pause => bindings.pause = key,
             BindingSlot::Ask => bindings.ask = key,
+            BindingSlot::ArmPlumb => bindings.arm_plumb = key,
+            BindingSlot::Plumb => bindings.plumb = key,
         }
     }
 }

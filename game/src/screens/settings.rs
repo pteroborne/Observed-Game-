@@ -155,6 +155,8 @@ const fn binding_key(slot: BindingSlot) -> u64 {
         BindingSlot::TacMap => 13,
         BindingSlot::Pause => 14,
         BindingSlot::Ask => 15,
+        BindingSlot::ArmPlumb => 16,
+        BindingSlot::Plumb => 17,
     }
 }
 

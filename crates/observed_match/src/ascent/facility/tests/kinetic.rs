@@ -4,24 +4,40 @@
 use glam::Vec3;
 
 use super::*;
-use crate::ascent::economy::{KINETIC_SHOT_COST, MAX_CHARGE};
-use crate::hex_wfc::{HexActionButtons, HexReleasedKind};
+use crate::ascent::economy::{KINETIC_SHOT_COST, MAX_CHARGE, PLUMB_SHOT_COST};
+use crate::hex_wfc::{HexActionButtons, HexPlumbAim, HexReleasedKind};
 
 const MINOR: u16 = 900;
 
 /// One tick, the body standing still and pressing `actions`; the Architect idle.
 fn press(game: &mut AscentMatch, actions: HexActionButtons) -> Vec<HexMatchEventKind> {
+    command(
+        game,
+        HexPlayerCommand {
+            actions,
+            ..HexPlayerCommand::default()
+        },
+    )
+}
+
+/// One tick, the body standing still and firing a plumb armed straight up.
+fn plumb(game: &mut AscentMatch) -> Vec<HexMatchEventKind> {
+    command(
+        game,
+        HexPlayerCommand {
+            plumb: Some(HexPlumbAim { pitch: 90, yaw: 0 }),
+            ..HexPlayerCommand::default()
+        },
+    )
+}
+
+/// One tick, the body sending `body`; the Architect idle.
+fn command(game: &mut AscentMatch, body: HexPlayerCommand) -> Vec<HexMatchEventKind> {
     let tick = game.rules().tick + 1;
     let bodies = HexInputFrame {
         version: HEX_INPUT_VERSION,
         tick,
-        commands: BTreeMap::from([(
-            BODY,
-            HexPlayerCommand {
-                actions,
-                ..HexPlayerCommand::default()
-            },
-        )]),
+        commands: BTreeMap::from([(BODY, body)]),
     };
     let seats = InputFrame {
         version: ASCENT_INPUT_VERSION,
@@ -122,4 +138,32 @@ fn an_empty_pool_cannot_fire() {
         0,
         "a cleared shot left a cooldown"
     );
+}
+
+#[test]
+fn a_plumb_that_lands_costs_more_than_a_shove() {
+    let mut game = game(7);
+    minor_in_the_crosshair(&mut game);
+    assert!(plumb(&mut game).contains(&HexMatchEventKind::KineticPlumb));
+    assert_eq!(charge(&game), MAX_CHARGE - PLUMB_SHOT_COST);
+    const { assert!(PLUMB_SHOT_COST > KINETIC_SHOT_COST) };
+}
+
+/// A pool that could still pay for a shove cannot pay for a plumb.
+#[test]
+fn a_pool_short_of_a_plumb_cannot_plumb() {
+    let mut game = game(7);
+    let observer = game.observer_for(BODY).expect("an Observer");
+    game.ascent
+        .session
+        .sim
+        .economy
+        .set_charge(observer, PLUMB_SHOT_COST - 1);
+    minor_in_the_crosshair(&mut game);
+    assert!(
+        !plumb(&mut game).contains(&HexMatchEventKind::KineticPlumb),
+        "plumbed on a pool short of it"
+    );
+    assert_eq!(charge(&game), PLUMB_SHOT_COST - 1);
+    assert!(press(&mut game, PUSH).contains(&HexMatchEventKind::KineticPush));
 }

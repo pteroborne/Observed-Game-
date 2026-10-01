@@ -29,6 +29,8 @@ pub(super) struct HexInputContext<'w, 's> {
     onboarding: Option<Res<'w, crate::screens::onboarding::OnboardingState>>,
     intent: ResMut<'w, HexWfcIntent>,
     spectator_bot: Option<Res<'w, crate::sim::state::SpectatorBot>>,
+    /// The plumb: while its arm key is held, the look dials it rather than the view.
+    armed: Option<Res<'w, super::kinetic::ArmedPlumb>>,
 }
 
 pub(super) fn map_input(context: HexInputContext) {
@@ -43,6 +45,7 @@ pub(super) fn map_input(context: HexInputContext) {
         onboarding,
         mut intent,
         spectator_bot,
+        armed,
     } = context;
     if spectator_bot.is_some() {
         neutralize(&mut intent);
@@ -64,7 +67,16 @@ pub(super) fn map_input(context: HexInputContext) {
         axis(bindings.move_back, bindings.move_forward),
     )
     .normalize_or_zero();
-    let mouse_delta = mouse.map_or(Vec2::ZERO, |motion| motion.delta);
+    // Dialling the plumb takes the mouse and the stick (`kinetic::arm_and_fire`).
+    let dialing = armed.is_some_and(|armed| {
+        armed.armed.is_some()
+            && super::kinetic::ArmedPlumb::dialing(&keyboard, &gamepads, &settings)
+    });
+    let mouse_delta = if dialing {
+        Vec2::ZERO
+    } else {
+        mouse.map_or(Vec2::ZERO, |motion| motion.delta)
+    };
     let mut gamepad_intent = PlayerIntent::default();
     let mut gamepad_deploy = false;
     let mut gamepad_recover = false;
@@ -74,7 +86,9 @@ pub(super) fn map_input(context: HexInputContext) {
     for gamepad in &gamepads {
         let (command, items) = crate::screens::input::read_gamepad_match(gamepad);
         gamepad_intent.movement += command.movement;
-        gamepad_intent.look += command.look;
+        if !dialing {
+            gamepad_intent.look += command.look;
+        }
         gamepad_intent.jump_pressed |= command.jump_pressed;
         gamepad_intent.sprint_held |= command.sprint_held;
         gamepad_intent.interact_held |= command.interact_held;
@@ -172,6 +186,7 @@ pub(super) fn hotkeys_beside_desk(
 fn neutralize(intent: &mut HexWfcIntent) {
     intent.intent = PlayerIntent::default();
     intent.actions = HexActionButtons::default();
+    intent.plumb = None;
     intent.browse_map_level = 0;
 }
 
@@ -410,6 +425,7 @@ mod tests {
                     kinetic_push: true,
                     kinetic_pull: true,
                 },
+                plumb: Some(observed_match::hex_wfc::HexPlumbAim::default()),
                 browse_map_level: 1,
             })
             .add_systems(Update, map_input);
@@ -420,6 +436,7 @@ mod tests {
         assert!(intent.intent.is_neutral());
         assert_eq!(intent.actions, HexActionButtons::default());
         assert_eq!(intent.browse_map_level, 0);
+        assert_eq!(intent.plumb, None);
     }
 
     #[test]

@@ -53,6 +53,7 @@ pub use guardian::{HexGuardianState, HexGuardianStatus};
 pub use kinetic::{
     HexKillingPush, HexKineticTarget, HexKineticVerb, KINETIC_COOLDOWN_TICKS, KINETIC_PULL_SPEED,
     KINETIC_PUSH_SPEED, KINETIC_REACH, KINETIC_STAGGER_FRICTION, KINETIC_STAGGER_TICKS,
+    PLUMB_COOLDOWN_TICKS, PLUMB_TICKS,
 };
 pub use knowledge::{HexMapCellKnowledge, HexMapDiscovery, HexPlayerMapKnowledge};
 pub use objectives::{DUAL_STATION_HOLD_TICKS, HexObjectiveState, KEYSTONES_REQUIRED};
@@ -71,11 +72,11 @@ pub(super) const FIXED_DT: f32 = 1.0 / 60.0;
 /// traversal must all agree on this surface or a capsule starts half embedded
 /// in collision.
 pub(super) use observed_hex::FLOOR_SLAB_TOP;
-/// Bumped to 6 when `deploy_pad` joined [`HexActionButtons`], and to 7 when the kinetic
-/// tool's push and pull did. The handshake compares this, so a peer built before a
+/// Bumped to 6 when `deploy_pad` joined [`HexActionButtons`], to 7 when the kinetic
+/// tool's push and pull did, and to 8 when the plumb's aim joined [`HexPlayerCommand`]. The handshake compares this, so a peer built before a
 /// button is refused outright rather than connecting and then disagreeing about a bit
 /// it never sends.
-pub const HEX_INPUT_VERSION: u16 = 7;
+pub const HEX_INPUT_VERSION: u16 = 8;
 
 /// Most players one match may hold. Agrees with `observed_net::lan::MAX_SEATS`
 /// and `observed_progression::session::lan::LAN_MAX_SEATS`; a mismatch shows up
@@ -109,6 +110,46 @@ pub struct HexActionButtons {
 pub struct HexPlayerCommand {
     pub intent: PlayerIntent,
     pub actions: HexActionButtons,
+    /// Plumb the minor in the crosshair, armed this way (`kinetic::plumb`). Arming is the
+    /// player's own business until a plumb is fired: only the aim travels.
+    pub plumb: Option<HexPlumbAim>,
+}
+
+/// Which way a plumb is armed, relative to the way the body faces, in whole degrees: up
+/// positive, and right of the facing positive. Whole degrees so it travels in three bytes
+/// and every peer turns the same aim into the same direction.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct HexPlumbAim {
+    /// -90 to 90.
+    pub pitch: i8,
+    /// -180 to 180.
+    pub yaw: i16,
+}
+
+impl HexPlumbAim {
+    /// The aim nearest `pitch` and `yaw`, radians.
+    #[must_use]
+    pub fn from_radians(pitch: f32, yaw: f32) -> Self {
+        let yaw = (yaw.to_degrees() + 180.0).rem_euclid(360.0) - 180.0;
+        Self {
+            pitch: pitch.to_degrees().round().clamp(-90.0, 90.0) as i8,
+            yaw: yaw.round() as i16,
+        }
+    }
+
+    /// Its direction in the facing: `-Z` ahead, `+Y` up, `+X` right.
+    #[must_use]
+    pub fn in_facing(self) -> Vec3 {
+        let (sin_pitch, cos_pitch) = f32::from(self.pitch).to_radians().sin_cos();
+        let (sin_yaw, cos_yaw) = f32::from(self.yaw).to_radians().sin_cos();
+        Vec3::new(cos_pitch * sin_yaw, sin_pitch, -cos_pitch * cos_yaw)
+    }
+
+    /// Its direction in the world, for a body facing `yaw` (radians, the body's own).
+    #[must_use]
+    pub fn in_world(self, yaw: f32) -> Vec3 {
+        glam::Quat::from_rotation_y(-yaw) * self.in_facing()
+    }
 }
 
 /// One simulation input frame: sanitized commands keyed by stable player ID.
@@ -185,6 +226,8 @@ pub enum HexMatchEventKind {
     KineticPush,
     /// `player`'s kinetic tool pulled a minor, standing in `cell`, back.
     KineticPull,
+    /// `player`'s kinetic tool plumbed a minor standing in `cell`: it falls the armed way.
+    KineticPlumb,
     MatchFinished,
 }
 
@@ -640,7 +683,7 @@ impl HexWfcMatch {
             self.move_player(id, command.intent.sanitized());
             self.step_lantern_actions(id, command.actions);
             self.step_pad_actions(id, command.actions);
-            self.step_kinetic_actions(id, command.actions);
+            self.step_kinetic_actions(id, command.actions, command.plumb);
         }
         // After every body has moved, so contact is judged where a player ended
         // the tick; the `sync_teleports_to_bodies` below carries any jump into

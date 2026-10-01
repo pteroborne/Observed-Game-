@@ -218,6 +218,31 @@ impl RapierTraversalScene {
             .any(|(_, collider)| collider.user_data != 0)
     }
 
+    /// Run `query` against the live stable colliders, as the controller sees them: for a
+    /// caller that moves a body itself, such as `gravity::step` for a body whose up is not
+    /// the world's.
+    pub fn with_query<R>(&self, query: impl FnOnce(&QueryPipeline<'_>) -> R) -> R {
+        let active = |handle: ColliderHandle, collider: &Collider| {
+            self.stable_handles
+                .get(&super::StableColliderId(collider.user_data as u32))
+                == Some(&handle)
+        };
+        let pipeline = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
+            &self.bodies,
+            &self.colliders,
+            QueryFilter::default().predicate(&active),
+        );
+        query(&pipeline)
+    }
+
+    /// The world-space bounds a body may not leave: the centre and half extents the
+    /// controller recovers a body outside of.
+    #[must_use]
+    pub const fn safety_bounds(&self) -> (Vec3, Vec3) {
+        (self.safety_center, self.safety_half)
+    }
+
     /// How far along `direction` from `origin` the first structural collider is, within
     /// `reach`, or `None` if the way is clear. `direction` need not be normalised; the
     /// distance is in its units. Queries only the live stable colliders, as the

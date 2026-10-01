@@ -57,6 +57,7 @@ fn bot_player_command(
     HexPlayerCommand {
         intent: driver.command(game, id).intent,
         actions: HexActionButtons::default(),
+        plumb: None,
     }
 }
 
@@ -730,9 +731,12 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // without moving the tick: the survivor map now records what each body actually sees
     // (`sight`) in place of every unsealed neighbour, and the map folds into the snapshot.
     // This bot never reads the map, so its route is tick for tick the same.
+    //
+    // The plumb bumped HEX_INPUT_VERSION to 8, which folds into the snapshot, moving it
+    // again (0x5e11_e0e4_8938_4db7 -> 0x0fde_68b8_5aa8_5dda) without moving the tick.
     assert_eq!(
         first.snapshot().digest,
-        0x5e11_e0e4_8938_4db7,
+        0x0fde_68b8_5aa8_5dda,
         "TR-10 pins the declared-ramp final snapshot digest"
     );
 }
@@ -1231,6 +1235,7 @@ fn scripted_inputs(ticks: u64) -> Vec<HexInputFrame> {
                     HexPlayerCommand {
                         intent,
                         actions: HexActionButtons::default(),
+                        plumb: None,
                     },
                 );
             }

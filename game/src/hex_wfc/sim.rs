@@ -30,6 +30,8 @@ pub(super) const EYE_OFFSET: f32 = 0.70;
 pub(super) struct HexWfcIntent {
     pub intent: PlayerIntent,
     pub actions: HexActionButtons,
+    /// A plumb fired this frame, and its aim (`kinetic`'s armed direction).
+    pub plumb: Option<observed_match::hex_wfc::HexPlumbAim>,
     /// One-shot survivor-map floor browse request (`1` up, `-1` down).
     pub browse_map_level: i8,
 }
@@ -406,6 +408,7 @@ pub(super) fn step_runtime(
         HexPlayerCommand {
             intent: intent.intent,
             actions: intent.actions,
+            plumb: intent.plumb,
         }
     };
     if runtime.networked {
@@ -480,6 +483,7 @@ fn clear_one_shot_input(intent: &mut PlayerIntent) {
 fn neutralize_input(intent: &mut HexWfcIntent) {
     intent.intent = PlayerIntent::default();
     intent.actions = HexActionButtons::default();
+    intent.plumb = None;
     intent.browse_map_level = 0;
 }
 
@@ -490,6 +494,7 @@ fn finish_input_tick(intent: &mut HexWfcIntent, policy: SimulationPolicy) {
         clear_one_shot_input(&mut intent.intent);
     }
     intent.actions = HexActionButtons::default();
+    intent.plumb = None;
 }
 
 fn browsed_level(discovered: &BTreeSet<HexCoord>, current: u8, direction: i8) -> u8 {

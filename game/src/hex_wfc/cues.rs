@@ -41,7 +41,7 @@ pub(super) struct CueDefinition {
 }
 
 #[cfg(test)]
-pub(super) const ALL_EVENTS: [HexMatchEventKind; 26] = [
+pub(super) const ALL_EVENTS: [HexMatchEventKind; 27] = [
     HexMatchEventKind::MutationWarning,
     HexMatchEventKind::MutationCommitted,
     HexMatchEventKind::MutationNoChange,
@@ -67,6 +67,7 @@ pub(super) const ALL_EVENTS: [HexMatchEventKind; 26] = [
     HexMatchEventKind::PlayerLost,
     HexMatchEventKind::KineticPush,
     HexMatchEventKind::KineticPull,
+    HexMatchEventKind::KineticPlumb,
     HexMatchEventKind::MatchFinished,
 ];
 
@@ -168,6 +169,9 @@ pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
         HexMatchEventKind::KineticPull => {
             cue("MINOR PULLED", MarkerRole::Control, HexWfcSound::Hold)
         }
+        HexMatchEventKind::KineticPlumb => {
+            cue("MINOR PLUMBED", MarkerRole::Control, HexWfcSound::Hold)
+        }
         HexMatchEventKind::MatchFinished => {
             cue("MATCH COMPLETE", MarkerRole::Exit, HexWfcSound::Complete)
         }
@@ -179,7 +183,9 @@ pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
 pub(super) const fn presented_by_the_tool(kind: HexMatchEventKind) -> bool {
     matches!(
         kind,
-        HexMatchEventKind::KineticPush | HexMatchEventKind::KineticPull
+        HexMatchEventKind::KineticPush
+            | HexMatchEventKind::KineticPull
+            | HexMatchEventKind::KineticPlumb
     )
 }
 

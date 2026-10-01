@@ -145,8 +145,16 @@ pub(super) fn sync(
                 guardian::apply(&guardian_art, &pose, children, &mut parts);
             }
             HexReleasedGuardian::Minor(minor) => {
-                let feet = minor.position - Vec3::Y * half_height;
-                roll(&mut visual, feet, art.stride * MINOR_SCALE);
+                // A plumbed minor stands on whatever its plumb made its floor: its feet
+                // are down its own frame, and the whole Roller turns with it. It does not
+                // roll while a plumb carries it.
+                let frame = minor.visual_frame();
+                let feet = minor.position - frame.up() * half_height;
+                if minor.plumbed() {
+                    visual.at = feet;
+                } else {
+                    roll(&mut visual, feet, art.stride * MINOR_SCALE);
+                }
                 let mut body = Roll::toward(visual.rest, visual.heading).at(visual.progress);
                 // The body carries it along; the roll only turns and lifts it.
                 body.centre -= visual.heading * art.stride * visual.progress;
@@ -157,7 +165,9 @@ pub(super) fn sync(
                     .position
                     + Vec3::Y * EYE_OFFSET;
                 let pose = form::roller_rolling(body, clock, (toward - feet) / MINOR_SCALE);
-                *transform = Transform::from_translation(feet).with_scale(Vec3::splat(MINOR_SCALE));
+                *transform = Transform::from_translation(feet)
+                    .with_rotation(frame.rotation)
+                    .with_scale(Vec3::splat(MINOR_SCALE));
                 guardian::apply(&guardian_art, &pose, children, &mut parts);
             }
         }

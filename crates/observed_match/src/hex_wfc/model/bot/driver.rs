@@ -198,7 +198,11 @@ impl HexBotDriver {
         let intent = target.map_or_else(PlayerIntent::default, |target| {
             self.cached_bot_command(game, id, target)
         });
-        HexPlayerCommand { intent, actions }
+        HexPlayerCommand {
+            intent,
+            actions,
+            plumb: None,
+        }
     }
 
     fn invalidate_from_match(

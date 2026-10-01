@@ -5,7 +5,9 @@
 //! of the match (`HexWfcMatch::killing_push`) - and stages three minors there: one at the
 //! edge the push sends it over, two more beside it. The local body is stood a few metres
 //! behind the first, looking at it. Then everything is the match's own: the minors hunt
-//! the body, the push is the body's own input, and the fall breaks the minor.
+//! the body, the push is the body's own input, and the fall breaks the minor. Then the
+//! plumb: armed straight up, the body turns onto the next minor coming and fires, and the
+//! minor falls onto the ceiling, and off it again when the plumb lets go.
 //!
 //! Frames and stills as the power capture's (`power::capture`), but one frame a 1/60 s of
 //! game time - a tick a frame, as in play, so presentation that reads a tick's events
@@ -13,7 +15,7 @@
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
-use observed_match::hex_wfc::{HexKillingPush, HexMatchEventKind};
+use observed_match::hex_wfc::{HexKillingPush, HexMatchEventKind, HexPlumbAim, PLUMB_TICKS};
 use player_input::PlayerIntent;
 
 use crate::hex_wfc::sim::{HexWfcIntent, HexWfcRuntime};
@@ -36,6 +38,8 @@ enum Beat {
     Staged,
     Pushed,
     Broken,
+    Armed,
+    Plumbed,
     Done,
 }
 
@@ -44,6 +48,8 @@ pub(in crate::hex_wfc) struct MinorsCapture {
     beat: Beat,
     since: u64,
     press: bool,
+    /// Fire a plumb armed this way on the next tick.
+    plumb: Option<HexPlumbAim>,
     still: Option<&'static str>,
     frames: u32,
 }
@@ -130,6 +136,7 @@ pub(in crate::hex_wfc) fn drive(
     minors: Option<ResMut<MinorsCapture>>,
     runtime: Option<ResMut<HexWfcRuntime>>,
     intent: Option<ResMut<HexWfcIntent>>,
+    armed: Option<ResMut<super::ArmedPlumb>>,
 ) {
     let (Some(capture), Some(mut minors), Some(mut runtime), Some(mut intent)) =
         (capture, minors, runtime, intent)
@@ -144,6 +151,9 @@ pub(in crate::hex_wfc) fn drive(
     intent.intent = PlayerIntent::default();
     if std::mem::take(&mut minors.press) {
         intent.actions.kinetic_push = true;
+    }
+    if let Some(aim) = minors.plumb.take() {
+        intent.plumb = Some(aim);
     }
     let broke = runtime
         .match_state
@@ -194,7 +204,70 @@ pub(in crate::hex_wfc) fn drive(
             minors.go(Beat::Done, tick);
         }
         Beat::Broken if elapsed == 12 => minors.still = Some("minors-3-broken-1280x800.png"),
-        Beat::Broken if elapsed >= 60 => minors.go(Beat::Done, tick),
+        Beat::Broken if elapsed >= 60 => {
+            if !runtime.match_state.released.contains_key(&OTHERS[0]) {
+                info!("minors capture: no second minor for the plumb");
+                minors.go(Beat::Done, tick);
+                return;
+            }
+            // Armed straight up, as a player arms it by looking up and pressing the arm key:
+            // the gimbal's bob swings up.
+            if let Some(mut armed) = armed {
+                armed.armed = Some((std::f32::consts::FRAC_PI_2, 0.0));
+            }
+            minors.go(Beat::Armed, tick);
+        }
+        Beat::Armed if elapsed == 20 => minors.still = Some("minors-4-armed-1280x800.png"),
+        Beat::Armed if elapsed >= 30 => {
+            // Onto the next minor coming, where it stands now, and fire.
+            let local = runtime.local_player;
+            let game = &mut runtime.match_state;
+            let at = game.released.get(&OTHERS[0]).map(|minor| minor.position());
+            let (cell, feet) = {
+                let body = &game.players[&local];
+                (body.cell, body.position)
+            };
+            let floor = game.standing_point(cell).map(|point| feet.with_y(point.y));
+            if let (Some(at), Some(floor)) = (at, floor) {
+                game.stage_body_facing(local, cell, floor, at);
+            }
+            minors.plumb = Some(HexPlumbAim { pitch: 90, yaw: 0 });
+            minors.go(Beat::Plumbed, tick);
+        }
+        // The body follows the plumbed minor with its eyes, as a player would.
+        Beat::Plumbed
+            if elapsed > 2
+                && elapsed < u64::from(PLUMB_TICKS) + 100
+                && runtime.match_state.released.contains_key(&OTHERS[0]) =>
+        {
+            let local = runtime.local_player;
+            let game = &mut runtime.match_state;
+            let at = game.released[&OTHERS[0]].position();
+            let (cell, feet) = {
+                let body = &game.players[&local];
+                (body.cell, body.position)
+            };
+            if let Some(floor) = game.standing_point(cell).map(|point| feet.with_y(point.y)) {
+                game.stage_body_facing(local, cell, floor, at);
+            }
+            if elapsed == 40 {
+                minors.still = Some("minors-5-plumbed-up-1280x800.png");
+            } else if elapsed == u64::from(PLUMB_TICKS) + 40 {
+                minors.still = Some("minors-6-let-go-1280x800.png");
+            }
+        }
+        Beat::Plumbed if elapsed >= u64::from(PLUMB_TICKS) + 120 => {
+            let survived = runtime.match_state.released.contains_key(&OTHERS[0]);
+            info!(
+                "minors capture: the plumbed minor {}",
+                if survived {
+                    "survived its drop"
+                } else {
+                    "broke on its drop"
+                }
+            );
+            minors.go(Beat::Done, tick);
+        }
         _ => {}
     }
     if tick > GIVE_UP_TICKS && minors.beat != Beat::Done {

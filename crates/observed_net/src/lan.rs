@@ -9,6 +9,7 @@ use observed_core::{PlayerId, TeamId};
 use observed_facility::hex_wfc::HexWfcConfig;
 use observed_match::hex_wfc::{
     HEX_INPUT_VERSION, HexActionButtons, HexInputFrame, HexMatchConfig, HexPlayerCommand,
+    HexPlumbAim,
 };
 
 use crate::protocol::WireIntent;
@@ -38,7 +39,9 @@ use crate::protocol::WireIntent;
 /// the rules took before is refused beside an anchored doorway.
 /// Version 14 drops the Rogue's directive and sensor commands (11, 12): they are cards in
 /// the Rogue's own deck now, played like any other, and the bot Rogue plays them.
-pub const LAN_PROTOCOL_VERSION: u16 = 14;
+/// Version 15 carries a plumb and its aim after a body's action bits, and every body now
+/// wards and knows by its real sight, so the same frames make a different match.
+pub const LAN_PROTOCOL_VERSION: u16 = 15;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;
@@ -87,6 +90,8 @@ impl WirePhase {
 pub struct WireHexCommand {
     pub intent: WireIntent,
     pub actions: u8,
+    /// The plumb's aim, when [`Self::PLUMB`] is set: three bytes after the action bits.
+    pub plumb: Option<HexPlumbAim>,
     /// The seat's say in the Ascent rules this tick, if any.
     pub seat: WireSeatCommand,
 }
@@ -98,6 +103,8 @@ impl WireHexCommand {
     const DEPLOY_PAD: u8 = 1 << 3;
     const KINETIC_PUSH: u8 = 1 << 4;
     const KINETIC_PULL: u8 = 1 << 5;
+    /// A plumb fired, its aim following the action bits.
+    const PLUMB: u8 = 1 << 6;
     /// Every bit this build understands. The decoder rejects anything outside
     /// it, so this must be derived from the flags rather than written out as a
     /// literal: a hand-maintained mask silently rejects the newest action, and
@@ -107,7 +114,8 @@ impl WireHexCommand {
         | Self::RECOVER
         | Self::DEPLOY_PAD
         | Self::KINETIC_PUSH
-        | Self::KINETIC_PULL;
+        | Self::KINETIC_PULL
+        | Self::PLUMB;
 
     #[must_use]
     pub fn from_command(command: HexPlayerCommand) -> Self {
@@ -130,9 +138,13 @@ impl WireHexCommand {
         if command.actions.kinetic_pull {
             actions |= Self::KINETIC_PULL;
         }
+        if command.plumb.is_some() {
+            actions |= Self::PLUMB;
+        }
         Self {
             intent: WireIntent::from_player_intent(command.intent.sanitized()),
             actions,
+            plumb: command.plumb,
             seat: WireSeatCommand::None,
         }
     }
@@ -156,6 +168,7 @@ impl WireHexCommand {
                 kinetic_push: self.actions & Self::KINETIC_PUSH != 0,
                 kinetic_pull: self.actions & Self::KINETIC_PULL != 0,
             },
+            plumb: self.plumb,
         }
     }
 }
@@ -248,7 +261,7 @@ impl WireFrame {
 /// Encoded size of one [`WireHexCommand`] at most: a [`WireIntent`], its action bits, and
 /// the largest seat command. Budgeting by the largest keeps a bundle inside a datagram
 /// whatever the seats say that tick.
-const WIRE_COMMAND_BYTES: usize = 5 + 1 + WireSeatCommand::MAX_BYTES;
+const WIRE_COMMAND_BYTES: usize = 5 + 1 + 3 + WireSeatCommand::MAX_BYTES;
 
 /// How many frames of `seats` commands fit in one datagram alongside the header.
 ///
@@ -724,25 +737,43 @@ fn encode_command(out: &mut Vec<u8>, command: WireHexCommand) {
     out.push(command.intent.look_y as u8);
     out.push(command.intent.flags);
     out.push(command.actions);
+    if let Some(aim) = command.plumb {
+        out.push(aim.pitch as u8);
+        put_u16(out, aim.yaw as u16);
+    }
     command.seat.encode(out);
 }
 
 fn decode_command(cursor: &mut Cursor<'_>) -> Result<WireHexCommand, LanCodecError> {
-    let command = WireHexCommand {
-        intent: WireIntent {
-            movement_x: cursor.u8()? as i8,
-            movement_y: cursor.u8()? as i8,
-            look_x: cursor.u8()? as i8,
-            look_y: cursor.u8()? as i8,
-            flags: cursor.u8()?,
-        },
-        actions: cursor.u8()?,
-        seat: WireSeatCommand::decode(cursor)?,
+    let intent = WireIntent {
+        movement_x: cursor.u8()? as i8,
+        movement_y: cursor.u8()? as i8,
+        look_x: cursor.u8()? as i8,
+        look_y: cursor.u8()? as i8,
+        flags: cursor.u8()?,
     };
-    if command.actions & !WireHexCommand::KNOWN_ACTIONS != 0 {
+    let actions = cursor.u8()?;
+    if actions & !WireHexCommand::KNOWN_ACTIONS != 0 {
         return Err(LanCodecError::InvalidValue);
     }
-    Ok(command)
+    let plumb = if actions & WireHexCommand::PLUMB != 0 {
+        let aim = HexPlumbAim {
+            pitch: cursor.u8()? as i8,
+            yaw: cursor.u16()? as i16,
+        };
+        if !(-90..=90).contains(&aim.pitch) || !(-180..=180).contains(&aim.yaw) {
+            return Err(LanCodecError::InvalidValue);
+        }
+        Some(aim)
+    } else {
+        None
+    };
+    Ok(WireHexCommand {
+        intent,
+        actions,
+        plumb,
+        seat: WireSeatCommand::decode(cursor)?,
+    })
 }
 
 fn encode_config(out: &mut Vec<u8>, config: HexMatchConfig) {
@@ -1401,6 +1432,11 @@ mod tests {
                 kinetic_push: true,
                 kinetic_pull: false,
             },
+            // Set, at the ends of its range, so the round trip proves the aim survives.
+            plumb: Some(HexPlumbAim {
+                pitch: -90,
+                yaw: 180,
+            }),
         });
         vec![
             LanPacket::DiscoveryProbe,
@@ -1544,6 +1580,7 @@ mod tests {
             let wire = WireHexCommand::from_command(HexPlayerCommand {
                 intent: PlayerIntent::default(),
                 actions,
+                plumb: None,
             });
             assert_eq!(
                 wire.actions & !WireHexCommand::KNOWN_ACTIONS,
@@ -1600,8 +1637,13 @@ mod tests {
                         // undefined ones and the decoder rightly refuses those.
                         flags: 0b0001_1111,
                     },
-                    actions: 0b0000_0111,
-                    // The largest seat command, on every seat: the budget is for the worst.
+                    actions: 0b0100_0111,
+                    // A plumb's aim on every seat, and the largest seat command: the budget
+                    // is for the worst.
+                    plumb: Some(HexPlumbAim {
+                        pitch: 90,
+                        yaw: -180,
+                    }),
                     seat: WireSeatCommand::Play {
                         card: u32::MAX,
                         target: observed_facility::hex_wfc::HexCoord {

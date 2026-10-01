@@ -20,7 +20,7 @@ use glam::Vec3;
 use observed_core::PlayerId;
 use observed_hex::HexCoord;
 
-use super::economy::KINETIC_SHOT_COST;
+use super::economy::{KINETIC_SHOT_COST, PLUMB_SHOT_COST};
 use super::session::{ASCENT_INPUT_VERSION, AscentSession, InputFrame, Refusal, Role, Seat};
 use super::sim::{
     ArchitectLab, Embodiment, GuardianId, GuardianKind, MatchOutcome, ObserverId, TeamId,
@@ -280,24 +280,29 @@ impl AscentRules {
     /// `bodies`, less every kinetic shot whose Observer's pool cannot pay for it. The rules
     /// own charge; the physical match only resolves a shot it is handed.
     fn affordable<'a>(&self, bodies: &'a HexInputFrame) -> Cow<'a, HexInputFrame> {
-        let broke = |player: &PlayerId| {
+        let short_of = |player: &PlayerId, cost: u32| {
             self.bodies
                 .get(player)
-                .is_some_and(|&id| self.session.sim.economy.charge(id) < KINETIC_SHOT_COST)
+                .is_some_and(|&id| self.session.sim.economy.charge(id) < cost)
         };
-        let shoots = |actions: &crate::hex_wfc::HexActionButtons| {
-            actions.kinetic_push || actions.kinetic_pull
+        let unpaid = |player: &PlayerId, command: &crate::hex_wfc::HexPlayerCommand| {
+            (command.plumb.is_some() && short_of(player, PLUMB_SHOT_COST))
+                || ((command.actions.kinetic_push || command.actions.kinetic_pull)
+                    && short_of(player, KINETIC_SHOT_COST))
         };
         if !bodies
             .commands
             .iter()
-            .any(|(player, command)| shoots(&command.actions) && broke(player))
+            .any(|(player, command)| unpaid(player, command))
         {
             return Cow::Borrowed(bodies);
         }
         let mut frame = bodies.clone();
         for (player, command) in &mut frame.commands {
-            if broke(player) {
+            if short_of(player, PLUMB_SHOT_COST) {
+                command.plumb = None;
+            }
+            if short_of(player, KINETIC_SHOT_COST) {
                 command.actions.kinetic_push = false;
                 command.actions.kinetic_pull = false;
             }
@@ -305,16 +310,20 @@ impl AscentRules {
         Cow::Owned(frame)
     }
 
-    /// Spend [`KINETIC_SHOT_COST`] from the pool of every Observer whose shot landed this
-    /// tick. A shot that selected nothing raised no event and costs nothing.
+    /// Spend from the pool of every Observer whose shot landed this tick:
+    /// [`KINETIC_SHOT_COST`] for a push or a pull, [`PLUMB_SHOT_COST`] for a plumb. A shot
+    /// that selected nothing raised no event and costs nothing.
     fn pay_for_shots(&mut self, physical: &HexWfcMatch) {
         for event in &physical.recent_events {
-            if matches!(
-                event.kind,
-                HexMatchEventKind::KineticPush | HexMatchEventKind::KineticPull
-            ) && let Some(&id) = event.player.as_ref().and_then(|p| self.bodies.get(p))
-            {
-                self.session.sim.economy.spend_charge(id, KINETIC_SHOT_COST);
+            let cost = match event.kind {
+                HexMatchEventKind::KineticPush | HexMatchEventKind::KineticPull => {
+                    KINETIC_SHOT_COST
+                }
+                HexMatchEventKind::KineticPlumb => PLUMB_SHOT_COST,
+                _ => continue,
+            };
+            if let Some(&id) = event.player.as_ref().and_then(|p| self.bodies.get(p)) {
+                self.session.sim.economy.spend_charge(id, cost);
             }
         }
     }

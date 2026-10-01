@@ -327,3 +327,189 @@ fn a_shove_steps_identically_on_every_peer() {
         assert_eq!(a.snapshot().digest, b.snapshot().digest, "tick {}", a.tick);
     }
 }
+
+/// One tick, the body standing still and firing a plumb armed `aim`.
+fn plumb(game: &mut HexWfcMatch, aim: HexPlumbAim) -> Vec<HexMatchEventKind> {
+    let frame = HexInputFrame {
+        version: HEX_INPUT_VERSION,
+        tick: game.tick + 1,
+        commands: BTreeMap::from([(
+            BODY,
+            HexPlayerCommand {
+                plumb: Some(aim),
+                ..HexPlayerCommand::default()
+            },
+        )]),
+    };
+    game.step(&frame).iter().map(|event| event.kind).collect()
+}
+
+const AHEAD: HexPlumbAim = HexPlumbAim { pitch: 0, yaw: 0 };
+const UP: HexPlumbAim = HexPlumbAim { pitch: 90, yaw: 0 };
+const RIGHT: HexPlumbAim = HexPlumbAim { pitch: 0, yaw: 90 };
+
+#[test]
+fn an_aim_turns_with_the_facing_it_is_relative_to() {
+    assert!(AHEAD.in_facing().distance(Vec3::NEG_Z) < 1e-5);
+    assert!(UP.in_facing().distance(Vec3::Y) < 1e-5);
+    assert!(RIGHT.in_facing().distance(Vec3::X) < 1e-5);
+    // A body facing +X (yaw a quarter turn): its right is +Z.
+    assert!(
+        RIGHT
+            .in_world(std::f32::consts::FRAC_PI_2)
+            .distance(Vec3::Z)
+            < 1e-5
+    );
+    let aim = HexPlumbAim::from_radians(-0.5, 2.5);
+    assert_eq!(
+        aim,
+        HexPlumbAim {
+            pitch: -29,
+            yaw: 143
+        }
+    );
+    assert_eq!(HexPlumbAim::from_radians(-3.0, -4.0).pitch, -90);
+    assert_eq!(HexPlumbAim::from_radians(0.0, 4.0).yaw, -131);
+}
+
+/// Whether a body lying on its side, as a plumbed minor does, has room along `direction`
+/// for `clear` metres: the line clear at three heights and half a body to either side.
+fn wide_clear_along(game: &HexWfcMatch, direction: Vec3, clear: f32) -> bool {
+    let centre = game.body_position_for_tests(BODY);
+    let side = direction.cross(Vec3::Y).normalize();
+    [-0.5, 0.0, 0.5].into_iter().all(|across| {
+        [-0.4, 0.0, 0.4].into_iter().all(|up| {
+            let from = centre + side * across + Vec3::Y * up;
+            game.physics.ray_distance(from, direction, clear).is_none()
+        })
+    })
+}
+
+/// A plumb turns the down of the minor in the crosshair to the armed direction, about the
+/// way the body faces, and the minor falls that way. It neither walks nor catches while
+/// the plumb holds, and when it wears off the minor is upright and hunts again.
+#[test]
+fn a_plumb_turns_the_minors_down_and_wears_off() {
+    let mut game = game();
+    let direction = compass()
+        .find(|&direction| {
+            wide_clear_along(&game, direction, 12.0)
+                && (1..=12).all(|metre| floored_at(&game, direction, metre as f32))
+        })
+        .expect("a wide, floored line from the spawn");
+    let start = minor_ahead(&mut game, direction, 3.0);
+    let yaw = game.bodies[&BODY].yaw;
+    let events = plumb(&mut game, AHEAD);
+    assert!(
+        events.contains(&HexMatchEventKind::KineticPlumb),
+        "{events:?}"
+    );
+    let ahead = AHEAD.in_world(yaw);
+    assert!(minor(&game).plumbed());
+    assert!(
+        minor(&game).down().distance(ahead) < 1e-3,
+        "down {}",
+        minor(&game).down()
+    );
+    for _ in 0..30 {
+        let events = step(&mut game, IDLE);
+        assert!(!events.contains(&HexMatchEventKind::GuardianCatch));
+    }
+    assert!(
+        (minor(&game).position - start).dot(ahead) > 2.0,
+        "it did not fall the armed way"
+    );
+    let mut ticks = 0;
+    while minor(&game).plumbed() {
+        step(&mut game, IDLE);
+        ticks += 1;
+        assert!(ticks <= PLUMB_TICKS + 120, "the plumb never wore off");
+    }
+    for _ in 0..60 {
+        step(&mut game, IDLE);
+    }
+    assert!(minor(&game).target.is_some(), "it never hunted again");
+}
+
+/// Plumbed up, a minor falls onto the ceiling.
+#[test]
+fn a_minor_plumbed_up_rises() {
+    let mut game = game();
+    let direction = open_direction(&game, 16.0);
+    let start = minor_ahead(&mut game, direction, 4.0);
+    assert!(plumb(&mut game, UP).contains(&HexMatchEventKind::KineticPlumb));
+    let mut highest = start.y;
+    for _ in 0..90 {
+        step(&mut game, IDLE);
+        highest = highest.max(minor(&game).position.y);
+    }
+    assert!(
+        highest > start.y + 2.0,
+        "it rose only to {highest} from {}",
+        start.y
+    );
+}
+
+/// What kills is the architecture: plumbed out toward an unrailed edge, a minor falls
+/// off the facility and is gone.
+#[test]
+fn a_minor_plumbed_over_an_open_edge_is_lost() {
+    let mut game = game();
+    // The ground floor's open edges are railed; the floor above's are not. Stand the body
+    // where one of them has room for a body lying on its side.
+    let mut cells: Vec<_> = game
+        .facility
+        .placements
+        .iter()
+        .filter(|(cell, placement)| cell.level == 1 && placement.space.built())
+        .map(|(&cell, _)| cell)
+        .collect();
+    cells.sort();
+    let (direction, edge) = cells
+        .into_iter()
+        .find_map(|cell| {
+            let feet = game.standing_point(cell)?;
+            game.stand_body_for_tests(BODY, cell, feet);
+            compass().find_map(|direction| {
+                let edge = (1..=12).find(|&metre| !floored_at(&game, direction, metre as f32))?;
+                (edge >= 4 && wide_clear_along(&game, direction, edge as f32 + 3.0))
+                    .then_some((direction, edge))
+            })
+        })
+        .expect("a wide, unrailed edge on the first floor");
+    minor_ahead(&mut game, direction, edge as f32 - 2.5);
+    assert!(plumb(&mut game, AHEAD).contains(&HexMatchEventKind::KineticPlumb));
+    let lost = (0..PLUMB_TICKS + 240)
+        .any(|_| step(&mut game, IDLE).contains(&HexMatchEventKind::GuardianLost));
+    assert!(lost, "the minor was never lost over the edge");
+}
+
+/// A plumb leaves the tool waiting longer than a shove does.
+#[test]
+fn a_plumb_waits_out_its_own_cooldown() {
+    let mut game = game();
+    let direction = open_direction(&game, 16.0);
+    minor_ahead(&mut game, direction, 4.0);
+    plumb(&mut game, UP);
+    assert_eq!(game.kinetic_cooldown(BODY), PLUMB_COOLDOWN_TICKS);
+    const { assert!(PLUMB_COOLDOWN_TICKS > KINETIC_COOLDOWN_TICKS) };
+}
+
+/// The same plumbs on two peers leave the same world.
+#[test]
+fn a_plumb_steps_identically_on_every_peer() {
+    let mut a = game();
+    let direction = open_direction(&a, 16.0);
+    minor_ahead(&mut a, direction, 4.0);
+    let mut b = a.clone();
+    for tick in 0..PLUMB_TICKS + 60 {
+        for game in [&mut a, &mut b] {
+            if tick == 0 {
+                plumb(game, RIGHT);
+            } else {
+                step(game, IDLE);
+            }
+        }
+        assert_eq!(a.snapshot().digest, b.snapshot().digest, "tick {}", a.tick);
+    }
+}

@@ -1,5 +1,6 @@
 //! The Observer's kinetic tool on the facility: a push or a pull that shoves a minor
-//! Guardian along the crosshair, so that the architecture can take it.
+//! Guardian along the crosshair, or a plumb that turns its down to the way the tool is
+//! armed, so that the architecture can take it.
 //!
 //! The tool kills nothing. A minor it shoves slides, and whatever it slides off (an open
 //! edge, a retracted cell, a stairwell) is what destroys it, through the fall a released
@@ -18,7 +19,10 @@
 use glam::{Vec2, Vec3};
 use observed_core::PlayerId;
 
-use super::{HexActionButtons, HexMatchEvent, HexMatchEventKind, HexReleasedGuardian, HexWfcMatch};
+use super::{
+    HexActionButtons, HexMatchEvent, HexMatchEventKind, HexPlumbAim, HexReleasedGuardian,
+    HexWfcMatch,
+};
 
 /// How far the crosshair reaches, in metres from the eye.
 pub const KINETIC_REACH: f32 = 8.0;
@@ -34,6 +38,11 @@ pub const KINETIC_STAGGER_TICKS: u16 = 75;
 /// The friction a staggered minor slides under, m/s^2, on the ground and in the air: a
 /// push slides one about five and a half metres on the level.
 pub const KINETIC_STAGGER_FRICTION: f32 = 9.0;
+/// How long a plumb holds a minor, ticks: four seconds, as in `wfc_kinetic_lab`.
+pub const PLUMB_TICKS: u32 = 240;
+/// Ticks after a plumb before the tool fires again: longer than a shove's, because it owns
+/// which way the minor falls for four seconds.
+pub const PLUMB_COOLDOWN_TICKS: u8 = 45;
 /// How far outside a minor's capsule the crosshair still selects it, metres.
 const AIM_TOLERANCE: f32 = 0.15;
 
@@ -117,17 +126,34 @@ impl HexWfcMatch {
         }
     }
 
+    /// Radians a unit of look turns a body: what a dial of the plumb turns it by too, so
+    /// dialling feels like looking.
+    #[must_use]
+    pub fn look_step(&self) -> f32 {
+        self.content.traversal_profile().controller().look_step
+    }
+
     /// Ticks before `player`'s tool fires again.
     #[must_use]
     pub fn kinetic_cooldown(&self, player: PlayerId) -> u8 {
         self.kinetic_cooldowns.get(&player).copied().unwrap_or(0)
     }
 
-    /// Fire `player`'s tool, if this tick's buttons ask it to and it is ready. A shot that
-    /// selects nothing does nothing: no cooldown, no event.
-    pub(super) fn step_kinetic_actions(&mut self, player: PlayerId, actions: HexActionButtons) {
+    /// Fire `player`'s tool, if this tick's command asks it to and it is ready: a plumb if
+    /// one is asked for, else a push or a pull. A shot that selects nothing does nothing:
+    /// no cooldown, no event.
+    pub(super) fn step_kinetic_actions(
+        &mut self,
+        player: PlayerId,
+        actions: HexActionButtons,
+        plumb: Option<HexPlumbAim>,
+    ) {
         if let Some(cooldown) = self.kinetic_cooldowns.get_mut(&player) {
             *cooldown = cooldown.saturating_sub(1);
+        }
+        if let Some(aim) = plumb {
+            self.fire_plumb(player, aim);
+            return;
         }
         let Some(verb) = HexKineticVerb::from_actions(actions) else {
             return;
@@ -159,6 +185,37 @@ impl HexWfcMatch {
                 HexKineticVerb::Push => HexMatchEventKind::KineticPush,
                 HexKineticVerb::Pull => HexMatchEventKind::KineticPull,
             },
+            player: Some(player),
+            cell: Some(cell),
+        });
+    }
+}
+
+impl HexWfcMatch {
+    /// Plumb the minor `player`'s crosshair selects, armed `aim` about the way the body
+    /// faces: its down becomes that direction for [`PLUMB_TICKS`].
+    fn fire_plumb(&mut self, player: PlayerId, aim: HexPlumbAim) {
+        if self.kinetic_cooldown(player) > 0 {
+            return;
+        }
+        let Some(target) = self.kinetic_target(player) else {
+            return;
+        };
+        let yaw = self.bodies[&player].yaw;
+        let down = aim.in_world(yaw);
+        let config = self.content.traversal_profile().controller();
+        let Some(HexReleasedGuardian::Minor(minor)) = self.released.get_mut(&target.guardian)
+        else {
+            return;
+        };
+        if !minor.plumb(&self.physics, &config, down, PLUMB_TICKS) {
+            return;
+        }
+        let cell = minor.cell;
+        self.kinetic_cooldowns.insert(player, PLUMB_COOLDOWN_TICKS);
+        self.recent_events.push(HexMatchEvent {
+            tick: self.tick,
+            kind: HexMatchEventKind::KineticPlumb,
             player: Some(player),
             cell: Some(cell),
         });

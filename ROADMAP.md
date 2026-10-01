@@ -82,6 +82,13 @@ the combined loop.
     A dark floor's doors freeze and its teleport plates go inert, at either end of a link.
     Its stairs stay walkable, in the rules as for the bodies: the real facility has no
     powered lifts, and barring stairs could strand a body away from its own generator.
+    **The plumb (2026-10):** the Lance's second verb is in the game. Q arms it along the
+    look and, held, dials it round the way the body faces; G fires it at the minor in the
+    crosshair, whose down becomes the armed direction for four seconds. Only the aim
+    travels, with the shot. A plumbed minor falls along its new down on its own
+    controller and lands on a wall or a ceiling; only a fall along the world's down breaks
+    one, so the architecture still kills, once the plumb lets go. Still open: bots do not
+    plumb, and self-plumb is not in the game.
     **Real sight (2026-10):** an embodied Observer now wards and knows by what its body
     actually sees - a fan of rays from its eye against the match's colliders
     (`hex_wfc::model::sight`) - warding its own cell and what it sees within one cell, in

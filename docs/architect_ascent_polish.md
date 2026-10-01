@@ -473,6 +473,41 @@ weighed and set aside: parts of a floor reach their own generator only through a
 floor, and a body there with its floor dark and its stairs barred could never restore it.
 Darkness still costs a floor its doors, plates, recharge and sight range.
 
+### The plumb
+
+The Lance's second verb, as `wfc_kinetic_lab` proved it (`hex_wfc::model::kinetic`,
+`game/src/hex_wfc/kinetic.rs`). The arm key (Q, rebindable) arms the plumb along the
+look; held, the mouse or the right stick dials it round the way the body faces instead of
+turning the view. The plumb key (G, or the middle button; the controller's D-pad right)
+fires it at the minor in the crosshair, whose down becomes the armed direction for four
+seconds (`PLUMB_TICKS`). The gimbal on the Lance shows the armed direction, turning with
+the body; until armed its bob hangs true.
+
+- **Only the aim travels.** Arming and dialling are the player's own until a plumb is
+  fired; the shot carries the aim as whole degrees of pitch and yaw about the body's
+  facing (`HexPlumbAim`, three bytes on the wire after the action bits; LAN protocol 15,
+  hex input version 8), so every peer turns it into the same direction.
+- **A plumbed minor falls along its new down** on the same controller that walks it,
+  through the gravity lifecycle that turns an Observer (`ObserverGravity`): its capsule
+  turns, it falls that way, and it lands on whatever is there, a wall or a ceiling. It
+  neither walks nor catches until the plumb has let go and it is upright again, and the
+  game draws it standing on its new floor.
+- **A plumb's flight is not a fall.** Only a fall along the world's down breaks a minor
+  (`MINOR_BREAKING_DROP`), so a minor plumbed into a far wall lands on it unhurt. What
+  kills is still the architecture, once the plumb lets go: plumbed out over an open edge
+  it falls into the void, and plumbed up it drops from the ceiling, which breaks it where
+  the ceiling is high or, under open sky, where there is none.
+- **It costs more and waits longer.** A plumb costs `PLUMB_SHOT_COST` (25) against a
+  shove's 10, the rules clear one the pool cannot pay for, and the tool waits
+  `PLUMB_COOLDOWN_TICKS` (45) after one. Firing unarmed, or short of charge, is answered
+  with a notice and never sent.
+
+Evidence (`OBSERVED2_CAPTURE_HEX_WFC_MINORS=<dir>`, after the push): the plumb armed
+straight up, the body turning onto the next minor and firing, the minor upside down on
+the overhang above, and broken when the plumb let go, under a high ceiling.
+
+Still open: bots do not plumb, and self-plumb (walking walls) is not in the game.
+
 ### Where a minor can die
 
 A minor is destroyed only by the architecture, and a push is how an Observer hands it

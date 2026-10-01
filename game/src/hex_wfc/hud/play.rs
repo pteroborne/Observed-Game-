@@ -469,7 +469,9 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
             Field::EquipmentKeys => (
                 if charge.is_some() {
                     format!(
-                        "[LMB] Push   [RMB] Pull   [{}] Plate   [{}] Map",
+                        "[LMB] Push   [RMB] Pull   [{}] Arm   [{}] Plumb   [{}] Plate   [{}] Map",
+                        key_name(settings.bindings.arm_plumb),
+                        key_name(settings.bindings.plumb),
                         key_name(settings.bindings.pad),
                         key_name(settings.bindings.tac_map),
                     )

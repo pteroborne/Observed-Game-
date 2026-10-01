@@ -130,6 +130,7 @@ impl Plugin for HexWfcPlugin {
                         input::mode_hotkeys,
                         input::release_overlay_transition_capture,
                         input::map_input,
+                        kinetic::arm_and_fire,
                         overlay::sync_runtime_map,
                         overlay::rebuild,
                         input::sync_cursor,

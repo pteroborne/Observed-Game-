@@ -96,6 +96,7 @@ fn offline_pause_stops_the_authoritative_system_tick() {
                 kinetic_push: true,
                 kinetic_pull: true,
             },
+            plumb: None,
             browse_map_level: 1,
         })
         .insert_resource(super::super::overlay::MatchOverlayState::Pause(
@@ -127,11 +128,13 @@ fn continuing_neutrally_clears_held_input_between_fixed_ticks() {
             interact: true,
             ..Default::default()
         },
+        plumb: Some(observed_match::hex_wfc::HexPlumbAim::default()),
         browse_map_level: 0,
     };
     finish_input_tick(&mut intent, SimulationPolicy::ContinueNeutral);
     assert!(intent.intent.is_neutral());
     assert_eq!(intent.actions, HexActionButtons::default());
+    assert_eq!(intent.plumb, None, "a fired plumb is spent with its tick");
 }
 
 #[test]

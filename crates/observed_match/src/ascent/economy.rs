@@ -24,6 +24,11 @@ pub const SHOVE_COST: u32 = 25;
 /// it (`hex_wfc::kinetic`). A cell-level shove commits the minor, and costs [`SHOVE_COST`].
 pub const KINETIC_SHOT_COST: u32 = 10;
 
+/// Charge consumed by one plumb of the kinetic tool on the real facility: more than a
+/// shove, because it does not move a minor once, it owns which way the minor falls for
+/// four seconds (`hex_wfc::kinetic::PLUMB_TICKS`), as in `wfc_kinetic_lab`.
+pub const PLUMB_SHOT_COST: u32 = 25;
+
 /// Charge restored per actor beat at a powered recharge station.
 pub const RECHARGE_PER_BEAT: u32 = 25;
 

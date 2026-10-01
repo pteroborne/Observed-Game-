@@ -25,6 +25,7 @@ use glam::Vec3;
 use observed_core::PlayerId;
 use observed_hex::{HexCoord, HexFace, hex_origin};
 use observed_traversal::FpsBody;
+use observed_traversal::gravity::{BodyFrame, ObserverGravity};
 use observed_traversal::rapier_controller::step_character_with_settings;
 use player_input::PlayerIntent;
 
@@ -75,7 +76,11 @@ pub struct HexMinorState {
     /// Ticks left sliding from a kinetic shove, when it neither walks nor catches.
     pub stagger: u16,
     /// The highest it has been since it last stood on something, while it is falling.
+    /// A plumb's flight is not a fall: only the world's down breaks a minor.
     fall_peak: Option<f32>,
+    /// Which way is down for it: the world's, or a plumb's while one holds it
+    /// (`kinetic::plumb`), on the same lifecycle that turns an Observer's.
+    gravity: ObserverGravity,
     body: FpsBody,
 }
 
@@ -84,6 +89,45 @@ impl HexMinorState {
     #[must_use]
     pub const fn staggered(&self) -> bool {
         self.stagger > 0
+    }
+
+    /// Whether a plumb holds it, or it is still turning back upright from one: it neither
+    /// walks nor catches until its down is the world's again.
+    #[must_use]
+    pub fn plumbed(&self) -> bool {
+        self.gravity.remaining > 0 || self.gravity.returning || !self.gravity.frame.is_upright()
+    }
+
+    /// Its frame as drawn: the plumb's, eased in and out (`ObserverGravity::visual_frame`).
+    #[must_use]
+    pub fn visual_frame(&self) -> BodyFrame {
+        self.gravity.visual_frame()
+    }
+
+    /// Its down now, in the world.
+    #[must_use]
+    pub fn down(&self) -> Vec3 {
+        -self.gravity.frame.up()
+    }
+
+    /// Plumb it: its down becomes `down` for `ticks`, and it falls that way. It stops
+    /// walking and forgets its prey. Refused (`false`) where its body would not fit turned.
+    pub(super) fn plumb(
+        &mut self,
+        scene: &observed_traversal::rapier_controller::RapierTraversalScene,
+        config: &observed_traversal::FpsConfig,
+        down: Vec3,
+        ticks: u32,
+    ) -> bool {
+        let (gravity, body) = (&mut self.gravity, &mut self.body);
+        if !scene.with_query(|query| gravity.activate(query, body, config, down, ticks)) {
+            return false;
+        }
+        self.stagger = 0;
+        self.fall_peak = None;
+        self.target = None;
+        self.waypoint = None;
+        true
     }
 
     /// Stand it at rest at `position`, its body's centre.
@@ -169,6 +213,7 @@ impl HexWfcMatch {
                     waypoint: None,
                     stagger: 0,
                     fall_peak: None,
+                    gravity: ObserverGravity::default(),
                     body: FpsBody::spawned(position, 0.0),
                 })
             }
@@ -217,7 +262,8 @@ impl HexWfcMatch {
         let Some(HexReleasedGuardian::Minor(mut minor)) = self.released.get(&id).cloned() else {
             return;
         };
-        let staggered = minor.staggered();
+        // A plumbed minor is as good as staggered: it neither walks nor catches.
+        let staggered = minor.staggered() || minor.plumbed();
         let replan = (self.tick + u64::from(id)).is_multiple_of(MINOR_REPLAN_TICKS);
         let lost_target = minor.target.is_none_or(|player| !self.huntable(player));
         if !staggered && (replan || lost_target) {
@@ -251,33 +297,54 @@ impl HexWfcMatch {
             controller.air_accel = KINETIC_STAGGER_FRICTION;
         }
         let before = minor.body.position.y;
-        let _ = step_character_with_settings(
-            &self.physics,
-            &mut minor.body,
-            intent,
-            &controller,
-            profile.rapier(),
-            FIXED_DT,
-        );
-        if staggered {
+        let mut recovered = false;
+        if minor.plumbed() {
+            // Down is the plumb's: the same capsule and contract, in the minor's frame.
+            let bounds = self.physics.safety_bounds();
+            let gravity = &mut minor.gravity;
+            let body = &mut minor.body;
+            recovered = self.physics.with_query(|query| {
+                gravity
+                    .step(query, body, PlayerIntent::default(), &controller, bounds)
+                    .recovered
+            });
+        } else {
+            let _ = step_character_with_settings(
+                &self.physics,
+                &mut minor.body,
+                intent,
+                &controller,
+                profile.rapier(),
+                FIXED_DT,
+            );
+        }
+        if minor.staggered() {
             let stopped = minor.body.grounded
                 && minor.body.velocity.with_y(0.0).length() < STAGGER_RECOVERED_SPEED;
             minor.stagger = if stopped { 0 } else { minor.stagger - 1 };
         }
 
-        // A fall is measured from its highest point to where it lands.
-        let broke = if minor.body.grounded {
+        // A fall is measured from its highest point to where it lands. A plumb's flight is
+        // a lash, not a fall: a minor plumbed into a wall lands on it unhurt, and only when
+        // the plumb lets go does it fall, from wherever it then is.
+        let height = minor.body.position.y;
+        let broke = if minor.plumbed() {
+            minor.fall_peak = None;
+            false
+        } else if minor.body.grounded {
             minor
                 .fall_peak
                 .take()
-                .is_some_and(|peak| peak - minor.body.position.y > MINOR_BREAKING_DROP)
+                .is_some_and(|peak| peak - height > MINOR_BREAKING_DROP)
         } else {
-            let peak = minor.fall_peak.unwrap_or(before).max(minor.body.position.y);
+            let peak = minor.fall_peak.unwrap_or(before).max(height);
             minor.fall_peak = Some(peak);
             false
         };
         let floor_y = self.geometry.arena.floor_y;
+        // A body the controller would recover from outside the world has left it.
         if broke
+            || recovered
             || !minor.body.position.is_finite()
             || minor.body.position.y < floor_y - OUT_OF_WORLD_DEPTH
         {

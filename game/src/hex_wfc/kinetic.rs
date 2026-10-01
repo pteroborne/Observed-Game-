@@ -10,12 +10,19 @@
 //!
 //! - The Lance, posed for what it last did: the prongs open on a push and close on a
 //!   pull, and the signal burns with the local body's charge. Its gimbal hangs the plumb
-//!   bob straight down, true gravity, until the plumb is armed (not in the game yet).
+//!   bob straight down, true gravity, until the plumb is armed, and then along the armed
+//!   direction, turning with the body.
 //! - A small reticle at the centre of the view, lit in the push colour when a minor is in
 //!   reach and dim otherwise, amber once the pool cannot pay for a shot.
 //! - The lab's kinetic sounds: push and pull at the tool, an empty click when the pool is
 //!   dry, and the void when a minor the local body shoved goes over.
 //! - Notices: the tool is empty, and a minor was sent into the void.
+//!
+//! The plumb, as `wfc_kinetic_lab` proved it: the arm key (Q) arms it along the look, and
+//! held, the mouse dials it round the way the body faces instead of turning the view; the
+//! plumb key (G, or the middle button) fires it at the minor in the crosshair, whose down
+//! becomes the armed direction. The armed direction is the local player's own until they
+//! fire: only the aim travels, with the shot. The gimbal on the Lance shows it.
 //!
 //! Presentation only: it reads the match and the rules and writes nothing back.
 
@@ -40,6 +47,9 @@ use crate::GameState;
 use crate::view::theme::{DIM, WARNING};
 
 pub(super) mod capture;
+mod plumb;
+
+pub(in crate::hex_wfc) use plumb::{ArmedPlumb, arm_and_fire};
 
 /// The design every Observer carries.
 const HELD: Design = Design::Lance;
@@ -63,7 +73,8 @@ pub(in crate::hex_wfc) const REACH: [Vec3; 2] = [
     Vec3::new(0.066, 0.136, 0.131),
 ];
 
-/// Seconds a minor going over after a local shove is credited to it.
+/// Seconds a minor going over after a local shove is credited to it; after a plumb, these
+/// count from when the plumb lets go.
 const CREDIT_SECONDS: f32 = 3.0;
 
 /// Whether the match plays Ascent, which is when bodies carry the tool.
@@ -85,8 +96,9 @@ pub(super) struct KineticPresentation {
     beats: BTreeMap<PlayerId, (Beat, f32)>,
     /// The last tick whose events were read.
     tick: u64,
-    /// When the local body last shoved something (app seconds).
-    shoved_at: Option<f32>,
+    /// Until when (app seconds) a minor lost is credited to the local body's last shot:
+    /// a shove's few seconds, or a plumb's hold and a few seconds after it lets go.
+    credited_until: Option<f32>,
     /// When the reticle last flashed empty (app seconds).
     empty_at: Option<f32>,
     /// Which bodies' tools are spawned.
@@ -191,6 +203,7 @@ pub(super) fn setup(
         void: server.load("sounds/kinetic/void.ogg"),
     });
     commands.insert_resource(KineticPresentation::default());
+    commands.insert_resource(ArmedPlumb::default());
     commands.spawn((
         Reticle,
         DespawnOnExit(GameState::HexWfc),
@@ -213,6 +226,7 @@ pub(super) fn setup(
 pub(super) fn cleanup(mut commands: Commands) {
     commands.remove_resource::<KineticAssets>();
     commands.remove_resource::<KineticPresentation>();
+    commands.remove_resource::<ArmedPlumb>();
 }
 
 /// Spawn a tool for every body walking the facility, and take away the tools of those
@@ -290,13 +304,11 @@ pub(super) fn read_shots(
         let beat = match event.kind {
             HexMatchEventKind::KineticPush => Beat::Push,
             HexMatchEventKind::KineticPull => Beat::Pull,
+            HexMatchEventKind::KineticPlumb => Beat::Lash,
             HexMatchEventKind::GuardianLost => {
                 // A minor the local body shoved a moment ago has gone over.
-                if presentation
-                    .shoved_at
-                    .is_some_and(|at| now - at < CREDIT_SECONDS)
-                {
-                    presentation.shoved_at = None;
+                if presentation.credited_until.is_some_and(|until| now < until) {
+                    presentation.credited_until = None;
                     notice.show("Minor sent into the void", Tone::Good, now.into());
                     super::audio::play(
                         &mut commands,
@@ -316,7 +328,12 @@ pub(super) fn read_shots(
         presentation.beats.insert(player, (beat, now));
         let local = player == runtime.local_player;
         if local {
-            presentation.shoved_at = Some(now);
+            let hold = if beat == Beat::Lash {
+                observed_match::hex_wfc::PLUMB_TICKS as f32 / 60.0
+            } else {
+                0.0
+            };
+            presentation.credited_until = Some(now + hold + CREDIT_SECONDS);
         }
         let sound = if beat == Beat::Pull {
             assets.pull.clone()
@@ -347,6 +364,7 @@ pub(super) struct KineticPoseContext<'w, 's> {
     sway: Res<'w, HeldSway>,
     assets: Option<Res<'w, KineticAssets>>,
     presentation: Option<Res<'w, KineticPresentation>>,
+    armed: Option<Res<'w, ArmedPlumb>>,
     materials: ResMut<'w, Assets<StandardMaterial>>,
     tools: HeldTools<'w, 's>,
     parts: ToolParts<'w, 's>,
@@ -361,6 +379,7 @@ pub(super) fn pose_held(context: KineticPoseContext) {
         sway,
         assets,
         presentation,
+        armed,
         mut materials,
         mut tools,
         mut parts,
@@ -379,12 +398,18 @@ pub(super) fn pose_held(context: KineticPoseContext) {
             .beats
             .get(&tool.0)
             .map_or((Beat::Idle, 10.0), |&(beat, at)| (beat, now - at));
+        // The bob hangs true until the plumb is armed. Only the local player's arming is
+        // known here: it travels only with a shot.
+        let (armed_pitch, armed_yaw) = armed
+            .as_ref()
+            .filter(|_| tool.0 == runtime.local_player)
+            .and_then(|armed| armed.armed)
+            .unwrap_or((-FRAC_PI_2, 0.0));
         let state = ToolState {
             beat,
             since,
-            // The bob hangs true until the plumb is armed.
-            armed_pitch: -FRAC_PI_2,
-            armed_yaw: 0.0,
+            armed_pitch,
+            armed_yaw,
             charge: charge(&runtime, tool.0)
                 .map_or(0.0, |charge| charge as f32 / MAX_CHARGE as f32),
         };

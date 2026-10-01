@@ -31,12 +31,13 @@ pub use model::{
     HexKineticVerb, HexLanternCache, HexLanternState, HexMapCellKnowledge, HexMapCellSnapshot,
     HexMapDiscovery, HexMatchConfig, HexMatchError, HexMatchEvent, HexMatchEventKind,
     HexMatchSnapshot, HexMatchStatus, HexMinorState, HexPadState, HexPlayerCommand,
-    HexPlayerMapKnowledge, HexPlayerSnapshot, HexPlayerState, HexReleasedGuardian, HexReleasedKind,
-    HexSight, HexTeamObjectiveState, HexTeamSnapshot, HexTeamState, HexWfcMatch,
+    HexPlayerMapKnowledge, HexPlayerSnapshot, HexPlayerState, HexPlumbAim, HexReleasedGuardian,
+    HexReleasedKind, HexSight, HexTeamObjectiveState, HexTeamSnapshot, HexTeamState, HexWfcMatch,
     KEYSTONES_REQUIRED, KINETIC_COOLDOWN_TICKS, KINETIC_PULL_SPEED, KINETIC_PUSH_SPEED,
     KINETIC_REACH, KINETIC_STAGGER_FRICTION, KINETIC_STAGGER_TICKS, MAX_ROSTER,
     MINOR_BREAKING_DROP, MINOR_SIGHT_STEPS, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER,
-    SENSOR_HANG, SENSOR_REACH, SIGHT_REACH, SIGHT_REFRESH_TICKS, door_pose,
+    PLUMB_COOLDOWN_TICKS, PLUMB_TICKS, SENSOR_HANG, SENSOR_REACH, SIGHT_REACH, SIGHT_REFRESH_TICKS,
+    door_pose,
 };
 pub use trim::{HexTrimKind, HexTrimPiece, derive_thresholds, derive_trim, derive_trim_for};
 
