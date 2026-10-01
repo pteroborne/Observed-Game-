@@ -149,6 +149,10 @@ impl ArchitectLab {
     /// The single path by which the rules change the facility.
     pub(crate) fn rewrite(&mut self, placement: HexPlacement) {
         let cell = placement.coord;
+        // A station is deployable equipment on the old tile, not permanent
+        // structure inherited by the replacement or surviving a retraction.
+        self.economy.stations.remove(&cell);
+        self.station_sites.remove(&cell);
         self.world.placements.insert(cell, placement);
         *self.world.cell_revisions.entry(cell).or_default() += 1;
         if self.authored {
@@ -195,9 +199,8 @@ impl ArchitectLab {
         std::mem::take(&mut self.rewrites)
     }
 
-    /// A stamped room, a cell a stair or ramp links vertically, or a floor's generator or
-    /// recharge station. A first-person facility builds these whole, and no play creates
-    /// or removes a fixture; a lab board has no such thing.
+    /// A stamped room, a cell a stair or ramp links vertically, or a floor's
+    /// generator. A placed recharge station remains mutable with its tile.
     #[must_use]
     pub fn fixed_structure(&self, cell: HexCoord) -> bool {
         if !self.authored {
@@ -209,7 +212,6 @@ impl ArchitectLab {
             .any(|blueprint| blueprint.cells.contains(&cell))
             || self.linked_vertically(cell)
             || self.economy.is_at_generator(cell)
-            || self.economy.stations.contains(&cell)
     }
 
     /// Whether a stair or ramp links `cell` to the floor above or below it.

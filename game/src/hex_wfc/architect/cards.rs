@@ -155,9 +155,11 @@ pub(super) fn sync(
                 ortho.scale = match card.kind {
                     CardKind::Tile(_) => TILE_SCALE,
                     CardKind::Stair => STAIR_SCALE,
-                    CardKind::Door | CardKind::Directive | CardKind::Sensor | CardKind::Surge => {
-                        DOOR_SCALE
-                    }
+                    CardKind::Door
+                    | CardKind::Station
+                    | CardKind::Directive
+                    | CardKind::Sensor
+                    | CardKind::Surge => DOOR_SCALE,
                 };
             }
         }
@@ -299,6 +301,47 @@ pub(super) fn sync(
                             translation: at + part.translation,
                             ..part
                         },
+                    );
+                }
+            }
+            CardKind::Station => {
+                let hardware = materials.add(StandardMaterial {
+                    base_color: color(Role::Fixture),
+                    unlit: true,
+                    ..default()
+                });
+                let charge = materials.add(StandardMaterial {
+                    base_color: color(if lifted {
+                        Role::Selected
+                    } else {
+                        Role::Observer
+                    }),
+                    unlit: true,
+                    ..default()
+                });
+                spawn(
+                    Cylinder::new(1.2, 0.35).into(),
+                    hardware.clone(),
+                    Transform::from_translation(at + Vec3::Y * 0.18),
+                );
+                spawn(
+                    Cylinder::new(0.32, 1.25).into(),
+                    charge.clone(),
+                    Transform::from_translation(at + Vec3::Y * 0.8),
+                );
+                spawn(
+                    Torus::new(0.65, 0.78).into(),
+                    charge,
+                    Transform::from_translation(at + Vec3::Y * 1.4),
+                );
+                for corner in 0..3u8 {
+                    let angle = (f32::from(corner) * 120.0 + 30.0).to_radians();
+                    spawn(
+                        Cylinder::new(0.09, 1.15).into(),
+                        hardware.clone(),
+                        Transform::from_translation(
+                            at + Vec3::new(0.8 * angle.cos(), 0.72, 0.8 * angle.sin()),
+                        ),
                     );
                 }
             }

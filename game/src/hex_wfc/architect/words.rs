@@ -17,6 +17,7 @@ pub(super) const fn card_name(kind: CardKind) -> &'static str {
         CardKind::Tile(TileShape::Junction) => "JUNCTION",
         CardKind::Tile(TileShape::Hall) => "HALL",
         CardKind::Door => "DOOR",
+        CardKind::Station => "STATION",
         CardKind::Stair => "STAIR",
         CardKind::Directive => "DIRECTIVE",
         CardKind::Sensor => "SENSOR",
@@ -34,6 +35,7 @@ pub(super) const fn card_detail(kind: CardKind) -> &'static str {
         CardKind::Tile(TileShape::Junction) => "3 ways",
         CardKind::Tile(TileShape::Hall) => "4 ways",
         CardKind::Door => "on a doorway",
+        CardKind::Station => "recharges your team on a powered floor",
         CardKind::Stair => "climbs a floor",
         CardKind::Directive => "majors walk here",
         CardKind::Sensor => "sees 4 cells each way",
@@ -155,6 +157,7 @@ mod tests {
     fn every_card_has_a_name_and_a_line() {
         for kind in TileShape::ALL.into_iter().map(CardKind::Tile).chain([
             CardKind::Door,
+            CardKind::Station,
             CardKind::Stair,
             CardKind::Directive,
             CardKind::Sensor,
@@ -204,6 +207,7 @@ mod tests {
         }
         for kind in TileShape::ALL.into_iter().map(CardKind::Tile).chain([
             CardKind::Door,
+            CardKind::Station,
             CardKind::Stair,
             CardKind::Directive,
             CardKind::Sensor,

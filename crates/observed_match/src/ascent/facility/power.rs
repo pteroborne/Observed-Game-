@@ -1,17 +1,17 @@
 //! Floor power and recharge on the real facility.
 //!
 //! The rules own power and charge (`ascent::economy`): which floors have power, where
-//! each floor's generator and recharge station are, and every Observer's pool. On a lab
+//! each floor's generator and deployed recharge stations are, and every Observer's pool. On a lab
 //! board an Observer at a fixture is an Observer on its cell. A first-person cell is
 //! fourteen metres across, so here each fixture stands at a point on its cell's floor,
 //! and a body works it by standing within [`FIXTURE_REACH`] of that point.
 //!
-//! - Every floor's generator and station are sited once, before tick zero, on cells a
+//! - Every floor's generator is sited once, before tick zero, on a cell a
 //!   body can stand in: never a stair or ramp cell, never the prison, and the generator
 //!   in a room wherever the floor has one a body can reach (design section 5: "every
-//!   playable floor has exactly one generator room"). A fixture's cell is fixed
-//!   structure from then on: no card rewrites it and no retraction takes it, because no
-//!   play creates or removes a fixture.
+//!   playable floor has exactly one generator room"). The generator is fixed
+//!   structure. Architects deploy stations from their mixed hand onto standable
+//!   built cells; a tile rewrite or retraction removes the equipment.
 //! - A body within reach of its floor's generator that presses interact toggles the
 //!   floor's power, through the Observer command a lab Observer uses, so the power policy
 //!   and every refusal are the rules' own.
@@ -73,9 +73,9 @@ pub enum AtFixture {
     Station { powered: bool, charge: u32 },
 }
 
-/// Site every floor's generator and station in `world`, which `physical` builds: the
-/// cells a lab board would choose, kept only where a body can stand. Returns the economy
-/// and where each fixture stands.
+/// Site every floor's generator in `world`, which `physical` builds. The lab
+/// economy's pre-sited stations are removed here: first-person Architects must
+/// play station cards. Returns the economy and generator fixtures.
 pub(super) fn site(
     world: &HexWfcWorld,
     observers: &BTreeMap<ObserverId, Observer>,
@@ -107,21 +107,13 @@ pub(super) fn site(
     };
     let mut economy = EconomyState::sited(world, observers, prison_core, allowed, room);
     economy.pads.clear();
-    // A station that could only share the generator's cell is no station.
-    let generators: BTreeSet<HexCoord> = economy.generators.values().copied().collect();
-    economy.stations.retain(|cell| !generators.contains(cell));
-    let fixtures = generators
-        .iter()
-        .map(|&cell| (FixtureKind::Generator, cell))
-        .chain(
-            economy
-                .stations
-                .iter()
-                .map(|&cell| (FixtureKind::Station, cell)),
-        )
-        .filter_map(|(kind, cell)| {
+    economy.stations.clear();
+    let fixtures = economy
+        .generators
+        .values()
+        .filter_map(|&cell| {
             Some(Fixture {
-                kind,
+                kind: FixtureKind::Generator,
                 cell,
                 floor: point(cell)?,
             })
@@ -130,7 +122,70 @@ pub(super) fn site(
     (economy, fixtures)
 }
 
+/// Collider-verified places where a played station can stand. Kept outside the
+/// economy until a card is actually played.
+pub(super) fn station_points(
+    physical: &HexWfcMatch,
+    rules: &crate::ascent::sim::ArchitectLab,
+) -> BTreeMap<HexCoord, Vec3> {
+    rules
+        .world
+        .placements
+        .iter()
+        .filter_map(|(&cell, _)| station_point(physical, rules, cell).map(|point| (cell, point)))
+        .collect()
+}
+
+fn station_point(
+    physical: &HexWfcMatch,
+    rules: &crate::ascent::sim::ArchitectLab,
+    cell: HexCoord,
+) -> Option<Vec3> {
+    if !rules.world.placements.get(&cell)?.space.built()
+        || rules.prison_core.contains(&cell)
+        || rules.economy.is_at_generator(cell)
+        || rules.linked_vertically(cell)
+    {
+        return None;
+    }
+    physical.standing_point(cell)
+}
+
 impl AscentRules {
+    pub(super) fn refresh_station_sites(
+        &mut self,
+        physical: &HexWfcMatch,
+        changed: impl IntoIterator<Item = HexCoord>,
+    ) {
+        for cell in changed {
+            self.station_points.remove(&cell);
+            self.session.sim.station_sites.remove(&cell);
+            if let Some(point) = station_point(physical, &self.session.sim, cell) {
+                self.station_points.insert(cell, point);
+                self.session.sim.station_sites.insert(cell);
+            }
+        }
+    }
+
+    pub(super) fn refresh_station_fixtures(&mut self) {
+        let stations = &self.session.sim.economy.stations;
+        self.fixtures.retain(|fixture| {
+            fixture.kind == FixtureKind::Generator || stations.contains(&fixture.cell)
+        });
+        for &cell in stations {
+            if self.fixtures.iter().any(|fixture| fixture.cell == cell) {
+                continue;
+            }
+            let floor = self.station_points[&cell];
+            self.fixtures.push(Fixture {
+                kind: FixtureKind::Station,
+                cell,
+                floor,
+            });
+        }
+        self.fixtures
+            .sort_by_key(|fixture| (fixture.kind, fixture.cell));
+    }
     /// Every floor's generator and recharge station, where each stands.
     #[must_use]
     pub fn fixtures(&self) -> &[Fixture] {
@@ -185,6 +240,27 @@ impl AscentRules {
         if let Some(&id) = self.bodies.get(&player) {
             self.session.sim.economy.set_charge(id, charge);
         }
+    }
+
+    /// Deploy a station on `level` at the site nearest `near`, as a station card played
+    /// there would, and return it. For evidence captures: in play only an Architect's card
+    /// deploys one. `None` when the floor has no site.
+    pub fn stage_station(&mut self, level: u8, near: Vec3) -> Option<Fixture> {
+        let (&cell, _) = self
+            .station_points
+            .iter()
+            .filter(|(cell, _)| cell.level == level)
+            .min_by(|(a, at), (b, bt)| {
+                at.distance_squared(near)
+                    .total_cmp(&bt.distance_squared(near))
+                    .then(a.cmp(b))
+            })?;
+        self.session.sim.economy.stations.insert(cell);
+        self.refresh_station_fixtures();
+        self.fixtures
+            .iter()
+            .copied()
+            .find(|fixture| fixture.kind == FixtureKind::Station && fixture.cell == cell)
     }
 
     /// Set a floor's power. For evidence captures: play switches it only at the generator,

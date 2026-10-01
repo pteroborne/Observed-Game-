@@ -254,6 +254,9 @@ pub struct ArchitectLab {
     pub traces: BTreeMap<String, BehaviorTrace>,
     pub command_log: Vec<(u64, ArchitectCommand)>,
     pub economy: EconomyState,
+    /// Cells with a physical standing point where an Architect may deploy a
+    /// station. The first-person host refreshes this after directed rewrites.
+    pub(crate) station_sites: BTreeSet<HexCoord>,
     pub requisition: crate::ascent::requisition::RequisitionState,
     pub power_policy: PowerPolicy,
     /// The match is held in planning: the shell is showing the board with time stopped.
@@ -360,6 +363,7 @@ impl ArchitectLab {
             traces: BTreeMap::new(),
             command_log: Vec::new(),
             economy,
+            station_sites: BTreeSet::new(),
             requisition: crate::ascent::requisition::RequisitionState::new(seed),
             power_policy: PowerPolicy::default(),
             planning: false,
@@ -745,6 +749,19 @@ impl ArchitectLab {
             }
             CardKind::Surge => (!placement.space.built() || self.retracted.contains(&target))
                 .then_some(CommandRefusal::VoidTarget),
+            CardKind::Station => {
+                if !placement.space.built() || self.retracted.contains(&target) {
+                    return Some(CommandRefusal::VoidTarget);
+                }
+                if self.economy.stations.contains(&target) {
+                    return Some(CommandRefusal::NoChange);
+                }
+                if self.economy.is_at_generator(target) || self.linked_vertically(target) {
+                    return Some(CommandRefusal::FixedStructure);
+                }
+                (self.authored && !self.station_sites.contains(&target))
+                    .then_some(CommandRefusal::Unbuildable)
+            }
             CardKind::Door => {
                 let Some(key) = self.threshold_key(target, lateral_face(rotation)) else {
                     return Some(CommandRefusal::InvalidThreshold);
@@ -906,6 +923,9 @@ impl ArchitectLab {
                             .threshold_key(target, lateral_face(rotation))
                             .expect("legality proved the threshold exists");
                         self.doors.insert(key, DoorState::Closed);
+                    }
+                    CardKind::Station => {
+                        self.economy.stations.insert(target);
                     }
                     CardKind::Stair => {
                         for placement in self.played_stair(target, rotation) {

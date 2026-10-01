@@ -4,7 +4,8 @@
 //! then stages two scenes and plays each through the match's own input. The body is stood
 //! a few metres from the ground floor's generator, facing it, and walks up; interact cuts
 //! the floor's power and, a few seconds later, restores it. Then it is stood before the
-//! floor's recharge station with its tool nearly empty, walks into the cradle and stands
+//! floor's recharge station (deployed near the body if the team's Architect has not yet
+//! played one) with its tool nearly empty, walks into the cradle and stands
 //! there until the tool is full; last, the floor's power is staged off, to show a dead
 //! station. The walk, the interact presses and the recharge are all the match's own.
 //!
@@ -171,8 +172,18 @@ pub(in crate::hex_wfc) fn drive(
             power.still = Some("power-4-generator-restored-1280x800.png");
         }
         Beat::Restored if elapsed >= 120 => {
-            let Some(station) = fixture(&runtime, FixtureKind::Station) else {
-                error!("power capture: no station on the spawn floor");
+            // The team's Architect may not have dealt the floor a station yet; deploy one
+            // near the body, as a station card would.
+            let level = runtime.local().cell.level;
+            let near = runtime.local().position;
+            let station = fixture(&runtime, FixtureKind::Station).or_else(|| {
+                runtime
+                    .ascent
+                    .as_mut()
+                    .and_then(|ascent| ascent.stage_station(level, near))
+            });
+            let Some(station) = station else {
+                error!("power capture: no station site on the spawn floor");
                 power.go(Beat::Done, tick);
                 return;
             };

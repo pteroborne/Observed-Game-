@@ -119,6 +119,7 @@ pub(in crate::hex_wfc) fn capture(
                 CardKind::Stair => 0,
                 CardKind::Tile(_) => 1,
                 CardKind::Door => 2,
+                CardKind::Station => 2,
                 // The Rogue's orders build nothing to show.
                 CardKind::Directive | CardKind::Sensor | CardKind::Surge => 3,
             });

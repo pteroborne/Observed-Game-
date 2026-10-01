@@ -16,7 +16,9 @@ impl AscentRules {
     /// Choose and drive a bot body through the same input frame as a player.
     /// A dark floor's reachable generator comes first. When charge cannot pay
     /// for a shot, seek a reachable powered station and remain there until full.
-    /// If no fixture can be reached, continue the normal physical objective.
+    /// Reachable means without leaving the floor: these errands are judged by the floor
+    /// the body stands on, so one that climbed away would be dropped halfway. If no
+    /// fixture can be reached, continue the normal physical objective.
     #[must_use]
     pub fn bot_body_command(
         &self,
@@ -40,7 +42,7 @@ impl AscentRules {
                 fixture.kind == FixtureKind::Generator
                     && fixture.cell.level == floor
                     && driver
-                        .route_len_to(physical, player, fixture.cell)
+                        .floor_route_len_to(physical, player, fixture.cell)
                         .is_some()
             })
         {
@@ -73,7 +75,7 @@ impl AscentRules {
                         && rules.economy.is_powered(floor)
                 })
                 .filter_map(|fixture| {
-                    let length = driver.route_len_to(physical, player, fixture.cell)?;
+                    let length = driver.floor_route_len_to(physical, player, fixture.cell)?;
                     Some((length, fixture.cell, fixture))
                 })
                 .min_by_key(|(length, cell, _)| (*length, *cell));

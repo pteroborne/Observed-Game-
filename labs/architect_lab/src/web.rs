@@ -223,6 +223,7 @@ impl RogueGame {
                         "Rewrite or extend a route",
                     ),
                     CardKind::Door => ("door", 0, "Block a threshold; Observers can reopen it"),
+                    CardKind::Station => ("station", 0, "Recharge on a powered floor"),
                     CardKind::Stair => ("stair", 0, "Build a way up"),
                     CardKind::Directive => ("directive", 0, "Send major Guardians"),
                     CardKind::Sensor => ("sensor", 0, "Watch a floor"),

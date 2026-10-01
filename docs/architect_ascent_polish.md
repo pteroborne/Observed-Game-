@@ -373,16 +373,24 @@ The charge comes back only at a powered recharge station, and a floor's power is
 generator's (design sections 5 and 6), so both now stand in the facility
 (`ascent::facility::power`, `game/src/hex_wfc/power.rs`):
 
-- **Sited once, before tick zero, where a body can stand.** A first-person cell is fourteen
-  metres across, so a fixture is not a cell but a point on its cell's floor
-  (`HexWfcMatch::standing_point`: the centre if a body fits there, else the nearest clear,
-  supported spot within four metres). Every floor gets a generator and a station on cells
-  a body can reach from the floor's spine - never a stair or ramp cell, never the prison -
-  and the generator goes in a room wherever the floor has one that qualifies. The lab's
-  choice of cells is kept and only filtered, so a lab board's fixtures are unchanged. The
-  lab's teleport pads are not sited: the first-person match has plates of its own.
-- **Fixed structure.** No play creates or removes a fixture, so a fixture's cell is refused
-  to every card as `FixedStructure` and never retracted, as rooms and stairs are.
+- **Generators are sited once, before tick zero, where a body can stand.** A first-person
+  cell is fourteen metres across, so a fixture is not a cell but a point on its cell's
+  floor (`HexWfcMatch::standing_point`: the centre if a body fits there, else the nearest
+  clear, supported spot within four metres). Every floor gets a generator on a cell a body
+  can reach from the floor's spine - never a stair or ramp cell, never the prison - in a
+  room wherever the floor has one that qualifies. A generator's cell is fixed structure:
+  refused to every card as `FixedStructure` and never retracted, as rooms and stairs are.
+  The lab's teleport pads are not sited: the first-person match has plates of its own.
+- **Stations are played, from the Architect's mixed hand** (design section 6). A
+  first-person deck holds four station cards (`CardKind::Station`). One is played on any
+  built cell with a standing point - a room's included, never a generator's, a stair's or
+  the prison's (`AscentRules::station_points`, refreshed whenever a tile changes) - under
+  the same knowledge, sight, occupancy and cooldown rules as any card. A station is
+  equipment on its tile, not structure: rewrite or retract the tile and the station goes
+  with it. A hand short of a tile for its floor gives up another floor's tile, a door or a
+  stair before it gives up a station. A bot Architect, before improving any route, plays a
+  station within reach of its team on a floor they stand on that has none. At the desk the
+  card's miniature is the cradle itself.
 - **Worked in person, within 2.2 m.** Interact at the generator switches the floor's power
   through the same Observer command a lab Observer uses, so the power policy and its
   refusals are the rules'. A body standing at a powered station draws `RECHARGE_PER_BEAT`
@@ -427,10 +435,16 @@ press interact within reach to restore it, and take a route to a powered station
 their Lance has less charge than one shot. At the station they wait through the recharge
 beats until full. Both local and authoritative LAN bots make these choices through the
 same body command path, and match tests walk a bot to each fixture and check the result.
+An errand counts only if its route stays on the body's floor: the errand is judged by the
+floor the body stands on, so a route that climbed away through a stair was dropped the
+moment the body arrived on a powered floor, and the bot stalled there
+(`HexBotDriver::floor_route_len_to`).
 
-Still open: stations are sited by the rules rather than placed from the Architect's
-mixed hand as the design has them; doors, teleport plates and ascent are not yet gated
-by power in the physical match.
+The power capture deploys a station near the body (`AscentRules::stage_station`) if the
+team's bot Architect has not yet played one on the spawn floor.
+
+Still open: doors, teleport plates and ascent are not yet gated by power in the physical
+match.
 
 ### Where a minor can die
 

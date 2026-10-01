@@ -117,9 +117,11 @@ pub fn sync_previews(
             CardKind::Door => door_parts(&models, models.ghost.clone(), rotation),
             // The lab's decks deal no stairs, directives or sensors: only the real
             // facility's decks do.
-            CardKind::Stair | CardKind::Directive | CardKind::Sensor | CardKind::Surge => {
-                Vec::new()
-            }
+            CardKind::Stair
+            | CardKind::Station
+            | CardKind::Directive
+            | CardKind::Sensor
+            | CardKind::Surge => Vec::new(),
         };
         for mut part in parts {
             part.transform.translation += preview_origin(i);
@@ -328,9 +330,11 @@ pub fn rebuild_board(
                     &mut materials,
                 ),
                 CardKind::Door => door_parts(&models, models.ghost.clone(), session.rotation),
-                CardKind::Stair | CardKind::Directive | CardKind::Sensor | CardKind::Surge => {
-                    Vec::new()
-                }
+                CardKind::Stair
+                | CardKind::Station
+                | CardKind::Directive
+                | CardKind::Sensor
+                | CardKind::Surge => Vec::new(),
             };
             for mut part in parts {
                 part.material = models.ghost.clone();

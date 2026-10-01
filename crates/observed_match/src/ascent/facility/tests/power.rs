@@ -1,12 +1,10 @@
-//! Floor power and recharge on the real facility: every floor's generator and station
-//! stand where a body can reach them, interact at the generator switches the floor, and
-//! a powered station fills a body standing at it.
+//! Floor power and Architect-placed recharge on the real facility.
 
 use glam::Vec3;
 
 use super::*;
 use crate::ascent::economy::{MAX_CHARGE, RECHARGE_PER_BEAT};
-use crate::ascent::sim::ACTOR_BEAT_TICKS;
+use crate::ascent::sim::{ACTOR_BEAT_TICKS, CardKind};
 use crate::hex_wfc::{HexActionButtons, HexBotDriver};
 
 const INTERACT: HexActionButtons = HexActionButtons {
@@ -77,8 +75,76 @@ fn powered(game: &AscentMatch, level: u8) -> bool {
     game.rules().economy.is_powered(level)
 }
 
+fn open_site(game: &AscentMatch, level: u8) -> Fixture {
+    let (&cell, &floor) = game
+        .ascent
+        .station_points
+        .iter()
+        .find(|(cell, _)| cell.level == level && !game.rules().fixed_structure(**cell))
+        .expect("a mutable, standable station site");
+    Fixture {
+        kind: FixtureKind::Station,
+        cell,
+        floor,
+    }
+}
+
+/// Stage a station card and use the real Architect seat once a known site is legal.
+fn install_station(game: &mut AscentMatch) -> Fixture {
+    assert!(
+        game.ascent
+            .session
+            .hands
+            .get_mut(&TEAM)
+            .unwrap()
+            .deck
+            .stage_kind(CardKind::Station),
+        "the loyal deck deals stations"
+    );
+    let command = (0..6_000)
+        .find_map(|_| {
+            // Held through the whole walk: the live-hand rule never gives up a station.
+            let card = game.session().hands[&TEAM]
+                .deck
+                .hand
+                .iter()
+                .find(|card| card.kind == CardKind::Station)
+                .expect("the station card stays in hand")
+                .id;
+            let legal = game
+                .ascent
+                .station_points
+                .keys()
+                .copied()
+                .filter(|cell| cell.level == 0 && !game.rules().fixed_structure(*cell))
+                .map(|target| ArchitectCommand::Play {
+                    card,
+                    target,
+                    rotation: 0,
+                })
+                .find(|&command| {
+                    game.session()
+                        .architect_refusal(ARCHITECT, command)
+                        .is_none()
+                });
+            if legal.is_none() {
+                step(game, Body::Explore, SeatCommand::None);
+            }
+            legal
+        })
+        .expect("exploration found a legal station site");
+    let ArchitectCommand::Play { target, .. } = command else {
+        unreachable!()
+    };
+    assert!(step(game, Body::Turn(0.0), SeatCommand::Architect(command)).is_empty());
+    let station = fixture(game, FixtureKind::Station, target.level);
+    assert_eq!(station.cell, target);
+    assert!(game.rules().economy.stations.contains(&target));
+    station
+}
+
 #[test]
-fn every_floor_has_a_generator_and_a_station_a_body_can_stand_at() {
+fn every_floor_has_a_generator_and_standable_station_sites_but_no_free_station() {
     for seed in [3, 7, 11] {
         let game = game(seed);
         let rules = game.rules();
@@ -87,37 +153,47 @@ fn every_floor_has_a_generator_and_a_station_a_body_can_stand_at() {
             "the lab's pads are not sited"
         );
         for level in 0..rules.world.config.levels {
-            for kind in [FixtureKind::Generator, FixtureKind::Station] {
-                let fixture = fixture(&game, kind, level);
+            {
+                let fixture = fixture(&game, FixtureKind::Generator, level);
                 let cell = fixture.cell;
                 assert!(
                     rules.fixed_structure(cell),
-                    "seed {seed}: {kind:?} can be rewritten"
+                    "seed {seed}: generator can be rewritten"
                 );
                 assert!(
                     !rules.linked_vertically(cell),
-                    "seed {seed}: {kind:?} on a stair"
+                    "seed {seed}: generator on a stair"
                 );
                 assert!(
                     !rules.prison_core.contains(&cell),
-                    "seed {seed}: {kind:?} in the prison"
+                    "seed {seed}: generator in the prison"
                 );
                 let centre = Vec3::from_array(observed_hex::hex_origin(cell));
                 assert!(
                     (fixture.floor - centre).with_y(0.0).length() <= 4.01,
-                    "seed {seed}: {kind:?} is off the middle of its cell"
+                    "seed {seed}: generator is off the middle of its cell"
                 );
                 assert!(
                     (fixture.floor.y - centre.y - observed_hex::FLOOR_SLAB_TOP).abs() < 0.2,
-                    "seed {seed}: {kind:?} is not on its floor"
+                    "seed {seed}: generator is not on its floor"
                 );
             }
             let generator = fixture(&game, FixtureKind::Generator, level);
-            let station = fixture(&game, FixtureKind::Station, level);
-            assert_ne!(generator.cell, station.cell, "seed {seed}");
             assert_eq!(rules.economy.generators[&level], generator.cell);
-            assert!(rules.economy.stations.contains(&station.cell));
+            assert!(
+                game.ascent
+                    .station_points
+                    .keys()
+                    .any(|cell| cell.level == level)
+            );
         }
+        assert!(rules.economy.stations.is_empty(), "stations must be played");
+        assert!(
+            game.ascent
+                .fixtures()
+                .iter()
+                .all(|fixture| fixture.kind == FixtureKind::Generator)
+        );
     }
 }
 
@@ -152,7 +228,7 @@ fn interact_at_the_generator_switches_the_floors_power_and_back() {
 fn interact_out_of_reach_of_the_generator_changes_nothing() {
     let mut game = game(7);
     let generator = fixture(&game, FixtureKind::Generator, 0);
-    let station = fixture(&game, FixtureKind::Station, 0);
+    let station = open_site(&game, 0);
     stand_at(&mut game, station, Vec3::ZERO);
     press(&mut game, INTERACT);
     assert!(powered(&game, 0));
@@ -167,7 +243,7 @@ fn interact_out_of_reach_of_the_generator_changes_nothing() {
 fn a_powered_station_fills_the_tool_of_a_body_standing_at_it() {
     let mut game = game(7);
     let observer = game.observer_for(BODY).expect("an Observer");
-    let station = fixture(&game, FixtureKind::Station, 0);
+    let station = install_station(&mut game);
     stand_at(&mut game, station, Vec3::ZERO);
     game.ascent.session.sim.economy.set_charge(observer, 0);
     for _ in 0..ACTOR_BEAT_TICKS {
@@ -193,7 +269,7 @@ fn a_powered_station_fills_the_tool_of_a_body_standing_at_it() {
 fn a_dark_station_and_one_out_of_reach_supply_nothing() {
     let mut game = game(7);
     let observer = game.observer_for(BODY).expect("an Observer");
-    let station = fixture(&game, FixtureKind::Station, 0);
+    let station = install_station(&mut game);
     // In the station's cell, but not at it.
     stand_at(&mut game, station, Vec3::ZERO);
     let aside = [Vec3::X, Vec3::Z, Vec3::NEG_X, Vec3::NEG_Z]
@@ -229,11 +305,54 @@ fn a_dark_station_and_one_out_of_reach_supply_nothing() {
     );
 }
 
+/// A standable site on `level` whose way to the floor's generator stays on the floor, or,
+/// with `on_floor` false, one whose only way there leaves it.
+fn site_reaching_the_generator(game: &AscentMatch, level: u8, on_floor: bool) -> Fixture {
+    let generator = fixture(game, FixtureKind::Generator, level).cell;
+    let facility = &game.physical().facility;
+    let (&cell, &floor) = game
+        .ascent
+        .station_points
+        .iter()
+        .filter(|(cell, _)| cell.level == level && **cell != generator)
+        .find(|(cell, _)| {
+            facility
+                .route_between_cells(**cell, generator)
+                .is_some_and(|route| route.cells.iter().all(|at| at.level == level) == on_floor)
+        })
+        .expect("such a site");
+    Fixture {
+        kind: FixtureKind::Station,
+        cell,
+        floor,
+    }
+}
+
+/// A dark generator the body could only reach by climbing off its floor is no errand: the
+/// floor it would arrive on is not the dark one, and it would give up halfway.
+#[test]
+fn a_generator_reachable_only_off_the_floor_is_not_an_errand() {
+    let mut game = game(7);
+    let mut driver = HexBotDriver::default();
+    let site = site_reaching_the_generator(&game, 0, false);
+    stand_at(&mut game, site, Vec3::ZERO);
+    let generator = fixture(&game, FixtureKind::Generator, 0).cell;
+    assert!(
+        driver
+            .route_len_to(game.physical(), BODY, generator)
+            .is_some()
+    );
+    assert_eq!(
+        driver.floor_route_len_to(game.physical(), BODY, generator),
+        None
+    );
+}
+
 #[test]
 fn bot_body_walks_to_a_dark_floors_generator_and_restores_power() {
     let mut game = game(7);
     let mut driver = HexBotDriver::default();
-    let station = fixture(&game, FixtureKind::Station, 0);
+    let station = site_reaching_the_generator(&game, 0, true);
     stand_at(&mut game, station, Vec3::ZERO);
     game.ascent.stage_power(0, false);
     let mut interacted = false;
@@ -254,7 +373,8 @@ fn bot_body_walks_to_a_powered_station_and_waits_until_full() {
     let mut game = game(7);
     let mut driver = HexBotDriver::default();
     let observer = game.observer_for(BODY).expect("an Observer");
-    let generator = fixture(&game, FixtureKind::Generator, 0);
+    let station = install_station(&mut game);
+    let generator = fixture(&game, FixtureKind::Generator, station.cell.level);
     stand_at(&mut game, generator, Vec3::ZERO);
     game.ascent.stage_charge(BODY, 0);
     let mut recharging = false;
@@ -278,9 +398,14 @@ fn bot_body_walks_to_a_powered_station_and_waits_until_full() {
 }
 
 #[test]
-fn no_card_rewrites_a_fixture() {
+fn no_card_rewrites_a_generator() {
     let game = game(7);
-    for fixture in game.ascent.fixtures() {
+    for fixture in game
+        .ascent
+        .fixtures()
+        .iter()
+        .filter(|fixture| fixture.kind == FixtureKind::Generator)
+    {
         let hand = &game.session().hands[&TEAM].deck.hand;
         for card in hand {
             for rotation in 0..6 {
@@ -297,4 +422,55 @@ fn no_card_rewrites_a_fixture() {
             }
         }
     }
+}
+
+/// A bot Architect deals its team a station: with none on the floor its Observers stand on,
+/// it plays one from its mixed hand onto a site the team has found, and the station stands
+/// in the facility where a body can work it.
+#[test]
+fn a_bot_architect_deploys_a_station_on_its_teams_floor() {
+    let mut game = game_seated(7, 1, false, true);
+    let mut deployed = None;
+    for _ in 0..6_000 {
+        step(&mut game, Body::Explore, SeatCommand::None);
+        if let Some(&cell) = game.rules().economy.stations.first() {
+            deployed = Some(cell);
+            break;
+        }
+    }
+    let cell = deployed.expect("the bot Architect never deployed a station");
+    let station = game
+        .ascent
+        .fixtures()
+        .iter()
+        .find(|fixture| fixture.kind == FixtureKind::Station && fixture.cell == cell)
+        .expect("the deployed station stands in the facility");
+    assert_eq!(station.floor, game.ascent.station_points[&cell]);
+    assert!(
+        game.rules()
+            .observers
+            .values()
+            .any(|observer| observer.cell.level == cell.level),
+        "deployed off the team's floor"
+    );
+}
+
+/// A station is equipment on its tile, not structure: rewrite the tile and the station goes
+/// with it, from the rules and from the facility.
+#[test]
+fn a_rewritten_tile_takes_its_station_with_it() {
+    let mut game = game(7);
+    let station = install_station(&mut game);
+    let placement = game.rules().world.placements[&station.cell];
+    game.ascent.session.sim.rewrite(placement);
+    step(&mut game, Body::Turn(0.0), SeatCommand::None);
+    assert!(!game.rules().economy.stations.contains(&station.cell));
+    assert!(
+        !game
+            .ascent
+            .fixtures()
+            .iter()
+            .any(|fixture| fixture.kind == FixtureKind::Station && fixture.cell == station.cell),
+        "the station still stands in the facility"
+    );
 }

@@ -113,6 +113,8 @@ impl TileShape {
 pub enum CardKind {
     Tile(TileShape),
     Door,
+    /// Deploy a powered-floor recharge station on a standable built cell.
+    Station,
     /// An ascent: a ramp pair climbing from the cell played on to the one above, turned
     /// to the direction of the climb. The only card that builds the way up.
     Stair,
@@ -148,6 +150,7 @@ impl Card {
                 format!("{} - {}", shape.label(), district.label())
             }
             (CardKind::Door, _) => "deployable door".to_string(),
+            (CardKind::Station, _) => "recharge station".to_string(),
             (CardKind::Stair, Some(district)) => format!("stair - {}", district.label()),
             (CardKind::Stair, None) => "stair".to_string(),
             (CardKind::Tile(shape), None) => shape.label().to_string(),
@@ -183,10 +186,16 @@ impl Deck {
         Self::with_stairs(seed, levels, shapes, 0)
     }
 
-    /// A deck of `shapes` and `stairs` stair cards in each district, and the doors.
+    /// A deck of `shapes` and `stairs` stair cards in each district, plus doors
+    /// and, for the first-person game, deployable recharge stations.
     #[must_use]
     pub fn with_stairs(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
-        Self::composed(seed, levels, shapes, stairs, &[(CardKind::Door, 4)])
+        let extra = if stairs == 0 {
+            vec![(CardKind::Door, 4)]
+        } else {
+            vec![(CardKind::Door, 4), (CardKind::Station, 4)]
+        };
+        Self::composed(seed, levels, shapes, stairs, &extra)
     }
 
     /// The Rogue's deck (design section 7): two of each of `shapes` in each district, the
@@ -325,23 +334,32 @@ impl Deck {
     }
 
     /// Bring a tile of `district` into the hand from the draw pile, or failing that the
-    /// discard, in place of the hand's first card; whether there was one. Deterministic:
-    /// the first such card in the pile.
+    /// discard, in place of the hand's least useful card ([`Self::least_useful`]); whether
+    /// there was one. Deterministic: the first such card in the pile.
     pub(crate) fn offer_any_tile(&mut self, district: District) -> bool {
-        if self.hand.is_empty() {
+        let Some(replace) = self.least_useful(district) else {
             return false;
-        }
+        };
         let matches =
             |card: &Card| matches!(card.kind, CardKind::Tile(_)) && card.district == Some(district);
-        if let Some(index) = self.draw.iter().position(matches) {
-            std::mem::swap(&mut self.hand[0], &mut self.draw[index]);
-            return true;
-        }
-        if let Some(index) = self.discard.iter().position(matches) {
-            std::mem::swap(&mut self.hand[0], &mut self.discard[index]);
-            return true;
+        for pile in [&mut self.draw, &mut self.discard] {
+            if let Some(index) = pile.iter().position(matches) {
+                std::mem::swap(&mut self.hand[replace], &mut pile[index]);
+                return true;
+            }
         }
         false
+    }
+
+    /// The card a hand needing a tile of `district` gives up for one: a tile for another
+    /// floor, then a door, then anything but a station, which is how a team recharges and
+    /// may be the one card it is holding for. The first such card; `None` for no hand.
+    fn least_useful(&self, district: District) -> Option<usize> {
+        let first = |wanted: &dyn Fn(&Card) -> bool| self.hand.iter().position(wanted);
+        first(&|card| matches!(card.kind, CardKind::Tile(_)) && card.district != Some(district))
+            .or_else(|| first(&|card| card.kind == CardKind::Door))
+            .or_else(|| first(&|card| card.kind != CardKind::Station))
+            .or_else(|| (!self.hand.is_empty()).then_some(0))
     }
 
     fn shuffle_draw(&mut self) {
@@ -387,5 +405,95 @@ impl Deck {
         self.discard.push(self.hand.remove(index));
         self.refill();
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A first-person deck whose hand is `kinds` (a tile's district given), the rest back
+    /// in the draw pile.
+    fn deck_holding(kinds: &[(CardKind, Option<District>)]) -> Deck {
+        let mut deck = Deck::with_stairs(7, 2, &TileShape::AUTHORED, 3);
+        deck.draw.append(&mut deck.hand);
+        for &(kind, district) in kinds {
+            let index = deck
+                .draw
+                .iter()
+                .position(|card| {
+                    card.kind == kind && (district.is_none() || card.district == district)
+                })
+                .expect("the deck holds such a card");
+            let card = deck.draw.remove(index);
+            deck.hand.push(card);
+        }
+        deck
+    }
+
+    fn stations(deck: &Deck) -> usize {
+        deck.hand
+            .iter()
+            .filter(|card| card.kind == CardKind::Station)
+            .count()
+    }
+
+    /// A hand with nothing for its team's floor draws a tile in, and gives up the least
+    /// useful card for it: another floor's tile, then a door, then a stair, never the
+    /// station a team recharges by.
+    #[test]
+    fn a_hand_short_of_a_floors_tile_keeps_its_station() {
+        let grid = Some(District::LiminalGrid);
+        let corridor = CardKind::Tile(TileShape::Corridor);
+        for (hand, gives_up) in [
+            (
+                vec![
+                    (CardKind::Station, None),
+                    (corridor, grid),
+                    (CardKind::Door, None),
+                    (CardKind::Stair, None),
+                    (corridor, grid),
+                ],
+                corridor,
+            ),
+            (
+                vec![
+                    (CardKind::Station, None),
+                    (CardKind::Stair, None),
+                    (CardKind::Door, None),
+                    (CardKind::Stair, None),
+                    (CardKind::Station, None),
+                ],
+                CardKind::Door,
+            ),
+            (
+                vec![
+                    (CardKind::Station, None),
+                    (CardKind::Stair, None),
+                    (CardKind::Station, None),
+                    (CardKind::Stair, None),
+                    (CardKind::Station, None),
+                ],
+                CardKind::Stair,
+            ),
+        ] {
+            let mut deck = deck_holding(&hand);
+            let before = deck.hand.clone();
+            assert!(deck.offer_any_tile(District::Institutional));
+            assert!(deck.has_tile_for(District::Institutional));
+            assert_eq!(
+                stations(&deck),
+                before
+                    .iter()
+                    .filter(|c| c.kind == CardKind::Station)
+                    .count()
+            );
+            let lost: Vec<_> = before
+                .iter()
+                .filter(|card| !deck.hand.contains(card))
+                .collect();
+            assert_eq!(lost.len(), 1, "{hand:?}");
+            assert_eq!(lost[0].kind, gives_up, "{hand:?}");
+        }
     }
 }

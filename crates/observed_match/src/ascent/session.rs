@@ -451,6 +451,15 @@ impl AscentSession {
         if !self.sim.tick.is_multiple_of(beat) {
             return;
         }
+        let bot_teams: std::collections::BTreeSet<TeamId> = self
+            .seats
+            .values()
+            .filter(|seat| seat.bot)
+            .filter_map(|seat| match seat.role {
+                Role::Architect(team) => Some(team),
+                _ => None,
+            })
+            .collect();
         for (team, hand) in &mut self.hands {
             let districts: Vec<District> = self
                 .sim
@@ -463,6 +472,21 @@ impl AscentSession {
                 && !districts.iter().any(|&d| hand.deck.has_tile_for(d))
             {
                 hand.deck.offer_any_tile(district);
+            }
+            if self.sim.is_authored()
+                && bot_teams.contains(team)
+                && self.sim.observers.values().any(|observer| {
+                    observer.team == *team
+                        && observer.state == ObserverState::Active
+                        && !self
+                            .sim
+                            .economy
+                            .stations
+                            .iter()
+                            .any(|site| site.level == observer.cell.level)
+                })
+            {
+                hand.deck.offer_kind(super::sim::CardKind::Station);
             }
         }
         let rogue_districts: Vec<District> = self

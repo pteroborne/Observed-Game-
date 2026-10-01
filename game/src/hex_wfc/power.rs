@@ -1,5 +1,5 @@
-//! Floor power in Architect Ascent: every floor's generator and recharge station, drawn
-//! where the rules site them, and what a floor losing its power looks and sounds like.
+//! Floor power in Architect Ascent: each floor's generator and the stations
+//! Architects deploy, drawn where the rules place them.
 //!
 //! The rules own power and charge (`observed_match::ascent::facility::power`); this reads
 //! them and writes nothing back. A body works a fixture by standing at it: interact at the
@@ -21,7 +21,7 @@
 //!   when it is the local body's floor; charge ticks in as the station fills the tool.
 //! - **The prompt**: at the generator, what interact would do; at the station, the fill.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::ecs::system::SystemParam;
 use bevy::light::{NotShadowCaster, NotShadowReceiver};
@@ -163,6 +163,8 @@ impl FromWorld for PowerAssets {
 #[derive(Component)]
 pub(super) struct PowerFixture {
     level: u8,
+    kind: FixtureKind,
+    cell: observed_hex::HexCoord,
 }
 
 /// A part of a fixture lit by its floor's power: what it wears lit, and dark.
@@ -194,7 +196,6 @@ pub(super) struct PowerPresentation {
     power: BTreeMap<u8, bool>,
     /// The local body's charge as last heard.
     charge: Option<u32>,
-    spawned: bool,
 }
 
 fn spawn_fixture(commands: &mut Commands, assets: &PowerAssets, fixture: Fixture) {
@@ -209,7 +210,11 @@ fn spawn_fixture(commands: &mut Commands, assets: &PowerAssets, fixture: Fixture
     };
     commands
         .spawn((
-            PowerFixture { level },
+            PowerFixture {
+                level,
+                kind: fixture.kind,
+                cell: fixture.cell,
+            },
             DespawnOnExit(GameState::HexWfc),
             Transform::from_translation(fixture.floor),
             Visibility::default(),
@@ -274,7 +279,7 @@ fn spawn_fixture(commands: &mut Commands, assets: &PowerAssets, fixture: Fixture
 
 #[derive(SystemParam)]
 pub(super) struct FixtureParts<'w, 's> {
-    fixtures: Query<'w, 's, (&'static PowerFixture, &'static Children)>,
+    fixtures: Query<'w, 's, (Entity, &'static PowerFixture, &'static Children)>,
     lit: Query<
         'w,
         's,
@@ -287,7 +292,7 @@ pub(super) struct FixtureParts<'w, 's> {
     rotors: Query<'w, 's, &'static mut Transform, With<Rotor>>,
 }
 
-/// Stand every fixture once the match has rules, and light each by its floor's power.
+/// Keep drawn fixtures in step with station-card plays and tile retractions.
 pub(super) fn sync_fixtures(
     mut commands: Commands,
     runtime: Res<HexWfcRuntime>,
@@ -306,20 +311,33 @@ pub(super) fn sync_fixtures(
         return;
     };
     // Built on first need, so a race never makes them.
-    let (Some(assets), Some(mut presentation)) = (assets, presentation) else {
+    let (Some(assets), Some(_presentation)) = (assets, presentation) else {
         commands.init_resource::<PowerAssets>();
         commands.init_resource::<PowerPresentation>();
         return;
     };
-    if !presentation.spawned {
-        presentation.spawned = true;
-        for &fixture in ascent.fixtures() {
+    let wanted: BTreeSet<_> = ascent
+        .fixtures()
+        .iter()
+        .map(|fixture| (fixture.kind, fixture.cell))
+        .collect();
+    let drawn: BTreeSet<_> = fixtures
+        .iter()
+        .map(|(_, fixture, _)| (fixture.kind, fixture.cell))
+        .collect();
+    for (entity, fixture, _) in &fixtures {
+        if !wanted.contains(&(fixture.kind, fixture.cell)) {
+            commands.entity(entity).despawn();
+        }
+    }
+    for &fixture in ascent.fixtures() {
+        if !drawn.contains(&(fixture.kind, fixture.cell)) {
             spawn_fixture(&mut commands, &assets, fixture);
         }
     }
     let economy = &ascent.rules().economy;
     let spin = time.delta_secs() * ROTOR_SPEED;
-    for (fixture, children) in &fixtures {
+    for (_, fixture, children) in &fixtures {
         let powered = economy.is_powered(fixture.level);
         for child in children.iter() {
             if let Ok((lit, mut material)) = lit.get_mut(child) {

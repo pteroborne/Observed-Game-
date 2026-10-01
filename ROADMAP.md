@@ -74,8 +74,12 @@ the combined loop.
     Bot bodies now walk to a reachable generator on a dark floor, restore its power with
     the same interact command as a player, and seek a powered station when the Lance
     cannot pay for a shot. They stay there until full. Local and server bots use the
-    same physical route follower and command path. Next: stations placed from the
-    Architect's mixed hand, and power gating doors, plates and ascent physically.
+    same physical route follower and command path. Recharge stations are now played from
+    the Architect's mixed hand (`CardKind::Station`, four in a first-person deck) onto any
+    standable built cell, and go with their tile when it is rewritten or retracted; a bot
+    Architect deploys one on a floor its team stands on that has none. Bot bodies only
+    take an errand to a generator or station they can reach without leaving the floor.
+    Next: power gating doors, plates and ascent physically.
     **Minors can be killed, and cannot crowd (2026-09):** measured on production
     facilities (`hex_wfc::model::kinetic::edges`, every candidate replayed as a real shove),
     a minor that died only out of the facility was all but immortal: a push killed one from

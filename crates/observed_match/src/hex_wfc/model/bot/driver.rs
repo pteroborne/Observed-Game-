@@ -149,6 +149,30 @@ impl HexBotDriver {
             .map(|route| route.cells.len())
     }
 
+    /// As [`Self::route_len_to`], but only for a route that never leaves `target`'s floor.
+    /// An errand on one floor (its generator, its station) is judged by the floor the body
+    /// stands on, so a route that climbs away from it is one the bot would give up the
+    /// moment a stair carried it to another.
+    #[must_use]
+    pub fn floor_route_len_to(
+        &mut self,
+        game: &HexWfcMatch,
+        id: PlayerId,
+        target: HexCoord,
+    ) -> Option<usize> {
+        let body = game.players.get(&id)?;
+        if !body.in_facility() || body.cell.level != target.level {
+            return None;
+        }
+        if body.cell == target {
+            return Some(1);
+        }
+        self.cache_route(game, id, body.cell, target)
+            .and_then(|cache| cache.route.as_ref())
+            .filter(|route| route.cells.iter().all(|cell| cell.level == target.level))
+            .map(|route| route.cells.len())
+    }
+
     fn command_to_destination(
         &mut self,
         game: &HexWfcMatch,

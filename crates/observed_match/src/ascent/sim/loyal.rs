@@ -66,6 +66,49 @@ impl ArchitectLab {
             .filter(|o| o.team == team && o.state == ObserverState::Active)
             .map(|o| o.cell)
             .collect();
+        // A team without a powered-floor cradle eventually loses its only
+        // answer to minor Guardians. Install one on a known, reachable site
+        // before spending this beat on optional route improvements.
+        let station = self
+            .deck
+            .hand
+            .iter()
+            .find(|card| card.kind == CardKind::Station)
+            .and_then(|card| {
+                own.iter()
+                    .filter(|from| {
+                        !self
+                            .economy
+                            .stations
+                            .iter()
+                            .any(|site| site.level == from.level)
+                    })
+                    .flat_map(|&from| {
+                        self.station_sites
+                            .iter()
+                            .copied()
+                            .filter(move |site| {
+                                site.level == from.level && travel_distance(from, *site) <= REACH
+                            })
+                            .filter_map(move |target| {
+                                let command = ArchitectCommand::Play {
+                                    card: card.id,
+                                    target,
+                                    rotation: 0,
+                                };
+                                (self.refusal(command).is_none()).then_some((from, target, command))
+                            })
+                    })
+                    .filter_map(|(from, target, command)| {
+                        self.route(from, target)
+                            .map(|route| (route.len(), target, command))
+                    })
+                    .min_by_key(|(length, target, _)| (*length, *target))
+                    .map(|(_, _, command)| command)
+            });
+        if trace.test("deploy recharge station", station.is_some()) {
+            return (station, trace);
+        }
         // Candidates around the team, and around where it has asked for a route.
         let anchors: Vec<HexCoord> = own.iter().chain(asked).copied().collect();
         let candidates = self.candidates(&anchors);

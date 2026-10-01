@@ -16,7 +16,9 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use glam::Vec3;
 use observed_core::PlayerId;
+use observed_hex::HexCoord;
 
 use super::economy::KINETIC_SHOT_COST;
 use super::session::{ASCENT_INPUT_VERSION, AscentSession, InputFrame, Refusal, Role, Seat};
@@ -113,8 +115,10 @@ pub struct AscentRules {
     session: AscentSession,
     /// Which body each Observer is.
     bodies: BTreeMap<PlayerId, ObserverId>,
-    /// Every floor's generator and recharge station, where each stands (`power`).
+    /// Every floor's generator and every deployed station, where each stands.
     fixtures: Vec<Fixture>,
+    /// Collider-verified sites for station cards, refreshed after tile changes.
+    station_points: BTreeMap<HexCoord, Vec3>,
 }
 
 impl AscentRules {
@@ -160,7 +164,7 @@ impl AscentRules {
             .expect("just sent catches to prison");
         let lobby = (prison.lobby.clone(), prison.lobby_anchor);
         let mut fixtures = Vec::new();
-        let sim = ArchitectLab::over_facility(
+        let mut sim = ArchitectLab::over_facility(
             physical.facility.clone(),
             seed,
             &embodiments,
@@ -171,6 +175,8 @@ impl AscentRules {
                 economy
             },
         );
+        let station_points = power::station_points(physical, &sim);
+        sim.station_sites = station_points.keys().copied().collect();
         let mut roster = seats;
         for (&player, &id) in &bodies {
             roster.insert(
@@ -185,6 +191,7 @@ impl AscentRules {
             session: AscentSession::new(sim, seed, roster)?,
             bodies,
             fixtures,
+            station_points,
         };
         rules.observe(physical);
         Ok(rules)
@@ -220,6 +227,7 @@ impl AscentRules {
         let refusals = self.session.advance(seats)?;
         self.recharge_at_stations(physical);
         let rewrites = self.session.sim.take_rewrites();
+        let changed: Vec<HexCoord> = rewrites.keys().copied().collect();
         if !rewrites.is_empty() {
             // Legality admits only tiles the authored corpus builds, and never a room or a
             // stair, so a rewrite the physical match cannot build is a broken invariant.
@@ -227,6 +235,8 @@ impl AscentRules {
                 .apply_directed_change(rewrites)
                 .expect("the rules rewrite only what the facility can build");
         }
+        self.refresh_station_sites(physical, changed);
+        self.refresh_station_fixtures();
         // After the rewrites, which consume the doors of the cells they took.
         self.place_doors(physical);
         // The major Guardians' bodies walk where the Rogue sent them, until the rules say
