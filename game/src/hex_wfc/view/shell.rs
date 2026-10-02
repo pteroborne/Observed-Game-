@@ -312,6 +312,12 @@ fn spawn_cell(
                 max_y: group.max_y,
                 origin_y: origin.y,
                 cell_level: coord.level,
+                climb_wall: matches!(
+                    group_key,
+                    super::assets::MeshGroupKey::Climb(
+                        super::mesh_group::Facing::Side | super::mesh_group::Facing::Down
+                    )
+                ),
             });
         }
         child_pieces += 1;
@@ -363,6 +369,7 @@ fn spawn_trim(
             max_y: piece.position.y - origin.y,
             origin_y: origin.y,
             cell_level: piece.cell.level,
+            climb_wall: false,
         },
         ChildOf(parent),
     ));
@@ -453,6 +460,7 @@ fn spawn_cell_practicals(
                     max_y: at.y - origin.y,
                     origin_y: origin.y,
                     cell_level: coord.level,
+                    climb_wall: false,
                 },
                 ChildOf(parent),
                 Name::new("Authored fluorescent diffuser"),
@@ -567,5 +575,6 @@ fn cutaway_measure(piece: &HexStructurePiece) -> super::spectate::Cutaway {
         max_y: max_y - origin.y,
         origin_y: origin.y,
         cell_level: piece.source_cell.level,
+        climb_wall: false,
     }
 }

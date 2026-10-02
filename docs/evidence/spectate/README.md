@@ -11,6 +11,13 @@
 run has no keyboard. `OBSERVED2_SPECTATE_TRACE=1` logs the framing and a
 breakdown of what the cutaway kept and why.
 
+`OBSERVED2_CAPTURE_HEX_WFC_SPECTATE=<dir>` records the climb as video: an
+Ascent match from the Observer seat, every body a bot, the overview cutting to
+whichever free body stands highest. It is a 6x time-lapse, one frame per 0.2 s
+of game time, saved as `<dir>/frames/frame_NNNNN.png`, and it ends a beat after
+the match does. Encode with the `capture-evidence` skill's ffmpeg line at 30 fps.
+Result: [`climb.mp4`](climb.mp4), still `climb.jpg`.
+
 The view snaps to the *centre of the body's tile* rather than tracking the body
 itself: following a walking body slides the whole facility under a fixed camera,
 which is unreadable at this scale. Snapped, the view holds still while the body
@@ -74,6 +81,32 @@ could not see the very entities that lacked the component. An instrument built
 from the filter cannot audit what the filter never touched. The reliable check
 was enumerating the spawners - `grep Mesh3d` over the view - not measuring the
 ones already accounted for.
+
+## Solved: the outside, the furniture, and the climbs
+
+2026-10-02, the first spectate video. Three things had arrived since the
+overview was built, and none of them knew it existed:
+
+- **The exterior skin** (`view/exterior.rs`) is the building seen from outside,
+  drawn for every cell that is not resident. The overview stands outside the
+  building, so the skin was a lid over the whole cutaway and the body vanished
+  under it. It is hidden while the overview is up, keels included, as the
+  boundary shell already was.
+- **Furniture** - generators, stations, objective mechanisms, lanterns, doors,
+  sensors, Guardians, the exit beacon, every room's threshold gate - is drawn
+  by its own module wherever it stands. The overview drew every floor's at
+  once, hanging in the sky. `spectate::overview_props` holds all of it to the
+  storey and reach, hiding and giving back exactly what each had, so a module
+  that sets its own visibility is never contradicted.
+- **Stair towers** are climb geometry, merged per facing and centred on the
+  cell, so the near-wall test kept them whole: the spiral's guard wall stood as
+  a closed column with its treads for a lid. The overview drops a climb's walls
+  and undersides (`Cutaway::climb_wall`) and keeps what is walked on.
+
+The threshold gates were found by asking the engine rather than the code: a
+throwaway system logged every visible mesh off the storey by name. The same
+caution as above applies - every filter here was built from a list of
+spawners, and the list was out of date.
 
 ## Solved: position and scale must frame the same box
 

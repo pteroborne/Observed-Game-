@@ -15,6 +15,10 @@ use crate::GameState;
 #[derive(Component)]
 pub(super) struct ActorVisual(PlayerId);
 
+/// The exit beacon's root, so the spectator overview can hold it to its storey.
+#[derive(Component)]
+pub(super) struct ExitBeacon;
+
 #[derive(Component)]
 pub(super) struct ObjectiveVisual {
     room_generation_key: u64,
@@ -104,6 +108,7 @@ pub(super) fn setup(
     let exit_floor = exit_origin + Vec3::Y * observed_hex::FLOOR_SLAB_TOP;
     commands
         .spawn((
+            ExitBeacon,
             DespawnOnExit(GameState::HexWfc),
             Transform::from_translation(exit_floor),
             Visibility::Visible,

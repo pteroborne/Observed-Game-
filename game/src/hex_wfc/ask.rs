@@ -169,6 +169,7 @@ fn sync(
     mut panel: Query<&mut Visibility, With<AskPanel>>,
     mut line: Query<(&mut Text, &mut TextColor), With<AskLine>>,
     mut heard: Local<Option<u64>>,
+    spectating: Option<Res<crate::sim::state::SpectatorBot>>,
 ) {
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
@@ -202,7 +203,8 @@ fn sync(
         }
     }
     for mut visibility in &mut panel {
-        *visibility = if *overlay == MatchOverlayState::Playing {
+        // A spectator has no hand on the body and no Architect to ask.
+        *visibility = if *overlay == MatchOverlayState::Playing && spectating.is_none() {
             Visibility::Inherited
         } else {
             Visibility::Hidden

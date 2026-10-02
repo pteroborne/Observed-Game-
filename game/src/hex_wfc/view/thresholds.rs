@@ -33,6 +33,11 @@ const GATE_NATIVE_DEPTH: f32 = 1.4;
 /// which is most of a hall's walk channel. It is a jamb, not a tunnel.
 const GATE_MAX_DEPTH: f32 = 0.5;
 
+/// A threshold's frame, gate or jambs: resident everywhere, so the spectator
+/// overview holds it to the storey it shows (`spectate::overview_props`).
+#[derive(Component)]
+pub(in crate::hex_wfc) struct ThresholdFrame;
+
 /// A doorway model at every named threshold, resident for the whole match.
 ///
 /// Crossing from a hall into a room is a real transition and now the only place
@@ -82,6 +87,7 @@ pub(in crate::hex_wfc::view) fn spawn_thresholds(
                     .with_scale(scale),
                 Name::new(format!("{name} gate")),
                 HexWfcGeometry,
+                ThresholdFrame,
                 DespawnOnExit(crate::GameState::HexWfc),
             ));
             continue;
@@ -97,6 +103,7 @@ pub(in crate::hex_wfc::view) fn spawn_thresholds(
                 .with_rotation(rotation),
                 Name::new(format!("{name} jamb")),
                 HexWfcGeometry,
+                ThresholdFrame,
                 DespawnOnExit(crate::GameState::HexWfc),
             ));
         }

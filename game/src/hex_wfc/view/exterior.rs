@@ -329,6 +329,10 @@ pub(in crate::hex_wfc) struct ExteriorSkin {
 #[derive(Component)]
 pub(in crate::hex_wfc) struct ExteriorShell(pub(in crate::hex_wfc) HexCoord);
 
+/// The keel under a hanging cell, marked so the spectator overview can lift it.
+#[derive(Component)]
+pub(in crate::hex_wfc) struct ExteriorKeel;
+
 fn spawn_cell(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -370,7 +374,11 @@ fn spawn_cell(
                 entity.insert(ChildOf(parent));
             }
             None => {
-                entity.insert((DespawnOnExit(GameState::HexWfc), Name::new("Hex keel")));
+                entity.insert((
+                    ExteriorKeel,
+                    DespawnOnExit(GameState::HexWfc),
+                    Name::new("Hex keel"),
+                ));
             }
         }
         Some(entity.id())
@@ -444,23 +452,33 @@ pub(in crate::hex_wfc) fn rebuild_changed(
     }
 }
 
-/// A cell's exterior is hidden exactly while its detailed geometry is resident.
+/// A cell's exterior is hidden exactly while its detailed geometry is resident - and
+/// all of it, keels included, while the spectator overview is up. The overview looks
+/// in from outside the building, where the skin is a lid over the cutaway: the body
+/// vanished under every cell beyond its reach. It shows real tiles and nothing else,
+/// and lifts the boundary shell for the same reason (`spectate::sync_detail_window`).
 pub(in crate::hex_wfc) fn sync_visibility(
     residency: Option<Res<super::HexPresentationResidency>>,
-    mut shells: Query<(&ExteriorShell, &mut Visibility)>,
+    overview: Res<super::spectate::SpectatorOverview>,
+    mut shells: Query<(&ExteriorShell, &mut Visibility), Without<ExteriorKeel>>,
+    mut keels: Query<&mut Visibility, With<ExteriorKeel>>,
 ) {
     let Some(residency) = residency else {
         return;
     };
-    for (shell, mut visibility) in &mut shells {
-        let wanted = if residency.resident.contains_key(&shell.0) {
-            Visibility::Hidden
-        } else {
+    let shown = |yes: bool| {
+        if yes {
             Visibility::Inherited
-        };
-        if *visibility != wanted {
-            *visibility = wanted;
+        } else {
+            Visibility::Hidden
         }
+    };
+    for (shell, mut visibility) in &mut shells {
+        let wanted = shown(!overview.active && !residency.resident.contains_key(&shell.0));
+        visibility.set_if_neq(wanted);
+    }
+    for mut visibility in &mut keels {
+        visibility.set_if_neq(shown(!overview.active));
     }
 }
 

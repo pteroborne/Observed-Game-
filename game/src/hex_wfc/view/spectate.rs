@@ -52,6 +52,10 @@ use bevy::prelude::*;
 #[path = "cutaway_marks.rs"]
 pub(in crate::hex_wfc) mod cutaway_marks;
 
+// Here for the same reason: the overview's furniture is part of what it cuts.
+#[path = "overview_props.rs"]
+pub(in crate::hex_wfc) mod overview_props;
+
 use crate::hex_wfc::sim::HexWfcRuntime;
 
 /// Toggles the overview while spectating.
@@ -129,6 +133,17 @@ pub(in crate::hex_wfc) struct Cutaway {
     /// works in world height, deliberately - but it is what tells you whether
     /// a hull that renders on this storey came from a cell on another one.
     pub(in crate::hex_wfc) cell_level: u8,
+    /// A ramp's or a stair tower's walls and undersides, which the overview
+    /// drops whole and keeps only what is walked on.
+    ///
+    /// A climb is one merged mesh per facing, centred on its cell, so the near-wall
+    /// test reads all of it as interior and keeps it: a spiral stair's guard wall
+    /// and gallery walls stood as a closed column with its treads for a lid, and
+    /// the body climbing inside it could not be seen. Splitting climbs by sector
+    /// to cut only the near walls would multiply their meshes sevenfold in play
+    /// too, for a view nobody plays in; dropping the sides costs nothing, and the
+    /// treads are the climb.
+    pub(in crate::hex_wfc) climb_wall: bool,
 }
 
 /// The overview's own key light.
@@ -337,7 +352,10 @@ pub(in crate::hex_wfc) fn sync_cutaway(
         });
         let cut = off_level
             || bearing.is_some_and(|bearing| {
-                !observed_style::iso::survives(hull.min_y, hull.max_y, hull.local, bearing, true)
+                hull.climb_wall
+                    || !observed_style::iso::survives(
+                        hull.min_y, hull.max_y, hull.local, bearing, true,
+                    )
             });
         let wanted = if cut {
             Visibility::Hidden

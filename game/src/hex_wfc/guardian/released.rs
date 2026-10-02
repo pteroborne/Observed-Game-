@@ -33,7 +33,7 @@ pub(super) struct ReleasedArt {
 
 /// One released Guardian as drawn.
 #[derive(Component)]
-pub(super) struct ReleasedVisual {
+pub(in crate::hex_wfc) struct ReleasedVisual {
     id: u16,
     kind: HexReleasedKind,
     /// Where it is drawn standing, on the floor.

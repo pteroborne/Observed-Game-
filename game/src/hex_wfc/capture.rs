@@ -6,6 +6,8 @@ use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use super::{ascent_capture, hud, launch, loading, sim, view, vista_capture};
 use crate::GameState;
 
+mod spectate;
+
 #[derive(Resource)]
 pub(super) struct HexWfcCapture {
     pub(super) path: String,
@@ -69,6 +71,9 @@ pub(super) enum HexWfcCaptureMode {
     /// What each floor is made of: a sealed wall, its floor and its ceiling
     /// (`vista_capture::surfaces`).
     Surfaces,
+    /// The spectator overview following the climb, as time-lapse video frames
+    /// (`capture::spectate`).
+    Spectate,
 }
 
 /// How many screenshots the style montage takes before exiting; matched to a spectated
@@ -139,6 +144,10 @@ pub(super) fn configure(app: &mut App) {
                 .map(|path| (path, HexWfcCaptureMode::Surfaces))
         })
         .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_SPECTATE")
+                .map(|path| (path, HexWfcCaptureMode::Spectate))
+        })
+        .or_else(|_| {
             std::env::var("OBSERVED2_CAPTURE_HEX_WFC_STYLE")
                 .map(|path| (path, HexWfcCaptureMode::Style))
         })
@@ -178,6 +187,7 @@ pub(super) fn configure(app: &mut App) {
                 | HexWfcCaptureMode::Climb
                 | HexWfcCaptureMode::Verticals
                 | HexWfcCaptureMode::Surfaces
+                | HexWfcCaptureMode::Spectate
         ) {
             std::fs::create_dir_all(&path)
                 .expect("hex-WFC directory-style capture directory must be creatable");
@@ -188,14 +198,15 @@ pub(super) fn configure(app: &mut App) {
                 | HexWfcCaptureMode::Minors
                 | HexWfcCaptureMode::Doors
                 | HexWfcCaptureMode::Sensors
+                | HexWfcCaptureMode::Spectate
         ) {
             std::fs::create_dir_all(std::path::Path::new(&path).join("frames"))
                 .expect("a video capture's frame directory must be creatable");
             // Every rendered frame is one video frame, however long it takes to render.
-            let frame = if mode == HexWfcCaptureMode::Power {
-                super::power::capture::FRAME_SECONDS
-            } else {
-                super::kinetic::capture::FRAME_SECONDS
+            let frame = match mode {
+                HexWfcCaptureMode::Power => super::power::capture::FRAME_SECONDS,
+                HexWfcCaptureMode::Spectate => spectate::FRAME_SECONDS,
+                _ => super::kinetic::capture::FRAME_SECONDS,
             };
             app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
                 std::time::Duration::from_secs_f32(frame),
@@ -225,7 +236,18 @@ fn autostart_capture(
     mut next: ResMut<NextState<GameState>>,
     mut play_setup: ResMut<crate::play_setup::PlaySetupDraft>,
     mut sequence: ResMut<loading::HexLaunchRequestSequence>,
+    mut overview: ResMut<view::spectate::SpectatorOverview>,
 ) {
+    if capture.mode == HexWfcCaptureMode::Spectate {
+        // The climb, watched: Ascent from the Observer seat, so no body is a human's
+        // and every one of them is racing upward.
+        *play_setup = crate::play_setup::PlaySetupDraft {
+            rules: crate::play_setup::PlayRules::Ascent,
+            seat: crate::play_setup::PlaySeat::Observer,
+            ..crate::play_setup::PlaySetupDraft::for_preset(crate::play_setup::PlayPreset::TeamRace)
+        };
+        overview.active = true;
+    }
     if matches!(
         capture.mode,
         HexWfcCaptureMode::Prison
@@ -309,6 +331,7 @@ fn capture_progress(
     (mut power, mut minors, mut doors, mut sensors): VideoCaptures,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
+    mut clock: Local<spectate::Clock>,
 ) {
     request.frame = request.frame.saturating_add(1);
     match request.mode {
@@ -358,6 +381,15 @@ fn capture_progress(
             );
         }
         HexWfcCaptureMode::Architect | HexWfcCaptureMode::Rogue => {}
+        HexWfcCaptureMode::Spectate => {
+            spectate::advance(
+                &mut request,
+                &mut clock,
+                runtime.as_deref_mut(),
+                &mut commands,
+                &mut exit,
+            );
+        }
         HexWfcCaptureMode::Prison => {
             ascent_capture::advance(
                 &mut request,
