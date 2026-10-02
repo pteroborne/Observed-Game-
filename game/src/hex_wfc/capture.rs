@@ -66,6 +66,9 @@ pub(super) enum HexWfcCaptureMode {
     /// The ways up as a body meets them: ramps and stair towers
     /// (`vista_capture::verticals`).
     Verticals,
+    /// What each floor is made of: a sealed wall, its floor and its ceiling
+    /// (`vista_capture::surfaces`).
+    Surfaces,
 }
 
 /// How many screenshots the style montage takes before exiting; matched to a spectated
@@ -132,6 +135,10 @@ pub(super) fn configure(app: &mut App) {
                 .map(|path| (path, HexWfcCaptureMode::Verticals))
         })
         .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_SURFACES")
+                .map(|path| (path, HexWfcCaptureMode::Surfaces))
+        })
+        .or_else(|_| {
             std::env::var("OBSERVED2_CAPTURE_HEX_WFC_STYLE")
                 .map(|path| (path, HexWfcCaptureMode::Style))
         })
@@ -170,6 +177,7 @@ pub(super) fn configure(app: &mut App) {
                 | HexWfcCaptureMode::Guardian
                 | HexWfcCaptureMode::Climb
                 | HexWfcCaptureMode::Verticals
+                | HexWfcCaptureMode::Surfaces
         ) {
             std::fs::create_dir_all(&path)
                 .expect("hex-WFC directory-style capture directory must be creatable");
@@ -326,12 +334,14 @@ fn capture_progress(
         | HexWfcCaptureMode::Equipment
         | HexWfcCaptureMode::Guardian
         | HexWfcCaptureMode::Climb
-        | HexWfcCaptureMode::Verticals => {
+        | HexWfcCaptureMode::Verticals
+        | HexWfcCaptureMode::Surfaces => {
             let which = match request.mode {
                 HexWfcCaptureMode::Vista => vista_capture::poses,
                 HexWfcCaptureMode::Equipment => vista_capture::equipment_poses,
                 HexWfcCaptureMode::Climb => vista_capture::climb_poses,
                 HexWfcCaptureMode::Verticals => vista_capture::verticals::poses,
+                HexWfcCaptureMode::Surfaces => vista_capture::surfaces::poses,
                 _ => vista_capture::guardian_poses,
             };
             let HexWfcCapture {

@@ -2,6 +2,8 @@
 //! have their own), then its role, then for halls and rooms which surface of the
 //! cell it is.
 
+use std::collections::BTreeMap;
+
 use bevy::prelude::*;
 use observed_match::hex_wfc::{HexPiecePart, HexStructurePiece, HexStructureRole};
 use observed_traversal::ColliderShape;
@@ -12,8 +14,10 @@ pub(in crate::hex_wfc) enum MeshGroupKey {
     Ceiling,
     Interior,
     Perimeter(u8),
-    Ramp,
-    Shaft,
+    /// A ramp's or a stair tower's faces that point one way: drawn in the district's
+    /// floor, wall or ceiling by which way that is, so a flight is walked on floor
+    /// and a landing's underside is ceiling, whatever the hull it belongs to.
+    Climb(Facing),
     Boundary,
     /// The lit lip of an open edge.
     Lip,
@@ -33,6 +37,33 @@ pub(in crate::hex_wfc) enum MeshGroupKey {
     Window,
 }
 
+/// Which way a face points, for choosing its surface.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(in crate::hex_wfc) enum Facing {
+    /// Something to walk on: a floor, a flight, a landing, a balcony.
+    Up,
+    /// A wall, a balustrade, a pier, the side of a slab.
+    Side,
+    /// An underside: a ceiling, the soffit of a flight or a balcony.
+    Down,
+}
+
+impl Facing {
+    pub(in crate::hex_wfc) const ALL: [Self; 3] = [Self::Up, Self::Side, Self::Down];
+
+    /// Whether a face with this unit normal points this way. Up to 50 degrees off
+    /// level is a surface to walk on - every flight in the corpus is under 36 - and
+    /// the same off downward is an underside.
+    pub(in crate::hex_wfc) fn holds(self, normal: Vec3) -> bool {
+        const LEVEL: f32 = 0.64;
+        match self {
+            Self::Up => normal.y >= LEVEL,
+            Self::Down => normal.y <= -LEVEL,
+            Self::Side => normal.y.abs() < LEVEL,
+        }
+    }
+}
+
 impl MeshGroupKey {
     pub(in crate::hex_wfc) fn for_piece(piece: &HexStructurePiece) -> Self {
         match piece.part {
@@ -45,8 +76,8 @@ impl MeshGroupKey {
             HexPiecePart::Guard | HexPiecePart::Glazing => return Self::Hidden,
         }
         match piece.role {
-            HexStructureRole::Ramp => Self::Ramp,
-            HexStructureRole::Shaft => Self::Shaft,
+            // Split by facing when the meshes are built; the key only gathers them.
+            HexStructureRole::Ramp | HexStructureRole::Shaft => Self::Climb(Facing::Side),
             HexStructureRole::Boundary => Self::Boundary,
             HexStructureRole::Room | HexStructureRole::Hall => {
                 let points = match &piece.shape {
@@ -88,4 +119,52 @@ impl MeshGroupKey {
             }
         }
     }
+}
+
+/// One merged mesh's worth of a cell's hulls, and their extent.
+#[derive(Clone)]
+pub(in crate::hex_wfc) struct MergedGroup<'a> {
+    pub hulls: Vec<&'a [Vec3]>,
+    pub min_y: f32,
+    pub max_y: f32,
+    pub centroid_sum: Vec3,
+    pub point_count: usize,
+}
+
+/// A cell's pieces gathered into the meshes they are drawn as. A climb's pieces are
+/// gathered as one group and drawn as three, by which way each face points.
+pub(in crate::hex_wfc) fn gather<'a>(
+    pieces: &[&'a HexStructurePiece],
+) -> Vec<(MeshGroupKey, MergedGroup<'a>)> {
+    let mut groups: BTreeMap<MeshGroupKey, MergedGroup<'a>> = BTreeMap::new();
+    for piece in pieces {
+        let entry = groups
+            .entry(MeshGroupKey::for_piece(piece))
+            .or_insert_with(|| MergedGroup {
+                hulls: Vec::new(),
+                min_y: f32::INFINITY,
+                max_y: f32::NEG_INFINITY,
+                centroid_sum: Vec3::ZERO,
+                point_count: 0,
+            });
+        if let ColliderShape::ConvexHull { points } = &piece.shape {
+            entry.hulls.push(points.as_slice());
+            for &pt in points {
+                entry.min_y = entry.min_y.min(pt.y);
+                entry.max_y = entry.max_y.max(pt.y);
+                entry.centroid_sum += pt;
+                entry.point_count += 1;
+            }
+        }
+    }
+    groups
+        .into_iter()
+        .flat_map(|(key, group)| {
+            let keys = match key {
+                MeshGroupKey::Climb(_) => Facing::ALL.map(MeshGroupKey::Climb).to_vec(),
+                other => vec![other],
+            };
+            keys.into_iter().map(move |key| (key, group.clone()))
+        })
+        .collect()
 }

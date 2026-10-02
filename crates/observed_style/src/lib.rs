@@ -22,6 +22,7 @@ pub mod architect;
 pub mod equipment;
 pub mod guardian;
 pub mod open_air;
+pub mod surfaces;
 
 use bevy::color::{Color, LinearRgba};
 

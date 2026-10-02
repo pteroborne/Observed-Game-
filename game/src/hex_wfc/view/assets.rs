@@ -27,8 +27,6 @@ pub(in crate::hex_wfc) struct RegisterMaterials {
     wall: Handle<StandardMaterial>,
     ceiling: Handle<StandardMaterial>,
     fixture: Handle<StandardMaterial>,
-    ramp: Handle<StandardMaterial>,
-    shaft: Handle<StandardMaterial>,
     boundary: Handle<StandardMaterial>,
 }
 
@@ -39,13 +37,18 @@ impl RegisterMaterials {
         horizontal_surface: HorizontalSurface,
     ) -> Handle<StandardMaterial> {
         match role {
-            HexStructureRole::Room | HexStructureRole::Hall => match horizontal_surface {
+            // A ramp and a stair tower are built of the district's own floor, wall and
+            // ceiling, like any hall. They had materials of their own - a route
+            // treatment with a cyan glow, and a generic stone - which put every climb
+            // in the same teal, in every district.
+            HexStructureRole::Room
+            | HexStructureRole::Hall
+            | HexStructureRole::Ramp
+            | HexStructureRole::Shaft => match horizontal_surface {
                 HorizontalSurface::Floor => self.floor.clone(),
                 HorizontalSurface::Wall => self.wall.clone(),
                 HorizontalSurface::Ceiling => self.ceiling.clone(),
             },
-            HexStructureRole::Ramp => self.ramp.clone(),
-            HexStructureRole::Shaft => self.shaft.clone(),
             HexStructureRole::Boundary => self.boundary.clone(),
         }
     }
@@ -85,7 +88,6 @@ impl HexWfcVisualAssets {
         content: &observed_content::ContentManifest,
     ) -> Self {
         let wall_texture = load_repeating_texture(asset_server, observed_assets::WALL.path);
-        let floor_texture = load_repeating_texture(asset_server, observed_assets::FLOOR.path);
         let registers = ArchitectureRegister::ALL
             .into_iter()
             .map(|register| {
@@ -101,14 +103,39 @@ impl HexWfcVisualAssets {
                 // divided and this makes the image. A register with no weave
                 // keeps the shared albedo, which is a real answer for the
                 // Monolith rather than a fallback.
-                let weave = weave_texture(images, style::architecture_weave(register));
-                let mut tinted = |look: style::HexSurfaceLook,
-                                  texture: Option<Handle<Image>>,
-                                  mask_emission: bool| {
+                // What the district is made of: a detail image and a normal map for
+                // each of its floor, wall and ceiling (`observed_style::surfaces`),
+                // the wall's carrying the district's weave.
+                let mut surface =
+                    |role: ArchitectureSurfaceRole,
+                     mask_emission: bool,
+                     materials: &mut Assets<StandardMaterial>| {
+                        let look = style::hex_shell_surface(register, role);
+                        let drawn = style::surfaces::surface_images(register, role);
+                        let albedo = surface_texture(images, drawn.albedo, true);
+                        let normal = surface_texture(images, drawn.normal, false);
+                        materials.add(StandardMaterial {
+                            base_color: look.base_color,
+                            emissive: look.emissive,
+                            emissive_texture: mask_emission.then(|| albedo.clone()),
+                            unlit: look.unlit,
+                            base_color_texture: Some(albedo),
+                            normal_map_texture: Some(normal),
+                            perceptual_roughness: palette.surface_roughness,
+                            ..default()
+                        })
+                    };
+                let floor = surface(ArchitectureSurfaceRole::Floor, false, materials);
+                let wall = surface(
+                    ArchitectureSurfaceRole::Wall,
+                    register == ArchitectureRegister::ShadowScreen,
+                    materials,
+                );
+                let ceiling = surface(ArchitectureSurfaceRole::Ceiling, false, materials);
+                let mut tinted = |look: style::HexSurfaceLook, texture: Option<Handle<Image>>| {
                     materials.add(StandardMaterial {
                         base_color: look.base_color,
                         emissive: look.emissive,
-                        emissive_texture: if mask_emission { texture.clone() } else { None },
                         unlit: look.unlit,
                         base_color_texture: if look.textured { texture } else { None },
                         perceptual_roughness: palette.surface_roughness,
@@ -116,46 +143,19 @@ impl HexWfcVisualAssets {
                     })
                 };
                 RegisterMaterials {
-                    floor: tinted(
-                        style::hex_shell_surface(register, ArchitectureSurfaceRole::Floor),
-                        floor_texture.clone(),
-                        false,
-                    ),
-                    wall: tinted(
-                        style::hex_shell_surface(register, ArchitectureSurfaceRole::Wall),
-                        weave.clone().or_else(|| wall_texture.clone()),
-                        register == ArchitectureRegister::ShadowScreen,
-                    ),
-                    ceiling: tinted(
-                        style::hex_shell_surface(register, ArchitectureSurfaceRole::Ceiling),
-                        wall_texture.clone(),
-                        false,
-                    ),
+                    floor,
+                    wall,
+                    ceiling,
                     fixture: tinted(
                         style::hex_shell_surface(
                             register,
                             ArchitectureSurfaceRole::PracticalFixture,
                         ),
                         None,
-                        false,
-                    ),
-                    ramp: tinted(
-                        style::hex_shell_look(&style::surface(SurfaceRole::SafeBypass), register),
-                        floor_texture.clone(),
-                        false,
-                    ),
-                    shaft: tinted(
-                        style::hex_shell_look(
-                            &style::surface(SurfaceRole::WellshaftStone),
-                            register,
-                        ),
-                        wall_texture.clone(),
-                        false,
                     ),
                     boundary: tinted(
                         style::hex_shell_look(&style::surface(SurfaceRole::Wall), register),
                         wall_texture.clone(),
-                        false,
                     ),
                 }
             })
@@ -180,8 +180,6 @@ impl HexWfcVisualAssets {
                 wall: dummy.clone(),
                 ceiling: dummy.clone(),
                 fixture: dummy.clone(),
-                ramp: dummy.clone(),
-                shaft: dummy.clone(),
                 boundary: dummy.clone(),
             })
             .collect();
@@ -312,8 +310,9 @@ impl HexWfcVisualAssets {
             MeshGroupKey::Floor => reg.floor.clone(),
             MeshGroupKey::Ceiling => reg.ceiling.clone(),
             MeshGroupKey::Interior | MeshGroupKey::Perimeter(_) => reg.wall.clone(),
-            MeshGroupKey::Ramp => reg.ramp.clone(),
-            MeshGroupKey::Shaft => reg.shaft.clone(),
+            MeshGroupKey::Climb(super::mesh_group::Facing::Up) => reg.floor.clone(),
+            MeshGroupKey::Climb(super::mesh_group::Facing::Side) => reg.wall.clone(),
+            MeshGroupKey::Climb(super::mesh_group::Facing::Down) => reg.ceiling.clone(),
             MeshGroupKey::Boundary => reg.boundary.clone(),
             MeshGroupKey::Lip => self.open_edge.lip.clone(),
             MeshGroupKey::Rail => self.open_edge.rail.clone(),
@@ -332,24 +331,32 @@ impl HexWfcVisualAssets {
         group: MeshGroupKey,
         hulls: &[&[Vec3]],
     ) -> Option<Handle<Mesh>> {
+        let facing = match group {
+            MeshGroupKey::Climb(facing) => Some(facing),
+            _ => None,
+        };
         if let Some(key) = tile_key {
             let cache_key = (key.to_string(), group);
             if let Some(handle) = self.merged_hull_cache.get(&cache_key) {
                 return Some(handle.clone());
             }
-            let mesh = build_merged_mesh(hulls)?;
+            let mesh = build_merged_mesh_facing(hulls, facing)?;
             let handle = meshes.add(mesh);
             self.merged_hull_cache.insert(cache_key, handle.clone());
             Some(handle)
         } else {
-            let mesh = build_merged_mesh(hulls)?;
+            let mesh = build_merged_mesh_facing(hulls, facing)?;
             Some(meshes.add(mesh))
         }
     }
 }
 
-/// Convert multiple convex hulls into a single merged Bevy mesh with offset triangle indices.
-pub(super) fn build_merged_mesh(hulls: &[&[Vec3]]) -> Option<Mesh> {
+/// Convert multiple convex hulls into a single merged Bevy mesh, keeping only the
+/// triangles that face `facing` when one is given.
+pub(super) fn build_merged_mesh_facing(
+    hulls: &[&[Vec3]],
+    facing: Option<super::mesh_group::Facing>,
+) -> Option<Mesh> {
     let mut all_positions = Vec::new();
     let mut all_normals = Vec::new();
     let mut all_uvs = Vec::new();
@@ -359,12 +366,22 @@ pub(super) fn build_merged_mesh(hulls: &[&[Vec3]]) -> Option<Mesh> {
         let Some(data) = ConvexRenderMesh::from_convex_hull(hull) else {
             continue;
         };
-        let index_offset = u32::try_from(all_positions.len()).ok()?;
-        all_positions.extend(data.positions);
-        all_normals.extend(data.normals);
-        all_uvs.extend(data.uvs);
-        for idx in data.indices {
-            all_indices.push(index_offset.checked_add(idx)?);
+        // Every triangle's corners are its own (`ConvexRenderMesh` duplicates them),
+        // so a triangle is three consecutive vertices and can be kept or dropped whole.
+        for corner in data.indices.chunks_exact(3) {
+            let point = |index: u32| Vec3::from_array(data.positions[index as usize]);
+            let (a, b, c) = (point(corner[0]), point(corner[1]), point(corner[2]));
+            let normal = (b - a).cross(c - a).normalize_or_zero();
+            if facing.is_some_and(|facing| !facing.holds(normal)) {
+                continue;
+            }
+            for &index in corner {
+                let next = u32::try_from(all_positions.len()).ok()?;
+                all_positions.push(data.positions[index as usize]);
+                all_normals.push(data.normals[index as usize]);
+                all_uvs.push(data.uvs[index as usize]);
+                all_indices.push(next);
+            }
         }
     }
 
@@ -372,67 +389,110 @@ pub(super) fn build_merged_mesh(hulls: &[&[Vec3]]) -> Option<Mesh> {
         return None;
     }
 
-    Some(
-        Mesh::new(
-            PrimitiveTopology::TriangleList,
-            RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
-        )
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, all_positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, all_normals)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, all_uvs)
-        .with_inserted_indices(Indices::U32(all_indices)),
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
     )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, all_positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, all_normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, all_uvs)
+    .with_inserted_indices(Indices::U32(all_indices))
+    .with_generated_tangents()
+    .ok()
 }
 
 /// Convert shared engine-independent render data into Bevy's mesh format.
 pub(super) fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
     let data = ConvexRenderMesh::from_convex_hull(hull)?;
-    Some(
-        Mesh::new(
-            PrimitiveTopology::TriangleList,
-            RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
-        )
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
-        .with_inserted_indices(Indices::U32(data.indices)),
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
     )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
+    .with_inserted_indices(Indices::U32(data.indices))
+    .with_generated_tangents()
+    .ok()
 }
 
-/// Draw a register's weave as a repeating tile.
+/// Upload a surface image ([`style::surfaces`]) as a repeating texture with its whole
+/// mip chain, box-filtered here.
 ///
-/// A white field with darker lines through it, which multiplies the palette
-/// tint the same way the shared `wall.png` does - so a weave darkens a surface
-/// where its joints are and leaves the district's own colour everywhere else.
-/// `SurfaceWeave::None` returns nothing, and the caller falls back to the
-/// shared albedo.
-fn weave_texture(
-    images: &mut Assets<Image>,
-    pattern: style::SurfacePattern,
-) -> Option<Handle<Image>> {
-    use bevy::asset::RenderAssetUsages;
-    use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
+/// Without mips a fine pattern - a weave, a joint, tread plate - shimmers into moiré
+/// at a few metres. `srgb` for an albedo; a normal map is linear, and its texels are
+/// renormalised at every level so a distant surface keeps unit normals.
+fn surface_texture(images: &mut Assets<Image>, data: Vec<u8>, srgb: bool) -> Handle<Image> {
+    use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
     use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
-    let data = style::surface_weave_rgba(pattern)?;
-    let n = style::SURFACE_WEAVE_SIZE;
+    let size = style::surfaces::SURFACE_TEXTURE_SIZE as usize;
+    let mut chain = data.clone();
+    let mut level = data;
+    let mut side = size;
+    let mut levels = 1u32;
+    while side > 1 {
+        let half = side / 2;
+        let mut next = Vec::with_capacity(half * half * 4);
+        for y in 0..half {
+            for x in 0..half {
+                let texel = |dx: usize, dy: usize, c: usize| {
+                    f32::from(level[((y * 2 + dy) * side + x * 2 + dx) * 4 + c])
+                };
+                let mut rgba = [0.0f32; 4];
+                for (c, channel) in rgba.iter_mut().enumerate() {
+                    *channel =
+                        (texel(0, 0, c) + texel(1, 0, c) + texel(0, 1, c) + texel(1, 1, c)) * 0.25;
+                }
+                if !srgb {
+                    let v = |c: f32| c / 127.5 - 1.0;
+                    let (nx, ny, nz) = (v(rgba[0]), v(rgba[1]), v(rgba[2]));
+                    let length = (nx * nx + ny * ny + nz * nz).sqrt().max(1e-4);
+                    for (channel, n) in rgba.iter_mut().zip([nx, ny, nz]) {
+                        *channel = (n / length + 1.0) * 127.5;
+                    }
+                }
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                next.extend(rgba.map(|c| c.round().clamp(0.0, 255.0) as u8));
+            }
+        }
+        chain.extend_from_slice(&next);
+        level = next;
+        side = half;
+        levels += 1;
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    let extent = Extent3d {
+        width: size as u32,
+        height: size as u32,
+        depth_or_array_layers: 1,
+    };
+    let base = chain[..size * size * 4].to_vec();
     let mut image = Image::new(
-        Extent3d {
-            width: n,
-            height: n,
-            depth_or_array_layers: 1,
-        },
+        extent,
         TextureDimension::D2,
-        data,
-        TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::RENDER_WORLD,
+        base,
+        if srgb {
+            TextureFormat::Rgba8UnormSrgb
+        } else {
+            TextureFormat::Rgba8Unorm
+        },
+        bevy::asset::RenderAssetUsages::RENDER_WORLD,
     );
+    // `Image::new` checks the data against the base level alone; the chain goes in
+    // after, every level in order, which is how a mip-mapped image is laid out.
+    image.data = Some(chain);
+    image.texture_descriptor.mip_level_count = levels;
     image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
         address_mode_u: ImageAddressMode::Repeat,
         address_mode_v: ImageAddressMode::Repeat,
+        mag_filter: ImageFilterMode::Linear,
+        min_filter: ImageFilterMode::Linear,
+        mipmap_filter: ImageFilterMode::Linear,
+        anisotropy_clamp: 8,
         ..default()
     });
-    Some(images.add(image))
+    images.add(image)
 }
 
 fn horizontal_surface(piece: &HexStructurePiece) -> HorizontalSurface {

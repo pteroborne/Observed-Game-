@@ -270,35 +270,7 @@ fn spawn_cell(
         })
     });
 
-    struct MergedGroup<'a> {
-        hulls: Vec<&'a [Vec3]>,
-        min_y: f32,
-        max_y: f32,
-        centroid_sum: Vec3,
-        point_count: usize,
-    }
-
-    let mut groups: BTreeMap<super::assets::MeshGroupKey, MergedGroup<'_>> = BTreeMap::new();
-    for piece in &pieces {
-        let group_key = super::assets::MeshGroupKey::for_piece(piece);
-        let entry = groups.entry(group_key).or_insert_with(|| MergedGroup {
-            hulls: Vec::new(),
-            min_y: f32::INFINITY,
-            max_y: f32::NEG_INFINITY,
-            centroid_sum: Vec3::ZERO,
-            point_count: 0,
-        });
-        if let observed_traversal::ColliderShape::ConvexHull { points } = &piece.shape {
-            entry.hulls.push(points.as_slice());
-            for &pt in points {
-                entry.min_y = entry.min_y.min(pt.y);
-                entry.max_y = entry.max_y.max(pt.y);
-                entry.centroid_sum += pt;
-                entry.point_count += 1;
-            }
-        }
-    }
-
+    let groups = super::mesh_group::gather(&pieces);
     for (group_key, group) in groups {
         if group_key == super::assets::MeshGroupKey::Hidden {
             continue;

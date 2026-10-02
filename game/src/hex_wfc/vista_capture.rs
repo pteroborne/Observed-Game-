@@ -18,6 +18,7 @@ use observed_match::hex_wfc::{OpenEdges, RAILED_BELOW_LEVEL, open_edges};
 
 use super::sim::HexWfcRuntime;
 
+pub(super) mod surfaces;
 pub(super) mod verticals;
 
 /// Frames before the first pose: the facility enters and the first cells stream in.
