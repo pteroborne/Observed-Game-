@@ -498,13 +498,9 @@ mod tests {
     fn a_ramp_reports_the_height_it_gains() {
         let ramp = module("hall_ramp");
         let probe = Probe::from_prototype(&ramp.prototype);
-        // West door inward to the centre and on toward the east sill.
-        let deck = observed_hex::FLOOR_SLAB_TOP;
-        let route = vec![
-            Vec3::new(-5.5, deck, 0.0),
-            Vec3::new(0.0, deck, 0.0),
-            Vec3::new(5.5, deck, 0.0),
-        ];
+        // The ramp's own climb line: it folds, so a straight walk across it is a walk
+        // into the centre wall.
+        let route = ramp.prototype.spine.nodes.clone();
         let report = walk(&probe, &route, &Thresholds::default());
         assert!(
             report.climbed > 3.0,

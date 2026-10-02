@@ -69,6 +69,11 @@ pub fn compatibility_cells() -> Result<Vec<crate::TilePrototype>, crate::TileErr
             cells.push(convert(source, None)?);
         }
     }
+    // The ramp is authored now (`forge::silos::hall_ramp`), for every register. The
+    // generated wedge stood beside it under the very same keys - variant for variant -
+    // so a weighted draw could pick either, and the projector, finding a tile by its
+    // key, found the wedge first: in most registers the authored ramp never appeared.
+    cells.retain(|tile| tile.key.archetype != "hall_ramp");
     Ok(cells)
 }
 

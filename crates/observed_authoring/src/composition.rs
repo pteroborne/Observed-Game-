@@ -770,6 +770,10 @@ mod tests {
         // or not an old file still parses. A schema-only move is still a LAN
         // lockout, and there is no way to add a control without one.
         //
+        // Moved when the ramp became a switchback (2026-10): `hall_ramp` folds a storey
+        // into two flights and a balcony, dressed once for each district on the climb
+        // (six new sources), and the seven straight wedges it replaces were retired.
+        //
         // Moved before that when the collapse learned to draw the *space* before
         // the variant. The catalog is untouched - no tile changed - and the whole
         // move is on the profile side: a new `space_mix` field, and
@@ -784,7 +788,7 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "d966523c08b29fd378b097abe6c21749b6517784a0723e8fbae08498d16dcae4";
+            "d474f996212b522b8e48b9387f67a3885f430cd8a258f52d5e1570d6d448ecde";
         // The open-air composition (void share 2,000), 2026-09-24.
         const PROFILE_HASH: &str =
             "bb9b542142f32c11b9dbfbba01cebb1e6903db4ba0f30c10b6c0b087fcd95ea3";
@@ -792,7 +796,7 @@ mod tests {
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "d166d150e5614160e4473769e5dc9730e053a374ca9a8d9e6d5b0586e62061ab";
+            "2d51e4d836e0cd5c694acbddd1c5488987c60937be9d8a84aceb4c1204d4f655";
 
         let root = committed_tiles();
         let compiled_text =
@@ -805,7 +809,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 332, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 331, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.

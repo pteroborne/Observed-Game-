@@ -77,7 +77,10 @@ pub(crate) fn compatibility_test_content() -> &'static std::sync::Arc<HexMatchCo
             test_catalog()
                 .cells
                 .iter()
-                .filter(|tile| tile.key.archetype == "stair_tower")
+                .filter(|tile| {
+                    // The authored vertical families: the generated library has none.
+                    tile.key.archetype == "stair_tower" || tile.key.archetype == "hall_ramp"
+                })
                 .cloned(),
         );
         std::sync::Arc::new(HexMatchContent::from_runtime_catalog(

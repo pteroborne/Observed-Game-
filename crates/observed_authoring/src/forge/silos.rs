@@ -193,24 +193,12 @@ fn ramp_height(x: f64) -> f64 {
     FLOOR_TOP + (x - RAMP_WEST) / (RAMP_EAST - RAMP_WEST) * LEVEL
 }
 
-/// The climbable line across a `hall_ramp`, west sill to east.
-///
-/// Variant 0 is one solid slope along x with no variation across y, so the line
-/// is the centreline and nothing more; there is no wall to go round and no deck
-/// to cross first, which is why this ships a spine and no `DeckPath`.
-///
-/// Five nodes, matching the perimeter flight's density over a comparable run.
-/// The first sits at the west doorway, where the slope is flush with the floor
-/// slab, and the last on the east sill — which for this shape is the *only*
-/// plan position where a body stands on the deck above, because the mass
-/// reaches full height exactly at the cell's east edge.
-///
-/// Until this existed the ramp projected no traversal annotation at all, so it
-/// recorded no guide, could not be executed as a graph leg, and the objective
-/// bot walked it by inferring a heading from the `RampUp` archetype — the last
-/// piece of shotgun surgery in the match layer.
+/// The straight climb across a wedge ramp, west sill to east: the centreline, in five
+/// nodes, from the west doorway where the slope is flush with the floor slab to the
+/// east sill. [`hall_ramp_gallery`] is the one wedge left; the ramp is
+/// `forge::ramp`'s switchback now.
 #[must_use]
-fn ramp_spine() -> String {
+fn wedge_spine() -> String {
     const NODES: usize = 5;
     let mut out = String::new();
     for index in 0..NODES {
@@ -220,65 +208,6 @@ fn ramp_spine() -> String {
         #[allow(clippy::cast_possible_truncation)]
         out.push_str(&stair_node(index as u16, x, 0.0, ramp_height(x)));
     }
-    out
-}
-
-/// A ground-supported two-level ramp: enter west, exit east one level up.
-#[must_use]
-pub fn hall_ramp() -> String {
-    let top = 2.0 * LEVEL;
-    let mut brushes = String::from("// Ground slab below the supported full-level ramp\n");
-    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 2.0, 0.0));
-    brushes.push_str("// One solid ramp mass: west sill 0.5 m, east sill 8.5 m\n");
-    brushes.push_str(&sloped_prism(
-        &corners(),
-        0.0,
-        [
-            (RAMP_WEST, -64.0, ramp_height(RAMP_WEST)),
-            (RAMP_WEST, 64.0, ramp_height(RAMP_WEST)),
-            (RAMP_EAST, -64.0, ramp_height(RAMP_EAST)),
-        ],
-        None,
-    ));
-    brushes.push_str(&hex_slab(top - FLOOR_TOP, top, 0.0, 3.0));
-    for face in 0..6 {
-        if face == 3 {
-            brushes.push_str(&door_wall_default(face, 0.0, top));
-        } else if face == 0 {
-            // The east door sits a full level up, on the ramp's high sill.
-            brushes.push_str(&door_wall(
-                face,
-                0.0,
-                top,
-                LEVEL + FLOOR_TOP,
-                LEVEL + DOOR_TOP,
-                10.0,
-                8.0,
-            ));
-        } else {
-            brushes.push_str(&wall(face, 0.0, top));
-        }
-    }
-    let mut lights = String::new();
-    for (face, along, z) in [(2, 0.72, 88.0), (5, 0.28, 184.0)] {
-        let (fixture, source) = wall_fixture(face, along, z, 20.0);
-        brushes.push_str(&fixture);
-        lights.push_str(&source);
-    }
-    let mut out =
-        String::from("// Ground-supported two-level ramp: enter west, exit east one level up.\n");
-    out.push_str(GENERATED_NOTE);
-    out.push_str(&worldspawn(&brushes));
-    out.push_str(
-        &Meta::cell("authored/hall_ramp", "hall_ramp", 0, 2, 10)
-            .with_register_scope("all")
-            .emit(),
-    );
-    out.push_str(&tile_cell(0, 0, 0, 2, "ramp"));
-    out.push_str(&lateral_port(3, "door", "west_entry", 0, 0, 0));
-    out.push_str(&vertical_port("up", "ramp_open", "upper_ramp", 0));
-    out.push_str(&ramp_spine());
-    out.push_str(&lights);
     out
 }
 
@@ -413,7 +342,7 @@ pub fn hall_ramp_gallery() -> String {
     out.push_str(&tile_cell(0, 0, 0, 2, "ramp"));
     out.push_str(&lateral_port(3, "door", "west_entry", 0, 0, 0));
     out.push_str(&vertical_port("up", "ramp_open", "upper_ramp", 0));
-    out.push_str(&ramp_spine());
+    out.push_str(&wedge_spine());
     out.push_str(&lights);
     out
 }
@@ -426,7 +355,6 @@ pub fn builders() -> Vec<Builder> {
         ("silo_ring", silo_ring),
         ("silo_ring_bridge", silo_ring_bridge),
         ("room_grounded_hub", room_grounded_hub),
-        ("hall_ramp", hall_ramp),
         ("hall_ramp_gallery", hall_ramp_gallery),
     ]
 }

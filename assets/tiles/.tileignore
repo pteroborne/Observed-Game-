@@ -1,4 +1,4 @@
-# Curated WFC library: 332 active sources; 96 retired alternatives.
+# Curated WFC library: 331 active sources; 103 retired alternatives.
 # See docs/tile_curation.md. The forge keeps these editable for reference.
 # Exact source paths; tilec build excludes these from the shipped catalog.
 authored/hall_classroom_facet_monument.map
@@ -97,3 +97,12 @@ authored/liminal_grid_sanctuary_lateral_o1_l1.map
 authored/liminal_grid_sanctuary_lateral_o2_l1.map
 authored/liminal_grid_sanctuary_lateral_o3_l1.map
 authored/liminal_grid_sanctuary_up_o4_l1.map
+# The straight wedge ramps, retired for the switchback hall_ramp (2026-10): a storey in
+# one straight run across a cell is too steep and meets the next floor at a step.
+authored/audience_ascent.map
+authored/courtyard_ascent.map
+authored/hall_ramp_gallery.map
+authored/hall_ramp_perimeter_120.map
+authored/noon_ascent.map
+authored/unwitnessed_ascent.map
+authored/witness_ascent.map

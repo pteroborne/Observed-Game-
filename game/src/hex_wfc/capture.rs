@@ -63,6 +63,9 @@ pub(super) enum HexWfcCaptureMode {
     Guardian,
     /// One still a floor at its open edge, under its own sky (`vista_capture::climb_poses`).
     Climb,
+    /// The ways up as a body meets them: ramps and stair towers
+    /// (`vista_capture::verticals`).
+    Verticals,
 }
 
 /// How many screenshots the style montage takes before exiting; matched to a spectated
@@ -125,6 +128,10 @@ pub(super) fn configure(app: &mut App) {
                 .map(|path| (path, HexWfcCaptureMode::Climb))
         })
         .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_VERTICALS")
+                .map(|path| (path, HexWfcCaptureMode::Verticals))
+        })
+        .or_else(|_| {
             std::env::var("OBSERVED2_CAPTURE_HEX_WFC_STYLE")
                 .map(|path| (path, HexWfcCaptureMode::Style))
         })
@@ -162,6 +169,7 @@ pub(super) fn configure(app: &mut App) {
                 | HexWfcCaptureMode::Equipment
                 | HexWfcCaptureMode::Guardian
                 | HexWfcCaptureMode::Climb
+                | HexWfcCaptureMode::Verticals
         ) {
             std::fs::create_dir_all(&path)
                 .expect("hex-WFC directory-style capture directory must be creatable");
@@ -317,11 +325,13 @@ fn capture_progress(
         HexWfcCaptureMode::Vista
         | HexWfcCaptureMode::Equipment
         | HexWfcCaptureMode::Guardian
-        | HexWfcCaptureMode::Climb => {
+        | HexWfcCaptureMode::Climb
+        | HexWfcCaptureMode::Verticals => {
             let which = match request.mode {
                 HexWfcCaptureMode::Vista => vista_capture::poses,
                 HexWfcCaptureMode::Equipment => vista_capture::equipment_poses,
                 HexWfcCaptureMode::Climb => vista_capture::climb_poses,
+                HexWfcCaptureMode::Verticals => vista_capture::verticals::poses,
                 _ => vista_capture::guardian_poses,
             };
             let HexWfcCapture {

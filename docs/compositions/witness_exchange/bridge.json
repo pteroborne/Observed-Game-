@@ -113,7 +113,7 @@
       "turn": 3
     },
     {
-      "tile": "hall_ramp:660",
+      "tile": "hall_ramp:0",
       "q": 6,
       "r": 4,
       "level": 0,
@@ -141,7 +141,7 @@
       "turn": 2
     },
     {
-      "tile": "hall_ramp:660",
+      "tile": "hall_ramp:0",
       "q": 2,
       "r": 4,
       "level": 1,

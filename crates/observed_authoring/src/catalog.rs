@@ -1236,8 +1236,8 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles");
         let built = build_catalog(&root).expect("curated catalog builds");
         let ignored = ignored_paths(&root).expect("retirement list reads");
-        assert_eq!(ignored.len(), 96);
-        assert_eq!(built.catalog.modules.len(), 332);
+        assert_eq!(ignored.len(), 103);
+        assert_eq!(built.catalog.modules.len(), 331);
         let registers = crate::tile_source::REGISTERS;
         for path in ignored {
             let text = std::fs::read_to_string(root.join(&path)).expect("retired source exists");
@@ -1265,13 +1265,22 @@ mod tests {
                 ports.sort();
                 ports
             };
+            // The cells a module occupies, without how each validates its floor: a
+            // floor policy is a check on the author, not a way the module connects.
+            let cells = |module: &CompiledModule| {
+                module
+                    .footprint
+                    .iter()
+                    .map(|cell| (cell.q, cell.r, cell.level, cell.levels))
+                    .collect::<Vec<_>>()
+            };
             for register in expanded_registers(&retired.register_scope, registers) {
                 assert!(
                     built.catalog.modules.iter().any(|candidate| {
                         candidate.kind == retired.kind
                             && candidate.archetype == retired.archetype
                             && candidate.levels == retired.levels
-                            && candidate.footprint == retired.footprint
+                            && cells(candidate) == cells(&retired)
                             && candidate.rotations == retired.rotations
                             && ports(candidate) == ports(&retired)
                             && expanded_registers(&candidate.register_scope, registers)

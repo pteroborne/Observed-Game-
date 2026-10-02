@@ -11,6 +11,7 @@ use std::fmt;
 
 use glam::{Vec2, Vec3};
 use observed_hex::{CORNERS, HexFace, PortClass, TILE_LEVEL_HEIGHT, face_edge};
+use observed_traversal::StairSpine;
 use quake_map::{Entity, QuakeMap};
 use serde::{Deserialize, Serialize};
 
@@ -625,6 +626,41 @@ fn validate_floor_and_headroom(module: &AuthoredModule) -> Result<(), SourceErro
     Ok(())
 }
 
+/// The steepest a ramp's walking surface may climb: rise over plan run.
+const RAMP_MAX_SLOPE: f32 = 0.65;
+
+/// Whether `spine` is a climb a ramp can stand on: rising at least a storey, less
+/// 0.6 m, with no stretch of it steeper than [`RAMP_MAX_SLOPE`].
+///
+/// The authored climb line is what bodies and bots actually walk, so it says more
+/// about a ramp than any one hull does. A ramp that folds back on itself - flights,
+/// landings, a balcony - has no single mass covering its cell's centre and climbing
+/// the whole storey, and the hull rule below cannot see that it climbs at all.
+fn spine_climbs_a_storey(spine: &StairSpine) -> Result<(), f32> {
+    let lowest = spine
+        .nodes
+        .iter()
+        .map(|node| node.y)
+        .fold(f32::INFINITY, f32::min);
+    let highest = spine
+        .nodes
+        .iter()
+        .map(|node| node.y)
+        .fold(f32::NEG_INFINITY, f32::max);
+    if highest - lowest < TILE_LEVEL_HEIGHT - 0.6 {
+        return Err(0.0);
+    }
+    for pair in spine.nodes.windows(2) {
+        let rise = (pair[1].y - pair[0].y).abs();
+        let run = (pair[1].x - pair[0].x).hypot(pair[1].z - pair[0].z);
+        let slope = rise / run.max(0.01);
+        if rise > 0.05 && slope > RAMP_MAX_SLOPE {
+            return Err(slope);
+        }
+    }
+    Ok(())
+}
+
 fn validate_ramps(module: &AuthoredModule) -> Result<(), SourceError> {
     for authored_cell in &module.footprint {
         if authored_cell.floor != FloorPolicy::Ramp {
@@ -635,6 +671,17 @@ fn validate_ramps(module: &AuthoredModule) -> Result<(), SourceError> {
             r: authored_cell.r,
             level: authored_cell.level,
         };
+        // A climb line that does the job passes; otherwise the ramp's tallest mass has to.
+        let spine = &module.prototype.spine;
+        if !spine.is_empty() {
+            match spine_climbs_a_storey(spine) {
+                Ok(()) => continue,
+                Err(slope) if slope > 0.0 => {
+                    return Err(SourceError::RampTooSteep { cell, slope });
+                }
+                Err(_) => {}
+            }
+        }
         let origin = plan_origin(cell);
         let candidate = module
             .prototype
@@ -649,7 +696,7 @@ fn validate_ramps(module: &AuthoredModule) -> Result<(), SourceError> {
             + (candidate.1.max.z - candidate.1.min.z).powi(2))
         .sqrt();
         let slope = (candidate.1.max.y - candidate.1.min.y) / plan_run.max(0.01);
-        if slope > 0.65 {
+        if slope > RAMP_MAX_SLOPE {
             return Err(SourceError::RampTooSteep { cell, slope });
         }
     }

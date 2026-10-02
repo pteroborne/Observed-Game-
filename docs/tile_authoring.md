@@ -280,8 +280,10 @@ center, level-0 floor at z = 0, one level = 128 units (8 m).
   face, sill at 8, lintel at 72; floor slab 0..8.
 - **Budgets & livability**: max 32 hulls per cell (128 per room); solid floor
   must cover the cell center and six corner samples; >= 2.2 m headroom over
-  the center; `floor="ramp"` cells need a full-level ramp surface with slope
-  <= 0.65. Keep walkable slopes <= ~0.45 for comfort.
+  the center; `floor="ramp"` cells need either a full-level ramp surface with
+  slope <= 0.65, or a stair spine that climbs a full level with no stretch
+  steeper than 0.65 (a ramp that folds - flights, landings, a balcony - has no
+  single mass that climbs the storey). Keep walkable slopes <= ~0.45 for comfort.
 - **Rotation**: `rotation_policy sixfold` + `register_scope all` expands one
   module into 6 rotations x 9 registers = 54 runtime variants. Interior
   geometry that gets rotated must stay inside **radius 104** — the quantized
@@ -324,6 +326,24 @@ center, level-0 floor at z = 0, one level = 128 units (8 m).
    bytes directly, so its LF endings survive.
 7. `cargo check -p observed_facility` silently skips the solver — full WFC is
    behind the off-by-default `wfc` cargo feature.
+
+## Ramps: the switchback family (`forge::ramp`)
+
+Every ramp is one skeleton: a storey folded into two 4 m flights at 0.44, a
+turning landing, a top landing and a balcony out to the upper door. The plan and
+the spine are shared, so every ramp climbs the same way; each district on the
+climb dresses it differently - stacks in the Library, slabs over open floor in
+Lumen, screens in Zen, piers in the Monument, a catwalk on struts in the Reactor,
+no rails in the Sky - and the plain one serves the Backrooms and the registers
+off the climb. One ramp per register, tested. The straight wedges it replaced
+are retired in `.tileignore`, and the generated library's wedge is dropped from
+the runtime compatibility cells, where it shared the authored ramp's keys.
+
+`every_production_ramp_climbs_and_descends_by_its_spine` (observed_match) walks
+every ramp in three production facilities up and down its own spine on the
+production controller. Change a ramp and run it.
+
+![The seven ramps in section](evidence/ramp_switchback_sections.jpg)
 
 ## Showcase reference: the silo wellshaft (multi-tile composition)
 
