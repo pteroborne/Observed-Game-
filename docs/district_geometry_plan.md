@@ -9,6 +9,13 @@ and works back to tiles the forge can emit under the seam contract.
 Read it with [tile_authoring.md](tile_authoring.md) open: every recipe below is
 named in the primitives that file documents.
 
+**The climb (2026-10-01).** The floors now run Backrooms (Liminal Grid), Library
+(Infinite Gallery), Lumen (Overlit Grid), Zen (Shadow Screen - the screens and the
+sunset, where this plan once put Japan on Thinning), two floors of Monument (Facet
+Monument, the Forerunner fiction), Reactor (Megastructure) and Sky (Thinning, the
+Bespin/Kamino tops). Wellshaft, Monolith and Institutional are off the climb. See
+[the climb](architect_ascent_polish.md#the-climb).
+
 ---
 
 ## 0. Two capabilities everything waits on

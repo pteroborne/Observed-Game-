@@ -363,6 +363,232 @@ pub fn stars(count: usize) -> Vec<Star> {
     field
 }
 
+/// What hangs in a floor's sky and lights its open edges: the climb's weather.
+///
+/// One a floor, by its district, so each circle of the ascent is a different hour under a
+/// different sky, and climbing crossfades from one to the next. Every colour obeys the
+/// rules above: down is darkest, every sky role stays atmosphere, and the light's disc is
+/// the brightest thing in the sky without ever reaching a signal.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SkyMood {
+    /// Straight up.
+    pub zenith: Color,
+    /// The horizon band, and what open-air fog fades into.
+    pub horizon: Color,
+    /// Straight down: the darkest thing in the frame.
+    pub nadir: Color,
+    /// The cloud sea below the decks.
+    pub cloud: Color,
+    /// The light from the sky's disc, and its strength in lux.
+    pub light: Color,
+    pub lux: f32,
+    /// Unit direction toward the disc and so the light.
+    pub toward: [f32; 3],
+    /// The disc's face (HDR) and the glow around it.
+    pub disc: LinearRgba,
+    pub glow: LinearRgba,
+    /// How much the disc is the moon's cratered face rather than a sun's plain one: one
+    /// for the moon, none for a sun, between only while the sky crossfades.
+    pub moon: f32,
+    /// How bright the star field shows, from none to the night's full field.
+    pub stars: f32,
+}
+
+/// The direction `(x, y, z)` made unit length.
+fn unit(x: f32, y: f32, z: f32) -> [f32; 3] {
+    let length = (x * x + y * y + z * z).sqrt();
+    [x / length, y / length, z / length]
+}
+
+/// The sky over a floor of `register`.
+#[must_use]
+pub fn sky_mood(register: observed_content::ArchitectureRegister) -> SkyMood {
+    use observed_content::ArchitectureRegister as R;
+    match register {
+        // The Backrooms: dreamcore. A pastel dusk that should not be there, seen through
+        // a window that should not be either - pink haze, a pale lilac zenith, a soft sun.
+        R::LiminalGrid => SkyMood {
+            zenith: Color::srgb(0.20, 0.19, 0.32),
+            horizon: Color::srgb(0.40, 0.29, 0.36),
+            nadir: Color::srgb(0.10, 0.08, 0.13),
+            cloud: Color::srgb(0.38, 0.31, 0.38),
+            light: Color::srgb(1.0, 0.86, 0.90),
+            lux: 4_000.0,
+            toward: unit(0.6, 0.55, -0.6),
+            disc: LinearRgba::rgb(1.45, 1.25, 1.30),
+            glow: LinearRgba::rgb(0.12, 0.08, 0.10),
+            moon: 0.0,
+            stars: 0.0,
+        },
+        // The Library: the blue hour over endless shelving, a low amber lamp of a sun.
+        R::InfiniteGallery => SkyMood {
+            zenith: Color::srgb(0.035, 0.045, 0.11),
+            horizon: Color::srgb(0.30, 0.20, 0.15),
+            nadir: Color::srgb(0.02, 0.02, 0.04),
+            cloud: Color::srgb(0.24, 0.19, 0.20),
+            light: Color::srgb(1.0, 0.72, 0.45),
+            lux: 4_500.0,
+            toward: unit(-0.9, 0.18, -0.4),
+            disc: LinearRgba::rgb(1.6, 1.05, 0.55),
+            glow: LinearRgba::rgb(0.14, 0.08, 0.04),
+            moon: 0.0,
+            stars: 0.35,
+        },
+        // Lumen: an overlit white-out, the sky as one flat diffuser and the light from
+        // nearly straight overhead.
+        R::OverlitGrid => SkyMood {
+            zenith: Color::srgb(0.33, 0.35, 0.37),
+            horizon: Color::srgb(0.34, 0.35, 0.36),
+            nadir: Color::srgb(0.16, 0.17, 0.19),
+            cloud: Color::srgb(0.33, 0.34, 0.35),
+            light: Color::srgb(0.94, 0.97, 1.0),
+            lux: 9_000.0,
+            toward: unit(0.15, 1.0, 0.2),
+            disc: LinearRgba::rgb(1.4, 1.45, 1.5),
+            glow: LinearRgba::rgb(0.10, 0.10, 0.11),
+            moon: 0.0,
+            stars: 0.0,
+        },
+        // Zen: sunset. The sun on the horizon behind the screens, and every shadow long.
+        R::ShadowScreen => SkyMood {
+            zenith: Color::srgb(0.12, 0.07, 0.18),
+            horizon: Color::srgb(0.46, 0.22, 0.12),
+            nadir: Color::srgb(0.07, 0.03, 0.05),
+            cloud: Color::srgb(0.44, 0.22, 0.18),
+            light: Color::srgb(1.0, 0.58, 0.30),
+            lux: 12_000.0,
+            toward: unit(-1.0, 0.12, 0.35),
+            disc: LinearRgba::rgb(1.85, 0.95, 0.38),
+            glow: LinearRgba::rgb(0.20, 0.08, 0.03),
+            moon: 0.0,
+            stars: 0.0,
+        },
+        // The Monument: a clear, alien day high above a ring of cloud.
+        R::FacetMonument => SkyMood {
+            zenith: Color::srgb(0.06, 0.14, 0.34),
+            horizon: Color::srgb(0.24, 0.34, 0.44),
+            nadir: Color::srgb(0.05, 0.07, 0.11),
+            cloud: Color::srgb(0.30, 0.33, 0.37),
+            light: Color::srgb(1.0, 0.97, 0.92),
+            lux: 14_000.0,
+            toward: unit(-0.45, 0.8, 0.35),
+            disc: LinearRgba::rgb(1.75, 1.72, 1.62),
+            glow: LinearRgba::rgb(0.12, 0.13, 0.14),
+            moon: 0.0,
+            stars: 0.0,
+        },
+        // The Sky: golden hour over the cloud sea, the tops of towers and the walkways
+        // between them lit warm from low in the west.
+        R::Thinning => SkyMood {
+            zenith: Color::srgb(0.12, 0.13, 0.26),
+            horizon: Color::srgb(0.46, 0.30, 0.20),
+            nadir: Color::srgb(0.14, 0.08, 0.08),
+            cloud: Color::srgb(0.46, 0.29, 0.23),
+            light: Color::srgb(1.0, 0.74, 0.50),
+            lux: 12_000.0,
+            toward: unit(-1.0, 0.22, 0.4),
+            disc: LinearRgba::rgb(1.85, 1.20, 0.62),
+            glow: LinearRgba::rgb(0.18, 0.10, 0.05),
+            moon: 0.0,
+            stars: 0.0,
+        },
+        // The Reactor, and anywhere off the climb: the night this facility has always had,
+        // the moon filling the western sky above a field of stars.
+        R::Megastructure | R::Monolith | R::Institutional | R::Wellshaft => night(),
+    }
+}
+
+/// The night: [`sky`], [`moon`] and [`toward_moon`], as one mood.
+#[must_use]
+pub fn night() -> SkyMood {
+    SkyMood {
+        zenith: sky(SkyRole::Zenith),
+        horizon: sky(SkyRole::Horizon),
+        nadir: sky(SkyRole::Nadir),
+        cloud: sky(SkyRole::Cloud),
+        light: moon(),
+        lux: 8_000.0,
+        toward: toward_moon(),
+        disc: moon_disc(),
+        glow: moon_halo(),
+        moon: 1.0,
+        stars: 1.0,
+    }
+}
+
+impl SkyMood {
+    /// The sky colour along a view direction whose vertical component is `up`: as
+    /// [`sky_along`], under this mood.
+    #[must_use]
+    pub fn along(&self, up: f32) -> LinearRgba {
+        let up = up.clamp(-1.0, 1.0);
+        let blended = if up >= 0.0 {
+            self.horizon.mix(&self.zenith, smoothstep(0.0, 0.45, up))
+        } else {
+            self.horizon.mix(&self.nadir, smoothstep(0.0, 0.7, -up))
+        };
+        blended.to_linear()
+    }
+
+    /// `self` a fraction `t` of the way to `other`: the crossfade as the eye climbs.
+    #[must_use]
+    pub fn toward_mood(&self, other: &Self, t: f32) -> Self {
+        let t = t.clamp(0.0, 1.0);
+        let lerp = |a: f32, b: f32| a + (b - a) * t;
+        let mix = |a: Color, b: Color| a.mix(&b, t);
+        let [ax, ay, az] = self.toward;
+        let [bx, by, bz] = other.toward;
+        Self {
+            zenith: mix(self.zenith, other.zenith),
+            horizon: mix(self.horizon, other.horizon),
+            nadir: mix(self.nadir, other.nadir),
+            cloud: mix(self.cloud, other.cloud),
+            light: mix(self.light, other.light),
+            lux: lerp(self.lux, other.lux),
+            toward: unit(lerp(ax, bx), lerp(ay, by), lerp(az, bz)),
+            disc: self.disc.mix(&other.disc, t),
+            glow: self.glow.mix(&other.glow, t),
+            moon: lerp(self.moon, other.moon),
+            stars: lerp(self.stars, other.stars),
+        }
+    }
+}
+
+/// A district palette taken outdoors under `mood`: as [`open_air`], with the fog fading
+/// into this sky's horizon and the fill from its light.
+#[must_use]
+pub fn open_air_under(mut palette: DistrictPalette, mood: &SkyMood) -> DistrictPalette {
+    palette = open_air(palette);
+    palette.fog_color = mood.horizon;
+    palette.ambient_color = mood.light;
+    palette
+}
+
+/// A sun's face as RGBA8, [`MOON_TEXTURE_SIZE`] square: a plain bright disc with a soft
+/// limb, transparent outside it. Drawn additively, tinted by the mood's disc colour.
+#[must_use]
+pub fn sun_rgba() -> Vec<u8> {
+    const SIZE: u32 = MOON_TEXTURE_SIZE;
+    #[allow(clippy::cast_precision_loss)]
+    let half = SIZE as f32 * 0.5;
+    let mut data = Vec::with_capacity((SIZE * SIZE * 4) as usize);
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            #[allow(clippy::cast_precision_loss)]
+            let (u, v) = (
+                (x as f32 + 0.5 - half) / half,
+                (y as f32 + 0.5 - half) / half,
+            );
+            let r = (u * u + v * v).sqrt();
+            let face = 1.0 - smoothstep(0.42, 0.5, r);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let a = (face * 255.0) as u8;
+            data.extend_from_slice(&[a, a, a, a]);
+        }
+    }
+    data
+}
+
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -375,6 +601,102 @@ mod tests {
         ATMOSPHERE_MAX_LUMINANCE, MarkerRole, SIGNAL_MIN_LUMINANCE, SurfaceRole, luminance, marker,
         surface,
     };
+
+    /// Every floor's sky keeps the open-air rules: atmosphere never outshines a signal,
+    /// down is darkest, and the disc is the brightest thing in its sky without being one.
+    #[test]
+    fn every_floors_sky_keeps_the_open_air_rules() {
+        for register in observed_content::ArchitectureRegister::ALL {
+            let mood = sky_mood(register);
+            let roles = [mood.zenith, mood.horizon, mood.nadir, mood.cloud];
+            for color in roles {
+                let lit = luminance(color.to_linear());
+                assert!(
+                    lit <= ATMOSPHERE_MAX_LUMINANCE,
+                    "{register:?}: {color:?} at {lit}"
+                );
+            }
+            let nadir = luminance(mood.along(-1.0));
+            for step in -9..=10 {
+                #[allow(clippy::cast_precision_loss)]
+                let up = step as f32 / 10.0;
+                assert!(
+                    luminance(mood.along(up)) >= nadir - 1e-6,
+                    "{register:?}: looking along {up} is darker than straight down"
+                );
+            }
+            let disc = luminance(mood.disc);
+            assert!(disc > 1.0, "{register:?}: a disc too dim to bloom");
+            assert!(
+                disc < SIGNAL_MIN_LUMINANCE,
+                "{register:?}: a disc as bright as a signal"
+            );
+            assert!(luminance(mood.glow) < SIGNAL_MIN_LUMINANCE);
+            for color in roles {
+                assert!(disc > luminance(color.to_linear()) * 10.0, "{register:?}");
+            }
+            let [x, y, z] = mood.toward;
+            assert!(((x * x + y * y + z * z).sqrt() - 1.0).abs() < 1e-5);
+            assert!(
+                y > 0.1,
+                "{register:?}: the light comes from below the horizon haze"
+            );
+            assert!((0.0..=1.0).contains(&mood.moon) && (0.0..=1.0).contains(&mood.stars));
+        }
+    }
+
+    /// The Reactor keeps the facility's night; every other circle of the climb is a
+    /// different hour, and Zen's sun is low enough for long shadows.
+    #[test]
+    fn the_climb_changes_the_hour_and_the_reactor_keeps_the_night() {
+        use observed_content::ArchitectureRegister as R;
+        assert_eq!(sky_mood(R::Megastructure), night());
+        let mut climb: Vec<SkyMood> = Vec::new();
+        for register in R::CLIMB {
+            let mood = sky_mood(register);
+            if !climb.contains(&mood) {
+                climb.push(mood);
+            }
+        }
+        assert_eq!(
+            climb.len(),
+            7,
+            "one sky for each of the climb's seven districts"
+        );
+        assert!(
+            sky_mood(R::ShadowScreen).toward[1] < 0.2,
+            "Zen's sun is on the horizon"
+        );
+        assert!(
+            luminance(sky_mood(R::LiminalGrid).along(0.0)) > luminance(night().along(0.0)),
+            "the Backrooms' dreamcore haze is lighter than the night"
+        );
+    }
+
+    /// A crossfade starts on the sky it leaves and ends on the one it reaches.
+    #[test]
+    fn a_crossfade_runs_from_one_sky_to_the_next() {
+        use observed_content::ArchitectureRegister as R;
+        let (from, to) = (sky_mood(R::ShadowScreen), sky_mood(R::Megastructure));
+        let start = from.toward_mood(&to, 0.0);
+        let end = from.toward_mood(&to, 1.0);
+        assert_eq!(
+            (start.horizon, start.lux, start.moon),
+            (from.horizon, from.lux, 0.0)
+        );
+        assert_eq!((end.horizon, end.lux, end.moon), (to.horizon, to.lux, 1.0));
+        let half = from.toward_mood(&to, 0.5);
+        assert!(half.lux < from.lux && half.lux > to.lux);
+    }
+
+    #[test]
+    fn a_sun_is_a_plain_disc() {
+        let face = sun_rgba();
+        let size = MOON_TEXTURE_SIZE as usize;
+        let alpha = |x: usize, y: usize| face[(y * size + x) * 4 + 3];
+        assert_eq!(alpha(0, 0), 0, "transparent outside the disc");
+        assert_eq!(alpha(size / 2, size / 2), 255, "opaque at its centre");
+    }
 
     #[test]
     fn the_moon_never_outshines_a_signal() {

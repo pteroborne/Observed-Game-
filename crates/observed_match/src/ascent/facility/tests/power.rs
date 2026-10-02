@@ -374,8 +374,37 @@ fn bot_body_walks_to_a_powered_station_and_waits_until_full() {
     let mut driver = HexBotDriver::default();
     let observer = game.observer_for(BODY).expect("an Observer");
     let station = install_station(&mut game);
-    let generator = fixture(&game, FixtureKind::Generator, station.cell.level);
-    stand_at(&mut game, generator, Vec3::ZERO);
+    // A few cells off, somewhere the station is an errand: reachable without leaving
+    // its floor, as the bot requires.
+    let facility = &game.physical().facility;
+    let (&cell, &floor) = game
+        .ascent
+        .station_points
+        .iter()
+        .filter(|(cell, _)| cell.level == station.cell.level && **cell != station.cell)
+        .find(|(cell, _)| {
+            facility
+                .route_between_cells(**cell, station.cell)
+                .is_some_and(|route| {
+                    route.cells.len() > 2 && route.cells.iter().all(|at| at.level == cell.level)
+                })
+        })
+        .expect("somewhere the station is an errand from");
+    stand_at(
+        &mut game,
+        Fixture {
+            kind: FixtureKind::Station,
+            cell,
+            floor,
+        },
+        Vec3::ZERO,
+    );
+    assert!(
+        driver
+            .floor_route_len_to(game.physical(), BODY, station.cell)
+            .is_some(),
+        "the bot can reach the station on its floor"
+    );
     game.ascent.stage_charge(BODY, 0);
     let mut recharging = false;
     for _ in 0..3_000 {

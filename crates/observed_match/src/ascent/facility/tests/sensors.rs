@@ -108,7 +108,20 @@ fn a_sensor_the_rogue_installs_hangs_in_the_facility_and_sees_the_body() {
 fn a_body_under_a_sensor_takes_it_down_with_interact() {
     let mut game = game_with_a_rogue();
     tick(&mut game, false, SeatCommand::None);
-    let cell = game.physical().players[&BODY].cell;
+    // The body's own cell, unless its floor's generator stands there: interact at the
+    // generator switches the floor's power, which comes before a sensor.
+    let own = game.physical().players[&BODY].cell;
+    let generator = game.rules().economy.generators.get(&own.level).copied();
+    let cell = if generator == Some(own) {
+        let grid = game.physical().facility.config.grid();
+        observed_hex::HexFace::LATERAL
+            .into_iter()
+            .filter_map(|face| grid.neighbor(own, face))
+            .find(|&next| Some(next) != generator && game.physical().standing_point(next).is_some())
+            .expect("a neighbour without the generator")
+    } else {
+        own
+    };
     game.ascent.stage_sensor(cell);
     tick(&mut game, false, SeatCommand::None);
     let (_, at) = game

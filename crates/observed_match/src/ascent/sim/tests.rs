@@ -646,8 +646,10 @@ fn every_scenario_still_interrupts_its_route() {
         (ArchitectMode::Pocket, 1usize),
         (ArchitectMode::QuickClimb, 2),
         (ArchitectMode::FullAscent, 3),
-        // Wants five; the route offers four that satisfy the flanking and spacing rules.
-        (ArchitectMode::DeepStack, 4),
+        // Wants five; the route offers three that satisfy the flanking and spacing
+        // rules. It offered four until every floor became one district: a different
+        // building, with a different route, rather than a guard taking a gap away.
+        (ArchitectMode::DeepStack, 3),
     ];
     for (mode, gaps) in expected {
         let lab = ArchitectLab::for_mode(mode).expect("scenario boots");

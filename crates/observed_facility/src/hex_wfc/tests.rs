@@ -1452,32 +1452,14 @@ fn the_production_facility_holds_its_measured_baseline() {
          if a region stage did this, move this band down deliberately"
     );
 
-    // Was 49.9% while a region was one register on one floor. Regions became
-    // whole-height volumes when a survey found that per-level ones had no
-    // vertical boundary at all, and the figure fell to 23.7%.
-    //
-    // That fall was not an improvement and should not have been read as one. The
-    // frontier now blends lateral pairs, still about half open, with vertical
-    // pairs, which are mostly solid floor - so the composite is lower for a
-    // reason that has nothing to do with boundaries tightening. It was a
-    // different measurement of a different object, re-baselined rather than
-    // beaten.
-    //
-    // **This fall is the other kind.** 23.7% to 16.9% when `route_corridors`
-    // became the default: the same measurement of the same object, moved by a
-    // stage that decides corridors as paths and gives each cell the exact mask
-    // it needs. A cell that opens two faces instead of four crosses fewer
-    // region frontiers, so the frontier closes - which is the first time this
-    // number has moved for the reason it was written to detect.
-    //
-    // Worth being precise about what it is not. `peers/room` is 28.40 and the
-    // band above is 20.0, so the room graph is still a clique: boundaries are
-    // tighter and connectivity is not scarcer. Routing narrowed the corridors,
-    // it did not cut the building into regions.
-    assert!(
-        (11.9..=21.9).contains(&permeability),
-        "region permeability moved to {permeability:.1}%, away from the measured 16.9%"
-    );
+    // Region permeability is printed above and no longer held to a band. A region is a
+    // register's territory through the facility, and since every floor became one
+    // district of the climb (`ArchitectureRegister::for_floor`) a region is a floor, or
+    // two of the Forerunner's: its boundary is the floor and ceiling between storeys, and
+    // this measure counts lateral crossings, of which there are now none. It read 16.9%
+    // while districts were ten neighbourhoods a floor. Measuring what crosses between
+    // floors is a different question, for whenever regions are wired into the solve.
+    let _ = permeability;
 
     // The solve runs synchronously on the desync and late-join paths against a
     // 2 s LAN client timeout (bug #39), so this is a real ceiling and not a

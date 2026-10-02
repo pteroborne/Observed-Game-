@@ -233,13 +233,14 @@ mod tests {
                     r: upper.r,
                     level: 0,
                 };
-                if sim.world.placements.contains_key(&lower) {
-                    Some((upper, lower))
-                } else {
-                    None
-                }
+                // Built below, so there is a floor to land on rather than rock.
+                sim.world
+                    .placements
+                    .get(&lower)
+                    .is_some_and(|placement| placement.space.built())
+                    .then_some((upper, lower))
             })
-            .expect("column spanning levels 0 and 1 must exist");
+            .expect("a column with a built floor at level 0 must exist");
 
         // Construct level 2 directly above level 1
         let level2 = HexCoord {
@@ -258,6 +259,13 @@ mod tests {
         // Level 2 retracts; level 1 also retracts (void/empty gap); level 0 remains solid
         sim.retracted.insert(level2);
         sim.retracted.insert(level1);
+        // The whole of level 1 round the column gone too, or a fall catches on a
+        // neighbour there before it reaches level 0.
+        for face in observed_hex::HexFace::LATERAL {
+            if let Some(next) = sim.world.config.grid().neighbor(level1, face) {
+                sim.retracted.insert(next);
+            }
+        }
 
         let events = sim.resolve_falls();
         assert_eq!(

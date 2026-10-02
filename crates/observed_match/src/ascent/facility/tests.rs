@@ -333,7 +333,7 @@ fn a_tile_ahead_of_the_body_is_held_by_its_sight() {
         .deck
         .hand
         .iter()
-        .find(|card| card.district == Some(crate::ascent::sim::District::for_level(ahead.level)))
+        .find(|card| card.district == Some(game.rules().district(ahead.level)))
         .copied()
         .expect("a card for this floor");
     assert_eq!(
@@ -369,7 +369,7 @@ fn rooms_and_stairs_are_refused_whole() {
         target = fixed(&game);
     }
     let target = target.expect("the body has seen a room or a stair and looked away");
-    let district = crate::ascent::sim::District::for_level(target.level);
+    let district = game.rules().district(target.level);
     let card = game.session().hands[&TEAM]
         .deck
         .hand
@@ -486,7 +486,6 @@ fn a_retraction_cannot_open_a_window_beside_a_watched_room() {
     use observed_facility::hex_wfc::{HexArchetype, HexPlacement, HexSpace};
     use observed_hex::{HexFace, PortClass};
 
-    let mut game = game(7);
     let redrawn_by = |game: &AscentMatch, watched: HexCoord, neighbour: HexCoord| {
         let drawn = |physical: &HexWfcMatch| {
             physical
@@ -512,34 +511,43 @@ fn a_retraction_cannot_open_a_window_beside_a_watched_room() {
             .is_ok()
             && drawn(&probe) != before
     };
-    for _ in 0..6_000 {
-        let rules = game.rules();
-        let body = &rules.observers[&ObserverId(BODY.0)];
-        let grid = rules.world.config.grid();
-        if rules
-            .world
-            .placements
-            .get(&body.cell)
-            .is_some_and(follows_neighbours)
-        {
-            let exposed = HexFace::LATERAL
-                .into_iter()
-                .filter(|&face| face != body.facing)
-                .filter_map(|face| grid.neighbor(body.cell, face))
-                .find(|&next| {
-                    rules.world.placements[&next].space.built()
-                        && !rules.fixed_structure(next)
-                        && redrawn_by(&game, body.cell, next)
-                });
-            if let Some(next) = exposed {
-                assert!(rules.observed.contains(&next));
-                assert!(rules.retraction_protected(next));
-                return;
+    // Over a few seeds, because whether a body's walk takes it into such a room is the
+    // facility's to say: seed 7's stopped doing so when every floor became one district.
+    let warded = [7, 3, 11, 13, 5].into_iter().find(|&seed| {
+        let mut game = game(seed);
+        for _ in 0..6_000 {
+            let rules = game.rules();
+            let body = &rules.observers[&ObserverId(BODY.0)];
+            let grid = rules.world.config.grid();
+            if rules
+                .world
+                .placements
+                .get(&body.cell)
+                .is_some_and(follows_neighbours)
+            {
+                let exposed = HexFace::LATERAL
+                    .into_iter()
+                    .filter(|&face| face != body.facing)
+                    .filter_map(|face| grid.neighbor(body.cell, face))
+                    .find(|&next| {
+                        rules.world.placements[&next].space.built()
+                            && !rules.fixed_structure(next)
+                            && redrawn_by(&game, body.cell, next)
+                    });
+                if let Some(next) = exposed {
+                    assert!(rules.observed.contains(&next), "seed {seed}");
+                    assert!(rules.retraction_protected(next), "seed {seed}");
+                    return true;
+                }
             }
+            step(&mut game, Body::Explore, SeatCommand::None);
         }
-        step(&mut game, Body::Explore, SeatCommand::None);
-    }
-    panic!("the body never stood where a neighbour's retraction would redraw it");
+        false
+    });
+    assert!(
+        warded.is_some(),
+        "no body stood where a neighbour's retraction would redraw it"
+    );
 }
 
 mod anchors;
@@ -566,8 +574,11 @@ fn a_bot_architect_repairs_what_the_rogue_breaks_through_the_human_path() {
             ..HexWfcConfig::default()
         },
     };
+    // Seed 11: on seed 7's facility, since one district a floor, a minor wave catches the
+    // lone body and ends the match before the repair this is about can be made.
+    let seed = 11;
     let physical = HexWfcMatch::new_with_content(
-        7,
+        seed,
         config,
         crate::hex_wfc::compatibility_test_content().clone(),
     )
@@ -588,7 +599,7 @@ fn a_bot_architect_repairs_what_the_rogue_breaks_through_the_human_path() {
             },
         ),
     ]);
-    let mut game = AscentMatch::new(physical, 7, seats).expect("a bot Architect and a Rogue");
+    let mut game = AscentMatch::new(physical, seed, seats).expect("a bot Architect and a Rogue");
     for _ in 0..600 {
         step(&mut game, Body::Explore, SeatCommand::None);
     }
@@ -867,6 +878,9 @@ fn production_ascent_tick_times() {
 /// mazes carved on other threads and all - or every client desyncs.
 #[test]
 fn two_peers_stepping_the_same_frames_stay_in_step() {
+    // Seed 13: seed 11's facility, since one district a floor, ran 12,000 ticks without a
+    // catch, which is the part of the match this is here to cover.
+    const SEED: u64 = 13;
     let config = HexMatchConfig {
         teams: 2,
         members_per_team: 2,
@@ -878,13 +892,13 @@ fn two_peers_stepping_the_same_frames_stay_in_step() {
     };
     let peer = || {
         let physical = HexWfcMatch::new_with_content(
-            11,
+            SEED,
             config,
             crate::hex_wfc::compatibility_test_content().clone(),
         )
         .expect("a two-level facility solves");
         let seats = super::architect_seats(&physical, None);
-        AscentMatch::new(physical, 11, seats).expect("bot Architects for both teams")
+        AscentMatch::new(physical, SEED, seats).expect("bot Architects for both teams")
     };
     let (mut server, mut client) = (peer(), peer());
     let mut caught = 0;

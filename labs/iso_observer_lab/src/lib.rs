@@ -965,12 +965,19 @@ mod tests {
         // 6.0 keeps a quarter's margin under what is measured and is still four
         // times the confetti baseline this test was written against. A district
         // that genuinely fragmented would have to halve to reach it.
+        //
+        // Every floor is one district now, so what must be somewhere is the climb:
+        // each floor's register and no other.
         let state = LabState::new(0);
         let census = state.district_census();
+        let levels = state.world.config.levels;
+        let climb = (0..levels)
+            .map(|level| ArchitectureRegister::for_floor(level, levels))
+            .collect::<BTreeSet<_>>();
         assert_eq!(
-            census.len(),
-            ArchitectureRegister::ALL.len(),
-            "every register is somewhere in the facility"
+            census.keys().copied().collect::<BTreeSet<_>>(),
+            climb,
+            "every floor's register is in the facility, and only those"
         );
         for (register, (cells, regions)) in &census {
             #[allow(clippy::cast_precision_loss)]

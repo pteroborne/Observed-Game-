@@ -321,6 +321,12 @@ pub(crate) struct Parts {
 impl ArchitectLab {
     pub const DEFAULT_LOYAL_TEAM_SIZE: usize = 2;
 
+    /// The district of floor `level`: its architecture, and the cards that build on it.
+    #[must_use]
+    pub const fn district(&self, level: u8) -> District {
+        District::for_floor(level, self.world.config.levels)
+    }
+
     /// The rules at tick zero, before observation has been refreshed.
     pub(crate) fn assemble(parts: Parts) -> Self {
         let Parts {
@@ -432,7 +438,7 @@ impl ArchitectLab {
         let config = mode.config();
         let mut world = HexWfcWorld::generate(seed, config)?;
         for (&cell, register) in &mut world.architecture {
-            *register = floor_register(cell.level);
+            *register = floor_register(cell.level, config.levels);
         }
 
         let route = world
@@ -566,7 +572,7 @@ impl ArchitectLab {
             tile.up = observed_hex::PortClass::Sealed;
             tile.down = observed_hex::PortClass::Sealed;
             if index == 0 {
-                lab.deck.offer_tile(shape, District::for_level(cell.level));
+                lab.deck.offer_tile(shape, lab.district(cell.level));
             }
             lab.record_event(
                 LabEventKind::Warning,
@@ -675,7 +681,7 @@ impl ArchitectLab {
 
         match card.kind {
             CardKind::Tile(shape) => {
-                if card.district != Some(District::for_level(target.level)) {
+                if card.district != Some(self.district(target.level)) {
                     return Some(CommandRefusal::WrongDistrict);
                 }
                 if self.fixed_structure(target) {
@@ -703,7 +709,7 @@ impl ArchitectLab {
                 (!fits).then_some(CommandRefusal::NoLocalAttachment)
             }
             CardKind::Stair => {
-                if card.district != Some(District::for_level(target.level)) {
+                if card.district != Some(self.district(target.level)) {
                     return Some(CommandRefusal::WrongDistrict);
                 }
                 let heading = lateral_face(rotation);
@@ -1623,28 +1629,21 @@ impl ArchitectLab {
     }
 }
 
-/// Canonical architecture register assigned to each floor level for visual legibility.
+/// The architecture register of floor `level` of a facility `levels` tall: its district's.
 #[must_use]
-pub fn floor_register(level: u8) -> observed_content::ArchitectureRegister {
-    match level {
-        0 => observed_content::ArchitectureRegister::Institutional,
-        1 => observed_content::ArchitectureRegister::LiminalGrid,
-        2 => observed_content::ArchitectureRegister::Wellshaft,
-        3 => observed_content::ArchitectureRegister::FacetMonument,
-        _ => observed_content::ArchitectureRegister::Megastructure,
-    }
+pub fn floor_register(level: u8, levels: u8) -> observed_content::ArchitectureRegister {
+    District::for_floor(level, levels).register()
 }
 
-/// Distinct floor architectural title for legibility.
+/// A floor's title: the place, then how it is built, as in `BACKROOMS // LIMINAL GRID`.
 #[must_use]
-pub fn floor_title(level: u8) -> &'static str {
-    match level {
-        0 => "FOUNDATION // INSTITUTIONAL",
-        1 => "CONCOURSE // LIMINAL GRID",
-        2 => "INTERIOR // WELLSHAFT",
-        3 => "GALLERY // FACET MONUMENT",
-        _ => "SUMMIT // MEGASTRUCTURE",
-    }
+pub fn floor_title(level: u8, levels: u8) -> String {
+    let district = District::for_floor(level, levels);
+    format!(
+        "{} // {}",
+        district.label().to_ascii_uppercase(),
+        district.register().label().to_ascii_uppercase()
+    )
 }
 
 #[cfg(test)]

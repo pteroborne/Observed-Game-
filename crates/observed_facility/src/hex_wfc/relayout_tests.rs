@@ -28,59 +28,57 @@ fn candidate(world: &HexWfcWorld, frame: &HexObservationFrame) -> super::HexRela
 }
 
 #[test]
-fn every_level_anchors_one_seed_stable_district_per_register() {
+fn every_floor_is_one_district_on_the_climb() {
     let config = HexWfcConfig::arc_default();
-    let first = super::district_sites(0x11_1A_1A, config);
-    let second = super::district_sites(0x11_1A_1A, config);
-    assert_eq!(first, second, "district anchors are a function of the seed");
+    let sites = super::district_sites(0x11_1A_1A, config);
     assert_eq!(
-        first.len(),
-        usize::from(config.levels) * ArchitectureRegister::ALL.len()
+        sites,
+        super::district_sites(0x22_2B_2B, config),
+        "the climb is the seed's for none"
     );
-    for level in 0..config.levels {
-        let on_level = first
-            .iter()
-            .filter(|site| site.anchor.level == level)
-            .collect::<Vec<_>>();
-        let registers = on_level
-            .iter()
-            .map(|site| site.register)
-            .collect::<BTreeSet<_>>();
+    assert_eq!(
+        sites.len(),
+        usize::from(config.levels),
+        "one district a floor"
+    );
+    for site in &sites {
         assert_eq!(
-            registers.len(),
-            ArchitectureRegister::ALL.len(),
-            "level {level} must anchor every register exactly once"
+            site.register,
+            ArchitectureRegister::for_floor(site.anchor.level, config.levels)
         );
-        for site in on_level {
-            assert!(site.anchor.q < config.cols && site.anchor.r < config.rows);
-        }
+        assert!(site.anchor.q < config.cols && site.anchor.r < config.rows);
     }
 }
 
 #[test]
-fn a_district_stays_in_one_piece() {
-    // The point of the phase: a district is a place you can walk across, not a
-    // scatter of cells that happen to share a colour. Nearest-anchor ownership
-    // guarantees it, and this measures it on a real solve.
-    let world = HexWfcWorld::generate(0x11_1A_1B, HexWfcConfig::arc_default()).expect("world");
-    let mut by_register: BTreeMap<ArchitectureRegister, BTreeSet<HexCoord>> = BTreeMap::new();
+fn a_floor_is_one_place() {
+    // A floor is the climb's district, whole: every cell on it wears its register, so a
+    // floor reads as one place and the ascent as a passage from one to the next. Rooms
+    // keep their anchor's register, and an anchor is on the room's own floor.
+    let config = HexWfcConfig::arc_default();
+    let world = HexWfcWorld::generate(0x11_1A_1B, config).expect("world");
+    // A room standing through two storeys wears its anchor's floor throughout.
+    let anchor_of: BTreeMap<HexCoord, HexCoord> = world
+        .blueprints
+        .iter()
+        .flat_map(|blueprint| blueprint.cells.iter().map(|&cell| (cell, blueprint.anchor)))
+        .collect();
     for (&coord, &register) in &world.architecture {
-        by_register.entry(register).or_default().insert(coord);
-    }
-    assert_eq!(
-        by_register.len(),
-        ArchitectureRegister::ALL.len(),
-        "every register is somewhere in the facility"
-    );
-    for (register, cells) in &by_register {
-        let regions = connected_regions(cells);
-        #[allow(clippy::cast_precision_loss)]
-        let mean = cells.len() as f32 / regions.max(1) as f32;
-        assert!(
-            mean > 8.0,
-            "{register:?} averages {mean:.1} cells per region - that is confetti, not a district"
+        let floor = anchor_of
+            .get(&coord)
+            .map_or(coord.level, |anchor| anchor.level);
+        assert_eq!(
+            register,
+            ArchitectureRegister::for_floor(floor, config.levels),
+            "{coord:?}"
         );
     }
+    let climb: BTreeSet<ArchitectureRegister> = ArchitectureRegister::CLIMB.into_iter().collect();
+    let worn: BTreeSet<ArchitectureRegister> = world.architecture.values().copied().collect();
+    assert_eq!(
+        worn, climb,
+        "every step of the climb is somewhere in the facility"
+    );
 }
 
 #[test]
@@ -137,36 +135,6 @@ fn districts_do_not_drift_across_relayout_generations() {
                 .all(|cell| world.architecture[cell] == anchor_register)
         );
     }
-}
-
-/// Flood-fill over lateral adjacency within a level.
-fn connected_regions(cells: &BTreeSet<HexCoord>) -> usize {
-    let mut unvisited = cells.clone();
-    let mut regions = 0;
-    while let Some(&start) = unvisited.iter().next() {
-        regions += 1;
-        let mut frontier = vec![start];
-        unvisited.remove(&start);
-        while let Some(coord) = frontier.pop() {
-            for (dq, dr) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (-1, 1)] {
-                let (Some(q), Some(r)) = (
-                    coord.q.checked_add_signed(dq),
-                    coord.r.checked_add_signed(dr),
-                ) else {
-                    continue;
-                };
-                let neighbour = HexCoord {
-                    q,
-                    r,
-                    level: coord.level,
-                };
-                if unvisited.remove(&neighbour) {
-                    frontier.push(neighbour);
-                }
-            }
-        }
-    }
-    regions
 }
 
 #[test]
@@ -672,33 +640,41 @@ fn halls_joining_different_thresholds_have_different_identities() {
 fn a_relayout_leaves_routed_corridors_as_narrow_as_it_found_them() {
     let mut profile = super::profile::HexCompositionProfile::baseline();
     profile.route_corridors = true;
-    let world = HexWfcWorld::generate_with_profile(0x9301, config(), None, &profile)
-        .expect("a routed world solves");
-    assert!(
-        world.route_corridors,
-        "the world must remember it was routed, or the relayout cannot know"
-    );
-
-    let skeleton = super::constraints::corridor_skeleton(world.config, &world.blueprints, false)
-        .expect("the routed world has a skeleton")
-        .0;
-    assert!(
-        !skeleton.is_empty(),
-        "an empty skeleton would assert nothing"
-    );
-
-    let proposal = candidate(&world, &HexObservationFrame::default());
+    // Seeds until a pocket takes in a corridor: where the pocket lands is the
+    // facility's to say, and 0x9301's stopped doing so with one district a floor.
     let mut checked = 0usize;
-    for (coord, placement) in &proposal.placements {
-        let Some(&mask) = skeleton.get(coord) else {
-            continue;
-        };
-        checked += 1;
-        assert_eq!(
-            placement.doors, mask,
-            "relayout moved the corridor at {coord:?}: {:06b} became {:06b}",
-            mask, placement.doors
+    for seed in 0x9301..0x9311 {
+        let world = HexWfcWorld::generate_with_profile(seed, config(), None, &profile)
+            .expect("a routed world solves");
+        assert!(
+            world.route_corridors,
+            "the world must remember it was routed, or the relayout cannot know"
         );
+
+        let skeleton =
+            super::constraints::corridor_skeleton(world.config, &world.blueprints, false)
+                .expect("the routed world has a skeleton")
+                .0;
+        assert!(
+            !skeleton.is_empty(),
+            "an empty skeleton would assert nothing"
+        );
+
+        let proposal = candidate(&world, &HexObservationFrame::default());
+        for (coord, placement) in &proposal.placements {
+            let Some(&mask) = skeleton.get(coord) else {
+                continue;
+            };
+            checked += 1;
+            assert_eq!(
+                placement.doors, mask,
+                "seed {seed:#x}: relayout moved the corridor at {coord:?}: {:06b} became {:06b}",
+                mask, placement.doors
+            );
+        }
+        if checked > 0 {
+            break;
+        }
     }
     assert!(
         checked > 0,

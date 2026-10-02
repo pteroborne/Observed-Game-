@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::OnceLock;
 
+use observed_content::ArchitectureRegister;
 use observed_core::SplitMix;
 use observed_hex::{HexCoord, HexFace, PortClass, PortSignature};
 
@@ -358,7 +359,9 @@ pub(super) fn collapse_pocket_attempt(
         &mut rng,
         influence,
         previous,
-        space_mix,
+        &|coord: HexCoord| {
+            space_mix.on_floor(ArchitectureRegister::for_floor(coord.level, config.levels))
+        },
     ) {
         return Err("pocket collapse contradiction");
     }
@@ -685,7 +688,8 @@ fn collapse_pocket_domains(
     rng: &mut SplitMix,
     influence: Option<&super::context::HexInfluenceField>,
     previous: &BTreeMap<HexCoord, HexPlacement>,
-    space_mix: super::profile::SpaceMix,
+    // The mix a cell draws by: its floor's own openness, as the full solve drew it.
+    floor_mix: &dyn Fn(HexCoord) -> super::profile::SpaceMix,
 ) -> bool {
     loop {
         let Some(min_size) = domains
@@ -718,7 +722,8 @@ fn collapse_pocket_domains(
             };
             clustered_expanse_weight(base, tables.variants[variant].archetype, adjacent_expanses)
         };
-        let lottery = SpaceLottery::build(domain.iter(), &tables.variants, space_mix, weight_of);
+        let lottery =
+            SpaceLottery::build(domain.iter(), &tables.variants, floor_mix(coord), weight_of);
         let scaled_of =
             |variant: usize| lottery.scaled(tables.variants[variant].space, weight_of(variant));
         let total = domain.iter().map(scaled_of).sum::<u128>().max(1);
@@ -1237,8 +1242,11 @@ fn collapse_domains(
             );
             clustered_expanse_weight(base, variants[variant].archetype, adjacent_expanses)
         };
-        let lottery =
-            SpaceLottery::build(domains[cell].iter(), variants, profile.space_mix, weight_of);
+        let floor_mix = profile.space_mix.on_floor(ArchitectureRegister::for_floor(
+            cell_coord.level,
+            config.levels,
+        ));
+        let lottery = SpaceLottery::build(domains[cell].iter(), variants, floor_mix, weight_of);
         let scaled_of =
             |variant: usize| lottery.scaled(variants[variant].space, weight_of(variant));
         let total: u128 = domains[cell].iter().map(scaled_of).sum();

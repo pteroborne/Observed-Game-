@@ -242,7 +242,7 @@ pub fn sync_dynamic_text(
                 "Floor {:02} / {:02}  /  {}",
                 state.floor + 1,
                 session.sim.world.config.levels,
-                crate::sim::floor_register(state.floor).slug()
+                session.sim.district(state.floor).label()
             ),
             DynamicText::FloorTargets => {
                 if card.is_none() || session.sim.bot_architect {

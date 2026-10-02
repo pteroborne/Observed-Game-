@@ -140,7 +140,7 @@ impl ArchitectLab {
         if self.authored {
             // The real facility's climb is gated on stairs, so an Architect who cannot lay
             // one cannot build the way up: three to a district.
-            Deck::with_stairs(seed, levels, &TileShape::AUTHORED, STAIRS_PER_DISTRICT)
+            Deck::for_team(seed, levels, &TileShape::AUTHORED, STAIRS_PER_DISTRICT)
         } else {
             Deck::for_levels(seed, levels)
         }

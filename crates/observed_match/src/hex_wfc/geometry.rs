@@ -1033,8 +1033,37 @@ impl<'a> HexTileCatalogue<'a> {
     ) -> Option<String> {
         world
             .architecture
-            .get(&self.assembly_identity(archetype, coord))
+            .get(&self.register_cell(world, archetype, coord))
             .map(|register| register.slug().to_string())
+    }
+
+    /// The cell whose register an assembly wears. A cell answers for itself. A vertical
+    /// column answers from one cell of its own, so every cell of the column draws one
+    /// shape: a floor of the climb chosen from the seed and the column's position alone.
+    ///
+    /// It was the column's level-0 cell, which gave every tower the ground floor's look
+    /// once each floor became one district of the climb. It must not depend on what is
+    /// built - say the column's lowest tower cell - or a relayout or a card that adds or
+    /// removes a tower cell at the bottom would change the shape of the whole column while
+    /// re-projecting only the cell it touched: the mixed column this rule exists to stop.
+    #[must_use]
+    pub fn register_cell(&self, world: &HexWfcWorld, archetype: &str, coord: HexCoord) -> HexCoord {
+        match self.scope(archetype) {
+            AssemblyScope::Cell => coord,
+            AssemblyScope::VerticalColumn => {
+                let mut mix = world.seed
+                    ^ u64::from(coord.q).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                    ^ u64::from(coord.r).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                mix ^= mix >> 31;
+                mix = mix.wrapping_mul(0x94D0_49BB_1331_11EB);
+                mix ^= mix >> 29;
+                let levels = u64::from(world.config.levels.max(1));
+                HexCoord {
+                    level: (mix % levels) as u8,
+                    ..coord
+                }
+            }
+        }
     }
 
     /// The family candidates for one assembly, after register fallback: exact
@@ -1367,10 +1396,11 @@ fn tile_for<'a>(
     signature: PortSignature,
 ) -> Result<&'a TilePrototype, HexGeometryError> {
     let identity = catalogue.assembly_identity(archetype, coord);
+    let register_cell = catalogue.register_cell(world, archetype, coord);
     let register = world
         .architecture
-        .get(&identity)
-        .ok_or(HexGeometryError::MissingArchitecture(identity))?
+        .get(&register_cell)
+        .ok_or(HexGeometryError::MissingArchitecture(register_cell))?
         .slug();
     match catalogue.select(
         archetype,

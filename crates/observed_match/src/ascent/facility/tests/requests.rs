@@ -5,9 +5,10 @@ use super::*;
 use crate::ascent::session::{RequestKind, STALL_BEATS};
 use crate::ascent::sim::ACTOR_BEAT_TICKS;
 
-/// A facility the body has walked for a while, with a bot Architect, the body voiced.
-fn walked(ticks: usize) -> AscentMatch {
-    let mut game = game_seated(7, 1, false, true);
+/// Facility `seed` once the body has walked it for a while, with a bot Architect, the
+/// body voiced.
+fn walked_seed(seed: u64, ticks: usize) -> AscentMatch {
+    let mut game = game_seated(seed, 1, false, true);
     game.voice([BODY]);
     for _ in 0..ticks {
         step(&mut game, Body::Explore, SeatCommand::None);
@@ -15,9 +16,27 @@ fn walked(ticks: usize) -> AscentMatch {
     game
 }
 
+/// A body left standing asks for a route, and its bot Architect acknowledges the ask and
+/// answers it with a play within reach of where the body stands - where a play can answer
+/// it harmlessly: one that leaves no contradiction and does not lengthen the team's way
+/// up. Some places offer none, and there the bot rightly holds, so this asks it of a few
+/// facilities and requires every one acknowledged and at least one answered.
 #[test]
 fn a_body_left_standing_asks_for_a_route_and_its_bot_architect_answers_it() {
-    let mut game = walked(600);
+    let answered = [7, 3, 11, 13]
+        .into_iter()
+        .filter_map(answer_to_a_stalled_ask)
+        .count();
+    assert!(
+        answered > 0,
+        "no bot Architect ever answered an ask with a play"
+    );
+}
+
+/// On facility `seed`: the body stalls and asks, the bot Architect acknowledges, and
+/// whether it answered with a play within reach.
+fn answer_to_a_stalled_ask(seed: u64) -> Option<HexCoord> {
+    let mut game = walked_seed(seed, 600);
     let stand = game.rules().observers[&ObserverId(BODY.0)].cell;
     let beat = u64::from(ACTOR_BEAT_TICKS);
     let mut asked = None;
@@ -32,11 +51,11 @@ fn a_body_left_standing_asks_for_a_route_and_its_bot_architect_answers_it() {
     assert_eq!(
         (request.kind, request.target),
         (RequestKind::Route, stand),
-        "for a route, where it stands"
+        "seed {seed}: for a route, where it stands"
     );
     assert!(
         game.physical().players[&BODY].cell == stand,
-        "it asked only once it had stood still for {STALL_BEATS} beats"
+        "seed {seed}: it asked only once it had stood still for {STALL_BEATS} beats"
     );
 
     // The bot Architect acknowledges on its beat, and builds toward the ask.
@@ -60,14 +79,18 @@ fn a_body_left_standing_asks_for_a_route_and_its_bot_architect_answers_it() {
             break;
         }
     }
-    assert!(acknowledged, "the bot Architect acknowledged the ask");
+    assert!(
+        acknowledged,
+        "seed {seed}: the bot Architect acknowledged the ask"
+    );
     let Some(ArchitectCommand::Play { target, .. }) = answered else {
-        panic!("the bot Architect never answered the ask with a play");
+        return None;
     };
     assert!(
         observed_hex::travel_distance(stand, target) <= 3,
-        "{target:?} answers an ask at {stand:?}"
+        "seed {seed}: {target:?} answers an ask at {stand:?}"
     );
+    Some(target)
 }
 
 #[test]

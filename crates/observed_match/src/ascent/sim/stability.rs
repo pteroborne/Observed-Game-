@@ -2,7 +2,7 @@
 use observed_facility::hex_wfc::HexSpace;
 use observed_hex::{HexCoord, travel_distance};
 
-use super::{ArchitectLab, District, DoorState, GuardianKind, threshold_touches};
+use super::{ArchitectLab, DoorState, GuardianKind, threshold_touches};
 
 pub const RETRACTION_TICKS: u64 = 180;
 
@@ -192,13 +192,13 @@ impl ArchitectLab {
         self.sync_retraction_clock();
     }
 
-    /// Upper floors share the Liminal Grid deck. Losing one floor must not retire
-    /// cards that can still be played on another floor in the same district.
+    /// Floors sharing a register on the climb share a district. Losing one floor must not
+    /// retire cards that can still be played on another floor in the same district.
     pub(super) fn retire_closed_district(&mut self, level: u8) {
-        let district = District::for_level(level);
-        if (0..self.world.config.levels).all(|other| {
-            District::for_level(other) != district || self.collapsed_floors.contains(&other)
-        }) {
+        let district = self.district(level);
+        if (0..self.world.config.levels)
+            .all(|other| self.district(other) != district || self.collapsed_floors.contains(&other))
+        {
             self.deck.retire_district(district);
         }
     }

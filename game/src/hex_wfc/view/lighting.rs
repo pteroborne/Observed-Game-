@@ -141,7 +141,11 @@ pub(in crate::hex_wfc) fn sync_practical_shadow_budget(
 pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
     time: Res<Time>,
     runtime: Res<HexWfcRuntime>,
-    frame: Res<super::camera::OverviewFrame>,
+    // What the view stands in: the overview's frame, if any, and the floor's sky.
+    (frame, sky): (
+        Res<super::camera::OverviewFrame>,
+        Option<Res<super::sky::HexSky>>,
+    ),
     mut ambient: ResMut<GlobalAmbientLight>,
     mut clear: ResMut<ClearColor>,
     mut camera: Query<&mut DistanceFog, With<GameCam>>,
@@ -156,10 +160,12 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
         .copied()
         .unwrap_or(observed_content::ArchitectureRegister::ALL[0]);
     let composition = composition_at(&runtime.match_state.facility, current);
+    let night = style::open_air::night();
     let palette = outdoors_if_open(
         &runtime.match_state.facility,
         current,
         style::architecture_for_composition(architecture, composition),
+        sky.as_deref().map_or(&night, |sky| &sky.now),
     );
     let t = (time.delta_secs() * BLEND_RATE).clamp(0.0, 1.0);
     let overview_active = frame.0.is_some();
@@ -230,15 +236,16 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
 }
 
 /// A hall that opens onto the outside is outdoors: its fog reaches across the air and
-/// fades into the horizon rather than into the dark, and the light comes from the sky.
-/// Everywhere else keeps its district palette, tuned for a body in a corridor.
+/// fades into the floor's horizon rather than into the dark, and the light comes from its
+/// sky. Everywhere else keeps its district palette, tuned for a body in a corridor.
 pub(super) fn outdoors_if_open(
     world: &observed_facility::hex_wfc::HexWfcWorld,
     coord: observed_facility::hex_wfc::HexCoord,
     palette: style::DistrictPalette,
+    sky: &style::open_air::SkyMood,
 ) -> style::DistrictPalette {
     if observed_match::hex_wfc::open_edges(world, coord).is_some() {
-        style::open_air::open_air(palette)
+        style::open_air::open_air_under(palette, sky)
     } else {
         palette
     }

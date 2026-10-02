@@ -15,36 +15,57 @@ const ROGUE_SURGES: u8 = 3;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CardId(pub u32);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum District {
-    Institutional,
-    LiminalGrid,
-}
+/// A floor's district (design section 6): its architecture and a card constraint, one a
+/// floor, climbing [`ArchitectureRegister::CLIMB`]. Floors sharing a register on the climb
+/// share a district, and so its cards.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct District(ArchitectureRegister);
 
 impl District {
+    /// The ground floor's: the Backrooms, on a facility of any height.
+    pub const GROUND: Self = Self(ArchitectureRegister::CLIMB[0]);
+
+    /// The district of floor `level` of a facility `levels` tall.
     #[must_use]
-    pub const fn for_level(level: u8) -> Self {
-        if level == 0 {
-            Self::Institutional
-        } else {
-            Self::LiminalGrid
-        }
+    pub const fn for_floor(level: u8, levels: u8) -> Self {
+        Self(ArchitectureRegister::for_floor(level, levels))
     }
 
+    /// Every district of a facility `levels` tall, once each, from the ground up.
+    #[must_use]
+    pub fn climb(levels: u8) -> Vec<Self> {
+        let mut climb: Vec<Self> = Vec::new();
+        for level in 0..levels.max(1) {
+            let district = Self::for_floor(level, levels);
+            if !climb.contains(&district) {
+                climb.push(district);
+            }
+        }
+        climb
+    }
+
+    /// The place a player knows the floor as. The register's own name says how it is
+    /// built; this says where you are.
     #[must_use]
     pub const fn label(self) -> &'static str {
-        match self {
-            Self::Institutional => "Institutional",
-            Self::LiminalGrid => "Liminal Grid",
+        use ArchitectureRegister as R;
+        match self.0 {
+            R::LiminalGrid => "Backrooms",
+            R::InfiniteGallery => "Library",
+            R::OverlitGrid => "Lumen",
+            R::ShadowScreen => "Zen",
+            R::FacetMonument => "Monument",
+            R::Megastructure => "Reactor",
+            R::Thinning => "Sky",
+            R::Monolith => "Monolith",
+            R::Institutional => "Institutional",
+            R::Wellshaft => "Silo",
         }
     }
 
     #[must_use]
     pub const fn register(self) -> ArchitectureRegister {
-        match self {
-            Self::Institutional => ArchitectureRegister::Institutional,
-            Self::LiminalGrid => ArchitectureRegister::LiminalGrid,
-        }
+        self.0
     }
 }
 
@@ -167,6 +188,11 @@ pub struct Deck {
     draw: Vec<Card>,
     discard: Vec<Card>,
     rng: Prng,
+    /// The facility's districts from the ground up ([`District::climb`]).
+    climb: Vec<District>,
+    /// How many of them, from the ground, a refill deals. A team's deck opens a district
+    /// as its bodies reach that floor (design section 6); every other deck deals them all.
+    reach: usize,
 }
 
 impl Deck {
@@ -190,12 +216,30 @@ impl Deck {
     /// and, for the first-person game, deployable recharge stations.
     #[must_use]
     pub fn with_stairs(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
-        let extra = if stairs == 0 {
+        Self::composed(
+            seed,
+            levels,
+            shapes,
+            stairs,
+            &Self::loyal_extras(stairs),
+            usize::MAX,
+        )
+    }
+
+    /// A team's deck: [`Self::with_stairs`], dealing only the ground floor's district until
+    /// the team's bodies reach another ([`Self::open_through`]). Seven districts' tiles
+    /// dealt from the start would leave most of a hand for floors nobody can reach.
+    #[must_use]
+    pub fn for_team(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
+        Self::composed(seed, levels, shapes, stairs, &Self::loyal_extras(stairs), 1)
+    }
+
+    fn loyal_extras(stairs: u8) -> Vec<(CardKind, u8)> {
+        if stairs == 0 {
             vec![(CardKind::Door, 4)]
         } else {
             vec![(CardKind::Door, 4), (CardKind::Station, 4)]
-        };
-        Self::composed(seed, levels, shapes, stairs, &extra)
+        }
     }
 
     /// The Rogue's deck (design section 7): two of each of `shapes` in each district, the
@@ -213,24 +257,24 @@ impl Deck {
                 (CardKind::Sensor, ROGUE_SENSORS),
                 (CardKind::Surge, ROGUE_SURGES),
             ],
+            usize::MAX,
         )
     }
 
     /// Two of each of `shapes` and `stairs` stairs in each district, and `extra` cards of
-    /// no district, shuffled and dealt.
+    /// no district, shuffled and dealt from the first `reach` districts.
     fn composed(
         seed: u64,
         levels: u8,
         shapes: &[TileShape],
         stairs: u8,
         extra: &[(CardKind, u8)],
+        reach: usize,
     ) -> Self {
+        let climb = District::climb(levels);
         let mut cards = Vec::new();
         let mut next_id = 0;
-        for district in [District::Institutional, District::LiminalGrid]
-            .into_iter()
-            .take(usize::from(levels).min(2))
-        {
+        for &district in &climb {
             for &shape in shapes {
                 for _ in 0..2 {
                     cards.push(Card {
@@ -265,6 +309,8 @@ impl Deck {
             draw: cards,
             discard: Vec::new(),
             rng: Prng(seed ^ 0xA8C4_17EC_700D_0001),
+            reach: reach.min(climb.len()),
+            climb,
         };
         deck.shuffle_draw();
         deck.refill();
@@ -369,18 +415,35 @@ impl Deck {
         }
     }
 
+    /// Open every district up to and including `district`'s for refills: the deck's team
+    /// has reached its floor. Never closes one.
+    pub(crate) fn open_through(&mut self, district: District) {
+        if let Some(index) = self.climb.iter().position(|&open| open == district) {
+            self.reach = self.reach.max(index + 1);
+        }
+    }
+
+    /// Whether a refill may deal `card`: no district, or one the deck has opened.
+    fn dealt(&self, card: &Card) -> bool {
+        card.district
+            .is_none_or(|district| self.climb[..self.reach].contains(&district))
+    }
+
+    /// Top the hand up from the end of the draw pile, passing over any card of a district
+    /// not yet open; reshuffle the discard in when the pile holds none to deal.
     pub(crate) fn refill(&mut self) {
         while self.hand.len() < HAND_SIZE {
-            if self.draw.is_empty() {
-                if self.discard.is_empty() {
-                    break;
-                }
-                self.draw.append(&mut self.discard);
-                self.shuffle_draw();
-            }
-            if let Some(card) = self.draw.pop() {
+            let next = self.draw.iter().rposition(|card| self.dealt(card));
+            if let Some(index) = next {
+                let card = self.draw.remove(index);
                 self.hand.push(card);
+                continue;
             }
+            if !self.discard.iter().any(|card| self.dealt(card)) {
+                break;
+            }
+            self.draw.append(&mut self.discard);
+            self.shuffle_draw();
         }
     }
 
@@ -410,6 +473,8 @@ impl Deck {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
 
     /// A first-person deck whose hand is `kinds` (a tile's district given), the rest back
@@ -443,16 +508,16 @@ mod tests {
     /// station a team recharges by.
     #[test]
     fn a_hand_short_of_a_floors_tile_keeps_its_station() {
-        let grid = Some(District::LiminalGrid);
+        let upper = Some(District::for_floor(1, 2));
         let corridor = CardKind::Tile(TileShape::Corridor);
         for (hand, gives_up) in [
             (
                 vec![
                     (CardKind::Station, None),
-                    (corridor, grid),
+                    (corridor, upper),
                     (CardKind::Door, None),
                     (CardKind::Stair, None),
-                    (corridor, grid),
+                    (corridor, upper),
                 ],
                 corridor,
             ),
@@ -479,8 +544,8 @@ mod tests {
         ] {
             let mut deck = deck_holding(&hand);
             let before = deck.hand.clone();
-            assert!(deck.offer_any_tile(District::Institutional));
-            assert!(deck.has_tile_for(District::Institutional));
+            assert!(deck.offer_any_tile(District::GROUND));
+            assert!(deck.has_tile_for(District::GROUND));
             assert_eq!(
                 stations(&deck),
                 before
@@ -495,5 +560,59 @@ mod tests {
             assert_eq!(lost.len(), 1, "{hand:?}");
             assert_eq!(lost[0].kind, gives_up, "{hand:?}");
         }
+    }
+
+    /// One district a floor, from the Backrooms to the sky; floors sharing a register
+    /// share a district.
+    #[test]
+    fn an_eight_floor_climb_has_seven_districts() {
+        let climb = District::climb(8);
+        assert_eq!(climb.len(), 7);
+        assert_eq!(climb[0], District::GROUND);
+        assert_eq!(climb[0].label(), "Backrooms");
+        assert_eq!(climb[6].label(), "Sky");
+        assert_eq!(District::for_floor(4, 8), District::for_floor(5, 8));
+        assert_eq!(District::climb(1), vec![District::GROUND]);
+    }
+
+    /// A team's deck deals the ground floor's tiles and none of a floor its bodies have
+    /// not reached, however often it is dealt; reaching a floor opens it and those below.
+    #[test]
+    fn a_team_deals_only_the_districts_it_has_reached() {
+        let tiles_of = |deck: &Deck| {
+            deck.hand
+                .iter()
+                .filter_map(|card| card.district)
+                .collect::<BTreeSet<_>>()
+        };
+        let mut deck = Deck::for_team(7, 8, &TileShape::AUTHORED, 3);
+        let mut seen = BTreeSet::new();
+        for _ in 0..40 {
+            seen.extend(tiles_of(&deck));
+            let card = deck.hand[0].id;
+            assert!(deck.spend(card));
+            assert_eq!(deck.hand.len(), HAND_SIZE);
+        }
+        assert_eq!(seen, BTreeSet::from([District::GROUND]));
+
+        let third = District::for_floor(2, 8);
+        deck.open_through(third);
+        let mut seen = BTreeSet::new();
+        for _ in 0..80 {
+            seen.extend(tiles_of(&deck));
+            let card = deck.hand[0].id;
+            assert!(deck.spend(card));
+        }
+        assert_eq!(
+            seen,
+            District::climb(8)[..3]
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>()
+        );
+
+        // A Rogue deals every district from the start.
+        let rogue = Deck::rogue(7, 8, &TileShape::AUTHORED);
+        assert_eq!(rogue.reach, 7);
     }
 }

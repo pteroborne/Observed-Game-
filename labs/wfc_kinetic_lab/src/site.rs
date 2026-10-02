@@ -171,7 +171,12 @@ pub fn profile() -> HexCompositionProfile {
     // heavy void share reads as open volume. On nine cells it reads as five
     // cells and a gap. 100 keeps the board mostly built while still voiding
     // enough of it to fall through.
-    profile.space_mix.void = 100.0;
+    //
+    // The solver scales a floor's void share by its district's openness, and a
+    // one-floor facility is the climb's ground floor, the closed Backrooms. So the
+    // share asked for here is the 100 this floor should draw, undone by that scale.
+    let ground = observed_content::ArchitectureRegister::for_floor(0, config().levels);
+    profile.space_mix.void = 100.0 / observed_facility::hex_wfc::profile::openness(ground);
     profile.route_corridors = false;
     profile.label = "wfc_kinetic_lab seven-cell floor".to_string();
     profile

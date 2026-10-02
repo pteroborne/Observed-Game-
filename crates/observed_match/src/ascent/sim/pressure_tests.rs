@@ -251,7 +251,7 @@ fn compatible_card_repairs_pending_collapse_and_rebuilds_removed_tiles() {
         .into_iter()
         .find(|shape| (0..6).any(|r| shape.doors(r) == original.doors))
         .unwrap();
-    sim.deck.offer_tile(shape, District::Institutional);
+    sim.deck.offer_tile(shape, District::GROUND);
     let rotation = (0..6).find(|&r| shape.doors(r) == original.doors).unwrap();
     let repair = sim.selected_command(0, opening, rotation).unwrap();
     sim.submit(repair).unwrap();
@@ -296,27 +296,34 @@ fn empty_floor_closes_permanently_but_prison_survives() {
         !sim.deck
             .hand
             .iter()
-            .any(|card| card.district == Some(District::for_level(target.level)))
+            .any(|card| card.district == Some(sim.district(target.level)))
     );
 }
 
 #[test]
-fn one_lost_upper_floor_does_not_retire_cards_for_the_other_upper_floors() {
+fn one_lost_floor_does_not_retire_cards_for_another_floor_of_its_district() {
     let mut sim = ArchitectLab::for_mode(ArchitectMode::DeepStack).unwrap();
+    // Two floors sharing a district on the climb.
+    let levels = sim.world.config.levels;
+    let (lost, twin) = (0..levels)
+        .flat_map(|a| ((a + 1)..levels).map(move |b| (a, b)))
+        .find(|&(a, b)| sim.district(a) == sim.district(b))
+        .expect("Deep Stack has two floors of one district");
+    let district = sim.district(lost);
     let deck = sim.deck.clone();
-    sim.collapsed_floors.insert(1);
-    sim.retire_closed_district(1);
+    sim.collapsed_floors.insert(lost);
+    sim.retire_closed_district(lost);
     assert_eq!(
-        sim.deck, deck,
-        "four upper floors still use Liminal Grid cards"
+        sim.deck,
+        deck,
+        "floor {twin} still uses {} cards",
+        district.label()
     );
 
-    for level in 2..sim.world.config.levels {
-        sim.collapsed_floors.insert(level);
-    }
-    sim.retire_closed_district(sim.world.config.levels - 1);
+    sim.collapsed_floors.insert(twin);
+    sim.retire_closed_district(twin);
     assert_ne!(sim.deck, deck);
-    assert!(!sim.deck.offer_any_tile(District::LiminalGrid));
+    assert!(!sim.deck.offer_any_tile(district));
 }
 
 #[test]
@@ -342,8 +349,7 @@ fn rejected_commands_are_atomic_and_no_op_cards_are_refused() {
         .unwrap();
     sim.world.placements.get_mut(&target).unwrap().space = HexSpace::Hall;
     sim.world.placements.get_mut(&target).unwrap().doors = TileShape::Corridor.doors(0);
-    sim.deck
-        .offer_tile(TileShape::Corridor, District::Institutional);
+    sim.deck.offer_tile(TileShape::Corridor, District::GROUND);
     assert_eq!(
         sim.refusal(sim.selected_command(0, target, 0).unwrap()),
         Some(CommandRefusal::NoChange)
@@ -357,7 +363,7 @@ fn pocket_needs_a_card_and_the_bot_completes_the_same_loop() {
         idle.deck
             .hand
             .iter()
-            .all(|card| card.district != Some(District::LiminalGrid))
+            .all(|card| card.district.is_none_or(|d| d == District::GROUND))
     );
     for _ in 0..90 {
         idle.step_beat();

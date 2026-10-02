@@ -1,6 +1,11 @@
-//! The sky outside the facility: a dome darkest straight down, a large moon and a
-//! field of stars above, and a cloud sea in two layers below the lattice. Seen only
-//! where the building opens onto it.
+//! The sky outside the facility: a dome darkest straight down, a sun or a large moon
+//! and a field of stars above, and a cloud sea in two layers below the lattice. Seen
+//! only where the building opens onto it.
+//!
+//! Each floor has its own ([`observed_style::open_air::sky_mood`], by the floor's
+//! district): the Backrooms' dreamcore dusk, Zen's sunset, the Reactor's moonlit night,
+//! golden hour over the sky floor. Climbing crossfades from one floor's sky to the
+//! next's ([`sync_mood`]).
 //!
 //! The colours and the cloud texture are `observed_style::open_air`'s, the same ones
 //! the Architect's cutaway and `labs/vista_lab` draw, so all three views of the same
@@ -13,12 +18,14 @@ use bevy::math::Affine2;
 use bevy::mesh::VertexAttributeValues;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use observed_content::ArchitectureRegister;
 use observed_style::open_air::{
-    CLOUD_TEXTURE_SIZE, MOON_ANGULAR_DIAMETER, MOON_TEXTURE_SIZE, SkyRole, cloud_rgba, halo_rgba,
-    moon_disc, moon_halo, moon_rgba, sky, sky_along, stars, toward_moon,
+    CLOUD_TEXTURE_SIZE, MOON_ANGULAR_DIAMETER, MOON_TEXTURE_SIZE, SkyMood, cloud_rgba, halo_rgba,
+    moon_rgba, sky_mood, stars, sun_rgba,
 };
 
 use crate::GameState;
+use crate::hex_wfc::sim::HexWfcRuntime;
 use crate::view::components::GameCam;
 
 /// The dome's radius: inside the play camera's far plane, outside everything else.
@@ -30,39 +37,83 @@ const LAYERS: [(f32, f32, f32, Vec2); 2] = [
     (-60.0, 0.8, 9.0, Vec2::new(-0.0011, 0.0016)),
 ];
 
+/// How long one floor's sky takes to become the next's, seconds.
+const SKY_FADE_SECONDS: f32 = 2.0;
+/// Where the disc and its glow hang inside the unit dome. Far enough in that even the
+/// glow's corners never reach it: a quad that pokes through the dome is clipped along
+/// the dome's facets.
+const DISC_AT: f32 = 0.72;
+const GLOW_AT: f32 = 0.7;
+
 #[derive(Component)]
 pub(in crate::hex_wfc) struct SkyDome;
 
-/// The moon's light: the one directional light in the facility.
+/// The sky's light: the one directional light in the facility, from the floor's sun or
+/// moon.
 #[derive(Component)]
 pub(in crate::hex_wfc) struct HexMoon;
 
-/// Moonlight, lux. Chosen from vista stills bracketed at 1,500, 6,000 and 10,000: at
-/// 1,500 the district keys drown it entirely; from 6,000 a loggia floor takes a cool
-/// patch with the railing's shadow across it and the overhangs rake into light, and
-/// the lit signals still own the frame.
-const MOONLIGHT_LUX: f32 = 8_000.0;
+/// One of the things hanging in the sky whose look follows the floor's mood.
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::hex_wfc) enum SkyBody {
+    Moon,
+    Sun,
+    Glow,
+    Stars,
+}
+
+/// The sky now, and the crossfade toward the floor the eye is on.
+#[derive(Resource, Clone, Debug)]
+pub(in crate::hex_wfc) struct HexSky {
+    pub(in crate::hex_wfc) now: SkyMood,
+    from: SkyMood,
+    to: SkyMood,
+    progress: f32,
+}
+
+impl HexSky {
+    fn settled(mood: SkyMood) -> Self {
+        Self {
+            now: mood,
+            from: mood,
+            to: mood,
+            progress: 1.0,
+        }
+    }
+}
+
+/// The sky over the floor of `cell` in `world`: its district's, by the climb.
+pub(in crate::hex_wfc) fn mood_at(
+    world: &observed_facility::hex_wfc::HexWfcWorld,
+    cell: observed_facility::hex_wfc::HexCoord,
+) -> SkyMood {
+    sky_mood(ArchitectureRegister::for_floor(
+        cell.level,
+        world.config.levels,
+    ))
+}
 
 /// `OBSERVED2_HEX_MOONLIGHT=off` leaves the moon in the sky and its light out of the
 /// scene: the switch the moonlight's cost is measured against.
 const MOONLIGHT_ENV: &str = "OBSERVED2_HEX_MOONLIGHT";
 
-/// Light from where the moon hangs, shadowed, so that walls and ceilings keep it out:
+/// Light from where the floor's sun or moon hangs, shadowed, so that walls and ceilings
+/// keep it out:
 /// it reaches a loggia's floor and a walkway, and nothing sealed (the vista capture's
 /// `sealed_room` still is the same with it and without it). Cascades cover the
 /// resident cells and stop there, because the far skin carries the moon's light baked
 /// in and casts nothing.
 ///
 /// Measured on the Phase 101 arc gate, uncapped: +140 us median frame, +95 us p95.
-pub(super) fn spawn_moonlight(commands: &mut Commands) {
+pub(super) fn spawn_moonlight(commands: &mut Commands, mood: &SkyMood) {
     if std::env::var(MOONLIGHT_ENV).is_ok_and(|value| value.eq_ignore_ascii_case("off")) {
         return;
     }
     commands.spawn((
         HexMoon,
         DirectionalLight {
-            color: observed_style::open_air::moon(),
-            illuminance: MOONLIGHT_LUX,
+            color: mood.light,
+            illuminance: mood.lux,
             shadow_maps_enabled: true,
             ..default()
         },
@@ -74,8 +125,7 @@ pub(super) fn spawn_moonlight(commands: &mut Commands) {
             overlap_proportion: 0.2,
         }
         .build(),
-        Transform::from_translation(Vec3::from_array(toward_moon()))
-            .looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_translation(Vec3::from_array(mood.toward)).looking_at(Vec3::ZERO, Vec3::Y),
         DespawnOnExit(GameState::HexWfc),
         Name::new("Moonlight"),
     ));
@@ -86,29 +136,37 @@ pub(in crate::hex_wfc) struct CloudLayer {
     material: Handle<StandardMaterial>,
     tiles: f32,
     drift: Vec2,
+    opacity: f32,
 }
 
-/// Spawn the dome and the cloud sea, centred on the facility.
-pub(super) fn spawn(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
-    images: &mut Assets<Image>,
-    center: Vec3,
-) {
-    let mut dome = Sphere::new(1.0).mesh().uv(64, 32);
+/// Colour the dome's vertices for `mood`, darkest straight down.
+fn paint_dome(dome: &mut Mesh, mood: &SkyMood) {
     if let Some(VertexAttributeValues::Float32x3(positions)) =
         dome.attribute(Mesh::ATTRIBUTE_POSITION)
     {
         let colors: Vec<[f32; 4]> = positions
             .iter()
             .map(|p| {
-                let c = sky_along(p[1]);
+                let c = mood.along(p[1]);
                 [c.red, c.green, c.blue, 1.0]
             })
             .collect();
         dome.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
     }
+}
+
+/// Spawn the dome and the cloud sea, centred on the facility, under `mood`.
+pub(super) fn spawn(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    images: &mut Assets<Image>,
+    center: Vec3,
+    mood: SkyMood,
+) {
+    commands.insert_resource(HexSky::settled(mood));
+    let mut dome = Sphere::new(1.0).mesh().uv(64, 32);
+    paint_dome(&mut dome, &mood);
     let dome = commands
         .spawn((
             SkyDome,
@@ -128,14 +186,14 @@ pub(super) fn spawn(
         ))
         .id();
     // Children of the dome, in its unit-sphere frame: at infinity, and with the eye.
-    for body in heavens(meshes, materials, images) {
-        commands.spawn((body, ChildOf(dome)));
+    for (body, kind) in heavens(meshes, materials, images, &mood) {
+        commands.spawn((body, kind, ChildOf(dome)));
     }
 
     let texture = images.add(cloud_image());
     for (depth, opacity, tiles, drift) in LAYERS {
         let material = materials.add(StandardMaterial {
-            base_color: sky(SkyRole::Cloud).with_alpha(opacity),
+            base_color: mood.cloud.with_alpha(opacity),
             base_color_texture: Some(texture.clone()),
             uv_transform: Affine2::from_scale(Vec2::splat(tiles)),
             alpha_mode: AlphaMode::Blend,
@@ -148,6 +206,7 @@ pub(super) fn spawn(
                 material: material.clone(),
                 tiles,
                 drift,
+                opacity,
             },
             Mesh3d(meshes.add(Plane3d::default().mesh().size(4_000.0, 4_000.0))),
             MeshMaterial3d(material),
@@ -160,62 +219,117 @@ pub(super) fn spawn(
     }
 }
 
-/// What hangs in the sky: the moon, its halo and the stars, each placed in the dome's
-/// unit-sphere frame just inside it, so the dome's scale puts them at the horizon's
-/// distance and the dome's position keeps them with the eye.
+/// What hangs in the sky: the moon, a sun, the glow round whichever shows, and the
+/// stars, each placed in the dome's unit-sphere frame just inside it, so the dome's
+/// scale puts them at the horizon's distance and the dome's position keeps them with
+/// the eye. Both discs are always there; the mood says which one shows.
 fn heavens(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     images: &mut Assets<Image>,
-) -> Vec<impl Bundle> {
-    let toward = Vec3::from_array(toward_moon());
-    let facing = |at: Vec3| Transform::from_translation(at).looking_at(Vec3::ZERO, Vec3::Y);
-    // Far enough inside the unit dome that even the halo's corners never reach it:
-    // a quad that pokes through the dome is clipped along the dome's facets.
-    let (moon_at, halo_at) = (0.72, 0.7);
-    let moon_width = moon_at * MOON_ANGULAR_DIAMETER;
-    let halo_width = halo_at * MOON_ANGULAR_DIAMETER * 2.4;
-    let sky_body =
-        |texture: Option<Handle<Image>>, color: LinearRgba, alpha: AlphaMode| StandardMaterial {
-            base_color: Color::LinearRgba(color),
-            base_color_texture: texture,
-            alpha_mode: alpha,
-            unlit: true,
-            fog_enabled: false,
-            cull_mode: None,
-            ..default()
-        };
+    mood: &SkyMood,
+) -> Vec<(impl Bundle, SkyBody)> {
+    let disc_width = DISC_AT * MOON_ANGULAR_DIAMETER;
+    let glow_width = GLOW_AT * MOON_ANGULAR_DIAMETER * 2.4;
+    let sky_body = |texture: Option<Handle<Image>>, alpha: AlphaMode| StandardMaterial {
+        base_color_texture: texture,
+        alpha_mode: alpha,
+        unlit: true,
+        fog_enabled: false,
+        cull_mode: None,
+        ..default()
+    };
+    let mut material = |kind: SkyBody, base: StandardMaterial| {
+        let mut base = base;
+        base.base_color = body_color(kind, mood);
+        materials.add(base)
+    };
+    let glow = material(
+        SkyBody::Glow,
+        sky_body(
+            Some(images.add(square_image(halo_rgba(), MOON_TEXTURE_SIZE))),
+            AlphaMode::Add,
+        ),
+    );
+    let moon = material(
+        SkyBody::Moon,
+        sky_body(
+            Some(images.add(square_image(moon_rgba(), MOON_TEXTURE_SIZE))),
+            AlphaMode::Blend,
+        ),
+    );
+    let sun = material(
+        SkyBody::Sun,
+        sky_body(
+            Some(images.add(square_image(sun_rgba(), MOON_TEXTURE_SIZE))),
+            AlphaMode::Add,
+        ),
+    );
+    let stars = material(SkyBody::Stars, sky_body(None, AlphaMode::Add));
     vec![
         (
-            Mesh3d(meshes.add(Rectangle::new(halo_width, halo_width))),
-            MeshMaterial3d(materials.add(sky_body(
-                Some(images.add(square_image(halo_rgba(), MOON_TEXTURE_SIZE))),
-                moon_halo(),
-                AlphaMode::Add,
-            ))),
-            facing(toward * halo_at),
-            NotShadowCaster,
-            Name::new("Moon halo"),
+            (
+                Mesh3d(meshes.add(Rectangle::new(glow_width, glow_width))),
+                MeshMaterial3d(glow),
+                body_pose(SkyBody::Glow, mood),
+                NotShadowCaster,
+                Name::new("Sky glow"),
+            ),
+            SkyBody::Glow,
         ),
         (
-            Mesh3d(meshes.add(Rectangle::new(moon_width, moon_width))),
-            MeshMaterial3d(materials.add(sky_body(
-                Some(images.add(square_image(moon_rgba(), MOON_TEXTURE_SIZE))),
-                moon_disc(),
-                AlphaMode::Blend,
-            ))),
-            facing(toward * moon_at),
-            NotShadowCaster,
-            Name::new("Moon"),
+            (
+                Mesh3d(meshes.add(Rectangle::new(disc_width, disc_width))),
+                MeshMaterial3d(moon),
+                body_pose(SkyBody::Moon, mood),
+                NotShadowCaster,
+                Name::new("Moon"),
+            ),
+            SkyBody::Moon,
         ),
         (
-            Mesh3d(meshes.add(star_field())),
-            MeshMaterial3d(materials.add(sky_body(None, LinearRgba::WHITE, AlphaMode::Add))),
-            Transform::IDENTITY,
-            NotShadowCaster,
-            Name::new("Stars"),
+            (
+                Mesh3d(meshes.add(Rectangle::new(disc_width, disc_width))),
+                MeshMaterial3d(sun),
+                body_pose(SkyBody::Sun, mood),
+                NotShadowCaster,
+                Name::new("Sun"),
+            ),
+            SkyBody::Sun,
+        ),
+        (
+            (
+                Mesh3d(meshes.add(star_field())),
+                MeshMaterial3d(stars),
+                Transform::IDENTITY,
+                NotShadowCaster,
+                Name::new("Stars"),
+            ),
+            SkyBody::Stars,
         ),
     ]
+}
+
+/// How one of the sky's bodies is coloured under `mood`. The moon fades by its alpha,
+/// the additive sun, glow and stars by their colour.
+fn body_color(kind: SkyBody, mood: &SkyMood) -> Color {
+    match kind {
+        SkyBody::Moon => Color::LinearRgba(mood.disc.with_alpha(mood.moon)),
+        SkyBody::Sun => Color::LinearRgba(mood.disc * (1.0 - mood.moon)),
+        SkyBody::Glow => Color::LinearRgba(mood.glow),
+        SkyBody::Stars => Color::LinearRgba(LinearRgba::WHITE * mood.stars),
+    }
+}
+
+/// Where one of the sky's bodies hangs under `mood`, facing the eye.
+fn body_pose(kind: SkyBody, mood: &SkyMood) -> Transform {
+    let toward = Vec3::from_array(mood.toward);
+    let at = match kind {
+        SkyBody::Moon | SkyBody::Sun => DISC_AT,
+        SkyBody::Glow => GLOW_AT,
+        SkyBody::Stars => return Transform::IDENTITY,
+    };
+    Transform::from_translation(toward * at).looking_at(Vec3::ZERO, Vec3::Y)
 }
 
 /// Every star as a tiny quad facing the eye, brightness in its vertex colour.
@@ -297,6 +411,82 @@ pub(in crate::hex_wfc) fn follow_camera(
     dome.translation = eye.translation;
 }
 
+/// Settle the sky at once on the floor the eye is on, rather than crossfading: for a
+/// capture that places the runner on another floor and takes a still, where a fade
+/// would be caught half done. Consumed by [`sync_mood`].
+#[derive(Resource)]
+pub(in crate::hex_wfc) struct SettleSky;
+
+/// The sky's directional light, apart from the bodies hanging in the sky.
+type SkyLight<'w, 's> = Query<
+    'w,
+    's,
+    (&'static mut DirectionalLight, &'static mut Transform),
+    (With<HexMoon>, Without<SkyBody>),
+>;
+
+/// Crossfade the sky toward the floor the eye is on: the dome, the clouds, the sun or
+/// moon and the stars, and the light they give. Nothing is touched once it has settled.
+#[allow(clippy::too_many_arguments)]
+pub(in crate::hex_wfc) fn sync_mood(
+    mut commands: Commands,
+    settle: Option<Res<SettleSky>>,
+    time: Res<Time>,
+    runtime: Res<HexWfcRuntime>,
+    sky: Option<ResMut<HexSky>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    dome: Query<&Mesh3d, With<SkyDome>>,
+    mut bodies: Query<(&SkyBody, &MeshMaterial3d<StandardMaterial>, &mut Transform)>,
+    clouds: Query<&CloudLayer>,
+    mut light: SkyLight,
+) {
+    let Some(mut sky) = sky else {
+        return;
+    };
+    let target = mood_at(&runtime.match_state.facility, runtime.viewed().cell);
+    if target != sky.to {
+        sky.from = sky.now;
+        sky.to = target;
+        sky.progress = 0.0;
+    }
+    if settle.is_some() {
+        commands.remove_resource::<SettleSky>();
+        sky.from = target;
+        sky.progress = 0.0;
+    }
+    if sky.progress >= 1.0 {
+        return;
+    }
+    sky.progress = (sky.progress + time.delta_secs() / SKY_FADE_SECONDS).min(1.0);
+    let t = sky.progress * sky.progress * (3.0 - 2.0 * sky.progress);
+    let mood = sky.from.toward_mood(&sky.to, t);
+    sky.now = mood;
+
+    if let Ok(handle) = dome.single()
+        && let Some(mut mesh) = meshes.get_mut(&handle.0)
+    {
+        paint_dome(&mut mesh, &mood);
+    }
+    for (&kind, material, mut transform) in &mut bodies {
+        if let Some(mut material) = materials.get_mut(&material.0) {
+            material.base_color = body_color(kind, &mood);
+        }
+        *transform = body_pose(kind, &mood);
+    }
+    for layer in &clouds {
+        if let Some(mut material) = materials.get_mut(&layer.material) {
+            material.base_color = mood.cloud.with_alpha(layer.opacity);
+        }
+    }
+    if let Ok((mut light, mut transform)) = light.single_mut() {
+        light.color = mood.light;
+        light.illuminance = mood.lux;
+        *transform = Transform::from_translation(Vec3::from_array(mood.toward))
+            .looking_at(Vec3::ZERO, Vec3::Y);
+    }
+}
+
 pub(in crate::hex_wfc) fn drift_clouds(
     time: Res<Time>,
     layers: Query<&CloudLayer>,
@@ -327,7 +517,8 @@ mod tests {
     fn the_moonlight_shines_from_the_moon_and_casts_shadows() {
         let mut world = World::new();
         let mut queue = CommandQueue::default();
-        spawn_moonlight(&mut Commands::new(&mut queue, &world));
+        let night = observed_style::open_air::night();
+        spawn_moonlight(&mut Commands::new(&mut queue, &world), &night);
         queue.apply(&mut world);
         let mut lights = world.query::<(&DirectionalLight, &Transform)>();
         let (light, transform) = lights.single(&world).expect("one moonlight");
@@ -336,10 +527,36 @@ mod tests {
             "unshadowed, it lights every room"
         );
         let travels = transform.forward().as_vec3();
-        let from_moon = -Vec3::from_array(toward_moon());
+        let from_moon = -Vec3::from_array(night.toward);
         assert!(
             travels.dot(from_moon) > 0.999_9,
             "light travels {travels}, but the moon shines along {from_moon}"
+        );
+    }
+
+    /// Under a sun the moon is gone and the sun shows; under the night, the reverse. The
+    /// stars show only where the mood has them.
+    #[test]
+    fn a_floor_shows_its_own_sun_or_moon() {
+        use observed_content::ArchitectureRegister as R;
+        let zen = sky_mood(R::ShadowScreen);
+        let night = observed_style::open_air::night();
+        let alpha = |kind, mood: &SkyMood| body_color(kind, mood).to_linear().alpha;
+        let lit =
+            |kind, mood: &SkyMood| observed_style::luminance(body_color(kind, mood).to_linear());
+        assert_eq!(alpha(SkyBody::Moon, &zen), 0.0);
+        assert!(lit(SkyBody::Sun, &zen) > 1.0);
+        assert_eq!(lit(SkyBody::Stars, &zen), 0.0);
+        assert_eq!(alpha(SkyBody::Moon, &night), 1.0);
+        assert_eq!(lit(SkyBody::Sun, &night), 0.0);
+        assert!(lit(SkyBody::Stars, &night) > 0.9);
+        // The disc hangs where the light comes from.
+        let pose = body_pose(SkyBody::Sun, &zen);
+        assert!(
+            pose.translation
+                .normalize()
+                .dot(Vec3::from_array(zen.toward))
+                > 0.999
         );
     }
 }

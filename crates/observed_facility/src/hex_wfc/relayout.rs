@@ -21,15 +21,6 @@ use super::{HexArchetype, HexPlacement, HexSpace, HexWfcConfig, HexWfcError, Hex
 
 pub const DEFAULT_MUTATION_TARGET_CELLS: usize = 32;
 pub const DEFAULT_MUTATION_MAX_CELLS: usize = 64;
-/// One district site per register per level. Ten registers means ten districts
-/// on every floor, which both guarantees every authored register is exercised
-/// and keeps a district big enough to be a place: a production floor is 560
-/// cells, so a district averages about fifty-six.
-const DISTRICTS_PER_LEVEL: usize = ArchitectureRegister::ALL.len();
-/// How far a district's anchor may wander per level, in cells. Small on purpose:
-/// a district should lean as you climb, so a floor is not a carbon copy of the
-/// one below, while staying recognisably the same neighbourhood.
-const DISTRICT_LEVEL_DRIFT: i32 = 3;
 
 /// The anchor of one district on one level. A cell belongs to the nearest site
 /// on its own level, which makes districts contiguous by construction.
@@ -48,43 +39,23 @@ pub struct DistrictSite {
 /// last touched.
 #[must_use]
 pub fn district_sites(seed: u64, config: HexWfcConfig) -> Vec<DistrictSite> {
-    let mut sites = Vec::with_capacity(usize::from(config.levels) * DISTRICTS_PER_LEVEL);
+    // One district a floor, the climb's (`ArchitectureRegister::for_floor`): a floor is
+    // one place, and the ascent passes from one to the next. The seed no longer places
+    // districts; it is kept so a later layout may lean them again.
+    let _ = seed;
     if config.cols == 0 || config.rows == 0 {
-        return sites;
+        return Vec::new();
     }
-    for level in 0..config.levels {
-        for (index, register) in ArchitectureRegister::ALL.into_iter().enumerate() {
-            // The base anchor is level-independent, so a district occupies
-            // roughly the same ground on every floor and can be navigated
-            // toward vertically as well as laterally.
-            let mut base = SplitMix::new(
-                seed ^ 0xD157_2C70_0000_0000 ^ (index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
-            );
-            let base_q = (base.next_u64() % u64::from(config.cols)) as i32;
-            let base_r = (base.next_u64() % u64::from(config.rows)) as i32;
-
-            let mut drift = SplitMix::new(
-                seed ^ 0x0DD1_F700_0000_0000
-                    ^ (index as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9)
-                    ^ u64::from(level).wrapping_mul(0x94D0_49BB_1331_11EB),
-            );
-            let span = DISTRICT_LEVEL_DRIFT * 2 + 1;
-            let dq = (drift.next_u64() % span as u64) as i32 - DISTRICT_LEVEL_DRIFT;
-            let dr = (drift.next_u64() % span as u64) as i32 - DISTRICT_LEVEL_DRIFT;
-
-            let q = (base_q + dq).clamp(0, i32::from(config.cols) - 1);
-            let r = (base_r + dr).clamp(0, i32::from(config.rows) - 1);
-            sites.push(DistrictSite {
-                register,
-                anchor: HexCoord {
-                    q: q as u16,
-                    r: r as u16,
-                    level,
-                },
-            });
-        }
-    }
-    sites
+    (0..config.levels)
+        .map(|level| DistrictSite {
+            register: ArchitectureRegister::for_floor(level, config.levels),
+            anchor: HexCoord {
+                q: config.cols / 2,
+                r: config.rows / 2,
+                level,
+            },
+        })
+        .collect()
 }
 
 /// Stable identity of one named room threshold.

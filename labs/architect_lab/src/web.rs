@@ -267,7 +267,7 @@ impl RogueGame {
             "doors": doors, "events": events, "routes": pursuit_routes(sim),
             "collapsed_floors": sim.collapsed_floors,
             "floor_districts": (0..sim.world.config.levels)
-                .map(|level| crate::sim::District::for_level(level).label())
+                .map(|level| sim.district(level).label())
                 .collect::<Vec<_>>(),
         }).to_string()
     }

@@ -364,14 +364,18 @@ fn cell_entity_count_falls_with_merged_hull_meshes() {
         })
         .count();
 
-    // The cell's 28 raw collider hull pieces were merged into exactly 9 mesh entities,
-    // one per surface group, dropping structural hull entities by two thirds. It was a 24-piece cell until open edges: that cell
+    // The cell's raw collider hull pieces were merged into exactly 9 mesh entities,
+    // one per surface group. It was a 24-piece cell until open edges: that cell
     // now opens onto the outside, carries lips and railings, and is no longer a
     // measurement of one tile's own hulls, so the walled cell measured here is the
     // next one along.
-    assert_eq!(raw_piece_count, 28);
-    assert_eq!(structural_hull_mesh_count, 9);
-    assert_eq!(child_pieces, 13);
+    //
+    // One district per floor moved the first walled cell to a smaller tile, 19 pieces
+    // where it was 28 (still 9 meshes); per-floor openness moved it again, to a
+    // 15-piece cell whose hulls merge into 8.
+    assert_eq!(raw_piece_count, 15);
+    assert_eq!(structural_hull_mesh_count, 8);
+    assert_eq!(child_pieces, 15);
     assert!(
         structural_hull_mesh_count < raw_piece_count,
         "structural hull meshes ({structural_hull_mesh_count}) must be strictly less than raw pieces ({raw_piece_count})"

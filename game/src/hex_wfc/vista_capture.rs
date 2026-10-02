@@ -122,6 +122,45 @@ pub(super) fn equipment_poses(world: &HexWfcWorld) -> Vec<VistaPose> {
     out
 }
 
+/// `OBSERVED2_CAPTURE_HEX_WFC_CLIMB`: one still a floor, from the ground to the top, each
+/// at that floor's open edge with the deepest drop, looking out the way that floor's sun
+/// or moon lies, eyes a little raised: the climb's skies, side by side.
+pub(super) fn climb_poses(world: &HexWfcWorld) -> Vec<VistaPose> {
+    const NAMES: [&str; 8] = [
+        "floor_1", "floor_2", "floor_3", "floor_4", "floor_5", "floor_6", "floor_7", "floor_8",
+    ];
+    let levels = world.config.levels;
+    (0..levels.min(8))
+        .filter_map(|level| {
+            let mood = observed_style::open_air::sky_mood(
+                observed_content::ArchitectureRegister::for_floor(level, levels),
+            );
+            let light = Vec2::new(mood.toward[0], mood.toward[2]).normalize_or_zero();
+            let (at, face, _) = world
+                .placements
+                .keys()
+                .filter(|at| at.level == level)
+                .filter_map(|&at| open_edges(world, at).map(|edges| (at, edges)))
+                .filter(|(_, edges)| edges.span.is_none())
+                .flat_map(|(at, edges)| {
+                    HexFace::LATERAL
+                        .into_iter()
+                        .filter(move |&face| edges.opens(face))
+                        .map(move |face| (at, face))
+                })
+                .map(|(at, face)| (at, face, drop_beyond(world, at, face)))
+                .max_by(|a, b| {
+                    let toward = |face: HexFace| face_dir(face).dot(light);
+                    (a.2.min(3), toward(a.1))
+                        .partial_cmp(&(b.2.min(3), toward(b.1)))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then(b.0.cmp(&a.0))
+                })?;
+            Some(pose(NAMES[usize::from(level)], at, face, 1.4, 0.12))
+        })
+        .collect()
+}
+
 /// `OBSERVED2_CAPTURE_HEX_WFC_GUARDIAN`: the major Guardian in the facility, frozen by
 /// the runner looking at it, in the moonlit loggia and in the windowed room.
 #[must_use]
@@ -451,6 +490,11 @@ pub(super) fn progress(
     // Held every frame of the pose, so nothing walks or falls away from it.
     if within < SETTLE {
         stage(runtime, pose);
+    }
+    if within == 10 {
+        // The runner has arrived on another floor (placed a few frames since, so the view
+        // has followed): show its sky, not a fade toward it.
+        commands.insert_resource(super::view::sky::SettleSky);
     }
     if within < SETTLE
         && let Some(player) = runtime.match_state.players.get_mut(&id)

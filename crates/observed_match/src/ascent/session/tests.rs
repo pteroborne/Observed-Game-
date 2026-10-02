@@ -515,11 +515,12 @@ fn a_body_asks_for_what_its_place_says_it_needs() {
 fn a_hand_with_nothing_for_its_team_s_floor_draws_something_that_is() {
     use crate::ascent::sim::{CardKind, District};
     let mut session = session();
-    let floor = District::for_level(session.sim.observers[&ObserverId(0)].cell.level);
-    let other = match floor {
-        District::Institutional => District::LiminalGrid,
-        District::LiminalGrid => District::Institutional,
-    };
+    let floor = session
+        .sim
+        .district(session.sim.observers[&ObserverId(0)].cell.level);
+    // Any other district's: the fixture is a single floor, so the sky's will do.
+    let other = District::for_floor(7, 8);
+    assert_ne!(other, floor);
     // A dead hand: the other district's tiles and doors only.
     let hand = session.hands.get_mut(&TeamId(0)).expect("a hand");
     for card in &mut hand.deck.hand {
@@ -550,6 +551,8 @@ fn seated_and_joined_rogue_hands_draw_a_tile_for_a_placeable_floor() {
     assert_eq!(session.seats()[&PlayerId(1)].role, Role::Rogue);
     assert!(session.sim.mutable_targets().iter().any(|c| c.level == 0));
 
+    let upper = District::for_floor(7, 8);
+    assert_ne!(upper, District::GROUND);
     // Both Rogue hands have only the other district's tiles and districtless cards.
     // Neither player can repair the one-floor facility with this hand.
     for deck in [
@@ -558,19 +561,19 @@ fn seated_and_joined_rogue_hands_draw_a_tile_for_a_placeable_floor() {
     ] {
         for card in &mut deck.hand {
             if matches!(card.kind, CardKind::Tile(_)) {
-                card.district = Some(District::LiminalGrid);
+                card.district = Some(upper);
             }
         }
-        assert!(!deck.has_tile_for(District::Institutional));
+        assert!(!deck.has_tile_for(District::GROUND));
     }
 
     session.sim.tick = 3 * u64::from(crate::ascent::sim::ACTOR_BEAT_TICKS);
     session.keep_hands_live();
-    assert!(session.sim.deck.has_tile_for(District::Institutional));
+    assert!(session.sim.deck.has_tile_for(District::GROUND));
     assert!(
         session.rogue_hands[&PlayerId(1)]
             .deck
-            .has_tile_for(District::Institutional)
+            .has_tile_for(District::GROUND)
     );
 }
 

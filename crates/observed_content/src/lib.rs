@@ -67,6 +67,42 @@ impl ArchitectureRegister {
         }
     }
 
+    /// The district of floor `level` of a facility `levels` tall: one register a floor,
+    /// climbing [`Self::CLIMB`] from the Backrooms on the ground to the open sky on top. A
+    /// facility of another height keeps both ends and samples the floors between, so a
+    /// four-floor test facility is the Backrooms, two floors of the middle, and the sky.
+    #[must_use]
+    pub const fn for_floor(level: u8, levels: u8) -> Self {
+        let last = Self::CLIMB.len() - 1;
+        if levels <= 1 {
+            return Self::CLIMB[0];
+        }
+        let top = levels as usize - 1;
+        let level = if level as usize > top {
+            top
+        } else {
+            level as usize
+        };
+        // Nearest step of the climb, rounding half up.
+        let index = (level * last * 2 + top) / (top * 2);
+        Self::CLIMB[index]
+    }
+
+    /// The climb, floor by floor, on an eight-floor facility: the Backrooms, the Library
+    /// of Babel, Lumen, Zen, two floors of the Forerunner, the Death Star, and the sky.
+    /// One register a floor, so a floor is one place and the ascent reads as a passage
+    /// through distinct circles.
+    pub const CLIMB: [Self; 8] = [
+        Self::LiminalGrid,
+        Self::InfiniteGallery,
+        Self::OverlitGrid,
+        Self::ShadowScreen,
+        Self::FacetMonument,
+        Self::FacetMonument,
+        Self::Megastructure,
+        Self::Thinning,
+    ];
+
     pub const fn label(self) -> &'static str {
         match self {
             Self::ShadowScreen => "Shadow Screen",
@@ -1123,5 +1159,53 @@ mod tests {
             !json.contains("substep"),
             "the legacy DTO must not silently claim a controller integration value"
         );
+    }
+}
+
+#[cfg(test)]
+mod climb_tests {
+    use super::ArchitectureRegister as R;
+
+    /// The climb on the production facility's eight floors is the table itself.
+    #[test]
+    fn an_eight_floor_facility_climbs_the_whole_table() {
+        let floors: Vec<R> = (0..8).map(|level| R::for_floor(level, 8)).collect();
+        assert_eq!(floors, R::CLIMB.to_vec());
+    }
+
+    /// A facility of another height keeps the Backrooms at the bottom and the sky at the
+    /// top, and samples the floors between in order.
+    #[test]
+    fn any_height_starts_in_the_backrooms_and_ends_in_the_sky() {
+        for levels in 2..=12 {
+            assert_eq!(R::for_floor(0, levels), R::LiminalGrid, "{levels}");
+            assert_eq!(R::for_floor(levels - 1, levels), R::Thinning, "{levels}");
+            let steps: Vec<usize> = (0..levels)
+                .map(|level| {
+                    let register = R::for_floor(level, levels);
+                    R::CLIMB
+                        .iter()
+                        .rposition(|&step| step == register)
+                        .expect("on the climb")
+                })
+                .collect();
+            assert!(
+                steps.windows(2).all(|pair| pair[0] <= pair[1]),
+                "{levels}: {steps:?}"
+            );
+        }
+        assert_eq!(
+            (0..4)
+                .map(|level| R::for_floor(level, 4))
+                .collect::<Vec<_>>(),
+            vec![
+                R::LiminalGrid,
+                R::OverlitGrid,
+                R::FacetMonument,
+                R::Thinning
+            ]
+        );
+        assert_eq!(R::for_floor(0, 1), R::LiminalGrid);
+        assert_eq!(R::for_floor(9, 8), R::Thinning, "past the top is the top");
     }
 }

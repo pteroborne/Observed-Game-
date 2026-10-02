@@ -466,8 +466,12 @@ impl AscentSession {
                 .observers
                 .values()
                 .filter(|o| o.team == *team && o.state == ObserverState::Active)
-                .map(|o| District::for_level(o.cell.level))
+                .map(|o| self.sim.district(o.cell.level))
                 .collect();
+            // Reaching a floor makes its district the team's to be dealt (design section 6).
+            for &district in &districts {
+                hand.deck.open_through(district);
+            }
             if let Some(&district) = districts.first()
                 && !districts.iter().any(|&d| hand.deck.has_tile_for(d))
             {
@@ -493,7 +497,7 @@ impl AscentSession {
             .sim
             .mutable_targets()
             .into_iter()
-            .map(|cell| District::for_level(cell.level))
+            .map(|cell| self.sim.district(cell.level))
             .collect();
         let offer_if_dead = |deck: &mut Deck| {
             if let Some(&district) = rogue_districts.first()

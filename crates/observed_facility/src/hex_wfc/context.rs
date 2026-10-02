@@ -291,8 +291,11 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::RampUp | A::RampHead => 0.8,
             A::Shaft => 0.4,
             A::Room => 1.0,
-            // A winding district is the opposite of an open one.
-            A::Expanse => 0.3,
+            // A winding district is the opposite of an open one, but a whole floor
+            // cannot go without its expanses: suppressed (0.3) across Lumen's floor of
+            // the climb, it took production solves from one attempt to as many as
+            // twenty. Its winding is in the corners, runs and junctions.
+            A::Expanse => 1.0,
             A::Void => 1.0,
         },
         // The vertical districts. Wellshaft is shafts; Megastructure climbs on

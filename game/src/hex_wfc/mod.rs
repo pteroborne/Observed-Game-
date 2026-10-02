@@ -164,6 +164,7 @@ impl Plugin for HexWfcPlugin {
                     (
                         view::sync_camera,
                         view::sky::follow_camera,
+                        view::sky::sync_mood,
                         view::sky::drift_clouds,
                     )
                         .chain(),

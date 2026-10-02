@@ -217,7 +217,7 @@ pub fn rebuild_board(
                 .architecture
                 .get(&cell)
                 .copied()
-                .unwrap_or_else(|| crate::sim::floor_register(cell.level));
+                .unwrap_or_else(|| session.sim.district(cell.level).register());
             let parts = models.room(register, p.doors, &mut meshes, &mut materials);
             for part in parts {
                 spawn_part(&mut commands, part, at, "Authored deck");

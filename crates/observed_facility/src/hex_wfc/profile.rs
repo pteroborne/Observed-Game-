@@ -189,6 +189,28 @@ pub struct SpaceMix {
     pub hall: f64,
 }
 
+/// How open a floor of `register` is drawn: the multiplier on its void share, and so on
+/// how much of it is sky, windows, open edges and walkways with nothing either side.
+///
+/// The climb's gradient. The Backrooms are close and sealed, a window there rare enough
+/// to be uncanny; each floor up opens further, and the sky floor is mostly air - tower
+/// tops and the walkways between them. Against the committed void share of 2,000 (56%
+/// air on the arc lattice), the Backrooms draw about 200 and the sky 6,000. Registers off
+/// the climb draw the profile's share as authored.
+#[must_use]
+pub const fn openness(register: ArchitectureRegister) -> f64 {
+    use ArchitectureRegister as R;
+    match register {
+        R::LiminalGrid => 0.1,
+        R::InfiniteGallery => 0.25,
+        R::OverlitGrid => 0.5,
+        R::ShadowScreen => 0.75,
+        R::FacetMonument | R::Monolith | R::Institutional | R::Wellshaft => 1.0,
+        R::Megastructure => 1.5,
+        R::Thinning => 3.0,
+    }
+}
+
 impl SpaceMix {
     /// The shares the alphabet used to imply on its own, so this is what the
     /// solver did before the space draw existed - near enough to serve as the
@@ -233,6 +255,13 @@ impl SpaceMix {
             room: 84.0,
             hall: 100.0,
         }
+    }
+
+    /// The mix on a floor of `register`: the void share scaled by how open that district
+    /// is drawn ([`openness`]). The climb runs from a sealed ground floor to the open sky.
+    #[must_use]
+    pub fn on_floor(self, register: ArchitectureRegister) -> Self {
+        self.with(HexSpace::Void, self.void * openness(register))
     }
 
     /// The share for one space.

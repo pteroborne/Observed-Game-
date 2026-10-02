@@ -53,6 +53,16 @@ fn the_bot_rogue_plays_only_against_a_detected_observer() {
             break;
         }
         let before = game.rules().command_log.len();
+        // Who it could have seen when it chose: the Rogue decides inside the tick, and its
+        // own play can cut a Guardian's view of its prey before the tick is out.
+        let detected_before: Vec<(crate::ascent::sim::ObserverId, HexCoord)> = {
+            let rules = game.rules();
+            rules
+                .detected_observers()
+                .iter()
+                .map(|id| (*id, rules.observers[id].cell))
+                .collect()
+        };
         let tick = game.rules().tick + 1;
         let frame = HexInputFrame {
             version: HEX_INPUT_VERSION,
@@ -83,7 +93,7 @@ fn the_bot_rogue_plays_only_against_a_detected_observer() {
         {
             rogue_plays += 1;
             // The Rogue decides on the beat, after the bodies have moved: what it saw is
-            // what the rules see now.
+            // what the rules saw as the tick began, or what they see now.
             let rules = game.rules();
             let (_, command) = rules.command_log[before];
             let ArchitectCommand::Play { target, .. } = command else {
@@ -92,7 +102,9 @@ fn the_bot_rogue_plays_only_against_a_detected_observer() {
             let near_prey = rules
                 .detected_observers()
                 .iter()
-                .any(|id| observed_hex::travel_distance(rules.observers[id].cell, target) <= 3);
+                .map(|id| rules.observers[id].cell)
+                .chain(detected_before.iter().map(|&(_, cell)| cell))
+                .any(|cell| observed_hex::travel_distance(cell, target) <= 3);
             assert!(
                 near_prey,
                 "tick {tick}: the Rogue played at {target:?}, near no detected Observer"

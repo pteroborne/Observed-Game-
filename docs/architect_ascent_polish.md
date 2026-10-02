@@ -133,9 +133,9 @@ breaks, because a locally valid contradiction is play (design section 3).
   first-person deck is corridors, turns, junctions and halls (`TileShape::AUTHORED`), and
   every tile play is one the corpus is required to build (`authored_hall`, tested against
   `geometry_demands`). The lab's deck is unchanged.
-- **Districts stay the rules' two.** A card's district is still level 0 Institutional and
-  above LiminalGrid; a rewritten cell keeps its facility's architecture register, which
-  the coverage gate guarantees every tile in.
+- **A card's district is its floor's** ([The climb](#the-climb)); a rewritten cell keeps
+  its facility's architecture register, which the coverage gate guarantees every tile in.
+  (Until 2026-10 the rules knew two: Institutional on the ground floor, Liminal Grid above.)
 
 ### The prison
 
@@ -760,6 +760,54 @@ it; the walk and the interact are the match's own):
 
 Not yet: a sensor seen from across the facility is not on a team's map; the Rogue cannot
 move one, only install another.
+
+### The climb
+
+One district a floor, so the ascent reads as a passage through distinct circles (the
+user's Dante's Inferno brief, 2026-10-01). The table is `ArchitectureRegister::CLIMB`,
+eight floors on the production facility; a facility of another height keeps both ends
+and samples between (`for_floor`):
+
+| floor | place | register | openness | sky |
+| --- | --- | --- | --- | --- |
+| 1 | Backrooms | Liminal Grid | 0.1 | dreamcore dusk, a soft pastel sun |
+| 2 | Library | Infinite Gallery | 0.25 | blue hour, a low amber sun, faint stars |
+| 3 | Lumen | Overlit Grid | 0.5 | overcast, light from overhead |
+| 4 | Zen | Shadow Screen | 0.75 | sunset on the horizon, long shadows |
+| 5-6 | Monument | Facet Monument | 1.0 | clear day, sun high |
+| 7 | Reactor | Megastructure | 1.5 | the facility's moonlit night |
+| 8 | Sky | Thinning | 3.0 | golden hour over the cloud sea |
+
+- **The solve** gives each floor one district (`relayout::district_sites`). A tower
+  column takes its shape from one floor of its column chosen by a seed-stable hash
+  (`HexWfcCatalogue::register_cell`): from the column's base, every tower came out
+  Backrooms. Lumen's district weight on open halls moved from 0.3 to 1.0: across a
+  whole floor it took production solves from one attempt to as many as twenty.
+- **Openness** scales each floor's void share by its district
+  (`profile::openness`), in the full solve and in a relayout's pocket alike. On the arc
+  lattice, six seeds: built share by floor 88, 74, 59, 49, 45, 43, 23 and 9 per cent, in
+  one or two attempts. Only the ground floor is railed, as before.
+- **The rules' districts** are the floors' registers (`District::for_floor`), labelled
+  by place. A loyal team's deck deals only the districts its bodies have reached
+  (`Deck::for_team`, `open_through`; design section 6): across five production seeds a
+  team's hand held 1.4-3.4 tiles for its own floor, against about one with every district
+  dealt. The Rogue's deck deals them all. Floors sharing a register share a district, so
+  losing one Monument floor keeps the other's cards.
+- **Sky and light** are a mood per district (`open_air::sky_mood`), every colour under
+  the atmosphere ceiling and every disc under a signal; the game crossfades over two
+  seconds when the eye changes floor (`view::sky::sync_mood`), dome, clouds, sun or moon,
+  stars and the directional light alike, and the outdoor fog fades to the floor's
+  horizon. `OBSERVED2_CAPTURE_HEX_WFC_CLIMB=<dir>` takes one still per floor.
+- **Measured.** Phase 101 arc gate passes (worst mutation frame 14.9 ms, p95 12.6 ms).
+  Production bot matches (two teams of two, ten minutes, five seeds) all end in a Rogue
+  victory, between 9,245 and 24,138 ticks; on the commit before, seeds 1 and 2 ended near
+  3,000 and seed 3 ran the full ten minutes. Bot bodies still almost never climb off the
+  ground floor (one reached floor 2, once), as on the commit before.
+
+Not yet: tiles per district (the other half, `docs/district_geometry_plan.md`); the
+far-field skin is still baked under the moon; the top floor is still one connected
+facility, not floating islands; and one headless-gate candidate seed stalled
+(`GATE_SEED`'s note).
 
 ### Not yet joined
 

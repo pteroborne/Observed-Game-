@@ -9,7 +9,12 @@ use crate::hex_wfc::HexReleasedKind;
 #[test]
 fn the_rules_see_the_tumbler_where_it_stands_and_never_move_it() {
     let mut game = game_with(7, 1, true);
+    // Until the match ends: a lone body the Tumbler catches is every loyal Observer
+    // jailed, which is the Rogue's win.
     for _ in 0..1_200 {
+        if !running(&game) {
+            break;
+        }
         step(&mut game, Body::Explore, SeatCommand::None);
         let physical = game.physical().guardian.cell;
         let rules = game
@@ -76,6 +81,10 @@ fn a_disturbance_wave_releases_minors_the_rules_follow_and_never_move() {
         );
     }
     for _ in 0..600 {
+        // Until the match ends: the wave may catch the only body, the Rogue's win.
+        if !running(&game) {
+            break;
+        }
         step(&mut game, Body::Explore, SeatCommand::None);
         for (&id, body) in &game.physical().released {
             let rules = &game.rules().guardians[&GuardianId(id)];
@@ -110,4 +119,8 @@ fn a_collapsed_floor_takes_its_minors_out_of_the_facility_and_the_rules() {
         assert!(!game.physical().released.contains_key(&id.0));
         assert!(!game.rules().guardians.contains_key(id));
     }
+}
+
+fn running(game: &AscentMatch) -> bool {
+    game.rules().outcome == crate::ascent::sim::MatchOutcome::Running
 }

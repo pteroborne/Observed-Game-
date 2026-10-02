@@ -15,6 +15,8 @@ use crate::hex_wfc::model::{
 const BODY: PlayerId = PlayerId(0);
 const MINOR: u16 = 1;
 
+/// Seed 11: since the ground floor became the sealed Backrooms, a seed whose spawn still
+/// has a drop near it. Seed 7's has none.
 fn game() -> HexWfcMatch {
     let config = HexMatchConfig {
         teams: 1,
@@ -26,7 +28,7 @@ fn game() -> HexWfcMatch {
         },
     };
     let mut game = HexWfcMatch::new_with_content(
-        7,
+        11,
         config,
         crate::hex_wfc::compatibility_test_content().clone(),
     )
@@ -391,12 +393,16 @@ fn wide_clear_along(game: &HexWfcMatch, direction: Vec3, clear: f32) -> bool {
 #[test]
 fn a_plumb_turns_the_minors_down_and_wears_off() {
     let mut game = game();
+    // Room to fall, and a wall to land on within reach of the body. Down an open
+    // aisle a four-second plumb carries a minor a hundred metres, beyond where it
+    // hunts from - right, and not what this test is about.
     let direction = compass()
         .find(|&direction| {
-            wide_clear_along(&game, direction, 12.0)
-                && (1..=12).all(|metre| floored_at(&game, direction, metre as f32))
+            wide_clear_along(&game, direction, 6.0)
+                && (1..=6).all(|metre| floored_at(&game, direction, metre as f32))
+                && !wide_clear_along(&game, direction, 14.0)
         })
-        .expect("a wide, floored line from the spawn");
+        .expect("a wide, floored line from the spawn that ends in a wall");
     let start = minor_ahead(&mut game, direction, 3.0);
     let yaw = game.bodies[&BODY].yaw;
     let events = plumb(&mut game, AHEAD);
@@ -472,11 +478,18 @@ fn a_minor_plumbed_over_an_open_edge_is_lost() {
             game.stand_body_for_tests(BODY, cell, feet);
             compass().find_map(|direction| {
                 let edge = (1..=12).find(|&metre| !floored_at(&game, direction, metre as f32))?;
-                (edge >= 4 && wide_clear_along(&game, direction, edge as f32 + 3.0))
-                    .then_some((direction, edge))
+                // A drop that clears the facility, not one onto the floor below.
+                let beyond = game.body_position_for_tests(BODY) + direction * (edge as f32 + 1.5);
+                (edge >= 4
+                    && wide_clear_along(&game, direction, edge as f32 + 3.0)
+                    && game
+                        .physics
+                        .ray_distance(beyond, Vec3::NEG_Y, 60.0)
+                        .is_none())
+                .then_some((direction, edge))
             })
         })
-        .expect("a wide, unrailed edge on the first floor");
+        .expect("a wide, unrailed edge on the first floor over open sky");
     minor_ahead(&mut game, direction, edge as f32 - 2.5);
     assert!(plumb(&mut game, AHEAD).contains(&HexMatchEventKind::KineticPlumb));
     let lost = (0..PLUMB_TICKS + 240)

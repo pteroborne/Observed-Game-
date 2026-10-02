@@ -131,14 +131,15 @@ the combined loop.
     **Instability surge (2026-09):** the Rogue deck also deals a card that raises one
     floor's disturbance and hastens a pending exposed retraction there. The bot uses it
     near detected Observers; the board shows floor pressure and the warning countdown.
-    **Deferred until the core features land - one district per floor:** every floor of the
-    climb should be its own district, drawn from the original seven, so the ascent reads as
-    a descent through distinct circles (Dante's Inferno is the reference). Today the rules
-    know two (`ascent::sim::District`: Institutional on the ground floor, Liminal Grid on
-    every floor above), while the floor titles already name five registers
-    (`floor_title`). Doing it touches card districts and deck dealing, the
-    district-matched hand refill, the railing rule (`RAILED_BELOW_LEVEL`), and each
-    floor's register in the facility solve. Confirm which seven with the user first.
+    **One district per floor - the climb (2026-10, systems half):** every floor is one
+    district, from the Backrooms on the ground to open sky on top
+    (`ArchitectureRegister::CLIMB`, chosen with the user: Backrooms, Library, Lumen, Zen,
+    two floors of Monument, Reactor, Sky). The solve gives each floor its register; the
+    rules' card districts are the floors' (`ascent::sim::District`), and a team's deck deals
+    a district once its bodies reach that floor; each floor draws its own openness, from a
+    closed ground floor to a sky floor that is mostly air; and each floor has its own sky
+    and light, crossfading as you climb. Tile authoring per district is the other half.
+    See [the climb](docs/architect_ascent_polish.md#the-climb).
     **Doors stand in the facility (2026-09):** a door card's door is a panel across its
     doorway while closed - it stops bodies, minors, pushes and the Guardians' pursuit - and
     any loyal body opens or closes it with interact unless its floor is dark. Bots open a

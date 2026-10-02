@@ -140,10 +140,12 @@ pub(super) fn setup_view(
         .unwrap_or(&ArchitectureRegister::ALL[0]);
     let current = runtime.local().cell;
     let composition = lighting::composition_at(&runtime.match_state.facility, current);
+    let mood = sky::mood_at(&runtime.match_state.facility, current);
     let palette = lighting::outdoors_if_open(
         &runtime.match_state.facility,
         current,
         observed_style::architecture_for_composition(architecture, composition),
+        &mood,
     );
     if let Ok((camera, mut transform)) = camera.single_mut() {
         camera::prime_camera(&mut transform, runtime.local());
@@ -225,8 +227,9 @@ pub(super) fn setup_view(
         &mut materials,
         &mut images,
         Vec3::new(far[0] * 0.5, 0.0, far[2] * 0.5),
+        mood,
     );
-    sky::spawn_moonlight(&mut commands);
+    sky::spawn_moonlight(&mut commands, &mood);
     let skin = exterior::spawn_all(&mut commands, &mut meshes, &assets, facility);
     commands.insert_resource(skin);
     thresholds::spawn_thresholds(&mut commands, &mut assets, &mut meshes, &runtime);

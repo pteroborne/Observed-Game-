@@ -99,7 +99,7 @@ pub(super) fn sync(
                     "{:02} / {:02}\n{}",
                     desk.floor + 1,
                     rules.world.config.levels,
-                    floor_title(desk.floor).to_ascii_uppercase(),
+                    floor_title(desk.floor, rules.world.config.levels),
                 ),
                 Role::Text,
             ),

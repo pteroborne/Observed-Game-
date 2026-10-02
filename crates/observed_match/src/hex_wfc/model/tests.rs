@@ -605,7 +605,17 @@ fn diagnose_bot() {
 /// `leg::serves_the_crossing` landed, offered eight candidates and **all eight
 /// completed**. Descending was simply not implemented, in two places, and this
 /// gate's own scan is what measured it.
-const GATE_SEED: u64 = 0xfeaf_ad20_d9b6_2c6e;
+///
+/// Re-pinned a sixth time when every floor became one district on the climb, and
+/// the old seed's route lost its ramps (`ramps=0`). This time the scan offered
+/// twelve candidates at five levels; the six probed all completed.
+///
+/// And a seventh, in the same branch, when each floor drew its own openness: the
+/// Backrooms close and the sky open. Four candidates probed; three completed, and one
+/// (0x1d15_2f9e_cb87_de12, `ramps=3 stairs=5`) stalled short of the exit in 40,000
+/// ticks - the first stall the scan has turned up since the descent fixes. This one
+/// was taken for `ramps=4 stairs=4`, the most verticality on offer.
+const GATE_SEED: u64 = 0x6d7e_3af8_7833_54e7;
 const GATE_LEVELS: u8 = 5;
 
 /// Phase 94 success criterion 1 — the headless gate. On a pinned seed whose
@@ -698,7 +708,13 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // descent fixes every candidate the scan offered could be completed and the
     // choice was free. A gate that exercises more verticality is worth more
     // ticks.
-    assert_eq!(a, 13_066, "TR-10 pins the declared-ramp completion tick");
+    //
+    // Ninth (13,066 -> 14,357), new seed again: one district per floor took the
+    // old seed's ramps. A different building, not comparable.
+    //
+    // Tenth (14,357 -> 10,871), and a new seed again: per-floor openness took that
+    // seed's ramps in turn. Not comparable either.
+    assert_eq!(a, 10_871, "TR-10 pins the declared-ramp completion tick");
     // Moved again by twenty open halls and by churn becoming a district
     // property, and again *without* moving the tick above - the same pairing,
     // and the same proof. The bot's route through the gate seed is tick for
@@ -734,9 +750,13 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     //
     // The plumb bumped HEX_INPUT_VERSION to 8, which folds into the snapshot, moving it
     // again (0x5e11_e0e4_8938_4db7 -> 0x0fde_68b8_5aa8_5dda) without moving the tick.
+    //
+    // The new gate seed for one district per floor moved it with the building
+    // (0x0fde_68b8_5aa8_5dda -> 0x9c35_1a54_6fd7_787e), and per-floor openness's again
+    // (-> 0x6868_4c8f_72ff_5fb3).
     assert_eq!(
         first.snapshot().digest,
-        0x0fde_68b8_5aa8_5dda,
+        0x6868_4c8f_72ff_5fb3,
         "TR-10 pins the declared-ramp final snapshot digest"
     );
 }
@@ -853,8 +873,8 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
     assert_eq!(
         cell,
         HexCoord {
-            q: 1,
-            r: 0,
+            q: 10,
+            r: 8,
             level: 0
         }
     );
@@ -882,8 +902,22 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
     // moved anything. A different seed put the bot on a different tower in a
     // different district and it climbed it identically, which is the clearest
     // statement this suite makes that the tower family is one shape.
-    assert_eq!(tile.register, "shadow_screen");
-    assert_eq!(tile.variant, 234);
+    //
+    // One district per floor and its new gate seed moved it all again, and once
+    // more **`traced_ticks` is 973**. The tower is on the third floor now, so the
+    // body ends 16 m higher; its x moved by the tower's offset and nothing else
+    // in the body differs past the fourth significant figure.
+    //
+    // **And then it moved: 997.** Each floor drawing its own openness, and the gate seed
+    // that came with it, put the bot on a ground-floor tower in the closed Backrooms, and
+    // it spends 24 more ticks touching it. The climb still completes and ends on the
+    // same tread - the body's height is the old ground-floor tower's to four figures
+    // (9.40996 against 9.40971), and its velocity and yaw agree as closely - so the
+    // helix is the same; where the
+    // extra 0.4 s goes (the approach, a wall the closed floor stands beside the tower,
+    // or the climb) is not yet known. Recorded rather than explained away.
+    assert_eq!(tile.register, "facet_monument");
+    assert_eq!(tile.variant, 180);
     // TR-11 moved this trace on purpose, and it is the only pin in that packet
     // permitted to move: the tower is now climbed by a graph leg instead of by
     // the compatibility follower beside it.
@@ -899,9 +933,9 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
     // Bevy 0.19 changed the intermediate floating-point trace while preserving
     // the pinned completion tick, traced-tick count, and terminal body bits.
     //
-    assert_eq!(completion, Some(1_075));
-    assert_eq!(traced_ticks, 973);
-    assert_eq!(trace, 0x69d7_d1c4_0681_1ff8);
+    assert_eq!(completion, Some(6_406));
+    assert_eq!(traced_ticks, 997);
+    assert_eq!(trace, 0xfa6d_7fe1_3cc3_9db7);
     assert_eq!(
         [
             body.position.x.to_bits(),
@@ -913,13 +947,13 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
             body.yaw.to_bits(),
         ],
         [
-            1_096_826_245,
-            1_091_997_307,
-            1_079_991_628,
-            3_173_502_237,
+            1_128_530_392,
+            1_091_997_486,
+            1_120_337_084,
+            3_164_595_368,
             0,
-            3_217_949_542,
-            1_086_865_250,
+            3_217_952_922,
+            1_086_893_194,
         ]
     );
 }
@@ -1972,7 +2006,9 @@ fn clearing_a_cell_beside_a_room_opens_a_window_and_building_it_closes_one() {
 
 #[test]
 fn interaction_read_matches_keystone_range_and_completion() {
-    let mut game = showcase_match(44, 2, 2);
+    // A seed that stamps a Keystone: the room count is drawn, and seed 44's
+    // facility drew four rooms once every floor became one district.
+    let mut game = showcase_match(3, 2, 2);
     let id = PlayerId(0);
     let socket = game
         .geometry
