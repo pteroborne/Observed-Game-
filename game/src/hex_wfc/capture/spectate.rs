@@ -1,15 +1,20 @@
-//! The spectator overview as video: an Ascent match from the Observer seat, every
-//! body a bot, watched through the isometric cutaway (`view::spectate`).
+//! A spectated Ascent match as video: the Observer seat, every body a bot, watched
+//! one of two ways ([`Watch`]).
 //!
-//! The overview follows one body, and a body chosen at random spends most of a match
-//! on the floor it started on. So this capture directs: whenever another body stands
-//! on a higher storey than the one being followed, the view cuts to it - the same
-//! cut the spectator's own focus key makes - and the video is the climb, floor by
-//! floor and district by district, as far as any body gets.
+//! **The overview** (`view::spectate`) follows one body, and a body chosen at random
+//! spends most of a match on the floor it started on. So it directs: whenever
+//! another body stands on a higher storey than the one being followed, the view
+//! cuts to it - the same cut the spectator's own focus key makes - and the video is
+//! the climb, floor by floor and district by district, as far as any body gets.
 //!
-//! A time-lapse, because a climb takes minutes: every rendered frame advances
-//! [`FRAME_SECONDS`] of game time, and is one 30 fps video frame, saved as
-//! `frames/frame_NNNNN.png`. Encode with:
+//! **Through the eyes** is the opposite choice. A cut in first person throws the
+//! viewer into another body mid-stride, and cutting at every new storey would cut
+//! exactly as the climb it was waiting for finished. So the eyes stay with one
+//! body, its climbs and its catch, and change only when that body leaves the
+//! facility.
+//!
+//! Every rendered frame advances a fixed slice of game time ([`Watch::frame_seconds`])
+//! and is one 30 fps video frame, saved as `frames/frame_NNNNN.png`. Encode with:
 //!
 //! ```text
 //! ffmpeg -framerate 30 -i <dir>/frames/frame_%05d.png -c:v libx264 -pix_fmt yuv420p \
@@ -21,16 +26,39 @@ use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
 use super::{HexWfcCapture, sim};
 
-/// Game time per video frame: 6x real time at 30 fps. Bevy clamps a frame's virtual
-/// time at 250 ms, so 8x would quietly play at 7.5x.
-pub(in crate::hex_wfc) const FRAME_SECONDS: f32 = 6.0 / 30.0;
+/// How the match is watched.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::hex_wfc) enum Watch {
+    /// The isometric cutaway, following the highest body.
+    Overview,
+    /// First person, through one body's eyes until it is caught.
+    Eyes,
+}
 
-/// Frames to let the facility load and the overview settle before recording.
+impl Watch {
+    /// Game time per video frame. The overview is a 6x time-lapse, since a climb
+    /// takes minutes; Bevy clamps a frame's virtual time at 250 ms, so 8x would
+    /// quietly play at 7.5x. First person is 2x: faster is unwatchable from inside
+    /// a head, and a whole match in real time is more frames than the scratch disk.
+    pub(in crate::hex_wfc) fn frame_seconds(self) -> f32 {
+        match self {
+            Self::Overview => 6.0 / 30.0,
+            Self::Eyes => 2.0 / 30.0,
+        }
+    }
+
+    /// The most video frames recorded. A match usually ends sooner, and the
+    /// recording with it: about 25 s of overview, 75 s of eyes.
+    fn frames(self) -> u16 {
+        match self {
+            Self::Overview => 1_800,
+            Self::Eyes => 3_600,
+        }
+    }
+}
+
+/// Frames to let the facility load and the view settle before recording.
 const WARMUP: u16 = 30;
-
-/// The most video frames recorded: one minute of video, six of match. A match
-/// usually ends sooner, and the recording with it.
-const FRAMES: u16 = 1_800;
 
 /// Frames the clock may stand still before the match is taken to be over: a beat
 /// held on the last picture, and out before the results screen takes the window.
@@ -44,6 +72,7 @@ pub(super) struct Clock {
 }
 
 pub(super) fn advance(
+    watch: Watch,
     request: &mut HexWfcCapture,
     clock: &mut Clock,
     runtime: Option<&mut sim::HexWfcRuntime>,
@@ -53,7 +82,10 @@ pub(super) fn advance(
     let Some(runtime) = runtime else {
         return;
     };
-    follow_the_highest(runtime);
+    match watch {
+        Watch::Overview => follow_the_highest(runtime),
+        Watch::Eyes => follow_until_caught(runtime),
+    }
     let Some(index) = request.frame.checked_sub(WARMUP) else {
         return;
     };
@@ -66,7 +98,7 @@ pub(super) fn advance(
         0
     };
     clock.last_tick = tick;
-    if index >= FRAMES || clock.still_for >= HOLD {
+    if index >= watch.frames() || clock.still_for >= HOLD {
         info!("spectate capture: {index} frames, ending at tick {tick}");
         exit.write(AppExit::Success);
         return;
@@ -110,5 +142,13 @@ fn follow_the_highest(runtime: &mut sim::HexWfcRuntime) {
         .map(|player| player.id);
     if let Some(id) = higher {
         runtime.local_player = id;
+    }
+}
+
+/// Stay with the body being followed until it leaves the facility, then take the
+/// highest one still in it.
+fn follow_until_caught(runtime: &mut sim::HexWfcRuntime) {
+    if !runtime.local().in_facility() {
+        follow_the_highest(runtime);
     }
 }

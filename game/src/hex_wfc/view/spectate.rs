@@ -80,6 +80,9 @@ pub(in crate::hex_wfc::view) const DETAIL_RADIUS: f32 = 34.0;
 const _: () = assert!(DETAIL_RADIUS > super::STREAM_ENTER_RADIUS);
 const _: () = assert!(DETAIL_RADIUS < super::STREAM_EXIT_RADIUS);
 
+/// Look through the followed body's eyes instead of trailing it.
+pub(in crate::hex_wfc) const EYES_KEY: KeyCode = KeyCode::KeyV;
+
 /// Rotate the view by one detent.
 pub(in crate::hex_wfc) const ROTATE_KEY: KeyCode = KeyCode::KeyR;
 
@@ -113,6 +116,10 @@ pub(in crate::hex_wfc) struct SpectatorOverview {
     /// placements, so massing built before it is a picture of a facility that
     /// no longer exists.
     pub(in crate::hex_wfc) built_generation: Option<u32>,
+    /// Out of the overview, ride inside the followed body's head rather than
+    /// trailing it. The chase is for reading a fight; this is the run as the
+    /// body has it - what it can see, and how close the minors get.
+    pub eyes: bool,
 }
 
 /// What the cutaway needs to judge one hull, measured once at spawn.
@@ -181,6 +188,9 @@ pub(in crate::hex_wfc) fn hotkeys(
     }
     if keys.just_pressed(TOGGLE_KEY) {
         overview.active = !overview.active;
+    }
+    if keys.just_pressed(EYES_KEY) {
+        overview.eyes = !overview.eyes;
     }
     if keys.just_pressed(CYCLE_KEY) {
         cycle_focus(&mut runtime);

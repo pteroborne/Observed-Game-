@@ -68,6 +68,7 @@ pub(in crate::hex_wfc) fn sync_camera(
     runtime: Res<HexWfcRuntime>,
     spectating: Option<Res<crate::sim::state::SpectatorBot>>,
     frame: Res<OverviewFrame>,
+    overview: Res<SpectatorOverview>,
     time: Res<Time>,
     mut camera: Query<&mut Transform, With<GameCam>>,
     mut was_overviewing: Local<bool>,
@@ -102,6 +103,17 @@ pub(in crate::hex_wfc) fn sync_camera(
     // ignores `is_active`, so a dormant one would take every overlay with it.
     let overviewing = frame.0.is_some();
     let iso = frame.0;
+    // Through the body's eyes: the eye exactly where the body's is, and the gaze
+    // easing after a head that a bot can snap between headings - the same pose the
+    // Architect gets looking through an Observer.
+    if overview.eyes && !overviewing {
+        *was_overviewing = false;
+        let (eye, rotation) = player_eye_pose(player);
+        transform.translation = eye;
+        let t = 1.0 - (-EYES_RESPONSE * time.delta_secs()).exp();
+        transform.rotation = transform.rotation.slerp(rotation, t);
+        return;
+    }
     if let Some(iso) = &iso
         && std::env::var("OBSERVED2_SPECTATE_TRACE").is_ok()
     {

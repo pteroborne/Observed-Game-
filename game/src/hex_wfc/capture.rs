@@ -71,9 +71,9 @@ pub(super) enum HexWfcCaptureMode {
     /// What each floor is made of: a sealed wall, its floor and its ceiling
     /// (`vista_capture::surfaces`).
     Surfaces,
-    /// The spectator overview following the climb, as time-lapse video frames
-    /// (`capture::spectate`).
-    Spectate,
+    /// A spectated Ascent match as video frames, watched from the overview or
+    /// through a body's eyes (`capture::spectate`).
+    Spectate(spectate::Watch),
 }
 
 /// How many screenshots the style montage takes before exiting; matched to a spectated
@@ -145,7 +145,11 @@ pub(super) fn configure(app: &mut App) {
         })
         .or_else(|_| {
             std::env::var("OBSERVED2_CAPTURE_HEX_WFC_SPECTATE")
-                .map(|path| (path, HexWfcCaptureMode::Spectate))
+                .map(|path| (path, HexWfcCaptureMode::Spectate(spectate::Watch::Overview)))
+        })
+        .or_else(|_| {
+            std::env::var("OBSERVED2_CAPTURE_HEX_WFC_EYES")
+                .map(|path| (path, HexWfcCaptureMode::Spectate(spectate::Watch::Eyes)))
         })
         .or_else(|_| {
             std::env::var("OBSERVED2_CAPTURE_HEX_WFC_STYLE")
@@ -187,7 +191,7 @@ pub(super) fn configure(app: &mut App) {
                 | HexWfcCaptureMode::Climb
                 | HexWfcCaptureMode::Verticals
                 | HexWfcCaptureMode::Surfaces
-                | HexWfcCaptureMode::Spectate
+                | HexWfcCaptureMode::Spectate(_)
         ) {
             std::fs::create_dir_all(&path)
                 .expect("hex-WFC directory-style capture directory must be creatable");
@@ -198,14 +202,14 @@ pub(super) fn configure(app: &mut App) {
                 | HexWfcCaptureMode::Minors
                 | HexWfcCaptureMode::Doors
                 | HexWfcCaptureMode::Sensors
-                | HexWfcCaptureMode::Spectate
+                | HexWfcCaptureMode::Spectate(_)
         ) {
             std::fs::create_dir_all(std::path::Path::new(&path).join("frames"))
                 .expect("a video capture's frame directory must be creatable");
             // Every rendered frame is one video frame, however long it takes to render.
             let frame = match mode {
                 HexWfcCaptureMode::Power => super::power::capture::FRAME_SECONDS,
-                HexWfcCaptureMode::Spectate => spectate::FRAME_SECONDS,
+                HexWfcCaptureMode::Spectate(watch) => watch.frame_seconds(),
                 _ => super::kinetic::capture::FRAME_SECONDS,
             };
             app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
@@ -238,7 +242,7 @@ fn autostart_capture(
     mut sequence: ResMut<loading::HexLaunchRequestSequence>,
     mut overview: ResMut<view::spectate::SpectatorOverview>,
 ) {
-    if capture.mode == HexWfcCaptureMode::Spectate {
+    if let HexWfcCaptureMode::Spectate(watch) = capture.mode {
         // The climb, watched: Ascent from the Observer seat, so no body is a human's
         // and every one of them is racing upward.
         *play_setup = crate::play_setup::PlaySetupDraft {
@@ -246,7 +250,8 @@ fn autostart_capture(
             seat: crate::play_setup::PlaySeat::Observer,
             ..crate::play_setup::PlaySetupDraft::for_preset(crate::play_setup::PlayPreset::TeamRace)
         };
-        overview.active = true;
+        overview.active = watch == spectate::Watch::Overview;
+        overview.eyes = watch == spectate::Watch::Eyes;
     }
     if matches!(
         capture.mode,
@@ -381,8 +386,9 @@ fn capture_progress(
             );
         }
         HexWfcCaptureMode::Architect | HexWfcCaptureMode::Rogue => {}
-        HexWfcCaptureMode::Spectate => {
+        HexWfcCaptureMode::Spectate(watch) => {
             spectate::advance(
+                watch,
                 &mut request,
                 &mut clock,
                 runtime.as_deref_mut(),

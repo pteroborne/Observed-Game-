@@ -4,6 +4,7 @@
 |---|---|
 | `O` | toggle the overview (spectating only) |
 | `F` | cycle which body is followed |
+| `V` | look through the followed body's eyes instead of trailing it |
 | `R` | rotate one detent - six, 60 degrees apart |
 | `[` / `]` | narrow / widen the tile radius, 2..12, default 3 |
 
@@ -17,6 +18,11 @@ whichever free body stands highest. It is a 6x time-lapse, one frame per 0.2 s
 of game time, saved as `<dir>/frames/frame_NNNNN.png`, and it ends a beat after
 the match does. Encode with the `capture-evidence` skill's ffmpeg line at 30 fps.
 Result: [`climb.mp4`](climb.mp4), still `climb.jpg`.
+
+`OBSERVED2_CAPTURE_HEX_WFC_EYES=<dir>` records the same match in first person, at
+2x, through one body's eyes until it is caught and then the highest body still
+free: a cut in first person throws you into another body mid-stride, so it cuts
+only when it must. Result: [`eyes.mp4`](eyes.mp4), still `eyes.jpg`.
 
 The view snaps to the *centre of the body's tile* rather than tracking the body
 itself: following a walking body slides the whole facility under a fixed camera,
