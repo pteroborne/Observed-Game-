@@ -426,7 +426,12 @@ mod tests {
 
     #[test]
     fn declared_climb_and_deck_legs_run_forward_and_reverse() {
-        let tile = tile("stair_tower_helix_0");
+        // The shaft's foot, which stands alone the way this audit stands it. A
+        // through storey's flight begins at the head of the one below - in a column
+        // that flight's top is right behind the foot - so alone, a body turning
+        // toward the climb from a standing start steps back into the air where it
+        // would be. The stacked climbs are `a_tower_climbs_with_another_standing_on_it`.
+        let tile = tile("stair_tower_helix_0_bottom");
         let guide = projected_guide(&tile).expect("tower has climb and deck guides");
         let report = audit_projected_guide(&tile, &guide);
 

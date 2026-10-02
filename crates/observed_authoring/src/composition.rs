@@ -770,6 +770,9 @@ mod tests {
         // or not an old file still parses. A schema-only move is still a LAN
         // lockout, and there is no way to add a control without one.
         //
+        // Moved when the stair tower became a spiral (2026-10): every one of the 171
+        // towers changed shape, and no source was added or retired.
+        //
         // Moved when the ramp became a switchback (2026-10): `hall_ramp` folds a storey
         // into two flights and a balcony, dressed once for each district on the climb
         // (six new sources), and the seven straight wedges it replaces were retired.
@@ -788,7 +791,7 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "d474f996212b522b8e48b9387f67a3885f430cd8a258f52d5e1570d6d448ecde";
+            "b565931b3e8ffb6bad198388ac3d49ef572213979068a25cc309555df8cb7a8e";
         // The open-air composition (void share 2,000), 2026-09-24.
         const PROFILE_HASH: &str =
             "bb9b542142f32c11b9dbfbba01cebb1e6903db4ba0f30c10b6c0b087fcd95ea3";
@@ -796,7 +799,7 @@ mod tests {
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "2d51e4d836e0cd5c694acbddd1c5488987c60937be9d8a84aceb4c1204d4f655";
+            "139ab9146387ff1fc20c6e3ce831175b7216072113f43cc7e3d34519aca20980";
 
         let root = committed_tiles();
         let compiled_text =

@@ -957,19 +957,34 @@ fn no_tower_is_ever_turned_and_here_is_why() {
         );
     }
 
+    // A spiral tower's storeys are one staircase: each flight ends where the next
+    // begins. A turned storey's flight begins at another bearing, so a body arriving
+    // from below is set down beside the climb, not at its foot - the column stops
+    // being one spiral. Count the turns that do that.
     let towers = crate::forge::tower::builders();
-    let (_, lower) = towers
+    let (_, through) = towers
         .iter()
         .find(|(stem, _)| stem == "stair_tower_helix_solid")
         .expect("the doorless through tower");
+    let spine = crate::parse_authored_module(through)
+        .expect("the through tower validates")
+        .prototype
+        .spine;
+    let head = *spine.nodes.last().expect("a spine");
     let defeated = (1..6u8)
-        .filter(|&turn| !climb_a_stacked_column_turned(lower, lower, turn).finished())
+        .filter(|&turn| {
+            let foot = spine.rotated(turn).nodes[0];
+            Vec2::new(foot.x - head.x, foot.z - head.z).length() > 0.5
+        })
         .count();
     assert!(
         defeated > 0,
-        "rotation no longer breaks a stacked climb, so the prohibition above is \
-         costing 66 authored sources for nothing - re-price it"
+        "rotation no longer breaks a column's continuity, so the prohibition above is \
+         costing authored sources for nothing - re-price it"
     );
+    // And unturned, the climb does run on from one storey into the next.
+    let foot = spine.nodes[0];
+    assert!(Vec2::new(foot.x - head.x, foot.z - head.z).length() < 0.05);
 }
 
 /// Every authored climb must be walkable by the production controller when it

@@ -719,7 +719,11 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // switchbacks. A storey is now two flights, a landing and a balcony - about 40 m of
     // walking where the wedge was 14 - and the route crosses four of them. Dressing
     // them by district moved it a tick (14,173 -> 14,172).
-    assert_eq!(a, 14_172, "TR-10 pins the declared-ramp completion tick");
+    //
+    // Twelfth (14,172 -> 12,928), the same seed and route: the stair towers became
+    // spiral stairs, and a storey of spiral is a shorter walk than a storey of helix
+    // and the ring round to its foot.
+    assert_eq!(a, 12_928, "TR-10 pins the declared-ramp completion tick");
     // Moved again by twenty open halls and by churn becoming a district
     // property, and again *without* moving the tick above - the same pairing,
     // and the same proof. The bot's route through the gate seed is tick for
@@ -759,10 +763,11 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // The new gate seed for one district per floor moved it with the building
     // (0x0fde_68b8_5aa8_5dda -> 0x9c35_1a54_6fd7_787e), and per-floor openness's again
     // (-> 0x6868_4c8f_72ff_5fb3), and the switchback ramp's (-> 0x6776_8f80_b021_bd38,
-    // then dressed by district -> 0xd8a4_56f3_de5d_1e26).
+    // then dressed by district -> 0xd8a4_56f3_de5d_1e26), and the spiral tower's
+    // (-> 0x18fc_ac97_862c_01a2).
     assert_eq!(
         first.snapshot().digest,
-        0xd8a4_56f3_de5d_1e26,
+        0x18fc_ac97_862c_01a2,
         "TR-10 pins the declared-ramp final snapshot digest"
     );
 }
@@ -927,6 +932,14 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
     // longer ramps on its way to this tower. The climb itself is 995 traced ticks, two
     // fewer than before, and ends on the same tread. Dressing each district's ramp
     // moved it a tick (9,707, 996 traced).
+    //
+    // **The helix is gone, and its numbers with it.** The tower is a spiral stair
+    // now: a full turn round a pier, each storey ending where the next begins. The
+    // bot climbs it in 957 traced ticks, against the helix's 973 to 997, and ends
+    // on the spiral's head - a different tread, so a different body. This pin now
+    // holds the spiral, the way it held the helix: one shape for every tower, so a
+    // seed or a district that moves which tower is climbed should move none of
+    // these but the cell and the completion tick.
     assert_eq!(tile.register, "facet_monument");
     assert_eq!(tile.variant, 180);
     // TR-11 moved this trace on purpose, and it is the only pin in that packet
@@ -944,9 +957,9 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
     // Bevy 0.19 changed the intermediate floating-point trace while preserving
     // the pinned completion tick, traced-tick count, and terminal body bits.
     //
-    assert_eq!(completion, Some(9_707));
-    assert_eq!(traced_ticks, 996);
-    assert_eq!(trace, 0xd832_18f4_1d8f_d70a);
+    assert_eq!(completion, Some(9_935));
+    assert_eq!(traced_ticks, 957);
+    assert_eq!(trace, 0xaece_eb3c_db69_6c29);
     assert_eq!(
         [
             body.position.x.to_bits(),
@@ -958,13 +971,13 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
             body.yaw.to_bits(),
         ],
         [
-            1_128_530_381,
-            1_091_997_793,
-            1_120_337_104,
-            3_164_359_216,
+            1_128_714_728,
+            1_091_829_108,
+            1_119_616_385,
+            1_067_260_020,
             0,
-            3_217_952_966,
-            1_086_893_767,
+            1_065_705_735,
+            1_074_894_116,
         ]
     );
 }

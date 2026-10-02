@@ -309,8 +309,19 @@ fn a_contradiction_retracts_out_of_the_physical_facility() {
 #[test]
 fn a_tile_ahead_of_the_body_is_held_by_its_sight() {
     let mut game = game(7);
-    for _ in 0..600 {
+    // Explore until the body sees past its own cell: a body inside a spiral tower,
+    // between its pier and its guard wall, sees nothing else, and fairly.
+    for tick in 0..6_000 {
         step(&mut game, Body::Explore, SeatCommand::None);
+        let rules = game.rules();
+        let body = &rules.observers[&ObserverId(BODY.0)];
+        if tick >= 600
+            && rules.observed.iter().any(|&at| {
+                at != body.cell && rules.team_knowledge[&TEAM].discovered_cells.contains(&at)
+            })
+        {
+            break;
+        }
     }
     let rules = game.rules();
     let body = &rules.observers[&ObserverId(BODY.0)];

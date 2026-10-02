@@ -66,13 +66,6 @@ const INNER: f64 = 0.55;
 /// autostep, stops a body walking back onto the flight.
 const DECK_ABOVE: f64 = LEVEL + FLOOR_TOP;
 
-/// How much clear air a body needs over a tread, in TB units.
-///
-/// 2 m against a 1.8 m capsule. Stated here rather than read from `FpsConfig`
-/// for the same reason as [`APERTURE_CLEARANCE`]; `a_tower_climbs_with_another_
-/// standing_on_it` is what actually holds the geometry to the controller.
-const HEADROOM: f64 = 32.0;
-
 /// How far a foothold must stand clear of the stairwell aperture, in TB units.
 ///
 /// 0.5 m, against a controller capsule of 0.4. Stated here as a distance rather
@@ -151,35 +144,6 @@ impl Extent {
     fn inner(self, step: usize) -> P2 {
         let c = self.outer(step);
         (c.0 * INNER, c.1 * INNER)
-    }
-
-    /// Whether the `step`th tread is high enough to stand clear of the floor,
-    /// rather than on the mass under it.
-    ///
-    /// A staircase is closed at the bottom for the same reason this is: a tread
-    /// only two metres up has no usable space beneath, and leaving it open just
-    /// makes somewhere to get wedged. Measured - with every tread carried clear,
-    /// 14 of 90 door approaches walked into the annulus and jammed under the
-    /// second facet, whose underside is at 2.0 m against the 2.3 m a body
-    /// standing on the floor reaches.
-    #[must_use]
-    fn carried_clear(self, step: usize) -> bool {
-        self.height(step) - FLOOR_TOP >= FLOOR_TOP + HEADROOM
-    }
-
-    /// Whether the tile above must leave its floor open at `seam`, on the facet
-    /// between `facet` and `facet + 1`, because the climb passing under it is
-    /// too close to that floor for a body to fit between the two.
-    ///
-    /// Asked per **facet**, not per seam, and the difference is a face. A seam
-    /// is shared by the facet either side of it, and the last seam of the sweep
-    /// is also the first of the facet past its end - which carries no climb at
-    /// all. Judging by the seam alone opened a hole over a face nothing climbs,
-    /// costing a whole face of solid floor that the circulation then has to
-    /// route around.
-    #[must_use]
-    fn arrives_through(self, seam: usize, facet: usize) -> bool {
-        facet < self.faces && LEVEL - self.height(seam) < HEADROOM
     }
 
     /// Where the climb crosses the level plane, in plan.
@@ -292,46 +256,18 @@ impl Extent {
 /// for exactly this reason.
 #[must_use]
 pub(super) fn flight(extent: Extent) -> String {
-    flight_mass(extent, false)
-}
-
-/// The same climb, carried on treads instead of on a solid mass.
-///
-/// **A tower stacks and a ramp does not, and that is the whole difference.** A
-/// ramp's spiral stands on the ground, so filling everything under it costs
-/// nothing. Fill everything under a *tower's* and the mass reaches down to that
-/// tower's own floor - which is the ceiling of the tower below - so the climb
-/// underneath runs out of headroom before it runs out of steps.
-///
-/// Measured: with a solid flight above, 100 of 100 stacked pairs stopped with
-/// their feet at 6.19 m of an 8 m climb, a 1.8 m body under a mass beginning at
-/// 8.0 m. The switchback said this in its own doc comment - "thin flights
-/// preserve headroom when cells stack" - and it is the one thing about it that
-/// the helix had to keep.
-///
-/// Each facet's underside sits one floor slab below where it starts, so the
-/// first is flush with the floor and the rest step up behind it. That leaves a
-/// clear level less a slab under every tread, against the 1.8 m a body needs.
-#[must_use]
-pub(super) fn thin_flight(extent: Extent) -> String {
-    flight_mass(extent, true)
+    flight_mass(extent)
 }
 
 #[must_use]
-fn flight_mass(extent: Extent, thin: bool) -> String {
+fn flight_mass(extent: Extent) -> String {
     let mut out = String::new();
     for step in 0..extent.faces {
         let (o0, o1) = (extent.outer(step), extent.outer(step + 1));
         let (i0, i1) = (extent.inner(step), extent.inner(step + 1));
         let (h0, h1) = (extent.height(step), extent.height(step + 1));
-        // A tread high enough to leave usable space under it is carried from
-        // just below where it starts; everything else - and all of a ramp,
-        // which stands on the ground - is solid to the floor.
-        let base = if thin && extent.carried_clear(step) {
-            h0 - FLOOR_TOP
-        } else {
-            0.0
-        };
+        // A ramp stands on the ground, so its flight is solid to the floor.
+        let base = 0.0;
 
         out.push_str(&sloped_prism(
             &[o0, o1, i0],
@@ -355,6 +291,7 @@ fn flight_mass(extent: Extent, thin: bool) -> String {
 /// sits at the cell centre with nothing joining them. It spans the exit seam -
 /// outer and inner, both level at the deck height - across to the centre and
 /// one face beyond, so a body steps off and walks to the opening.
+#[cfg(test)]
 #[must_use]
 pub(super) fn landing(extent: Extent) -> String {
     let end = extent.faces;
@@ -366,75 +303,6 @@ pub(super) fn landing(extent: Extent) -> String {
         extent.outer(end + 1),
     ];
     prism(&plan, LEVEL, DECK_ABOVE, None, 2.0, 0.0)
-}
-
-/// A floor pierced exactly where the climb arrives through it.
-///
-/// A tower stands in a column, and the tile above it owns the slab over its
-/// climb. Cut that slab as a small central hole - which is what
-/// `hex_opening_slab` gives, 0.30 of the hexagon - and the hole is in the wrong
-/// place: the switchback climbed near the middle, but an **inset helix arrives
-/// in the annulus**, between [`INNER`] and `outer_scale` of the rim. The flight
-/// then runs under a solid slab, and a body on it is stopped when its head
-/// meets the underside.
-///
-/// Measured, before this existed: every one of 100 stacked pairs stopped with
-/// its feet at 6.19 m of an 8 m climb, which is a 1.8 m body standing under a
-/// slab at 8.0 m. It was independent of the doors and of which tower stood
-/// above, and no single-tile harness could see it, because a lone tower has
-/// nothing overhead.
-///
-/// So the same shape [`upper_deck`] uses - solid everywhere but the swept band -
-/// plus the walkable ring outside the climb, which the ramp has no need of
-/// because it hugs the wall and a tower does not. Three regions:
-///
-/// - the inner hexagon, which carries [`Extent::foot`] and the shaft's middle
-/// - the annulus, wherever the flight below is still low enough to pass under
-/// - the ring outside the climb, on every face, which the doors open onto
-///
-/// **Only where the climb is high**, and that is a correction. Opening the whole
-/// swept band leaves the ring 1.25 m wide across four of the six faces, and a
-/// body walking it clips the lip and drops in: 28 of 90 door approaches failed
-/// that way. A tread near the *bottom* of its sweep has 5.5 m of air over it and
-/// wants a floor above, not a hole. So a facet is opened when the clearance
-/// between its high end and this slab falls under [`HEADROOM`] - which is the
-/// last two of four here, derived rather than chosen.
-///
-/// Emitted as one convex brush per region rather than one polygon, because a
-/// hexagon with a bite out of it is not convex and a brush must be. Seven of
-/// them, which matters: seaming every face at the climb's radius costs two more,
-/// and the tower is the corpus's most expensive cell with or without them.
-///
-/// This used to read "one hull under the 32 the importer allows". The importer
-/// now allows 36, because the branching landing needed it and 32 had been fitted
-/// to a corpus that had no such tile - see `CELL_HULL_BUDGET`. The slack is
-/// spent on doors, not on this: a four-door through tower sits exactly on the
-/// new cap, so the seam-per-face version is still over.
-#[must_use]
-pub(super) fn pierced_floor(extent: Extent, z0: f64, z1: f64) -> String {
-    // `rim` is the hexagon itself: the band the climb was pulled in off. See
-    // the tower's `OUTER_SCALE`.
-    let rim = |step: usize| -> P2 { corners()[(SWEEP_START + step) % 6] };
-    let mut out = prism(
-        &(0..6).map(|c| extent.inner(c)).collect::<Vec<P2>>(),
-        z0,
-        z1,
-        None,
-        2.0,
-        0.0,
-    );
-    for step in 0..6 {
-        let inward = |seam: usize| {
-            if extent.arrives_through(seam, step) {
-                extent.outer(seam)
-            } else {
-                extent.inner(seam)
-            }
-        };
-        let plan = vec![rim(step), rim(step + 1), inward(step + 1), inward(step)];
-        out.push_str(&prism(&plan, z0, z1, None, 2.0, 0.0));
-    }
-    out
 }
 
 /// The floor of the upper level: everything the climb does not sweep.

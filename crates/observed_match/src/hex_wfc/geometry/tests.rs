@@ -5,8 +5,8 @@ use observed_facility::hex_wfc::{
     HexWfcConfig, HexWfcWorld,
 };
 use observed_hex::{HexFace, hex_origin};
-use observed_traversal::rapier_controller::step_character;
-use observed_traversal::{FpsBody, FpsConfig};
+use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
+use observed_traversal::{FpsBody, FpsConfig, StairSpine};
 use player_input::PlayerIntent;
 
 use super::*;
@@ -2100,6 +2100,91 @@ fn sample(entries: &[String]) -> String {
         .cloned()
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Walk `spine` up from its first node to its last (or down, from the last to the
+/// first) on the production controller, steering each tick toward the point the spine
+/// says to walk to next - the follower's own rule. The ticks it took, or where it
+/// stalled.
+fn walk_spine(scene: &RapierTraversalScene, spine: &StairSpine, up: bool) -> Result<u32, Vec3> {
+    let config = FpsConfig::default();
+    let start = if up {
+        spine.nodes[0]
+    } else {
+        *spine.nodes.last().expect("a spine")
+    };
+    let mut body = FpsBody::spawned(start + Vec3::Y * config.half_height, 0.0);
+    for ticks in 0..1_200 {
+        let feet = body.position - Vec3::Y * config.half_height;
+        let done = if up {
+            spine.has_arrived(feet)
+        } else {
+            spine.has_descended(feet)
+        };
+        if done {
+            return Ok(ticks);
+        }
+        let target = spine.target(feet, up).expect("a target on the spine");
+        let toward = (target - feet).with_y(0.0).normalize_or_zero();
+        body.yaw = toward.x.atan2(-toward.z);
+        let intent = PlayerIntent {
+            movement: Vec2::Y,
+            ..PlayerIntent::default()
+        };
+        step_character(scene, &mut body, intent, &config, 1.0 / 60.0);
+    }
+    Err(body.position - Vec3::Y * config.half_height)
+}
+
+/// Every stair tower in a production facility climbs and descends by its own spine.
+///
+/// The towers' counterpart of the ramp walk below, and the measuring stick for their
+/// redesign: each tower that climbs (a through-tower or a shaft's foot) is walked up
+/// its spine from the foot to the deck above, and back down.
+#[test]
+fn every_production_tower_climbs_and_descends_by_its_spine() {
+    let catalog = crate::hex_wfc::test_catalog();
+    let mut towers = 0usize;
+    let mut slowest = (0u32, 0u32);
+    let mut stalls = Vec::new();
+    for seed in [1u64, 2, 3] {
+        let world = HexWfcWorld::generate_with_profile(
+            seed,
+            HexWfcConfig::arc_default(),
+            None,
+            &catalog.composition,
+        )
+        .expect("production seed solves");
+        let snapshot =
+            HexWfcGeometrySnapshot::project_with_rooms(&world, &catalog.cells, &catalog.rooms)
+                .expect("production corpus projects");
+        let scene = snapshot.rapier_scene();
+        for placement in world
+            .placements
+            .values()
+            .filter(|placement| placement.archetype == HexArchetype::Shaft)
+        {
+            let Some(spine) = snapshot.climbs.get(&placement.coord) else {
+                continue;
+            };
+            towers += 1;
+            for up in [true, false] {
+                match walk_spine(&scene, spine, up) {
+                    Ok(ticks) if up => slowest.0 = slowest.0.max(ticks),
+                    Ok(ticks) => slowest.1 = slowest.1.max(ticks),
+                    Err(at) => stalls.push((seed, placement.coord, up, at)),
+                }
+            }
+        }
+    }
+    eprintln!(
+        "towers={towers} slowest climb={} descent={} ticks stalls={}",
+        slowest.0,
+        slowest.1,
+        stalls.len()
+    );
+    assert!(towers >= 30, "production facilities place towers: {towers}");
+    assert!(stalls.is_empty(), "towers stalled: {stalls:?}");
 }
 
 /// Every ramp in a production facility climbs and descends by its own spine.

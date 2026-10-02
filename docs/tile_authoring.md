@@ -345,6 +345,27 @@ production controller. Change a ramp and run it.
 
 ![The seven ramps in section](evidence/ramp_switchback_sections.jpg)
 
+## Stair towers: the spiral (`forge::tower`)
+
+Each cell of a shaft column is one storey of one continuous spiral stair: a full
+turn of flight round a hexagonal pier, six sectors of two planar facets each, a
+guard wall rising with the flight on its outside and open only at its foot, and
+a gallery ring between that wall and the tower's own walls that every door opens
+onto. Every storey ends exactly where the next begins, so a column is one
+staircase; that is also why a tower is never turned (`no_tower_is_ever_turned_and_here_is_why`
+counts the turns that would break the column). A shaft head has no flight: its
+floor is solid but over the last third of the band, where the flight below comes
+up through it, railed round. The family is 171 sources - every door pattern of up
+to four doors, in three connectivities - and a four-door through tower is the
+cell hull budget, 45.
+
+`every_production_tower_climbs_and_descends_by_its_spine` (observed_match) walks
+every tower in three production facilities. A bot descending into a shaft walks
+the floor's own gallery path to the head of the flight first (`leg::descent`): the
+head is out past the pier, so a straight line from a door does not reach it.
+
+![A spiral column in section, the foot from the gallery, and the climb](evidence/stair_tower_spiral.jpg)
+
 ## Showcase reference: the silo wellshaft (multi-tile composition)
 
 `silo_core` / `silo_ring` / `silo_ring_bridge` + the `SiloWellshaft`

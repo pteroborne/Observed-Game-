@@ -412,11 +412,61 @@ fn descent(
 ) -> Option<HexTraversalCursor> {
     (transition.face == HexFace::Down).then_some(())?;
     let below = ResolvedModuleGraph::resolve(game, transition.to)?;
-    // The entry is left to `nearest_node`, not named as the climb's top
-    // terminal: the body may have drifted a node along the upper deck before
-    // this was asked for, and where it actually stands is the honest answer.
+    // The entry is where the body stands, not named as the climb's top terminal:
+    // it may have drifted a node along the upper deck before this was asked for.
+    //
+    // But only among the nodes at its own floor. A descent can be entered only
+    // where the climb is level with the floor the body stands on; a node further
+    // down the climb is under a hole in that floor, behind its rail. With the
+    // spiral tower the nearest node by any blend of distance and height can be
+    // one of those - a metre and a half down and six metres off, against the
+    // head of the flight nine metres off and level - and four soak bots pressed
+    // against the rail round a shaft head's opening, heading for it.
     let foot = below.climb_foot?;
-    lease_between(below, feet, foot)
+    let entry = below
+        .graph
+        .guide
+        .nearest_node_in_plan(feet, DESCENT_ENTRY_RISE)
+        .or_else(|| below.graph.guide.nearest_node(feet))?;
+    // Walk this floor to the head of the flight first, by this floor's own path,
+    // when it is not at hand. The head of a spiral tower's flight is out in the
+    // band, past the pier at the centre and beside the opening the flight comes up
+    // through, so a straight line from a doorway to it runs into one or the other;
+    // the floor's path goes round by the gallery. Once there, the next ask of this
+    // leg finds the head at hand and descends.
+    let head = Vec3::from_array(below.graph.guide.node(entry)?.position);
+    if feet.with_y(0.0).distance(head.with_y(0.0)) > DESCENT_HEAD_REACH
+        && let Some(upper) = ResolvedModuleGraph::resolve(game, transition.from)
+        && let Some(there) = upper
+            .graph
+            .guide
+            .nearest_node_in_plan(head, DESCENT_ENTRY_RISE)
+    {
+        return lease_between(upper, feet, there);
+    }
+    lease_from(below, entry, foot)
+}
+
+/// How far from the body's feet, in height, a descent's entry node may be: a step.
+const DESCENT_ENTRY_RISE: f32 = 0.6;
+/// How near the head of the flight a body must be to start down it, in plan.
+const DESCENT_HEAD_REACH: f32 = 1.0;
+
+fn lease_from(
+    module: ResolvedModuleGraph,
+    entry: TraversalNodeId,
+    exit: TraversalNodeId,
+) -> Option<HexTraversalCursor> {
+    let local = module.graph.guide.cursor_between(entry, exit)?;
+    Some(HexTraversalCursor {
+        lease: HexTraversalLease {
+            instance: module.instance,
+            revision: module.revision,
+            entry,
+            exit,
+        },
+        local,
+    })
 }
 
 fn lease_between(

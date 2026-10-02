@@ -54,11 +54,19 @@ const MIN_HEADROOM_METERS: f32 = 2.2;
 /// for a plain wall), so the branching landing the corridor router needs - a
 /// through tower at three and four doors - lands at 33 and 36.
 ///
-/// 36 is that tower and no more, so this stays a ratchet rather than becoming
-/// slack: the next cell that wants a thirty-seventh hull has to come here and
-/// say why. `the_corpus_stays_inside_its_stylistic_hull_budget` records the
-/// standing maximum so a drift cannot arrive unannounced.
-const CELL_HULL_BUDGET: usize = 36;
+/// 36 was that tower and no more, so this stays a ratchet rather than becoming
+/// slack: the next cell that wants another hull has to come here and say why.
+/// `the_corpus_stays_inside_its_stylistic_hull_budget` records the standing
+/// maximum so a drift cannot arrive unannounced.
+///
+/// **Was 36; 45 since the spiral stair tower (2026-10).** A full turn of flight
+/// round a core is six sectors of two planar facets - two level radial edges at
+/// different heights do not lie on one plane - and a guard wall rising with it is
+/// six more, against the helix's eight facets and no wall. The gallery floor round
+/// the open stairwell is six trapezoids. A through tower with four doors lands at
+/// 45, and the budget is that tower, as it was before. Collision is static and the drawn hulls merge by surface, so the cost is
+/// colliders, about 15 more on each of the ~130 towers in a production facility.
+const CELL_HULL_BUDGET: usize = 45;
 const ROOM_HULL_BUDGET: usize = 128;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
