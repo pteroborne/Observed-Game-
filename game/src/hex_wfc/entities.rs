@@ -1,5 +1,6 @@
-//! Stable-domain presentation of the rival runners, the objectives and the exit beacon.
-//! The objectives' bodies are built in `objective_models`.
+//! Stable-domain presentation of the other Observers, the objectives and the exit
+//! beacon. The objectives' bodies are built in `objective_models`; an Observer's eye
+//! in `observer`.
 
 use bevy::prelude::*;
 use observed_authoring::RoomSocketKind;
@@ -14,6 +15,13 @@ use crate::GameState;
 
 #[derive(Component)]
 pub(super) struct ActorVisual(PlayerId);
+
+impl ActorVisual {
+    /// Whose body this draws.
+    pub(super) fn player(&self) -> PlayerId {
+        self.0
+    }
+}
 
 /// The exit beacon's root, so the spectator overview can hold it to its storey.
 #[derive(Component)]
@@ -30,10 +38,6 @@ pub(super) struct ObjectiveLabel;
 
 #[derive(Resource)]
 pub(super) struct EntityVisualAssets {
-    runner: Handle<Mesh>,
-    local: Handle<StandardMaterial>,
-    teammate: Handle<StandardMaterial>,
-    rival: Handle<StandardMaterial>,
     exit: Handle<StandardMaterial>,
     pickup_material: Handle<StandardMaterial>,
     interactable_material: Handle<StandardMaterial>,
@@ -55,47 +59,40 @@ type ObjectiveVisualQuery<'w, 's> = Query<
 pub(super) fn setup(
     mut commands: Commands,
     runtime: Res<HexWfcRuntime>,
-    capture: Option<Res<super::HexWfcCapture>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let assets = EntityVisualAssets {
-        // Rival silhouettes are deliberately compact: the physical bodies
-        // begin close together, and a full-height opaque capsule at arm's
-        // length obscures the architecture players must read.
-        runner: meshes.add(Capsule3d::new(0.25, 0.8)),
-        local: signal_material(&mut materials, MarkerRole::You),
-        teammate: signal_material(&mut materials, MarkerRole::Teammate),
-        rival: signal_material(&mut materials, MarkerRole::Rival),
         exit: signal_material(&mut materials, MarkerRole::Exit),
         pickup_material: outline_material(&mut materials, OutlineRole::Pickup),
         interactable_material: outline_material(&mut materials, OutlineRole::Interactable),
     };
-    let show_local = capture
-        .as_deref()
-        .is_some_and(|capture| capture.mode == super::HexWfcCaptureMode::Traversal);
-    for player in runtime
-        .match_state
-        .players
-        .values()
-        .filter(|player| show_local || player.id != runtime.local_player)
-    {
+    let eyes = super::observer::ObserverArt::new(&mut meshes, &mut materials);
+    // Every body gets an eye, yours included: which one the camera is inside changes
+    // during a match - a spectator's focus, the Architect looking through an Observer -
+    // so `sync` hides it there rather than this leaving it out here.
+    for player in runtime.match_state.players.values() {
         let local_team = runtime.local().team;
-        let material = if player.id == runtime.local_player {
-            assets.local.clone()
+        let role = if player.id == runtime.local_player {
+            MarkerRole::You
         } else if player.team == local_team {
-            assets.teammate.clone()
+            MarkerRole::Teammate
         } else {
-            assets.rival.clone()
+            MarkerRole::Rival
         };
-        commands.spawn((
-            ActorVisual(player.id),
-            DespawnOnExit(GameState::HexWfc),
-            Mesh3d(assets.runner.clone()),
-            MeshMaterial3d(material),
-            Transform::from_translation(player.position).with_scale(Vec3::new(0.8, 1.0, 0.8)),
-            Name::new(format!("runner {} domain visual", player.id.0)),
-        ));
+        // A floating eye at the body's eye height, compact where the old capsule was
+        // body-sized: bodies begin close together, and a full-height figure at arm's
+        // length hid the architecture players must read.
+        let root = commands
+            .spawn((
+                ActorVisual(player.id),
+                DespawnOnExit(GameState::HexWfc),
+                Transform::from_translation(player.position),
+                Visibility::default(),
+                Name::new(format!("Observer {} eye", player.id.0)),
+            ))
+            .id();
+        eyes.dress(&mut commands, root, role, u32::from(player.id.0));
     }
     let models = ObjectiveModels::new(
         &mut meshes,
@@ -207,20 +204,30 @@ type SyncColumns<'w, 's> = Query<
 
 pub(super) fn sync(
     runtime: Res<HexWfcRuntime>,
+    (spectating, overview): (
+        Option<Res<crate::sim::state::SpectatorBot>>,
+        Res<super::view::spectate::SpectatorOverview>,
+    ),
     mut columns: SyncColumns,
     mut actors: Query<(&ActorVisual, &mut Transform, &mut Visibility)>,
     camera: Query<&GlobalTransform, With<crate::view::components::GameCam>>,
     mut objectives: ObjectiveVisualQuery,
 ) {
+    // The body the camera is inside, if it is inside one: in play, and a spectator
+    // looking through the followed body's eyes. Drawing it there put the back of its
+    // own iris over the whole view.
+    let inside =
+        (spectating.is_none() || (overview.eyes && !overview.active)).then(|| runtime.viewed().id);
     for (visual, mut transform, mut visibility) in &mut actors {
         let player = &runtime.match_state.players[&visual.0];
         transform.translation = super::ascent::presented_position(player);
         // A body lost to the void has left play.
-        *visibility = if player.escaped || player.place == HexBodyPlace::Void {
-            Visibility::Hidden
-        } else {
-            Visibility::Visible
-        };
+        *visibility =
+            if player.escaped || player.place == HexBodyPlace::Void || inside == Some(player.id) {
+                Visibility::Hidden
+            } else {
+                Visibility::Visible
+            };
     }
     let camera_rotation = camera.single().ok().map(GlobalTransform::rotation);
     let local_objectives = runtime.match_state.teams[&runtime.local().team].objectives;

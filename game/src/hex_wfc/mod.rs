@@ -24,6 +24,7 @@ pub(crate) mod launch;
 pub(crate) mod loading;
 mod net;
 mod objective_models;
+mod observer;
 pub(crate) mod overlay;
 mod pad;
 mod perf;
@@ -184,7 +185,7 @@ impl Plugin for HexWfcPlugin {
                     feedback::sync,
                     feedback::animate,
                     audio::sync,
-                    entities::sync,
+                    (entities::sync, observer::sync).chain(),
                     // Grouped: hand equipment, posed after the hands have swayed.
                     (
                         equipment::sway,

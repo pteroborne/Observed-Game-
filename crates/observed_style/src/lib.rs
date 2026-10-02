@@ -21,6 +21,7 @@ pub mod kinetic;
 pub mod architect;
 pub mod equipment;
 pub mod guardian;
+pub mod observer;
 pub mod open_air;
 pub mod surfaces;
 
