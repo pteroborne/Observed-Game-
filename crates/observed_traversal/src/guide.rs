@@ -17,6 +17,10 @@ const CLIMB_VERTICAL_WEIGHT: f32 = 3.0;
 /// when it stops steering at its target.
 pub(crate) const ARRIVAL_RADIUS: f32 = 0.6;
 
+/// How near in plan a body may stand to the node it is steering at before it looks
+/// past it: inside the 0.38 m player capsule's radius. See [`StairSpine::target`].
+const PASS_RADIUS: f32 = 0.3;
+
 /// The walkable line through a tile's vertical circulation, in tile-local world
 /// metres, ordered from the bottom entry to the top exit.
 ///
@@ -93,14 +97,26 @@ impl StairSpine {
     ///
     /// Always the far end of the segment the body is on, so the target sits on
     /// the surface underfoot rather than across a void.
+    ///
+    /// A body already standing over that end, in plan, looks past it to the next
+    /// node the way it is going. Steering at a point underfoot is steering at
+    /// nothing: a body that reaches a node from the side, or one whose node lies on
+    /// the pitch of a stair a little under the tread it stands on, circles the node
+    /// with the nearest segment never changing. A straight flight hid this, because a
+    /// body met every node head on and overshot onto the next stretch.
     #[must_use]
     pub fn target(&self, point: Vec3, up: bool) -> Option<Vec3> {
         let (index, _) = self.locate(point)?;
-        Some(if up {
-            self.nodes[index + 1]
-        } else {
-            self.nodes[index]
-        })
+        let mut next = if up { index + 1 } else { index };
+        let underfoot = |node: Vec3| (node - point).with_y(0.0).length() < PASS_RADIUS;
+        while underfoot(self.nodes[next]) {
+            match (up, next) {
+                (true, n) if n + 1 < self.nodes.len() => next += 1,
+                (false, n) if n > 0 => next -= 1,
+                _ => break,
+            }
+        }
+        Some(self.nodes[next])
     }
 
     /// Whether a body at `point` has finished climbing: it has reached the last

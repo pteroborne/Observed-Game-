@@ -182,7 +182,7 @@ pub fn schematic_view(
             // without selecting the cell.
             let glyph = match placement.archetype {
                 HexArchetype::Climb {
-                    part: ClimbPart::Foot | ClimbPart::Mid | ClimbPart::High,
+                    part: ClimbPart::Foot | ClimbPart::Mid { .. } | ClimbPart::High,
                     ..
                 } => Some(ramp_glyph(height)),
                 _ => None,

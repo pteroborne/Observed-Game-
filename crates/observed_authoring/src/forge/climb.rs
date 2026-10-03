@@ -53,7 +53,8 @@ use super::entities::{
 };
 use super::geometry::{
     FLOOR_TOP, LEVEL, P2, P3, WALL, centroid, corners, custom_plane, door_wall_default, edge,
-    flat_plane, hex_slab, offset_inward, prism, pylon, side_plane, translate, wall,
+    face_mid, flat_plane, hex_slab, offset_inward, prism, pylon, regular_polygon, side_plane,
+    translate, wall,
 };
 
 /// The cell's half-width across its east and west faces, in plan `x`.
@@ -97,25 +98,97 @@ const ALCOVE_END: f64 = (APEX - AISLE) * APOTHEM / 64.0;
 const PLINTH: f64 = 13.0;
 /// A balustrade's, a parapet's or a screen's height above what it stands on: 1.1 m.
 const GUARD: f64 = 18.0;
+/// Steps in a turning mid cell's flight: nine risers of 0.27 m, the first up from
+/// the foot's flight and the last up to the high cell's.
+const TREADS: usize = 8;
+/// The post a sharp turn's steps wind round, at the corner they share: the treads
+/// narrow to nothing there.
+const NEWEL: f64 = 20.0;
+/// How far the west pad of a landing left back over its flight reaches: far enough
+/// east to meet the gallery where the alcove is wide enough to walk, not so far that
+/// the flight below loses its headroom.
+const WEST_PAD: f64 = -64.0;
 
-/// Which cell of the composition a builder is making.
+/// A turn from the climb's heading, as faces counted toward its right, the way the
+/// forge numbers them: the facility's `ClimbTurn`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Turn {
+    Ahead,
+    Right,
+    SharpRight,
+    Back,
+    SharpLeft,
+    Left,
+}
+
+impl Turn {
+    /// The face this turn names from a climb heading east.
+    const fn face(self) -> usize {
+        self as usize
+    }
+
+    const fn word(self) -> &'static str {
+        match self {
+            Self::Ahead => "",
+            Self::Right => "_right",
+            Self::SharpRight => "_sharp_right",
+            Self::Back => "_back",
+            Self::SharpLeft => "_sharp_left",
+            Self::Left => "_left",
+        }
+    }
+
+    const fn phrase(self) -> &'static str {
+        match self {
+            Self::Ahead => "straight on",
+            Self::Right => "to the right",
+            Self::SharpRight => "sharply right",
+            Self::Back => "back over the flight",
+            Self::SharpLeft => "sharply left",
+            Self::Left => "to the left",
+        }
+    }
+}
+
+/// Which cell of the composition a builder is making. The mid cell may turn the
+/// flight, and the landing may be left by a face other than the one ahead.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Part {
     Foot,
-    Mid,
+    Mid(Turn),
     High,
-    Landing,
+    Landing(Turn),
 }
 
 impl Part {
-    const ALL: [Self; 4] = [Self::Foot, Self::Mid, Self::High, Self::Landing];
+    const ALL: [Self; 11] = [
+        Self::Foot,
+        Self::Mid(Turn::Ahead),
+        Self::High,
+        Self::Landing(Turn::Ahead),
+        Self::Mid(Turn::Right),
+        Self::Mid(Turn::SharpRight),
+        Self::Mid(Turn::SharpLeft),
+        Self::Mid(Turn::Left),
+        Self::Landing(Turn::Right),
+        Self::Landing(Turn::Left),
+        Self::Landing(Turn::Back),
+    ];
 
-    const fn stem(self) -> &'static str {
+    fn stem(self) -> String {
         match self {
-            Self::Foot => "climb_foot",
-            Self::Mid => "climb_mid",
-            Self::High => "climb_high",
-            Self::Landing => "climb_landing",
+            Self::Foot => "climb_foot".to_owned(),
+            Self::Mid(turn) => format!("climb_mid{}", turn.word()),
+            Self::High => "climb_high".to_owned(),
+            Self::Landing(exit) => format!("climb_landing{}", exit.word()),
+        }
+    }
+
+    /// The bend a turning mid cell's flight takes, if this is one.
+    fn bend(self) -> Option<Bend> {
+        match self {
+            Self::Mid(turn) if turn != Turn::Ahead => Some(Bend::of(turn)),
+            _ => None,
         }
     }
 
@@ -127,12 +200,12 @@ impl Part {
                 (-APOTHEM, FLOOR_TOP, PAD_END, FLOOR_TOP),
                 (PAD_END, FLOOR_TOP, APOTHEM, FOOT_TOP),
             ],
-            Self::Mid => vec![(-APOTHEM, FOOT_TOP, APOTHEM, MID_TOP)],
+            Self::Mid(_) => vec![(-APOTHEM, FOOT_TOP, APOTHEM, MID_TOP)],
             Self::High => vec![
                 (-APOTHEM, MID_TOP, STOREY_LINE, LEVEL),
                 (STOREY_LINE, LEVEL, APOTHEM, LEVEL),
             ],
-            Self::Landing => vec![
+            Self::Landing(_) => vec![
                 (STOREY_LINE, LIP, ARRIVAL, FLOOR_TOP),
                 (ARRIVAL, FLOOR_TOP, APOTHEM, FLOOR_TOP),
             ],
@@ -161,9 +234,9 @@ impl Part {
     /// Where along the climb this cell's own light hangs.
     const fn light_x(self) -> f64 {
         match self {
-            Self::Foot | Self::Mid => 0.0,
+            Self::Foot | Self::Mid(_) => 0.0,
             Self::High => -40.0,
-            Self::Landing => 80.0,
+            Self::Landing(_) => 80.0,
         }
     }
 }
@@ -300,6 +373,208 @@ fn rect(x0: f64, x1: f64, y0: f64, y1: f64) -> Vec<P2> {
     vec![(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
 }
 
+/// `poly` clipped to the side of the line through `origin` along `along` that
+/// `keep_left` names: left is counterclockwise in plan.
+fn clip_line(poly: &[P2], origin: P2, along: P2, keep_left: bool) -> Vec<P2> {
+    let side = |p: P2| {
+        let cross = along.0 * (p.1 - origin.1) - along.1 * (p.0 - origin.0);
+        if keep_left { cross } else { -cross }
+    };
+    let mut out = Vec::new();
+    for index in 0..poly.len() {
+        let (a, b) = (poly[index], poly[(index + 1) % poly.len()]);
+        let (sa, sb) = (side(a), side(b));
+        if sa >= 0.0 {
+            out.push(a);
+        }
+        if (sa >= 0.0) != (sb >= 0.0) {
+            let t = sa / (sa - sb);
+            out.push((a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t));
+        }
+    }
+    out
+}
+
+/// `poly` clipped to the cell's hexagon.
+fn in_hex(poly: &[P2]) -> Vec<P2> {
+    let corners = corners();
+    let mut out = poly.to_vec();
+    for index in 0..6 {
+        let (a, b) = (corners[index], corners[(index + 1) % 6]);
+        let along = (b.0 - a.0, b.1 - a.1);
+        // Keep the side the cell's centre is on.
+        let centre_left = along.0 * -a.1 - along.1 * -a.0 > 0.0;
+        out = clip_line(&out, a, along, centre_left);
+        if out.len() < 3 {
+            return Vec::new();
+        }
+    }
+    out
+}
+
+/// Where the lines along two of the hexagon's edges meet.
+fn meet((a, b): (P2, P2), (c, d): (P2, P2)) -> P2 {
+    let (r, s) = ((b.0 - a.0, b.1 - a.1), (d.0 - c.0, d.1 - c.1));
+    let t = ((c.0 - a.0) * s.1 - (c.1 - a.1) * s.0) / (r.0 * s.1 - r.1 * s.0);
+    (a.0 + r.0 * t, a.1 + r.1 * t)
+}
+
+/// A turning mid cell's flight, entered by the west face and left by `exit`.
+///
+/// The west face and the exit face lie on two rays from the point their lines meet:
+/// the corner they share for a sharp turn, a point outside the cell for a gentle one.
+/// Steps fanned about that point have every edge on such a ray, so the first meets
+/// the foot's flight along the whole of the west face and the last meets the high
+/// cell's along the whole of the exit face - which no warped slope made of flat
+/// brushes can. The climb line follows the pitch of the steps on the arc through
+/// both faces' midpoints, where the flights either side carry theirs.
+struct Bend {
+    exit: usize,
+    centre: P2,
+    /// The angle of the west face's midpoint about the centre, and how far round,
+    /// signed, the exit face's lies from it.
+    from: f64,
+    sweep: f64,
+    /// The arc's radius at the west face and at the exit face.
+    radii: (f64, f64),
+}
+
+impl Bend {
+    fn of(turn: Turn) -> Self {
+        let exit = turn.face();
+        let centre = meet(edge(WEST), edge(exit));
+        let polar = |p: P2| {
+            let d = (p.0 - centre.0, p.1 - centre.1);
+            (d.1.atan2(d.0), d.0.hypot(d.1))
+        };
+        let (from, entry_radius) = polar(face_mid(WEST));
+        let (to, exit_radius) = polar(face_mid(exit));
+        let mut sweep = to - from;
+        if sweep > std::f64::consts::PI {
+            sweep -= std::f64::consts::TAU;
+        } else if sweep <= -std::f64::consts::PI {
+            sweep += std::f64::consts::TAU;
+        }
+        Self {
+            exit,
+            centre,
+            from,
+            sweep,
+            radii: (entry_radius, exit_radius),
+        }
+    }
+
+    /// Whether the turn is sharp: the steps wind round a corner of the cell.
+    fn sharp(&self) -> bool {
+        self.radii.0 < APOTHEM
+    }
+
+    /// The direction from the centre at fraction `t` of the way round.
+    fn ray(&self, t: f64) -> P2 {
+        let angle = self.from + self.sweep * t;
+        (angle.cos(), angle.sin())
+    }
+
+    /// The point on the climb line at fraction `t` of the way round.
+    fn on_arc(&self, t: f64) -> P2 {
+        let radius = self.radii.0 + (self.radii.1 - self.radii.0) * t;
+        let ray = self.ray(t);
+        (
+            self.centre.0 + ray.0 * radius,
+            self.centre.1 + ray.1 * radius,
+        )
+    }
+
+    /// `plan` clipped to step `index`'s wedge.
+    fn wedge(&self, plan: &[P2], index: usize) -> Vec<P2> {
+        #[allow(clippy::cast_precision_loss)]
+        let (a, b) = (
+            index as f64 / TREADS as f64,
+            (index + 1) as f64 / TREADS as f64,
+        );
+        // Counterclockwise from ray `a` to ray `b` when the sweep is positive.
+        let left = self.sweep > 0.0;
+        let out = clip_line(plan, self.centre, self.ray(a), left);
+        clip_line(&out, self.centre, self.ray(b), !left)
+    }
+
+    /// Step `index`'s height: risers of one equal height from the foot's flight to
+    /// the high cell's.
+    fn tread(index: usize) -> f64 {
+        #[allow(clippy::cast_precision_loss)]
+        let t = (index + 1) as f64 / (TREADS + 1) as f64;
+        FOOT_TOP + (MID_TOP - FOOT_TOP) * t
+    }
+
+    /// The step under plan point `p`.
+    fn step_at(&self, p: P2) -> usize {
+        let angle = (p.1 - self.centre.1).atan2(p.0 - self.centre.0);
+        let mut round = angle - self.from;
+        if round > std::f64::consts::PI {
+            round -= std::f64::consts::TAU;
+        } else if round <= -std::f64::consts::PI {
+            round += std::f64::consts::TAU;
+        }
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            clippy::cast_precision_loss
+        )]
+        let index = ((round / self.sweep) * TREADS as f64).floor().max(0.0) as usize;
+        index.min(TREADS - 1)
+    }
+
+    /// The climb line: in at the west face, a node on the pitch of the steps at
+    /// each one, and out at the exit face.
+    fn nodes(&self) -> Vec<P3> {
+        let mut nodes = Vec::new();
+        for index in 0..=TREADS + 1 {
+            #[allow(clippy::cast_precision_loss)]
+            let t = match index {
+                0 => 0.0,
+                _ if index == TREADS + 1 => 1.0,
+                _ => (index as f64 - 0.5) / TREADS as f64,
+            };
+            let (x, y) = self.on_arc(t);
+            nodes.push((x, y, FOOT_TOP + (MID_TOP - FOOT_TOP) * t));
+        }
+        nodes
+    }
+
+    /// The faces the flight does not use, outermost first: walls round the outside
+    /// of the turn, farthest from where it turns.
+    fn outer_faces(&self) -> Vec<usize> {
+        let mut faces: Vec<usize> = (0..6).filter(|&f| f != WEST && f != self.exit).collect();
+        let distance = |f: usize| {
+            let m = face_mid(f);
+            (m.0 - self.centre.0).hypot(m.1 - self.centre.1)
+        };
+        faces.sort_by(|&a, &b| distance(b).total_cmp(&distance(a)));
+        faces
+    }
+}
+
+/// A mass over `plan` from the cell's base to `rise` above whichever step it stands
+/// on, one brush for each, never above `top`.
+fn on_bend(bend: &Bend, plan: &[P2], rise: f64, top: f64) -> String {
+    let mut out = String::new();
+    for index in 0..TREADS {
+        let piece = bend.wedge(plan, index);
+        if piece.len() < 3 {
+            continue;
+        }
+        out.push_str(&prism(
+            &piece,
+            0.0,
+            (Bend::tread(index) + rise).min(top),
+            None,
+            0.0,
+            0.0,
+        ));
+    }
+    out
+}
+
 /// A floor brush over `plan` from the cell's base up to the plane rising east through
 /// `(x0, z0)` and `(x1, z1)`, capped flat at `cap`.
 fn flight(plan: &[P2], (x0, z0): (f64, f64), (x1, z1): (f64, f64), cap: Option<f64>) -> String {
@@ -329,6 +604,9 @@ fn flight(plan: &[P2], (x0, z0): (f64, f64), (x1, z1): (f64, f64), cap: Option<f
 /// A stretch already at `top` is left out: anything there would stand no higher than
 /// the floor it is meant to rise from.
 fn on_flight(part: Part, plan: &[P2], rise: f64, top: f64) -> String {
+    if let Some(bend) = part.bend() {
+        return on_bend(&bend, plan, rise, top);
+    }
     let mut out = String::new();
     for (x0, z0, x1, z1) in part.surface() {
         if z0 >= top && z1 >= top {
@@ -364,7 +642,7 @@ fn parapet(part: Part, face: usize) -> String {
     let (ia, ib) = offset_inward(a, b, WALL);
     let plan = [a, b, ib, ia];
     let mut out = on_flight(part, &plan, GUARD, LEVEL);
-    if part == Part::Landing
+    if matches!(part, Part::Landing(_))
         && let Some(piece) = between(&plan, -APOTHEM, STOREY_LINE)
     {
         out.push_str(&prism(&piece, 0.0, FLOOR_TOP + GUARD, None, 0.0, 0.0));
@@ -380,6 +658,15 @@ fn sconce(face: usize, z: f64) -> (String, String) {
 /// What a district stands in the cell, and the lights it hangs there in place of the
 /// plain sconce, if it does.
 fn dress(dressing: Dressing, part: Part) -> (String, Option<String>) {
+    if let Some(bend) = part.bend() {
+        return dress_bend(dressing, &bend);
+    }
+    // A turned landing's gallery takes one alcove: only the other is dressed.
+    let alcoves: &[bool] = match part {
+        Part::Landing(Turn::Right) => &[true],
+        Part::Landing(exit) if exit != Turn::Ahead => &[false],
+        _ => &[true, false],
+    };
     let top = part.top(dressing.enclosed());
     let light_x = part.light_x();
     let floor_at_light = part.height(light_x).unwrap_or(FLOOR_TOP);
@@ -392,7 +679,7 @@ fn dress(dressing: Dressing, part: Part) -> (String, Option<String>) {
         Dressing::Backrooms => None,
         Dressing::Library => {
             out.push_str("// Stacks across the alcoves, floor to ceiling\n");
-            for north in [true, false] {
+            for &north in alcoves {
                 let side = if north { 1.0 } else { -1.0 };
                 for centre in [-48.0, 0.0, 48.0] {
                     let plan = clip_axis(&alcove(north), 0, centre - 5.0, true);
@@ -410,7 +697,7 @@ fn dress(dressing: Dressing, part: Part) -> (String, Option<String>) {
             // and wedged in the alcove's narrowing corner.
             out.push_str("// A lit plinth in each alcove, too high to step onto\n");
             let mut lights = String::new();
-            for north in [true, false] {
+            for &north in alcoves {
                 out.push_str(&on_flight(part, &alcove(north), PLINTH, top));
                 let side = if north { 1.0 } else { -1.0 };
                 lights.push_str(&tile_light(
@@ -424,7 +711,7 @@ fn dress(dressing: Dressing, part: Part) -> (String, Option<String>) {
         Dressing::Zen => {
             out.push_str("// Paper screens along both edges, gaps narrower than a body\n");
             let mut lights = String::new();
-            for north in [true, false] {
+            for &north in alcoves {
                 let side = if north { 1.0 } else { -1.0 };
                 let (y0, y1) = (side * AISLE, side * (AISLE + 3.0));
                 for (x0, x1) in [
@@ -441,7 +728,7 @@ fn dress(dressing: Dressing, part: Part) -> (String, Option<String>) {
         }
         Dressing::Monument => {
             out.push_str("// Masonry filling the alcoves, and a pier at each seam\n");
-            for north in [true, false] {
+            for &north in alcoves {
                 out.push_str(&prism(&alcove(north), 0.0, top, None, 0.0, 0.0));
                 let side = if north { 1.0 } else { -1.0 };
                 let (y0, y1) = (side * (AISLE - 12.0), side * AISLE);
@@ -466,7 +753,7 @@ fn dress(dressing: Dressing, part: Part) -> (String, Option<String>) {
         }
         Dressing::Reactor => {
             out.push_str("// Columns in the alcoves, balustrades along the aisle\n");
-            for north in [true, false] {
+            for &north in alcoves {
                 let side = if north { 1.0 } else { -1.0 };
                 for x in [-40.0, 40.0] {
                     out.push_str(&translate(
@@ -508,6 +795,102 @@ fn dress(dressing: Dressing, part: Part) -> (String, Option<String>) {
     (out, lights)
 }
 
+/// What a district stands round a turning flight, and the lights it hangs there in
+/// place of the plain sconce. A turning flight has no alcoves, so a district dresses
+/// the two walls farthest round the outside of the turn, well clear of the climb
+/// line, and the Monument a sharp turn's newel as well.
+fn dress_bend(dressing: Dressing, bend: &Bend) -> (String, Option<String>) {
+    let top = if dressing.enclosed() { CEILING } else { LEVEL };
+    let outer = bend.outer_faces();
+    let walls = &outer[..2];
+    // A band along a wall's inner face, from `near` to `far` in front of it, kept
+    // clear of the corners.
+    let band = |face: usize, near: f64, far: f64| {
+        let (a, b) = edge(face);
+        let (ia, ib) = offset_inward(a, b, WALL + near);
+        let (ja, jb) = offset_inward(a, b, WALL + far);
+        let at = |p: P2, q: P2, t: f64| (p.0 + (q.0 - p.0) * t, p.1 + (q.1 - p.1) * t);
+        vec![
+            at(ia, ib, 0.15),
+            at(ia, ib, 0.85),
+            at(ja, jb, 0.85),
+            at(ja, jb, 0.15),
+        ]
+    };
+    // A light `out` in front of a wall's middle, `rise` above the step there.
+    let light_by = |face: usize, out: f64, rise: f64| {
+        let (mx, my) = face_mid(face);
+        let length = mx.hypot(my);
+        let reach = WALL + out;
+        let p = (mx - mx / length * reach, my - my / length * reach);
+        let z = (Bend::tread(bend.step_at(p)) + rise).min(top - 12.0);
+        tile_light(p.0, p.1, z)
+    };
+    let mut out = String::new();
+    let lights = match dressing {
+        Dressing::Backrooms => None,
+        Dressing::Library => {
+            out.push_str("// Stacks along the walls round the outside of the turn\n");
+            let mut lights = String::new();
+            for &face in walls {
+                out.push_str(&prism(&band(face, 0.0, 10.0), 0.0, top, None, 0.0, 0.0));
+                lights.push_str(&light_by(face, 22.0, 56.0));
+            }
+            Some(lights)
+        }
+        Dressing::Lumen => {
+            out.push_str("// Lit plinths along the outside of the turn, too high to step onto\n");
+            let mut lights = String::new();
+            for &face in walls {
+                out.push_str(&on_bend(bend, &band(face, 0.0, 18.0), PLINTH, top));
+                lights.push_str(&light_by(face, 9.0, PLINTH + 24.0));
+            }
+            Some(lights)
+        }
+        Dressing::Zen => {
+            out.push_str("// Paper screens along the outside of the turn, lanterns behind\n");
+            let mut lights = String::new();
+            for &face in walls {
+                out.push_str(&on_bend(bend, &band(face, 16.0, 19.0), GUARD + 22.0, top));
+                lights.push_str(&light_by(face, 8.0, 36.0));
+            }
+            Some(lights)
+        }
+        Dressing::Monument => {
+            out.push_str("// Masonry along the outside of the turn\n");
+            let mut lights = String::new();
+            for &face in walls {
+                out.push_str(&prism(&band(face, 0.0, 16.0), 0.0, top, None, 0.0, 0.0));
+                lights.push_str(&light_by(face, 22.0, 48.0));
+            }
+            if bend.sharp() {
+                out.push_str("// The newel cased in masonry\n");
+                let post: Vec<P2> = regular_polygon(NEWEL + 10.0, 8, 22.5)
+                    .into_iter()
+                    .map(|(x, y)| (x + bend.centre.0, y + bend.centre.1))
+                    .collect();
+                out.push_str(&prism(&in_hex(&post), 0.0, top, None, 0.0, 0.0));
+            }
+            Some(lights)
+        }
+        Dressing::Reactor => {
+            out.push_str("// Columns along the outside of the turn\n");
+            for &face in walls {
+                let (a, b) = edge(face);
+                let (ia, ib) = offset_inward(a, b, WALL + 18.0);
+                for t in [0.3, 0.7] {
+                    let (x, y) = (ia.0 + (ib.0 - ia.0) * t, ia.1 + (ib.1 - ia.1) * t);
+                    out.push_str(&translate(&pylon(10.0, 0.0, top, 0.0, 0.0, 0.0), x, y, 0.0));
+                }
+            }
+            None
+        }
+        // A lamp on the parapet farthest round the outside.
+        Dressing::Sky => Some(light_by(outer[0], 6.0, GUARD + 6.0)),
+    };
+    (out, lights)
+}
+
 /// The cell's sides: walls, or in the Sky parapets.
 fn sides(dressing: Dressing, part: Part, door: Option<usize>, open: &[usize]) -> String {
     if dressing.enclosed() {
@@ -518,11 +901,15 @@ fn sides(dressing: Dressing, part: Part, door: Option<usize>, open: &[usize]) ->
         if open.contains(&face) {
             continue;
         }
+        // A turned landing's pad and gallery reach the east and west faces too.
+        let guarded = SIDES.contains(&face)
+            || matches!(part, Part::Landing(exit) if exit != Turn::Ahead)
+            || part.bend().is_some();
         if Some(face) == door {
             out.push_str(&door_wall_default(face, 0.0, LEVEL));
-        } else if SIDES.contains(&face) {
+        } else if guarded {
             out.push_str(&parapet(part, face));
-        } else if part != Part::Landing {
+        } else if !matches!(part, Part::Landing(_)) {
             out.push_str(&wall(face, 0.0, LEVEL));
         }
     }
@@ -530,11 +917,11 @@ fn sides(dressing: Dressing, part: Part, door: Option<usize>, open: &[usize]) ->
 }
 
 /// The climb line through this cell, in its own frame.
-fn spine(nodes: &[(f64, f64)]) -> String {
+fn spine(nodes: &[P3]) -> String {
     let mut out = String::new();
-    for (index, &(x, z)) in nodes.iter().enumerate() {
+    for (index, &(x, y, z)) in nodes.iter().enumerate() {
         #[allow(clippy::cast_possible_truncation)]
-        out.push_str(&stair_node(index as u16, x, 0.0, z));
+        out.push_str(&stair_node(index as u16, x, y, z));
     }
     out
 }
@@ -544,11 +931,11 @@ fn spine(nodes: &[(f64, f64)]) -> String {
 struct Skeleton {
     brushes: String,
     door: Option<usize>,
-    open: &'static [usize],
+    open: Vec<usize>,
     ports: String,
-    nodes: Vec<(f64, f64)>,
+    nodes: Vec<P3>,
     sconce: (usize, f64),
-    title: &'static str,
+    title: String,
 }
 
 impl Skeleton {
@@ -576,18 +963,19 @@ impl Skeleton {
                 Self {
                     brushes,
                     door: Some(WEST),
-                    open: &[EAST],
+                    open: vec![EAST],
                     ports,
                     nodes: vec![
-                        (-100.0, FLOOR_TOP),
-                        (PAD_END, FLOOR_TOP),
-                        (APOTHEM, FOOT_TOP),
+                        (-100.0, 0.0, FLOOR_TOP),
+                        (PAD_END, 0.0, FLOOR_TOP),
+                        (APOTHEM, 0.0, FOOT_TOP),
                     ],
                     sconce: (1, 88.0),
-                    title: "the foot: in from the west, and the flight begins",
+                    title: "the foot: in from the west, and the flight begins".to_owned(),
                 }
             }
-            Part::Mid => {
+            Part::Mid(turn) if turn != Turn::Ahead => Self::bend(&Bend::of(turn), turn),
+            Part::Mid(_) => {
                 let mut brushes = String::from("// The flight, carried across\n");
                 brushes.push_str(&flight(
                     &corners(),
@@ -600,11 +988,11 @@ impl Skeleton {
                 Self {
                     brushes,
                     door: None,
-                    open: &[EAST, WEST],
+                    open: vec![EAST, WEST],
                     ports,
-                    nodes: vec![(-APOTHEM, FOOT_TOP), (APOTHEM, MID_TOP)],
+                    nodes: vec![(-APOTHEM, 0.0, FOOT_TOP), (APOTHEM, 0.0, MID_TOP)],
                     sconce: (4, 100.0),
-                    title: "the middle of the flight",
+                    title: "the middle of the flight".to_owned(),
                 }
             }
             Part::High => {
@@ -622,14 +1010,15 @@ impl Skeleton {
                 Self {
                     brushes,
                     door: None,
-                    open: &[WEST],
+                    open: vec![WEST],
                     ports,
-                    nodes: vec![(-APOTHEM, MID_TOP), (STOREY_LINE, LEVEL)],
+                    nodes: vec![(-APOTHEM, 0.0, MID_TOP), (STOREY_LINE, 0.0, LEVEL)],
                     sconce: (2, 112.0),
-                    title: "the flight's last stretch, open to the landing above",
+                    title: "the flight's last stretch, open to the landing above".to_owned(),
                 }
             }
-            Part::Landing => {
+            Part::Landing(exit) if exit != Turn::Ahead => Self::turned_landing(exit),
+            Part::Landing(_) => {
                 let mut brushes =
                     String::from("// The flight's last few centimetres, and the exit pad\n");
                 brushes.push_str(&flight(
@@ -643,13 +1032,143 @@ impl Skeleton {
                 Self {
                     brushes,
                     door: Some(EAST),
-                    open: &[],
+                    open: Vec::new(),
                     ports,
-                    nodes: vec![(STOREY_LINE, LIP), (ARRIVAL, FLOOR_TOP), (100.0, FLOOR_TOP)],
+                    nodes: vec![
+                        (STOREY_LINE, 0.0, LIP),
+                        (ARRIVAL, 0.0, FLOOR_TOP),
+                        (100.0, 0.0, FLOOR_TOP),
+                    ],
                     sconce: (2, 40.0),
-                    title: "the landing: the flight arrives, and out to the east",
+                    title: "the landing: the flight arrives, and out to the east".to_owned(),
                 }
             }
+        }
+    }
+
+    /// A mid cell whose flight turns: steps fanned about the turn, wound round a
+    /// newel where the turn is sharp.
+    fn bend(bend: &Bend, turn: Turn) -> Self {
+        let mut brushes = format!(
+            "// The flight, turning {}: steps fanned round the turn\n",
+            turn.phrase()
+        );
+        brushes.push_str(&on_bend(bend, &corners(), 0.0, LEVEL));
+        if bend.sharp() {
+            brushes.push_str("// The newel the steps wind round\n");
+            let post: Vec<P2> = regular_polygon(NEWEL, 8, 22.5)
+                .into_iter()
+                .map(|(x, y)| (x + bend.centre.0, y + bend.centre.1))
+                .collect();
+            brushes.push_str(&prism(&in_hex(&post), 0.0, LEVEL, None, 0.0, 0.0));
+        }
+        let mut ports = lateral_port(WEST, "span", "flight_back", 0, 0, 0);
+        ports.push_str(&lateral_port(bend.exit, "span", "flight_on", 0, 0, 0));
+        // The plain sconce on the wall farthest round the outside of the turn, a
+        // body's height above the step beneath it.
+        let face = bend.outer_faces()[0];
+        let step = bend.step_at(face_mid(face));
+        Self {
+            brushes,
+            door: None,
+            open: vec![WEST, bend.exit],
+            ports,
+            nodes: bend.nodes(),
+            sconce: (face, (Bend::tread(step) + 40.0).min(CEILING - 12.0)),
+            title: format!("the middle of the flight, turning {}", turn.phrase()),
+        }
+    }
+
+    /// A landing left by a side face or back over the flight. The flight arrives on
+    /// the east pad as on every landing; a gallery round the alcove on the exit's side
+    /// carries the floor to the door, railed where it overlooks the flight, and a
+    /// landing left back over the flight has a pad of its own before the west door.
+    fn turned_landing(exit: Turn) -> Self {
+        let face = exit.face();
+        // The gallery runs on the exit's side; back over the flight it runs left.
+        let north = !matches!(exit, Turn::Right);
+        let side = if north { 1.0 } else { -1.0 };
+        let mut brushes =
+            String::from("// The flight's last few centimetres, and the arrival pad\n");
+        brushes.push_str(&flight(
+            &clip(STOREY_LINE, true),
+            (STOREY_LINE, LIP),
+            (ARRIVAL, FLOOR_TOP),
+            Some(FLOOR_TOP),
+        ));
+        brushes.push_str("// The gallery round the alcove\n");
+        brushes.push_str(&prism(
+            &clip_axis(&corners(), 1, side * AISLE, north),
+            0.0,
+            FLOOR_TOP,
+            None,
+            0.0,
+            0.0,
+        ));
+        // Where the gallery overlooks the flight, from the west pad or the west wall
+        // to the storey line, a rail.
+        let gallery_from = if exit == Turn::Back {
+            WEST_PAD
+        } else {
+            -APOTHEM
+        };
+        let rail_band = clip_axis(
+            &clip_axis(&corners(), 1, side * AISLE, north),
+            1,
+            side * (AISLE + 2.0),
+            !north,
+        );
+        brushes.push_str("// A rail along the gallery's edge\n");
+        if let Some(rail) = between(&rail_band, gallery_from, STOREY_LINE) {
+            brushes.push_str(&prism(&rail, 0.0, FLOOR_TOP + GUARD, None, 0.0, 0.0));
+        }
+        let mut nodes = vec![(STOREY_LINE, 0.0, LIP), (ARRIVAL, 0.0, FLOOR_TOP)];
+        if exit == Turn::Back {
+            brushes.push_str("// The west pad, before the door, railed over the flight\n");
+            brushes.push_str(&prism(
+                &clip(WEST_PAD, false),
+                0.0,
+                FLOOR_TOP,
+                None,
+                0.0,
+                0.0,
+            ));
+            let edge_band = clip_axis(&clip(WEST_PAD, true), 0, WEST_PAD + 2.0, false);
+            let edge_band = clip_axis(&edge_band, 1, side * (AISLE + 2.0), !north);
+            brushes.push_str(&prism(&edge_band, 0.0, FLOOR_TOP + GUARD, None, 0.0, 0.0));
+            nodes.extend([
+                (ARRIVAL, side * 66.0, FLOOR_TOP),
+                (0.0, side * 74.0, FLOOR_TOP),
+                (-72.0, side * 66.0, FLOOR_TOP),
+                (-88.0, side * 36.0, FLOOR_TOP),
+                (-100.0, 0.0, FLOOR_TOP),
+            ]);
+        } else {
+            // In front of the door, a body's half-width inside the wall.
+            let (mx, my) = face_mid(face);
+            let length = mx.hypot(my);
+            let inset = 14.0;
+            nodes.extend([
+                (84.0, side * 62.0, FLOOR_TOP),
+                (
+                    mx - mx / length * inset,
+                    my - my / length * inset,
+                    FLOOR_TOP,
+                ),
+            ]);
+        }
+        let mut ports = vertical_port("down", "ramp_open", "flight", 0);
+        ports.push_str(&lateral_port(face, "door", "exit", 0, 0, 0));
+        // The plain sconce on the gallery's own wall.
+        let sconce_face = if north { 4 } else { 2 };
+        Self {
+            brushes,
+            door: Some(face),
+            open: Vec::new(),
+            ports,
+            nodes,
+            sconce: (sconce_face, 40.0),
+            title: format!("the landing: the flight arrives, and out {}", exit.phrase()),
         }
     }
 }
@@ -670,7 +1189,7 @@ fn cell(dressing: Dressing, part: Part) -> (String, String) {
     if dressing.enclosed() && part != Part::High {
         brushes.push_str(&hex_slab(CEILING, LEVEL, 0.0, 3.0));
     }
-    brushes.push_str(&sides(dressing, part, door, open));
+    brushes.push_str(&sides(dressing, part, door, &open));
     let (dressed, lights) = dress(dressing, part);
     brushes.push_str(&dressed);
     let (fixture, source) = match lights {
@@ -683,7 +1202,7 @@ fn cell(dressing: Dressing, part: Part) -> (String, String) {
     out.push_str(
         &Meta::cell(
             &format!("authored/{stem}"),
-            part.stem(),
+            &part.stem(),
             dressing.variant(),
             1,
             10,
@@ -698,7 +1217,7 @@ fn cell(dressing: Dressing, part: Part) -> (String, String) {
     (stem, out)
 }
 
-/// Every district's four cells, as `(stem, text)`.
+/// Every district's cells of every shape, as `(stem, text)`.
 #[must_use]
 pub fn builders() -> Vec<(String, String)> {
     Dressing::ALL
@@ -765,7 +1284,7 @@ mod tests {
             ) {
                 continue;
             }
-            for part in Part::ALL {
+            for part in Part::ALL.into_iter().filter(|part| part.bend().is_none()) {
                 let plain = hulls(Dressing::Backrooms, part);
                 let same = |a: &[glam::Vec3], b: &[glam::Vec3]| {
                     a.len() == b.len() && a.iter().all(|p| b.iter().any(|q| p.distance(*q) < 1e-3))
@@ -785,6 +1304,78 @@ mod tests {
                             f64::from(y).abs() >= AISLE - 0.01 || overhead || z <= 0.01,
                             "{dressing:?} {part:?}: ({x:.1}, {y:.1}, {z:.1}) stands in the aisle"
                         );
+                    }
+                }
+            }
+        }
+    }
+
+    /// A turning flight has no aisle: what a district stands round it keeps clear of a
+    /// lane 3 m wide along its climb line, in every district, the Monument's newel
+    /// casing (2.1 m from the line round a sharp turn) and the Sky's parapets too. Each hull's outline is sampled along every
+    /// pair of its corners, so a wall whose ends lie outside the lane cannot cut across
+    /// it between them.
+    #[test]
+    fn the_climb_line_is_clear_round_every_turn() {
+        const LANE: f64 = 24.0;
+        let hulls = |dressing: Dressing, part: Part| {
+            crate::parse_authored_module(&cell(dressing, part).1)
+                .expect("a climb cell validates")
+                .prototype
+                .hulls
+        };
+        let same = |a: &[glam::Vec3], b: &[glam::Vec3]| {
+            a.len() == b.len() && a.iter().all(|p| b.iter().any(|q| p.distance(*q) < 1e-3))
+        };
+        for part in Part::ALL {
+            let Some(bend) = part.bend() else {
+                continue;
+            };
+            let plain = hulls(Dressing::Backrooms, part);
+            // Where along the turn, and how far off the climb line, a plan point lies.
+            let off_line = |x: f64, y: f64| {
+                let radius = (x - bend.centre.0).hypot(y - bend.centre.1);
+                let mut round = (y - bend.centre.1).atan2(x - bend.centre.0) - bend.from;
+                if round > std::f64::consts::PI {
+                    round -= std::f64::consts::TAU;
+                } else if round <= -std::f64::consts::PI {
+                    round += std::f64::consts::TAU;
+                }
+                let t = (round / bend.sweep).clamp(0.0, 1.0);
+                (radius - (bend.radii.0 + (bend.radii.1 - bend.radii.0) * t)).abs()
+            };
+            for dressing in Dressing::ALL {
+                for hull in hulls(dressing, part)
+                    .iter()
+                    .filter(|hull| !plain.iter().any(|other| same(hull, other)))
+                {
+                    // Metres, the importer's frame: plan y is the negated world z.
+                    let plan: Vec<(f64, f64, f64)> = hull
+                        .iter()
+                        .map(|p| {
+                            (
+                                f64::from(p.x) * 16.0,
+                                f64::from(-p.z) * 16.0,
+                                f64::from(p.y) * 16.0,
+                            )
+                        })
+                        .collect();
+                    // Low enough to be floor: a plinth or screen base under the steps.
+                    let low = plan.iter().all(|p| p.2 <= Bend::tread(0) + 0.01);
+                    if low {
+                        continue;
+                    }
+                    for a in &plan {
+                        for b in &plan {
+                            for step in 0..=10 {
+                                let t = f64::from(step) / 10.0;
+                                let (x, y) = (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
+                                assert!(
+                                    off_line(x, y) >= LANE,
+                                    "{dressing:?} {part:?}: ({x:.1}, {y:.1}) stands on the climb line"
+                                );
+                            }
+                        }
                     }
                 }
             }

@@ -97,6 +97,34 @@
       "r": 4,
       "turn": 0,
       "level": 1
+    },
+    {
+      "tile": "climb_foot:132",
+      "q": 8,
+      "r": 4,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "climb_mid:132",
+      "q": 9,
+      "r": 4,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "climb_high:132",
+      "q": 10,
+      "r": 4,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "climb_landing_back:132",
+      "q": 10,
+      "r": 4,
+      "level": 1,
+      "turn": 0
     }
   ],
   "register": 3,
@@ -106,7 +134,7 @@
   "volumetrics": false,
   "inspection_fill": true,
   "camera_target": [
-    98,
+    106,
     4,
     48
   ],
@@ -114,7 +142,7 @@
   "section_axis": 90,
   "orbit_yaw": 2.2,
   "orbit_pitch": 0.5,
-  "radius": 120,
+  "radius": 128,
   "height": 4,
   "output_image": "docs/evidence/same_door_twice/hero.png"
 }

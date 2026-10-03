@@ -1135,7 +1135,9 @@ fn cell_anchor_key(cell: HexCoord) -> HexThresholdKey {
 }
 
 /// A stable code for an archetype, for the digest: each one's old discriminant, so
-/// digests of facilities without climbs are what they were, and climbs after them.
+/// digests of facilities without climbs are what they were, and climbs after them:
+/// the straight climb's four parts first, as they were before climbs could turn, and
+/// the turned shapes after.
 fn archetype_code(archetype: HexArchetype) -> u64 {
     match archetype {
         HexArchetype::Void => 0,
@@ -1146,7 +1148,18 @@ fn archetype_code(archetype: HexArchetype) -> u64 {
         // 5 to 7 were the ramps and towers; codes stay put, so a digest does not move.
         HexArchetype::Expanse => 8,
         HexArchetype::Climb { part, heading } => {
-            let part = ClimbPart::ALL.iter().position(|&p| p == part).unwrap_or(0) as u64;
+            let part = match part {
+                ClimbPart::Foot => 0,
+                ClimbPart::High => 2,
+                ClimbPart::MID => 1,
+                ClimbPart::LANDING => 3,
+                turned => {
+                    4 + ClimbPart::ALL
+                        .iter()
+                        .position(|&p| p == turned)
+                        .unwrap_or(0) as u64
+                }
+            };
             9 + part * 6 + heading.index() as u64
         }
     }

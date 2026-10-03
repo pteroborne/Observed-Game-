@@ -3049,9 +3049,10 @@ mod tests {
                     .is_none()
             );
         }
+        // A bound for the search only: the scenes' climbs reach q = 10.
         let grid = HexGridSize {
-            cols: 10,
-            rows: 10,
+            cols: 12,
+            rows: 12,
             levels: 4,
         };
         for (&cell, signature) in &signatures {
@@ -3066,36 +3067,28 @@ mod tests {
                 }
             }
         }
-        // Each tier is one place, reachable through its own authored ports. The tiers
-        // were joined to each other by one-cell ramps, which retired for the climb
-        // compositions; a benchmark that climbs again will climb by a composition.
-        let levels: BTreeSet<u8> = signatures.keys().map(|cell| cell.level).collect();
-        for level in levels {
-            let tier: BTreeSet<HexCoord> = signatures
-                .keys()
-                .copied()
-                .filter(|cell| cell.level == level)
-                .collect();
-            let mut seen = BTreeSet::new();
-            let mut pending = vec![*tier.first().expect("a tier has cells")];
-            while let Some(cell) = pending.pop() {
-                if !seen.insert(cell) {
-                    continue;
-                }
-                for face in HexFace::LATERAL {
-                    if signatures[&cell].port(face) != PortClass::Sealed
-                        && let Some(next) = grid.neighbor(cell, face)
-                        && tier.contains(&next)
-                    {
-                        pending.push(next);
-                    }
+        // The scene is one place: every cell reachable through authored ports, across
+        // a storey by the climb composition that joins its tiers.
+        let all: BTreeSet<HexCoord> = signatures.keys().copied().collect();
+        let mut seen = BTreeSet::new();
+        let mut pending = vec![*all.first().expect("a scene has cells")];
+        while let Some(cell) = pending.pop() {
+            if !seen.insert(cell) {
+                continue;
+            }
+            for face in HexFace::ALL {
+                if signatures[&cell].port(face) != PortClass::Sealed
+                    && let Some(next) = grid.neighbor(cell, face)
+                    && all.contains(&next)
+                {
+                    pending.push(next);
                 }
             }
-            assert_eq!(
-                seen, tier,
-                "tier {level} must be reachable through its authored ports"
-            );
         }
+        assert_eq!(
+            seen, all,
+            "every cell must be reachable through its authored ports"
+        );
         state.compositions.push(Composition::Layout { cells });
         let index = state.compositions.len() - 1;
         state.switch(index);
@@ -3114,7 +3107,7 @@ mod tests {
             include_str!("../../../docs/compositions/witness_exchange/hero.json"),
             6,
             "wellshaft",
-            22,
+            28,
         );
     }
 
@@ -3124,7 +3117,7 @@ mod tests {
             include_str!("../../../docs/compositions/last_courtyard/hero.json"),
             8,
             "thinning",
-            8,
+            12,
         );
     }
     #[test]
@@ -3133,7 +3126,7 @@ mod tests {
             include_str!("../../../docs/compositions/empty_audience/hero.json"),
             4,
             "facet_monument",
-            9,
+            11,
         );
     }
     #[test]
@@ -3142,7 +3135,7 @@ mod tests {
             include_str!("../../../docs/compositions/missing_rooms/hero.json"),
             7,
             "infinite_gallery",
-            12,
+            11,
         );
     }
 
@@ -3340,7 +3333,7 @@ mod tests {
             include_str!("../../../docs/compositions/unfinished_crossing/hero.json"),
             5,
             "megastructure",
-            15,
+            20,
         );
     }
 
@@ -3350,7 +3343,7 @@ mod tests {
             include_str!("../../../docs/compositions/same_door_twice/hero.json"),
             2,
             "overlit_grid",
-            14,
+            18,
         );
     }
 }

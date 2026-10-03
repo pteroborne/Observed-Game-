@@ -32,7 +32,12 @@ use runtime::Runtime;
 /// most faces open onto void, which is the one property the kinetic tool needs
 /// from its architecture. Any other seed still works — [`site::Site::solve`]
 /// searches forward until it finds a usable seven-cell floor.
-pub const DEFAULT_SEED: u64 = 8;
+///
+/// 10 since the climbs gained turned shapes and the solver's weights were rescaled:
+/// seed 8 then dealt a floor the recorded loop could not cross, its policy snagged on
+/// a doorway on the way to the demolition control. About half of all seeds do that to
+/// it; 10 is the nearest that does not.
+pub const DEFAULT_SEED: u64 = 10;
 
 const HELP: &str = "\
 Kinetic / 02 — The Solved Floor

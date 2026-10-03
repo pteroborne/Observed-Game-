@@ -213,8 +213,8 @@ pub(super) fn layout_failure(
         if let HexArchetype::Climb { part, .. } = placement.archetype {
             let (face, lower_first) = match part {
                 ClimbPart::High => (HexFace::Up, true),
-                ClimbPart::Landing => (HexFace::Down, false),
-                ClimbPart::Foot | ClimbPart::Mid => continue,
+                ClimbPart::Landing { .. } => (HexFace::Down, false),
+                ClimbPart::Foot | ClimbPart::Mid { .. } => continue,
             };
             let Some(other) = grid
                 .neighbor(placement.coord, face)

@@ -38,13 +38,12 @@ pub(in crate::hex_wfc::view) fn sketch_role(
         HexArchetype::Void => HexSketchRole::Void,
         HexArchetype::Straight | HexArchetype::Corner => HexSketchRole::Corridor,
         HexArchetype::Junction => HexSketchRole::Junction,
-        // A climb composition draws as the ramp it replaces until it has a glyph of
         // A climb composition steps up the way it climbs.
         HexArchetype::Climb { part, .. } => match part {
             ClimbPart::Foot => HexSketchRole::ClimbFoot,
-            ClimbPart::Mid => HexSketchRole::ClimbMid,
+            ClimbPart::Mid { .. } => HexSketchRole::ClimbMid,
             ClimbPart::High => HexSketchRole::ClimbHigh,
-            ClimbPart::Landing => HexSketchRole::ClimbLanding,
+            ClimbPart::Landing { .. } => HexSketchRole::ClimbLanding,
         },
         HexArchetype::Expanse => HexSketchRole::Expanse,
         HexArchetype::Room => HexSketchRole::Room,

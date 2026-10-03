@@ -423,7 +423,7 @@ mod tests {
 
     /// Any climb cell: the weights are the composition's, whichever cell and heading.
     const CLIMB: HexArchetype = HexArchetype::Climb {
-        part: crate::hex_wfc::ClimbPart::Mid,
+        part: crate::hex_wfc::ClimbPart::MID,
         heading: observed_hex::HexFace::East,
     };
 

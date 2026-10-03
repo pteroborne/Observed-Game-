@@ -67,11 +67,19 @@ pub(in crate::hex_wfc) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
         let Some(&register) = world.architecture.get(&foot) else {
             continue;
         };
-        let Some(cells) = observed_facility::hex_wfc::composition_cells(
+        let Some(cells) = observed_facility::hex_wfc::composition_in(
             world.config.grid(),
+            &world.placements,
             foot,
-            placement.archetype,
         ) else {
+            continue;
+        };
+        // The flight may turn in its mid cell: the landing looks back down the way
+        // the high cell climbs, which is the landing's own heading.
+        let HexArchetype::Climb {
+            heading: arriving, ..
+        } = world.placements[&cells[3]].archetype
+        else {
             continue;
         };
         if !seen.insert(register as u8) {
@@ -79,7 +87,7 @@ pub(in crate::hex_wfc) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
         }
         let (up, down) = names(register);
         poses.push(looking_in(up, foot, heading.opposite(), 5.6, 0.15));
-        poses.push(looking_in(down, cells[3], heading, 5.6, -0.3));
+        poses.push(looking_in(down, cells[3], arriving, 5.6, -0.3));
     }
     poses
 }

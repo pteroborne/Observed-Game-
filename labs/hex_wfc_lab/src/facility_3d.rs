@@ -470,9 +470,11 @@ struct ClimbView {
 fn climb_view(world: &HexWfcWorld) -> Option<ClimbView> {
     world.placements.keys().find_map(|&foot| {
         let heading = climb_heading(world, foot)?;
-        let archetype = world.placements[&foot].archetype;
-        let cells =
-            observed_facility::hex_wfc::composition_cells(world.config.grid(), foot, archetype)?;
+        let cells = observed_facility::hex_wfc::composition_in(
+            world.config.grid(),
+            &world.placements,
+            foot,
+        )?;
         Some(ClimbView {
             foot,
             landing: cells[3],

@@ -213,18 +213,6 @@ fn a_hundred_seed_3d_corpus_solves_and_validates() {
 /// without its `RampHead` above — over the whole 3D corpus.
 /// The four cells of the climb composition with its foot at `foot`, climbing toward
 /// `heading`, as the world has them: `None` where the lattice ends.
-fn composition_at(
-    world: &HexWfcWorld,
-    foot: HexCoord,
-    heading: HexFace,
-) -> Option<[HexArchetype; 4]> {
-    let grid = world.config.grid();
-    let mid = grid.neighbor(foot, heading)?;
-    let high = grid.neighbor(mid, heading)?;
-    let landing = grid.neighbor(high, HexFace::Up)?;
-    Some([foot, mid, high, landing].map(|cell| world.placements[&cell].archetype))
-}
-
 #[test]
 fn every_part_of_a_composition_names_the_same_four_cells() {
     let config = HexWfcConfig {
@@ -243,9 +231,15 @@ fn every_part_of_a_composition_names_the_same_four_cells() {
             continue;
         };
         let cells = placements.map(|placement| placement.coord);
+        let at = |coord: HexCoord| {
+            placements
+                .iter()
+                .find(|placement| placement.coord == coord)
+                .map(|placement| placement.archetype)
+        };
         for placement in placements {
             assert_eq!(
-                composition_cells(config.grid(), placement.coord, placement.archetype),
+                composition_cells(config.grid(), placement.coord, at),
                 Some(cells),
                 "{heading:?} from its {:?}",
                 placement.archetype
@@ -255,13 +249,15 @@ fn every_part_of_a_composition_names_the_same_four_cells() {
 }
 
 /// Every climb cell the solver places belongs to a whole composition, in order:
-/// foot, mid and high along one heading and the landing above the high cell. And the
-/// corpus does build them - a mechanism that never fires proves nothing.
+/// foot, mid and high round the mid's turn and the landing above the high cell, each
+/// exactly the cell its shape builds. And the corpus does build them - a mechanism
+/// that never fires proves nothing.
 #[test]
 fn climb_compositions_are_always_whole_over_the_3d_corpus() {
     let config = config_3d();
     let mut compositions = 0;
     let mut seeds_with_one = 0;
+    let mut shapes = BTreeSet::new();
     for seed in corpus_seeds_3d() {
         let world = HexWfcWorld::generate(seed, config).expect("must solve");
         let mut found = 0;
@@ -274,13 +270,39 @@ fn climb_compositions_are_always_whole_over_the_3d_corpus() {
             if part != ClimbPart::Foot {
                 continue;
             }
-            let climb = |part| HexArchetype::Climb { part, heading };
-            assert_eq!(
-                composition_at(&world, placement.coord, heading),
-                Some(ClimbPart::ALL.map(climb)),
-                "seed {seed:#x}: the climb from {:?} is not whole",
-                placement.coord
-            );
+            let cells = composition_in(config.grid(), &world.placements, placement.coord)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "seed {seed:#x}: the climb from {:?} is not whole",
+                        placement.coord
+                    )
+                });
+            let [_, mid, _, landing] = cells.map(|cell| world.placements[&cell].archetype);
+            let (
+                HexArchetype::Climb {
+                    part: ClimbPart::Mid { turn },
+                    ..
+                },
+                HexArchetype::Climb {
+                    part: ClimbPart::Landing { exit },
+                    ..
+                },
+            ) = (mid, landing)
+            else {
+                panic!("seed {seed:#x}: the climb from {cells:?} has no mid or landing");
+            };
+            let authored = authored_climb_shaped(config, placement.coord, heading, turn, exit)
+                .expect("a placed shape is one the catalogue builds");
+            for built in authored {
+                let placed = world.placements[&built.coord];
+                assert_eq!(
+                    (placed.archetype, placed.doors, placed.up, placed.down),
+                    (built.archetype, built.doors, built.up, built.down),
+                    "seed {seed:#x}: the climb from {:?} is not the shape it names",
+                    placement.coord
+                );
+            }
+            shapes.insert((turn, exit));
             found += 1;
         }
         assert_eq!(
@@ -291,7 +313,7 @@ fn climb_compositions_are_always_whole_over_the_3d_corpus() {
         compositions += found;
         seeds_with_one += usize::from(found > 0);
     }
-    println!("{compositions} climb compositions across {seeds_with_one} seeds");
+    println!("{compositions} climb compositions across {seeds_with_one} seeds, shapes {shapes:?}");
     assert!(
         seeds_with_one > 0,
         "the corpus never built a climb composition"

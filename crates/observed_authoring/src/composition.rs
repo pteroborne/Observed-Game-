@@ -802,7 +802,7 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "16cf28acfc8f7fa75db106550bb35c6108c4ec640552814f83a26b4b835b6ceb";
+            "fd46cb673167a43e4dd14c3df154b3a56fcd99900032b9c359efff66feea79dc";
         // The open-air composition (void share 2,000), 2026-09-24, at profile
         // version 6 since the ramps and towers retired and its bias names `climb`.
         const PROFILE_HASH: &str =
@@ -811,7 +811,7 @@ mod tests {
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "2cd67a8ea5d1d60af351988fecaa9bc127e8ba704913b2c353b9c35394f6f1da";
+            "a9c6ce8fa512f4f9b0256433e23d60c533df9cb8c1ddcf9fb51e4f6da22ba901";
 
         let root = committed_tiles();
         let compiled_text =
@@ -820,8 +820,10 @@ mod tests {
             crate::CompiledTileCatalog::from_ron(&compiled_text).expect("catalog parses");
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
         // 359 with the switchback ramps and the 171 spiral towers; every storey is
-        // climbed by a composition since, and none of either is compiled.
-        assert_eq!(compiled.modules.len(), 181, "committed strict source count");
+        // climbed by a composition since, and none of either is compiled. 230 since
+        // climbs turn: four turning mid cells and three turned landings, in seven
+        // dressings.
+        assert_eq!(compiled.modules.len(), 230, "committed strict source count");
         assert!(
             compiled
                 .modules

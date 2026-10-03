@@ -209,8 +209,9 @@ mod tests {
                 .iter()
                 .filter(|label| label.starts_with("HALL / "))
                 .count(),
-            // The five flat halls, the expanse, and a climb's four cells.
-            10
+            // The five flat halls, the expanse, and every shape of climb cell: the foot,
+            // the high cell, five mid cells (straight and four turns) and four landings.
+            17
         );
     }
 }

@@ -557,7 +557,7 @@ impl MatchSettings {
             .with(HexArchetype::Junction, 1.65)
             .with(
                 HexArchetype::Climb {
-                    part: observed_facility::hex_wfc::ClimbPart::Mid,
+                    part: observed_facility::hex_wfc::ClimbPart::MID,
                     heading: observed_hex::HexFace::East,
                 },
                 1.45,

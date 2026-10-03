@@ -342,6 +342,14 @@ for the design and the router that lays them.
 | `climb_mid` | flight to 5.0 m | `span` both ways |
 | `climb_high` | flight to 8.0 m, no ceiling | `span` behind, `ramp_open` up |
 | `climb_landing` | lip over the flight, pad to the door | `ramp_open` down, door ahead |
+| `climb_mid_left`, `_right` | steps turning 60 degrees, fanned about a point outside the cell | `span` behind, `span` to the side |
+| `climb_mid_sharp_left`, `_sharp_right` | steps winding 120 degrees round a newel in the corner | `span` behind, `span` beside it |
+| `climb_landing_left`, `_right` | pad, then a gallery round the alcove to a side door | `ramp_open` down, door 60 degrees round |
+| `climb_landing_back` | pad, gallery, and a west pad: a switchback | `ramp_open` down, door behind |
+
+A composition's shape is its mid cell's turn and its landing's exit; the foot and the
+high cell are the same in every shape. The heading of a turning mid cell is the way it
+is entered, and its high cell heads the way it leaves.
 
 - **`span`** is the lateral port inside a composition. It meets only another span.
   Each ends at its partner's floor height mid-flight, not at the door sill.
@@ -352,7 +360,8 @@ for the design and the router that lays them.
   (`climb_foot_library`, and so on), authored variants 21-26 as the ramps' were. A
   dressing may stand anything in the alcoves, on the aisle's edges or overhead, but
   never in the aisle (`the_aisle_is_clear_in_every_district`), and never changes the
-  flight. To preview one in hex_tile_lab, name the runtime variant (authored times 6)
+  flight. A turning mid cell has no aisle; its dressing stands along the walls round
+  the outside of the turn, clear of the climb line (`the_climb_line_is_clear_round_every_turn`). To preview one in hex_tile_lab, name the runtime variant (authored times 6)
   in a `layout` entry, for example `"climb_mid:126"` for the Library.
 - **Never turned by the solver's choice:** projection pins each climb cell's turn to
   its heading (`geometry::required_turn`). The Mid's ports are symmetric under a half

@@ -55,6 +55,34 @@
       "r": 4,
       "turn": 3,
       "level": 1
+    },
+    {
+      "tile": "climb_foot:156",
+      "q": 6,
+      "r": 4,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "climb_mid:156",
+      "q": 7,
+      "r": 4,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "climb_high:156",
+      "q": 8,
+      "r": 4,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "climb_landing_back:156",
+      "q": 8,
+      "r": 4,
+      "level": 1,
+      "turn": 0
     }
   ],
   "register": 9,

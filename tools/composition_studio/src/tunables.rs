@@ -197,7 +197,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
         set: |p, v| {
             p.archetype_bias = p.archetype_bias.with(
                 HexArchetype::Climb {
-                    part: observed_facility::hex_wfc::ClimbPart::Mid,
+                    part: observed_facility::hex_wfc::ClimbPart::MID,
                     heading: observed_hex::HexFace::East,
                 },
                 v,

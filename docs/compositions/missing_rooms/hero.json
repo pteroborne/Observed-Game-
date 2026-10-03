@@ -1,13 +1,6 @@
 {
   "layout": [
     {
-      "tile": "hall_straight:840",
-      "q": 2,
-      "r": 4,
-      "level": 0,
-      "turn": 0
-    },
-    {
       "tile": "hall_junction_4way:840",
       "q": 5,
       "r": 4,
@@ -15,25 +8,18 @@
       "turn": 3
     },
     {
-      "tile": "hall_turn_120:840",
-      "q": 4,
-      "r": 5,
-      "level": 0,
-      "turn": 3
-    },
-    {
-      "tile": "hall_turn_120:846",
+      "tile": "climb_high:126",
       "q": 3,
       "r": 5,
       "level": 0,
-      "turn": 4
+      "turn": 0
     },
     {
-      "tile": "hall_junction_4way:846",
+      "tile": "climb_foot:126",
       "q": 3,
       "r": 4,
       "level": 0,
-      "turn": 0
+      "turn": 2
     },
     {
       "tile": "hall_turn_120:840",
@@ -64,11 +50,11 @@
       "turn": 3
     },
     {
-      "tile": "hall_turn_120:846",
+      "tile": "climb_landing:126",
       "q": 3,
       "r": 5,
       "level": 1,
-      "turn": 4
+      "turn": 0
     },
     {
       "tile": "hall_turn_120:840",
@@ -83,6 +69,13 @@
       "r": 3,
       "level": 1,
       "turn": 1
+    },
+    {
+      "tile": "climb_mid_sharp_left:126",
+      "q": 2,
+      "r": 5,
+      "level": 0,
+      "turn": 2
     }
   ],
   "register": 8,

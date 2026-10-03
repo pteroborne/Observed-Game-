@@ -43,7 +43,7 @@ pub use blueprint::{
     RoomBlueprint, StampedBlueprint, blueprint_cell_archetype, blueprint_for_role,
 };
 pub use context::{HexInfluenceField, PROFILE_MAX, PROFILE_MIN};
-pub use directed::{authored_climb, authored_hall};
+pub use directed::{authored_climb, authored_climb_shaped, authored_hall};
 pub use neighborhood::{
     FaceDomain, NeighborCandidate, Neighborhood, NeighborhoodError, neighborhood,
 };
@@ -66,7 +66,7 @@ pub use trace::{
     CellTrace, SolveStep, TraceSummary, cells_from_world, fold_trace, summarise_trace,
 };
 pub use variants::{
-    HexGeometryDemand, climb_bond, demandable_signatures, geometry_demands,
+    HexGeometryDemand, climb_bond, climb_tile_archetype, demandable_signatures, geometry_demands,
     placement_tile_archetype, spans_join,
 };
 
@@ -159,23 +159,145 @@ pub enum HexArchetype {
     },
 }
 
-/// One cell of a straight climb composition, in the order a body climbs through it.
+/// One cell of a climb composition, in the order a body climbs through it.
+///
+/// A composition's shape is carried by the two cells it changes: the mid cell's
+/// flight may turn as it crosses, and the landing may be left by any of four faces.
+/// The foot and the high cell are the same in every shape.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum ClimbPart {
     /// Entered by its doors on the low side; the flight starts here.
     Foot,
-    /// The flight carried on, span to span.
-    Mid,
+    /// The flight carried on, span to span, entered along the heading and left by
+    /// `turn`: straight across, or round a turn.
+    Mid { turn: ClimbTurn },
     /// The flight reaching the next floor, open to the landing above.
     High,
-    /// The storey above the high cell: open over the flight, left by its doors.
-    Landing,
+    /// The storey above the high cell: open over the flight, left by the face `exit`
+    /// names from the flight's own heading.
+    Landing { exit: ClimbTurn },
 }
 
 impl ClimbPart {
-    pub const ALL: [Self; 4] = [Self::Foot, Self::Mid, Self::High, Self::Landing];
+    /// Every part in every shape the catalogue builds.
+    pub const ALL: [Self; 11] = [
+        Self::Foot,
+        Self::Mid {
+            turn: ClimbTurn::Ahead,
+        },
+        Self::Mid {
+            turn: ClimbTurn::Left,
+        },
+        Self::Mid {
+            turn: ClimbTurn::SharpLeft,
+        },
+        Self::Mid {
+            turn: ClimbTurn::SharpRight,
+        },
+        Self::Mid {
+            turn: ClimbTurn::Right,
+        },
+        Self::High,
+        Self::Landing {
+            exit: ClimbTurn::Ahead,
+        },
+        Self::Landing {
+            exit: ClimbTurn::Left,
+        },
+        Self::Landing {
+            exit: ClimbTurn::Right,
+        },
+        Self::Landing {
+            exit: ClimbTurn::Back,
+        },
+    ];
+
+    /// The straight mid cell.
+    pub const MID: Self = Self::Mid {
+        turn: ClimbTurn::Ahead,
+    };
+    /// The landing left straight on.
+    pub const LANDING: Self = Self::Landing {
+        exit: ClimbTurn::Ahead,
+    };
+
+    /// Whether this is a mid cell, of any shape.
+    #[must_use]
+    pub const fn is_mid(self) -> bool {
+        matches!(self, Self::Mid { .. })
+    }
+
+    /// Whether this is a landing, of any shape.
+    #[must_use]
+    pub const fn is_landing(self) -> bool {
+        matches!(self, Self::Landing { .. })
+    }
+}
+
+/// A direction relative to a climb's heading, as whole lateral faces counted from the
+/// heading toward its right: `Right` is the next face in [`HexFace::LATERAL`] order,
+/// `Back` the face behind.
+///
+/// Face order runs East, SouthEast, SouthWest: clockwise seen from above, so the next
+/// face is on a climbing body's right. The forge authors every climb heading east and
+/// numbers its faces the same way.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum ClimbTurn {
+    Ahead,
+    /// 60 degrees right.
+    Right,
+    /// 120 degrees right.
+    SharpRight,
+    Back,
+    /// 120 degrees left.
+    SharpLeft,
+    /// 60 degrees left.
+    Left,
+}
+
+impl ClimbTurn {
+    /// The turns a mid cell's flight takes: every one but straight back.
+    pub const BENDS: [Self; 5] = [
+        Self::Ahead,
+        Self::Left,
+        Self::SharpLeft,
+        Self::SharpRight,
+        Self::Right,
+    ];
+
+    /// The faces a landing is left by. Not the two beside the face behind: from the
+    /// pad where the flight arrives, both are as far round as the face behind, which
+    /// is the one a switchback needs.
+    pub const EXITS: [Self; 4] = [Self::Ahead, Self::Left, Self::Right, Self::Back];
+
+    /// How many lateral faces round to the right of the heading.
+    #[must_use]
+    pub const fn offset(self) -> usize {
+        self as usize
+    }
+
+    /// The face this turn names from `heading`.
+    #[must_use]
+    pub const fn apply(self, heading: HexFace) -> HexFace {
+        HexFace::LATERAL[(heading.index() + self.offset()) % 6]
+    }
+
+    /// The turn that takes `heading` to `face`, for a lateral `face`.
+    #[must_use]
+    pub const fn between(heading: HexFace, face: HexFace) -> Self {
+        match (face.index() + 6 - heading.index()) % 6 {
+            0 => Self::Ahead,
+            1 => Self::Right,
+            2 => Self::SharpRight,
+            3 => Self::Back,
+            4 => Self::SharpLeft,
+            _ => Self::Left,
+        }
+    }
 }
 
 impl HexArchetype {
@@ -187,38 +309,89 @@ impl HexArchetype {
         match self {
             Self::Climb { part, heading } => match part {
                 ClimbPart::Foot => lateral_bit(heading),
-                ClimbPart::Mid => lateral_bit(heading) | lateral_bit(heading.opposite()),
+                ClimbPart::Mid { turn } => {
+                    lateral_bit(heading.opposite()) | lateral_bit(turn.apply(heading))
+                }
                 ClimbPart::High => lateral_bit(heading.opposite()),
-                ClimbPart::Landing => 0,
+                ClimbPart::Landing { .. } => 0,
             },
             _ => 0,
+        }
+    }
+
+    /// The faces a climb cell's flight enters by and leaves by, where it has them.
+    /// The heading is the way the flight runs through the cell, so a mid cell's
+    /// heading is the way it was entered and its high cell's the way it was left.
+    #[must_use]
+    pub const fn flight_faces(self) -> Option<(Option<HexFace>, Option<HexFace>)> {
+        match self {
+            Self::Climb { part, heading } => Some(match part {
+                ClimbPart::Foot => (None, Some(heading)),
+                ClimbPart::Mid { turn } => (Some(heading.opposite()), Some(turn.apply(heading))),
+                ClimbPart::High => (Some(heading.opposite()), None),
+                ClimbPart::Landing { .. } => (None, None),
+            }),
+            _ => None,
         }
     }
 }
 
 /// The four cells of the climb composition the cell at `coord` belongs to, foot first,
-/// if its archetype is a climb's and the lattice holds the whole of it. A composition
-/// is one unit: whatever pins, pockets or rewrites one of its cells takes all four.
+/// if `archetype_at` reads a climb there and the lattice holds the whole of it. A
+/// composition is one unit: whatever pins, pockets or rewrites one of its cells takes
+/// all four.
+///
+/// A composition's shape is its mid cell's turn, so the mid cell is read from
+/// `archetype_at` wherever `coord` is not it: `None` where it is missing or is not
+/// the mid cell this one's flight runs through.
 #[must_use]
 pub fn composition_cells(
     grid: observed_hex::HexGridSize,
     coord: HexCoord,
-    archetype: HexArchetype,
+    archetype_at: impl Fn(HexCoord) -> Option<HexArchetype>,
 ) -> Option<[HexCoord; 4]> {
-    let HexArchetype::Climb { part, heading } = archetype else {
+    let HexArchetype::Climb { part, heading } = archetype_at(coord)? else {
         return None;
     };
-    let back = heading.opposite();
-    let high = match part {
-        ClimbPart::Foot => grid.neighbor(grid.neighbor(coord, heading)?, heading)?,
-        ClimbPart::Mid => grid.neighbor(coord, heading)?,
-        ClimbPart::High => coord,
-        ClimbPart::Landing => grid.neighbor(coord, HexFace::Down)?,
+    let mid = match part {
+        ClimbPart::Foot => grid.neighbor(coord, heading)?,
+        ClimbPart::Mid { .. } => coord,
+        ClimbPart::High => grid.neighbor(coord, heading.opposite())?,
+        ClimbPart::Landing { .. } => {
+            grid.neighbor(grid.neighbor(coord, HexFace::Down)?, heading.opposite())?
+        }
     };
-    let mid = grid.neighbor(high, back)?;
-    let foot = grid.neighbor(mid, back)?;
+    let HexArchetype::Climb {
+        part: ClimbPart::Mid { turn },
+        heading: entered,
+    } = archetype_at(mid)?
+    else {
+        return None;
+    };
+    let foot = grid.neighbor(mid, entered.opposite())?;
+    let high = grid.neighbor(mid, turn.apply(entered))?;
     let landing = grid.neighbor(high, HexFace::Up)?;
-    Some([foot, mid, high, landing])
+    let cells = [foot, mid, high, landing];
+    // The cell asked about must be the one of this composition its part says.
+    let index = match part {
+        ClimbPart::Foot => 0,
+        ClimbPart::Mid { .. } => 1,
+        ClimbPart::High => 2,
+        ClimbPart::Landing { .. } => 3,
+    };
+    (cells[index] == coord).then_some(cells)
+}
+
+/// [`composition_cells`] read from a facility's placements.
+#[must_use]
+pub fn composition_in(
+    grid: observed_hex::HexGridSize,
+    placements: &BTreeMap<HexCoord, HexPlacement>,
+    coord: HexCoord,
+) -> Option<[HexCoord; 4]> {
+    composition_cells(grid, coord, |cell| {
+        placements.get(&cell).map(|placement| placement.archetype)
+    })
 }
 
 /// A climb's heading as its face index, for the optional serialised form:

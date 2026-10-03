@@ -20,16 +20,17 @@ use super::{HexArchetype, HexPlacement, HexRoomQuotas, HexSpace, HexWfcConfig, H
 
 type CollapseOutput = (BTreeMap<HexCoord, HexPlacement>, Vec<StampedBlueprint>, u32);
 
-/// Fixed-width bitset over catalogue variant indices. The catalogue holds 352
-/// variants since the climb compositions replaced the ramp pairs and the 169-entry
-/// stair-tower family (`docs/climb_compositions_plan.md`). Six words give 384.
+/// Fixed-width bitset over catalogue variant indices. The catalogue holds 394
+/// variants since the climbs gained turned mid cells and landings left by four
+/// faces (`docs/climb_compositions_plan.md`). Seven words give 448.
 /// `solver_tables` asserts the fit.
 ///
-/// It was eight at 509 variants, when the shaft family gained its branching
+/// It was six at 352, when the climb compositions replaced the ramp pairs and the
+/// stair towers, eight at 509 variants, when the shaft family gained its branching
 /// landing, seven since Phase 108 added `Expanse`, and six before that. The margin
 /// has always been a handful, deliberately: the assertion is the notice, and a
 /// word of slack is a word copied on every propagation step.
-const MASK_WORDS: usize = 6;
+const MASK_WORDS: usize = 7;
 /// A cadence event refreshes the architecture register across its full
 /// target-32 pocket, but only this connected structural core is allowed to
 /// change topology. This keeps collision churn bounded independently of

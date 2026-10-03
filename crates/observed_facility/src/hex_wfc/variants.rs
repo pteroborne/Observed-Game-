@@ -10,7 +10,7 @@ use observed_hex::{HexFace, PortClass, PortSignature};
 use crate::map_spec::RoomRole;
 
 use super::blueprint::{blueprint_cell_archetype, blueprint_for_role};
-use super::{ClimbPart, HexArchetype, HexPlacement, HexSpace, lateral_bit};
+use super::{ClimbPart, ClimbTurn, HexArchetype, HexPlacement, HexSpace, lateral_bit};
 
 /// One exact authored-tile requirement emitted by hex geometry projection.
 ///
@@ -63,14 +63,19 @@ impl HexVariant {
 /// ([`CLIMB_WEIGHT`]), so these stay where they are rather than reopening a
 /// balance nothing now leans on.
 ///
+/// Every weight in the alphabet was multiplied by four together when the climbs gained
+/// turned shapes, so that a turned shape could weigh a sixteenth of a straight one
+/// without the climbs as a family weighing any more ([`TURNED_CLIMB_WEIGHT`]). A
+/// uniform scale leaves every draw's odds where they were.
+///
 /// Nothing here changes how empty the facility is. `SpaceMix` draws the space
 /// before the variant and normalises within each one, so scaling every Hall
 /// weight together leaves the Void share exactly where `space_mix` puts it.
-const FLAT_DEGREE_2: u32 = 12;
+const FLAT_DEGREE_2: u32 = 48;
 /// Three and four lateral doors, flat. A third of a straight, as before.
-const FLAT_JUNCTION: u32 = 4;
+const FLAT_JUNCTION: u32 = 16;
 /// Open expanse cells.
-const FLAT_EXPANSE: u32 = 10;
+const FLAT_EXPANSE: u32 = 40;
 /// Every cell of a climb composition, per heading.
 ///
 /// Measured, not reasoned. With seven door masks at either end, at weights
@@ -80,7 +85,21 @@ const FLAT_EXPANSE: u32 = 10;
 /// 48 s against a 4 s ceiling. A composition is a third of a storey's plan length,
 /// so one is worth many flat cells, and the family weight has to say so. See the
 /// measurement at `the_production_facility_holds_its_measured_baseline`.
-const CLIMB_WEIGHT: u32 = 4;
+///
+/// 4 on the old scale, 16 on the new; then 10, because turned shapes fit where a
+/// straight climb cannot. Across twelve unprofiled `arc_default` solves the straight
+/// climbs built 3,328 climb cells; with turned shapes at the same family weight, 4,488,
+/// and at 10, 3,312. Turned shapes also build 8% more cells in all (29,596 to 32,162),
+/// whatever the climb weight: they close door patterns that used to fall to void.
+const CLIMB_WEIGHT: u32 = 10;
+/// A mid cell that turns, or a landing left by any face but the one ahead.
+///
+/// Each part's shapes share [`CLIMB_WEIGHT`] between them, the straight one keeping
+/// what the turned ones do not take. At a quarter of the straight weight each and on
+/// top of it, the turned shapes doubled the climbs a production facility builds (32
+/// climb cells to 68 on seed 1) and the solve's attempts went from 3 to 10: a mid cell
+/// or a landing drew as a climb twice as often, and fitted in more places.
+const TURNED_CLIMB_WEIGHT: u32 = 1;
 
 pub(super) fn catalogue() -> Vec<HexVariant> {
     let mut variants = vec![HexVariant {
@@ -89,7 +108,7 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
         doors: 0,
         up: PortClass::Sealed,
         down: PortClass::Sealed,
-        weight: 4,
+        weight: 16,
     }];
 
     // 1. Room variants: any lateral opening mask, optionally a vertical
@@ -104,10 +123,10 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
                 }
                 let degree = mask.count_ones();
                 let room_weight = match degree {
-                    0 | 1 => 4,
-                    2 => 3,
-                    3 => 2,
-                    _ => 1,
+                    0 | 1 => 16,
+                    2 => 12,
+                    3 => 8,
+                    _ => 4,
                 };
                 variants.push(HexVariant {
                     space: HexSpace::Room,
@@ -145,12 +164,13 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
         }
     }
 
-    // 3. Climb compositions (`docs/climb_compositions_plan.md`): a straight flight
-    //     across three cells of one storey and a landing above the last, assembled
-    //     by `Span` faces in order along one heading and by `RampOpen` above the
-    //     high cell. Entered straight on at the foot and left straight on at the
-    //     landing: a door on a side face would need flat floor in front of it, and
-    //     at either end of a flight that is most of a cell.
+    // 3. Climb compositions (`docs/climb_compositions_plan.md`): a flight across
+    //     three cells of one storey and a landing above the last, assembled by
+    //     `Span` faces in order and by `RampOpen` above the high cell. The foot is
+    //     entered straight on: a door on a side face would need flat floor in front
+    //     of it, and at the foot of a flight that is most of a cell. The mid cell may
+    //     turn the flight, and the landing may be left ahead, to either side or back
+    //     over the flight.
     for &heading in &HexFace::LATERAL {
         let climb = |part, doors, up, down, weight| HexVariant {
             space: HexSpace::Hall,
@@ -160,26 +180,48 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
             down,
             weight,
         };
+        #[allow(clippy::cast_possible_truncation)]
+        let weight = |turn, shapes: usize| {
+            if turn == ClimbTurn::Ahead {
+                CLIMB_WEIGHT - (shapes as u32 - 1) * TURNED_CLIMB_WEIGHT
+            } else {
+                TURNED_CLIMB_WEIGHT
+            }
+        };
         let (on, back) = (lateral_bit(heading), lateral_bit(heading.opposite()));
         let sealed = PortClass::Sealed;
-        variants.extend([
-            climb(ClimbPart::Foot, back | on, sealed, sealed, CLIMB_WEIGHT),
-            climb(ClimbPart::Mid, back | on, sealed, sealed, CLIMB_WEIGHT),
-            climb(
-                ClimbPart::High,
-                back,
-                PortClass::RampOpen,
+        variants.push(climb(
+            ClimbPart::Foot,
+            back | on,
+            sealed,
+            sealed,
+            CLIMB_WEIGHT,
+        ));
+        for turn in ClimbTurn::BENDS {
+            variants.push(climb(
+                ClimbPart::Mid { turn },
+                back | lateral_bit(turn.apply(heading)),
                 sealed,
-                CLIMB_WEIGHT,
-            ),
-            climb(
-                ClimbPart::Landing,
-                on,
+                sealed,
+                weight(turn, ClimbTurn::BENDS.len()),
+            ));
+        }
+        variants.push(climb(
+            ClimbPart::High,
+            back,
+            PortClass::RampOpen,
+            sealed,
+            CLIMB_WEIGHT,
+        ));
+        for exit in ClimbTurn::EXITS {
+            variants.push(climb(
+                ClimbPart::Landing { exit },
+                lateral_bit(exit.apply(heading)),
                 sealed,
                 PortClass::RampOpen,
-                CLIMB_WEIGHT,
-            ),
-        ]);
+                weight(exit, ClimbTurn::EXITS.len()),
+            ));
+        }
     }
 
     // 4. Open expanse cells. Only masks of four or more doors qualify: the
@@ -230,12 +272,30 @@ pub fn placement_tile_archetype(placement: &HexPlacement) -> Option<&'static str
         HexArchetype::Junction if placement.doors.count_ones() == 3 => Some("hall_junction_3way"),
         HexArchetype::Junction => Some("hall_junction_4way"),
         HexArchetype::Expanse => Some("expanse"),
-        HexArchetype::Climb { part, .. } => Some(match part {
-            ClimbPart::Foot => "climb_foot",
-            ClimbPart::Mid => "climb_mid",
-            ClimbPart::High => "climb_high",
-            ClimbPart::Landing => "climb_landing",
-        }),
+        HexArchetype::Climb { part, .. } => Some(climb_tile_archetype(part)),
+    }
+}
+
+/// The authored tile family for each part of each shape. The heading picks the
+/// tile's turn, so a shape and its mirror are separate families.
+#[must_use]
+pub const fn climb_tile_archetype(part: ClimbPart) -> &'static str {
+    match part {
+        ClimbPart::Foot => "climb_foot",
+        ClimbPart::Mid { turn } => match turn {
+            ClimbTurn::Ahead | ClimbTurn::Back => "climb_mid",
+            ClimbTurn::Left => "climb_mid_left",
+            ClimbTurn::SharpLeft => "climb_mid_sharp_left",
+            ClimbTurn::SharpRight => "climb_mid_sharp_right",
+            ClimbTurn::Right => "climb_mid_right",
+        },
+        ClimbPart::High => "climb_high",
+        ClimbPart::Landing { exit } => match exit {
+            ClimbTurn::Ahead | ClimbTurn::SharpLeft | ClimbTurn::SharpRight => "climb_landing",
+            ClimbTurn::Left => "climb_landing_left",
+            ClimbTurn::Right => "climb_landing_right",
+            ClimbTurn::Back => "climb_landing_back",
+        },
     }
 }
 
@@ -251,32 +311,31 @@ pub fn spans_join(a: HexArchetype, face: HexFace, b: HexArchetype) -> bool {
     if !a_span {
         return true;
     }
-    let (
-        HexArchetype::Climb {
-            part: a_part,
-            heading: a_heading,
-        },
-        HexArchetype::Climb {
-            part: b_part,
-            heading: b_heading,
-        },
-    ) = (a, b)
+    let (Some((_, a_out)), Some((b_in, _))) = (a.flight_faces(), b.flight_faces()) else {
+        return false;
+    };
+    let (HexArchetype::Climb { part: a_part, .. }, HexArchetype::Climb { part: b_part, .. }) =
+        (a, b)
     else {
         return false;
     };
-    if a_heading != b_heading {
-        return false;
+    // Up the flight from `a` into `b`, or back down it from `b` into `a`.
+    let up = a_out == Some(face) && b_in == Some(face.opposite());
+    if up {
+        return matches!(
+            (a_part, b_part),
+            (ClimbPart::Foot, ClimbPart::Mid { .. }) | (ClimbPart::Mid { .. }, ClimbPart::High)
+        );
     }
-    // Up the flight, or back down it.
-    let (low, high) = if face == a_heading {
-        (a_part, b_part)
-    } else {
-        (b_part, a_part)
+    let (Some((a_in, _)), Some((_, b_out))) = (a.flight_faces(), b.flight_faces()) else {
+        return false;
     };
-    matches!(
-        (low, high),
-        (ClimbPart::Foot, ClimbPart::Mid) | (ClimbPart::Mid, ClimbPart::High)
-    )
+    a_in == Some(face)
+        && b_out == Some(face.opposite())
+        && matches!(
+            (b_part, a_part),
+            (ClimbPart::Foot, ClimbPart::Mid { .. }) | (ClimbPart::Mid { .. }, ClimbPart::High)
+        )
 }
 
 fn corner_tile_archetype(doors: u8) -> &'static str {
@@ -397,7 +456,7 @@ pub fn climb_bond(lower: HexArchetype, upper: HexArchetype) -> bool {
         (lower, upper),
         (
             HexArchetype::Climb { part: ClimbPart::High, heading: low },
-            HexArchetype::Climb { part: ClimbPart::Landing, heading: high },
+            HexArchetype::Climb { part: ClimbPart::Landing { .. }, heading: high },
         ) if low == high
     )
 }

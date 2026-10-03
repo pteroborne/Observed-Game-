@@ -210,8 +210,11 @@ fn a_release_is_refused_twice_under_one_id_and_onto_nothing_built() {
 
 /// Drop a minor from `height` metres over a floor with open sky above it, and step until
 /// it has landed: whether it was lost, and the events.
+///
+/// Any seed whose two storeys leave a floor open to the sky will do: seed 7's lost its
+/// one when the climbs gained turned shapes and the solve's weights were rescaled.
 fn drop_minor(height: f32) -> (bool, Vec<HexMatchEventKind>) {
-    let mut game = prison_match(7);
+    let mut game = prison_match(1);
     let body = game.players[&BODY].cell;
     let mut cells: Vec<HexCoord> = game
         .facility
@@ -283,7 +286,7 @@ fn a_minor_released_onto_a_climb_stands_on_its_flight() {
             matches!(
                 placement.archetype,
                 HexArchetype::Climb {
-                    part: ClimbPart::Mid,
+                    part: ClimbPart::Mid { .. },
                     ..
                 }
             )

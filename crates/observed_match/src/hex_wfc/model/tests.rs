@@ -710,7 +710,13 @@ fn headless_gate_bot_walks_climbs_deterministically() {
     // both. The route now climbs its four storeys by straight flights three cells
     // long, a gentler and more direct walk than a switchback or a spiral, and the
     // solver routed the building around them, so the route is not the same one.
-    assert_eq!(a, 8_684, "TR-10 pins the declared-climb completion tick");
+    //
+    // Fourteenth (8,684 -> 9,903), the same seed: climbs gained turned shapes, the
+    // alphabet grew and its weights were rescaled, so the solve builds a different
+    // building. And a spine's target now looks past a node already underfoot
+    // (`StairSpine::target`), and a walkway over a built cell hangs no truss. Not
+    // comparable.
+    assert_eq!(a, 9_903, "TR-10 pins the declared-climb completion tick");
     // Moved again by twenty open halls and by churn becoming a district
     // property, and again *without* moving the tick above - the same pairing,
     // and the same proof. The bot's route through the gate seed is tick for
@@ -753,10 +759,11 @@ fn headless_gate_bot_walks_climbs_deterministically() {
     // then dressed by district -> 0xd8a4_56f3_de5d_1e26), and the spiral tower's
     // (-> 0x18fc_ac97_862c_01a2), and the climb compositions' (-> 0x541d_246f_6472_cf2a),
     // and every district's own climb, with pockets that keep a routed hall's branch
-    // (-> 0x273d_ea45_f7f9_3234), the tick unmoved.
+    // (-> 0x273d_ea45_f7f9_3234), the tick unmoved. Turned climbs moved both with the
+    // building (-> 0xf43c_3c63_94dc_3916).
     assert_eq!(
         first.snapshot().digest,
-        0x273d_ea45_f7f9_3234,
+        0xf43c_3c63_94dc_3916,
         "TR-10 pins the declared-climb final snapshot digest"
     );
 }
@@ -893,7 +900,7 @@ fn bots_climb_storeys_by_climb_compositions() {
                     let before = cells.insert(id, player.cell).expect("a known body");
                     if before != player.cell
                         && part(&game, before) == Some(ClimbPart::High)
-                        && part(&game, player.cell) == Some(ClimbPart::Landing)
+                        && part(&game, player.cell).is_some_and(ClimbPart::is_landing)
                     {
                         climbed += 1;
                     }

@@ -335,9 +335,7 @@ pub(super) fn pinned_cells(
     loop {
         let mut mates = Vec::new();
         for &coord in &pins {
-            let placement = &placements[&coord];
-            if let Some(unit) = super::composition_cells(config.grid(), coord, placement.archetype)
-            {
+            if let Some(unit) = super::composition_in(config.grid(), placements, coord) {
                 mates.extend(unit.into_iter().filter(|cell| !pins.contains(cell)));
             }
         }

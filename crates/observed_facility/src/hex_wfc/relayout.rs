@@ -1066,8 +1066,8 @@ fn close_units(
         let snapshot = cells.clone();
         for coord in snapshot {
             // A climb composition is re-solved whole or not at all.
-            let archetype = world.placements[&coord].archetype;
-            if let Some(unit) = super::composition_cells(world.config.grid(), coord, archetype) {
+            if let Some(unit) = super::composition_in(world.config.grid(), &world.placements, coord)
+            {
                 cells.extend(unit);
             }
         }

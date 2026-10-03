@@ -223,8 +223,7 @@ fn pocket_is_bounded_and_closes_indivisible_units() {
     }
     // A climb composition is in the pocket whole or not at all.
     for &coord in &region.cells {
-        let archetype = world.placements[&coord].archetype;
-        if let Some(unit) = super::composition_cells(world.config.grid(), coord, archetype) {
+        if let Some(unit) = super::composition_in(world.config.grid(), &world.placements, coord) {
             assert!(unit.iter().all(|cell| region.cells.contains(cell)));
         }
     }

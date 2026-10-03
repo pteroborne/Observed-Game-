@@ -452,7 +452,7 @@ pub fn update_chrome_ui(
                         state.profile.district_bias_for(
                             register,
                             observed_facility::hex_wfc::HexArchetype::Climb {
-                                part: observed_facility::hex_wfc::ClimbPart::Mid,
+                                part: observed_facility::hex_wfc::ClimbPart::MID,
                                 heading: observed_hex::HexFace::East,
                             }
                         ),

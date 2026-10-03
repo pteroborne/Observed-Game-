@@ -146,17 +146,16 @@ pub(super) fn apply(
             && let Some(ArchitectCommand::Play { target, .. }) = played
         {
             let world = &rules.rules().world;
-            let cells = world
-                .placements
-                .get(&target)
-                .map_or_else(Vec::new, |placement| {
-                    observed_facility::hex_wfc::composition_cells(
-                        world.config.grid(),
-                        target,
-                        placement.archetype,
-                    )
-                    .map_or_else(|| vec![target], Vec::from)
-                });
+            let cells = if world.placements.contains_key(&target) {
+                observed_facility::hex_wfc::composition_in(
+                    world.config.grid(),
+                    &world.placements,
+                    target,
+                )
+                .map_or_else(|| vec![target], Vec::from)
+            } else {
+                Vec::new()
+            };
             for cell in cells {
                 let Some(&placement) = rules.rules().world.placements.get(&cell) else {
                     continue;

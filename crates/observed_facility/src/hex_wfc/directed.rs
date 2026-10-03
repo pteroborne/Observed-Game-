@@ -18,8 +18,8 @@ use observed_hex::{HexCoord, HexFace, PortClass};
 
 use super::variants::hall_archetype;
 use super::{
-    ClimbPart, HexArchetype, HexMutationRegion, HexPlacement, HexRelayoutDelta, HexSpace,
-    HexWfcError, HexWfcWorld,
+    ClimbPart, ClimbTurn, HexArchetype, HexMutationRegion, HexPlacement, HexRelayoutDelta,
+    HexSpace, HexWfcError, HexWfcWorld,
 };
 
 /// The flat hall cell with exactly these lateral doors, if the authored corpus has one.
@@ -39,7 +39,7 @@ pub fn authored_hall(coord: HexCoord, doors: u8) -> Option<HexPlacement> {
     })
 }
 
-/// The climb composition with its foot at `foot`, climbing toward `heading`
+/// The straight climb composition with its foot at `foot`, climbing toward `heading`
 /// (`docs/climb_compositions_plan.md`): foot, mid and high along the heading on the
 /// foot's storey, entered straight on, and the landing above the high cell, left
 /// straight on. `None` where it would leave the lattice, or for a vertical heading.
@@ -49,14 +49,33 @@ pub fn authored_climb(
     foot: HexCoord,
     heading: HexFace,
 ) -> Option<[HexPlacement; 4]> {
-    if !heading.is_lateral() {
+    authored_climb_shaped(config, foot, heading, ClimbTurn::Ahead, ClimbTurn::Ahead)
+}
+
+/// The climb composition with its foot at `foot`, entered climbing toward `heading`,
+/// its flight turned by `turn` in the mid cell and its landing left by `exit`, both
+/// from the heading the flight has there. `None` where it would leave the lattice,
+/// for a vertical heading, or for a turn or exit the catalogue does not build.
+#[must_use]
+pub fn authored_climb_shaped(
+    config: super::HexWfcConfig,
+    foot: HexCoord,
+    heading: HexFace,
+    turn: ClimbTurn,
+    exit: ClimbTurn,
+) -> Option<[HexPlacement; 4]> {
+    if !heading.is_lateral()
+        || !ClimbTurn::BENDS.contains(&turn)
+        || !ClimbTurn::EXITS.contains(&exit)
+    {
         return None;
     }
     let grid = config.grid();
     let mid = grid.neighbor(foot, heading)?;
-    let high = grid.neighbor(mid, heading)?;
+    let rising = turn.apply(heading);
+    let high = grid.neighbor(mid, rising)?;
     let landing = grid.neighbor(high, HexFace::Up)?;
-    let cell = |coord, part, doors, up, down| HexPlacement {
+    let cell = |coord, part, heading, doors, up, down| HexPlacement {
         coord,
         space: HexSpace::Hall,
         archetype: HexArchetype::Climb { part, heading },
@@ -64,13 +83,42 @@ pub fn authored_climb(
         up,
         down,
     };
-    let (on, back) = (1 << heading.index(), 1 << heading.opposite().index());
+    let bit = |face: HexFace| 1u8 << face.index();
     let sealed = PortClass::Sealed;
+    let back = bit(heading.opposite());
     Some([
-        cell(foot, ClimbPart::Foot, back | on, sealed, sealed),
-        cell(mid, ClimbPart::Mid, back | on, sealed, sealed),
-        cell(high, ClimbPart::High, back, PortClass::RampOpen, sealed),
-        cell(landing, ClimbPart::Landing, on, sealed, PortClass::RampOpen),
+        cell(
+            foot,
+            ClimbPart::Foot,
+            heading,
+            back | bit(heading),
+            sealed,
+            sealed,
+        ),
+        cell(
+            mid,
+            ClimbPart::Mid { turn },
+            heading,
+            back | bit(rising),
+            sealed,
+            sealed,
+        ),
+        cell(
+            high,
+            ClimbPart::High,
+            rising,
+            bit(rising.opposite()),
+            PortClass::RampOpen,
+            sealed,
+        ),
+        cell(
+            landing,
+            ClimbPart::Landing { exit },
+            rising,
+            bit(exit.apply(rising)),
+            sealed,
+            PortClass::RampOpen,
+        ),
     ])
 }
 
@@ -221,6 +269,80 @@ mod tests {
         assert!(authored_climb(config, edge, HexFace::East).is_none());
         let top = HexCoord { level: 2, ..foot };
         assert!(authored_climb(config, top, HexFace::East).is_none());
+    }
+
+    #[test]
+    fn every_shape_of_climb_composes_and_is_found_whole_from_each_cell() {
+        let config = HexWfcConfig {
+            cols: 9,
+            rows: 9,
+            levels: 2,
+            ..HexWfcConfig::default()
+        };
+        let foot = HexCoord {
+            q: 4,
+            r: 4,
+            level: 0,
+        };
+        let catalogue = super::super::variants::catalogue();
+        let mut shapes = 0;
+        for heading in HexFace::LATERAL {
+            for turn in ClimbTurn::BENDS {
+                for exit in ClimbTurn::EXITS {
+                    let cells = authored_climb_shaped(config, foot, heading, turn, exit)
+                        .expect("inside the lattice");
+                    let [low, mid, high, landing] = cells;
+                    let rising = turn.apply(heading);
+                    assert!(spans_join(low.archetype, heading, mid.archetype));
+                    assert!(spans_join(mid.archetype, heading.opposite(), low.archetype));
+                    assert!(spans_join(mid.archetype, rising, high.archetype));
+                    assert!(spans_join(high.archetype, rising.opposite(), mid.archetype));
+                    assert!(climb_bond(high.archetype, landing.archetype));
+                    assert_eq!(landing.doors, lateral_bit(exit.apply(rising)));
+                    for placement in cells {
+                        assert!(
+                            catalogue.iter().any(|variant| variant.archetype
+                                == placement.archetype
+                                && variant.doors == placement.doors
+                                && variant.up == placement.up
+                                && variant.down == placement.down),
+                            "{placement:?} is a catalogue variant"
+                        );
+                        let at = |coord: HexCoord| {
+                            cells
+                                .iter()
+                                .find(|cell| cell.coord == coord)
+                                .map(|cell| cell.archetype)
+                        };
+                        assert_eq!(
+                            super::super::composition_cells(config.grid(), placement.coord, at),
+                            Some(cells.map(|cell| cell.coord))
+                        );
+                    }
+                    shapes += 1;
+                }
+            }
+            // The wrong mid's turn is a mismatch, not a different composition.
+            let [low, ..] = authored_climb(config, foot, heading).expect("inside");
+            let other = HexArchetype::Climb {
+                part: ClimbPart::Mid {
+                    turn: ClimbTurn::Left,
+                },
+                heading: heading.opposite(),
+            };
+            assert!(!spans_join(low.archetype, heading, other));
+        }
+        assert_eq!(shapes, 6 * 5 * 4);
+        assert!(
+            authored_climb_shaped(
+                config,
+                foot,
+                HexFace::East,
+                ClimbTurn::Back,
+                ClimbTurn::Ahead
+            )
+            .is_none()
+        );
     }
 
     fn world() -> HexWfcWorld {

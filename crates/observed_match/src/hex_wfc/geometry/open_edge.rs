@@ -60,6 +60,10 @@ pub struct OpenEdges {
     pub railed: bool,
     /// A straight hall open on all four flanks: drawn as a walkway along this axis.
     pub span: Option<HexFace>,
+    /// Whether a walkway hangs its truss: only over an unbuilt cell. Over a built one
+    /// it would come down through that cell's ceiling, and over a climb's flight
+    /// into the headroom of the steps beneath, where it stopped a body climbing.
+    pub truss: bool,
 }
 
 impl OpenEdges {
@@ -143,10 +147,16 @@ pub fn open_edges(world: &HexWfcWorld, at: HexCoord) -> Option<OpenEdges> {
         }
         _ => None,
     };
+    let below = at
+        .level
+        .checked_sub(1)
+        .map(|level| HexCoord { level, ..at })
+        .and_then(|cell| world.placements.get(&cell));
     Some(OpenEdges {
         faces,
         railed: at.level < RAILED_BELOW_LEVEL,
         span,
+        truss: below.is_none_or(|placement| !placement.space.built()),
     })
 }
 
@@ -313,9 +323,9 @@ pub fn edge_pieces(origin: Vec3, face: HexFace, railed: bool) -> Vec<EdgePiece> 
 }
 
 /// A narrow walkway along `axis` through a cell whose world origin is `origin`: deck,
-/// lips on both flanks, a railing when railed, and a single truss beneath.
+/// lips on both flanks, a railing when railed, and a single truss beneath when `truss`.
 #[must_use]
-pub fn span_pieces(origin: Vec3, axis: HexFace, railed: bool) -> Vec<EdgePiece> {
+pub fn span_pieces(origin: Vec3, axis: HexFace, railed: bool, truss: bool) -> Vec<EdgePiece> {
     let (normal, reach) = face_frame(axis);
     let along = Vec3::new(normal.x, 0.0, normal.y);
     let across = Vec3::new(-along.z, 0.0, along.x);
@@ -361,6 +371,9 @@ pub fn span_pieces(origin: Vec3, axis: HexFace, railed: bool) -> Vec<EdgePiece> 
                 ));
             }
         }
+    }
+    if !truss {
+        return pieces;
     }
     let mut truss = Vec::new();
     for end in [-1.0, 1.0] {
@@ -423,6 +436,7 @@ mod tests {
                 .fold(0, |mask, face| mask | (1 << face.index())),
             railed: true,
             span: None,
+            truss: true,
         }
     }
 

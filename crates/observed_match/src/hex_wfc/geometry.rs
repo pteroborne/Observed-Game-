@@ -1616,8 +1616,9 @@ fn push_tile(
         Some(OpenEdges {
             span: Some(axis),
             railed,
+            truss,
             ..
-        }) => open_edge::span_pieces(center, axis, railed),
+        }) => open_edge::span_pieces(center, axis, railed, truss),
         Some(open) => tile
             .hulls
             .iter()

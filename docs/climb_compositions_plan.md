@@ -10,8 +10,7 @@ Decisions:
 - **Stair towers retire.** Every storey is reached by its own composition, and climbs
   chain floor to floor. The narrow spiral goes, and so does the multi-storey shortcut.
 - **Straight first.** One straight composition proves the mechanism, dressed for each
-  district. District-specific shapes (an L-turn, a switchback across two cells, a grand
-  stair) follow as further compositions on the same mechanism.
+  district. Turned shapes follow on the same mechanism (phase 6).
 
 ## The composition
 
@@ -125,12 +124,85 @@ Each phase leaves the tree green and the game playable.
    ![Backrooms, Lumen and Zen: up from the foot, down from the landing](evidence/climbs/districts_backrooms_lumen_zen.jpg)
    ![Monument, Library and Reactor; the Reactor's landing is the Sky's](evidence/climbs/districts_monument_library_reactor.jpg)
 
+6. **Shapes.** Done. A composition's shape is carried by the two cells it changes.
+   The mid cell may turn the flight (`ClimbPart::Mid { turn }`) and the landing may
+   be left by four faces (`ClimbPart::Landing { exit }`). The foot is always entered
+   straight on, and the high cell is the same in every shape.
+
+   The shapes were chosen by the benchmark scenes in `docs/compositions/`, not in
+   the abstract. A probe tried every flight that bends 0, 60 or 120 degrees at its
+   mid cell, with every landing exit, in each scene. No straight climb fitted any
+   scene, and the shapes below are what the scenes asked for. Each scene was then
+   rebuilt by the generator's own check: every placement of every shape, with any
+   door it shuts re-chosen from that hall's own family, anything it strands pruned,
+   and the result ranked by what the scene loses. Two scenes take a climb that joins
+   two existing doors and touches nothing else, both with the switchback landing. The
+   two three-storey scenes take two climbs, one per storey:
+
+   | Scene | District | Climbs | What gave way |
+   |---|---|---|---|
+   | last courtyard | Sky | straight, landing back over the flight | nothing |
+   | same door twice | Lumen | straight, landing back over the flight | nothing |
+   | empty audience | Monument | winds 120 degrees left | a hall, and one it stranded |
+   | missing rooms | Library | winds 120 degrees left | three halls, and two stranded |
+   | witness exchange | Backrooms | bends 60 degrees left, landing to the right; then winds 120 degrees right | a junction; another re-chosen |
+   | unfinished crossing | Reactor | straight, landing to the left; then bends 60 degrees left | a turn; two junctions re-chosen |
+
+   Their tests now hold each scene to one place: every cell reachable through its
+   ports, across storeys by its climbs.
+
+   - **Turns** (`ClimbTurn`, counted from the heading toward its right, as the faces
+     run): ahead, 60 degrees either way, and 120 degrees either way. A turning mid
+     cell's steps fan about the point where its entry and exit faces' lines meet: the
+     corner they share for a 120-degree winder, which winds round a newel there, and
+     a point outside the cell for a 60-degree bend. Every step's edges lie on rays
+     from that point, so the first step meets the foot's flight along the whole entry
+     face and the last meets the high cell's along the whole exit face; no warped
+     slope of flat brushes can. Eight treads, nine equal risers of 0.27 m, and a climb
+     line on the pitch of the steps through both faces' midpoints: 0.29 for the
+     winder, 0.19 for the bend.
+   - **Exits:** ahead, 60 degrees either way, and back over the flight. The flight
+     arrives on the landing's east pad as on every landing. A gallery round the alcove
+     on the exit's side carries the floor to the door, railed where it overlooks the
+     stairwell. Back over the flight it runs left to a pad of its own before the
+     west door: a switchback. The two exits beside the face behind are left out,
+     because from the pad they are as far round as the face behind.
+   - **Weights:** the straight mid and landing keep weight 4, and each turned one has
+     weight 1. The corpus builds all 20 shapes. The router still lays straight
+     climbs on its routes, so routed climbs do not move: turned shapes come from free
+     collapse, from an Architect's card, and from authored scenes.
+   - **Cells:** `composition_cells` reads the mid cell's turn through a lookup, since
+     a foot alone no longer says where its high cell is (`composition_in` reads a
+     facility's placements). The catalogue is 394 variants (66 climb), so the
+     solver's variant set grows to seven words. The forge builds 49 more cells (seven
+     shapes in seven dressings); a turning flight has no alcoves, so each district
+     dresses the two walls round the outside of the turn.
+   - **Frame budget.** Phase 101 arc gate, 2026-10-03, uncapped, live seed: frame
+     p95 12.3 ms (13.8 before the shapes, budget 16.7), worst mutation frame 12.3 ms,
+     all ten mutations committed.
+   - **Walking them.** Every production composition, every shape, climbs and
+     descends end to end on the production controller (155 across three seeds). Two
+     fixes made that true. A spine's target now looks past a node already underfoot
+     (`StairSpine::target`): a body that met a node from the side, as on a landing it
+     arrives at off the axis, or one stood on a tread a little above a winder's pitch
+     line, circled the node. And a walkway hangs its truss only over an unbuilt cell:
+     over a climb's mid cell it came down through the ceiling into the steps'
+     headroom.
+
+   Clockwise from top left: a Backrooms winder from its foot, round the newel; a
+   Library winder between its stacks; the Sky courtyard's switchback landing, its
+   gallery railed over the stairwell; and its flight from the hall below.
+
+   ![Turned climbs: winders and a switchback landing](evidence/climbs/turned_shapes.jpg)
+
 ## What moved
 
 - **Hashes:** the catalogue, the composition profile (version 5) and the simulation.
   This means a LAN lockout against older builds.
 - **Pins:** gate, selection and soak pins, each with a note.
-- **Ascent scenario seeds:** Pocket 20, Quick Climb 19, Full Ascent 21, Deep Stack 27.
+- **Ascent scenario seeds:** Pocket 20, Quick Climb 39, Full Ascent 26, Deep Stack 10
+  (were 19, 21 and 27 until the climbs gained turned shapes; Quick Climb must also
+  complete its darkness hold).
   These were chosen by measurement, with two tests.
   - A scenario gap must now be a cell that some card rebuilds exactly. Routed halls can
     carry a branch, and many routes have too few such cells; Pocket's old seed had none.

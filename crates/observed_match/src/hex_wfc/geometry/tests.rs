@@ -353,20 +353,26 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     // followed the tower family follows the climb cells now: 32 and 24 of them, eight
     // and six compositions. Every district's own climb then moved both digests and
     // neither count: the same cells, drawn from each register's dressing.
+    //
+    // Re-pinned when the climbs gained turned mid cells and landings (189 -> 214 and
+    // 147 -> 198 cells; 32 -> 16 and 24 -> 44 climb cells): a different solve, since
+    // the alphabet grew and its weights were rescaled. Across twelve unprofiled solves
+    // the climbs hold their share and the facility builds 8% more cells
+    // (`variants::CLIMB_WEIGHT`); these two seeds swing either way.
     let cases = [
         (
             1u64,
-            189usize,
-            0x1e4d_d1d1_e477_8740u64,
-            32usize,
-            0x47a5_309e_8f94_b256u64,
+            214usize,
+            0x102b_9f57_5839_8d54u64,
+            16usize,
+            0x3a00_ae27_3908_e18eu64,
         ),
         (
             10_000_031u64,
-            147usize,
-            0xe3e7_60b5_1e73_77c1u64,
-            24usize,
-            0xb052_44d8_78ee_bc54u64,
+            198usize,
+            0x3d35_97f4_c0c2_4587u64,
+            44usize,
+            0x5f6f_8a03_3dd5_64b6u64,
         ),
     ];
     let mut actual = Vec::new();
@@ -1780,11 +1786,18 @@ fn every_production_climb_composition_climbs_and_descends_end_to_end() {
             else {
                 continue;
             };
-            let mid = grid.neighbor(placement.coord, heading).expect("a mid");
-            let high = grid.neighbor(mid, heading).expect("a high cell");
-            let landing = grid.neighbor(high, HexFace::Up).expect("a landing");
+            let cells = observed_facility::hex_wfc::composition_in(
+                grid,
+                &world.placements,
+                placement.coord,
+            )
+            .expect("a whole composition");
+            let shape = (
+                world.placements[&cells[1]].archetype,
+                world.placements[&cells[3]].archetype,
+            );
             let mut nodes: Vec<Vec3> = Vec::new();
-            for cell in [placement.coord, mid, high, landing] {
+            for cell in cells {
                 for &node in &snapshot.climbs[&cell].nodes {
                     if nodes.last().is_none_or(|last| last.distance(node) > 0.05) {
                         nodes.push(node);
@@ -1797,7 +1810,7 @@ fn every_production_climb_composition_climbs_and_descends_end_to_end() {
                 match walk_spine(&scene, &spine, up) {
                     Ok(ticks) if up => slowest.0 = slowest.0.max(ticks),
                     Ok(ticks) => slowest.1 = slowest.1.max(ticks),
-                    Err(at) => stalls.push((seed, placement.coord, heading, up, at)),
+                    Err(at) => stalls.push((seed, placement.coord, heading, shape, up, at)),
                 }
             }
         }

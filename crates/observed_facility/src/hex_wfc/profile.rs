@@ -861,7 +861,7 @@ mod tests {
 
     /// Any climb cell: the bias is the composition's, whichever cell and heading.
     const CLIMB: HexArchetype = HexArchetype::Climb {
-        part: super::super::ClimbPart::Mid,
+        part: super::super::ClimbPart::MID,
         heading: observed_hex::HexFace::East,
     };
 

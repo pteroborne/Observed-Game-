@@ -464,6 +464,9 @@ fn survey_void_share_playability() {
 /// the rest of the match. It was following the full-width hall's authored deck path
 /// across a span that keeps none of that hall's floor. On the arc lattice, where the
 /// top storeys are bare, the runner must get where it is going without a recovery.
+///
+/// Seed 3 since climbs turn: the production seed's route no longer crosses an unrailed
+/// span, which left the test proving nothing, and seed 3's crosses one.
 #[test]
 fn production_runner_crosses_unrailed_open_edges_without_falling() {
     use observed_facility::hex_wfc::HexWfcConfig;
@@ -481,8 +484,8 @@ fn production_runner_crosses_unrailed_open_edges_without_falling() {
         wfc: HexWfcConfig::arc_default(),
         ..Default::default()
     };
-    let mut game = HexWfcMatch::new_with_content(crate::flow::MATCH_SEED, config, content)
-        .expect("the production match solves");
+    let mut game =
+        HexWfcMatch::new_with_content(3, config, content).expect("the production match solves");
     let mut driver = HexBotDriver::new();
     let mut spans_crossed = 0;
     let mut last = game.players.values().next().expect("runner").cell;

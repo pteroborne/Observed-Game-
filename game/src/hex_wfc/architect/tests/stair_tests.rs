@@ -61,12 +61,9 @@ fn a_stair_played_at_the_desk_is_built_and_believed_on_both_floors() {
             ..
         }
     ));
-    let cells = observed_facility::hex_wfc::composition_cells(
-        facility.config.grid(),
-        target,
-        physical[&target].archetype,
-    )
-    .expect("a whole climb composition");
+    let cells =
+        observed_facility::hex_wfc::composition_in(facility.config.grid(), physical, target)
+            .expect("a whole climb composition");
     assert_eq!(
         cells[3].level,
         target.level + 1,

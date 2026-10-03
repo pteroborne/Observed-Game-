@@ -375,10 +375,12 @@ fn cell_entity_count_falls_with_merged_hull_meshes() {
     // where it was 28 (still 9 meshes); per-floor openness moved it again, to a
     // 15-piece cell whose hulls merge into 8. Every district's own climb moved it once
     // more, past a climb cell that now stands where it was: 17 pieces into 8 meshes, and
-    // 12 children - the meshes and four practicals (it was 15 by coincidence).
+    // 12 children - the meshes and four practicals (it was 15 by coincidence). Turned
+    // climbs moved it to a Liminal Grid three-way junction: 17 pieces into 8 meshes
+    // still, and 14 children with its three lights and their fittings.
     assert_eq!(raw_piece_count, 17);
     assert_eq!(structural_hull_mesh_count, 8);
-    assert_eq!(child_pieces, 12);
+    assert_eq!(child_pieces, 14);
     assert!(
         structural_hull_mesh_count < raw_piece_count,
         "structural hull meshes ({structural_hull_mesh_count}) must be strictly less than raw pieces ({raw_piece_count})"

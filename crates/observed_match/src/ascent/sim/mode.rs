@@ -57,12 +57,14 @@ impl ArchitectMode {
             // many routes have too few - Pocket's old 19 had none. And the bot match is
             // not decided in its opening beats: with the second Observer two thirds along
             // the route, many seeds start it a short walk from the exit, and Quick Climb's
-            // and Full Ascent's first full-gap seeds ended in 6 and 9 beats. These play
-            // 233, 336 and 413 beats. Pocket's is a sprint by design.
+            // and Full Ascent's first full-gap seeds ended in 6 and 9 beats. Chosen again
+            // when the climbs gained turned shapes, by the same two tests and a third:
+            // Quick Climb's darkness hold must complete under the Purge objective. These
+            // play 357, 386 and 380 beats. Pocket's is a sprint by design.
             Self::Pocket => 20,
-            Self::QuickClimb => 19,
-            Self::FullAscent => 21,
-            Self::DeepStack => 27,
+            Self::QuickClimb => 39,
+            Self::FullAscent => 26,
+            Self::DeepStack => 10,
         }
     }
 

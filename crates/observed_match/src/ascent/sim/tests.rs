@@ -221,8 +221,15 @@ fn unreachable_minor_guardian_does_not_softlock_observer() {
         100,
         "Refused shove spent no charge"
     );
+    // The refusal falls through to the observer's next priority, and that may make the
+    // shove legal: where the closed door lies on the way to the summit, the fallback
+    // opens it. A shove chosen again then is play, not a livelock; one chosen again
+    // while it is still refused is the softlock.
     let (next_intent, _) = lab.observer_intent(obs_id);
-    assert!(!matches!(next_intent, ObserverIntent::Shove(_)));
+    assert!(
+        !matches!(next_intent, ObserverIntent::Shove(_)) || lab.can_shove(obs_id, minor_id),
+        "a refused shove is chosen again while it is still refused"
+    );
 }
 
 #[test]

@@ -147,7 +147,7 @@ fn bias_field(name: &str) -> Option<HexArchetype> {
         "junction" => HexArchetype::Junction,
         // `ramp_up` is what the climb's bias was called before the ramps retired.
         "climb" | "ramp_up" => HexArchetype::Climb {
-            part: observed_facility::hex_wfc::ClimbPart::Mid,
+            part: observed_facility::hex_wfc::ClimbPart::MID,
             heading: observed_hex::HexFace::East,
         },
         "expanse" => HexArchetype::Expanse,
