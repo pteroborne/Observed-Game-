@@ -151,7 +151,10 @@ pub fn build(
                 placement.is_open(HexFace::Up),
                 placement.is_open(HexFace::Down),
             )),
-            HexSketchRole::Ramp => Some(ramp_glyph(height)),
+            HexSketchRole::Ramp
+            | HexSketchRole::ClimbFoot
+            | HexSketchRole::ClimbMid
+            | HexSketchRole::ClimbHigh => Some(ramp_glyph(height)),
             _ => None,
         };
         for (from, to) in vertical.into_iter().flatten() {

@@ -282,7 +282,9 @@ pub(super) fn setup_view(
     );
 }
 
-pub(super) use lighting::{sync_lighting_and_atmosphere, sync_practical_shadow_budget};
+pub(super) use lighting::{
+    sync_lighting_and_atmosphere, sync_practical_shadow_budget, sync_storey_shadow_casters,
+};
 pub(super) use prison::{PrisonView, sync_prison_view};
 use residency::{initial_spawn_batch, presentation_readiness};
 pub(super) use residency::{sync_changed_geometry, sync_streamed_cells};

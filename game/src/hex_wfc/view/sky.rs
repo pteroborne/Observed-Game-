@@ -112,7 +112,7 @@ pub(super) fn spawn_moonlight(commands: &mut Commands, mood: &SkyMood) {
     commands.spawn((
         HexMoon,
         DirectionalLight {
-            color: mood.light,
+            color: observed_style::open_air::sunlight(mood),
             illuminance: mood.lux,
             shadow_maps_enabled: true,
             ..default()
@@ -480,7 +480,7 @@ pub(in crate::hex_wfc) fn sync_mood(
         }
     }
     if let Ok((mut light, mut transform)) = light.single_mut() {
-        light.color = mood.light;
+        light.color = observed_style::open_air::sunlight(&mood);
         light.illuminance = mood.lux;
         *transform = Transform::from_translation(Vec3::from_array(mood.toward))
             .looking_at(Vec3::ZERO, Vec3::Y);

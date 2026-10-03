@@ -14,11 +14,13 @@
 //! the very shadows this rig exists to cast. The caged lantern remains the only
 //! discretionary player-following light, so spending the last one still has a cost.
 
+use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
 use observed_hex::hex_origin;
 use observed_style::{self as style, HexComposition};
 
+use super::spectate::Cutaway;
 use super::{HexPractical, HexWfcKeyLight};
 use crate::GameState;
 use crate::hex_wfc::sim::HexWfcRuntime;
@@ -27,7 +29,13 @@ use crate::view::components::GameCam;
 /// Per-tile fill fixtures allowed to cast shadows at once (the district key casts on top
 /// of this). Bounded because point-light shadows are six-face cubemaps; kept small to
 /// hold GPU margin while still giving real cast-shadow contrast around the runner.
-const PRACTICAL_SHADOW_BUDGET: usize = 4;
+///
+/// Three since the climb compositions. Measured on the Phase 101 arc gate (2026-10-02):
+/// each shadowed fixture redraws every caster within its 14 m range into six faces, about
+/// 2.5 ms a frame, and the shadow map's size makes no difference - it is draws, not fill.
+/// Climbs put half as many cells again within reach, and four took frame p95 to 18.3 ms
+/// against a 16.7 ms budget. Three: 14.0 ms. Two: 10.2 ms. None: 6.9 ms.
+const PRACTICAL_SHADOW_BUDGET: usize = 3;
 
 const BLEND_RATE: f32 = 2.5;
 /// The key trim, which now lives in `observed_style` beside the palette it
@@ -71,6 +79,51 @@ fn primed_key_light(architecture: ArchitectureRegister, composition: HexComposit
         outer_angle: palette.key_outer_angle,
         shadow_maps_enabled: palette.key_shadows_enabled,
         ..default()
+    }
+}
+
+/// A drawn mesh that has just streamed in.
+type JustStreamed = (With<Mesh3d>, Added<Cutaway>);
+
+/// Only geometry on the viewed body's storey and above casts shadows.
+///
+/// Every light that casts sits in or above that storey: the district key hangs 6.4 m up
+/// in the body's own cell, and the moon is overhead. A cell below can shadow only itself
+/// and what is lower still, which the storey's own floor hides from the key and which a
+/// body standing on it does not see; but it was rendered into every shadow map anyway,
+/// and since the climb compositions a storey has about half as many cells again within
+/// reach. Cells above keep casting: an overhang shading a moonlit loggia is a shadow
+/// a body sees.
+///
+/// Re-tagged whole when the storey changes, and otherwise only what has just streamed in.
+pub(in crate::hex_wfc) fn sync_storey_shadow_casters(
+    mut commands: Commands,
+    runtime: Res<HexWfcRuntime>,
+    mut last_level: Local<Option<u8>>,
+    added: Query<(Entity, &Cutaway), JustStreamed>,
+    meshes: Query<(Entity, &Cutaway, Has<NotShadowCaster>), With<Mesh3d>>,
+) {
+    let level = runtime.viewed().cell.level;
+    let casts = |cutaway: &Cutaway| cutaway.cell_level >= level;
+    if *last_level != Some(level) {
+        *last_level = Some(level);
+        for (entity, cutaway, silent) in &meshes {
+            match (casts(cutaway), silent) {
+                (true, true) => {
+                    commands.entity(entity).remove::<NotShadowCaster>();
+                }
+                (false, false) => {
+                    commands.entity(entity).insert(NotShadowCaster);
+                }
+                _ => {}
+            }
+        }
+        return;
+    }
+    for (entity, cutaway) in &added {
+        if !casts(cutaway) {
+            commands.entity(entity).insert(NotShadowCaster);
+        }
     }
 }
 

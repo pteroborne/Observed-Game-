@@ -995,6 +995,16 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.fog_end = 31.0;
             palette.key_range = 75.0;
             palette.pools_rhythm = true;
+            // Steel under working light, not amber everything. Foundry's rig is amber in
+            // fill, fog, key and practicals at once, and a surface's colour is mostly its
+            // district's light (`palette_tint_for_surface`), so the Reactor's cold steel
+            // rendered one orange-brown, wall, floor and ceiling alike - as Monolith's
+            // concrete had before it got its own rig. A warm key and practicals over a
+            // cool fill: what the light reaches reads warm, what it does not reads steel.
+            palette.ambient_color = Color::srgb(0.42, 0.45, 0.50);
+            palette.fog_color = Color::srgb(0.020, 0.020, 0.024);
+            palette.light_color = Color::srgb(1.0, 0.84, 0.66);
+            palette.key_color = Color::srgb(1.0, 0.87, 0.72);
         }
         Register::Wellshaft => {
             // The one district that was ever maintained, and the one whose
@@ -1718,13 +1728,22 @@ pub enum HexSketchRole {
     Ramp,
     /// A vertical shaft.
     Shaft,
+    /// A climb composition's foot: the first of three flight cells, drawn lowest so the
+    /// three read as a stair rising the way it climbs.
+    ClimbFoot,
+    /// A climb composition's middle flight cell.
+    ClimbMid,
+    /// A climb composition's last flight cell, drawn tallest: the storey is reached here.
+    ClimbHigh,
+    /// A climb composition's landing, on the floor above, where the flight arrives.
+    ClimbLanding,
     /// Open floor with no perimeter walls of its own, meant to merge with its
     /// neighbours into one volume.
     Expanse,
 }
 
 impl HexSketchRole {
-    pub const ALL: [HexSketchRole; 8] = [
+    pub const ALL: [HexSketchRole; 12] = [
         HexSketchRole::Void,
         HexSketchRole::Corridor,
         HexSketchRole::Junction,
@@ -1732,6 +1751,10 @@ impl HexSketchRole {
         HexSketchRole::Room,
         HexSketchRole::Ramp,
         HexSketchRole::Shaft,
+        HexSketchRole::ClimbFoot,
+        HexSketchRole::ClimbMid,
+        HexSketchRole::ClimbHigh,
+        HexSketchRole::ClimbLanding,
         HexSketchRole::Expanse,
     ];
 
@@ -1741,7 +1764,13 @@ impl HexSketchRole {
     pub fn composition(self) -> HexComposition {
         match self {
             Self::Room => HexComposition::Room,
-            Self::Ramp | Self::RampHead | Self::Shaft => HexComposition::Vertical,
+            Self::Ramp
+            | Self::RampHead
+            | Self::Shaft
+            | Self::ClimbFoot
+            | Self::ClimbMid
+            | Self::ClimbHigh
+            | Self::ClimbLanding => HexComposition::Vertical,
             // An expanse is a place, not a way between places: it fills its
             // hex so a run of them reads as one room-scale volume, which is the
             // whole reason the archetype exists.
@@ -2062,6 +2091,13 @@ pub fn hex_sketch(role: HexSketchRole) -> HexSketch {
         HexSketchRole::Ramp => Some(4.5),
         // A shaft nearly spans its level, so a stack of them reads as a column.
         HexSketchRole::Shaft => Some(6.8),
+        // A climb's three flight cells step up the way it climbs, so on the map the
+        // composition is a stair with a direction, not three identical towers; its
+        // landing sits low, as a ramp head did.
+        HexSketchRole::ClimbFoot => Some(1.6),
+        HexSketchRole::ClimbMid => Some(3.0),
+        HexSketchRole::ClimbHigh => Some(4.4),
+        HexSketchRole::ClimbLanding => Some(0.6),
         // Low and wide: an expanse should read as floor, not as massing.
         HexSketchRole::Expanse => Some(0.7),
     };
@@ -3227,6 +3263,16 @@ mod tests {
         assert!(h(HexSketchRole::Junction) < h(HexSketchRole::Room));
         assert!(h(HexSketchRole::Room) < h(HexSketchRole::Shaft));
         assert!(h(HexSketchRole::RampHead) < h(HexSketchRole::Ramp));
+    }
+
+    /// A climb composition reads as a stair: its flight cells rise in order, the way it
+    /// climbs, and its landing is lower than any of them.
+    #[test]
+    fn a_climb_steps_up_the_way_it_climbs() {
+        let h = |role| hex_sketch(role).height.expect("draws");
+        assert!(h(HexSketchRole::ClimbLanding) < h(HexSketchRole::ClimbFoot));
+        assert!(h(HexSketchRole::ClimbFoot) < h(HexSketchRole::ClimbMid));
+        assert!(h(HexSketchRole::ClimbMid) < h(HexSketchRole::ClimbHigh));
     }
 
     #[test]

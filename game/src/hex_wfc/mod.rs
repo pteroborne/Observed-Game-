@@ -150,7 +150,10 @@ impl Plugin for HexWfcPlugin {
                         view::exterior::sync_visibility,
                     )
                         .chain(),
-                    view::sync_practical_shadow_budget,
+                    (
+                        view::sync_practical_shadow_budget,
+                        view::sync_storey_shadow_casters,
+                    ),
                     // Grouped: the spectator overview is one concern, and the
                     // flat tuple had reached Bevy's 21-system limit.
                     (

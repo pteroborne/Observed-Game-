@@ -82,7 +82,7 @@ Each phase leaves the tree green and the game playable.
    legality covers all of them, and no climb cell is ever retracted. Still left as
    dead code: the `RampUp`, `RampHead` and `Shaft` enum variants, the tower and ramp
    forge sources, and the column-assembly machinery.
-5. **Districts.** In progress. Every register has its own climb: seven dressings
+5. **Districts.** Done. Every register has its own climb: seven dressings
    (`forge::climb`), 28 cells in all. The flight, its spans and its spine are the
    same in every district. The hexagon's flat east and west faces leave a straight
    aisle 7 m wide through every cell, with a triangular alcove either side, and a
@@ -102,7 +102,10 @@ Each phase leaves the tree green and the game playable.
    Monument's masonry and the Reactor's columns carry on up through it, so the high
    cell reads as one tall stairwell. Climbs are drawn by facing, as ramps were, so
    a flight wears its district's floor. They had been drawn as halls, which judged
-   the sloped mass a wall. Still to do: a map glyph.
+   the sloped mass a wall. On every map (the survivor map, tactics_lab,
+   iso_observer_lab, composition_studio), a climb's flight cells step up the way it
+   climbs (`HexSketchRole::ClimbFoot` to `ClimbHigh`), with its landing low on the
+   floor above, so a composition reads as a stair with a direction.
 
    `OBSERVED2_CAPTURE_HEX_WFC_VERTICALS` shoots each district's first climb in game:
    up from the foot, and down from the landing. The landing is on the floor above, so
@@ -123,18 +126,20 @@ Each phase leaves the tree green and the game playable.
   - The bot match must not be decided in its opening beats. The first seeds with full
     gaps ended in 6 to 9 beats, because they started the second Observer a short walk
     from the exit.
-- **Phase 101 arc gate: red on frame p95.** Measured 2026-10-02, uncapped, on the live
-  seed 263960012067191, against HEAD before this change:
+- **Phase 101 arc gate: green again.** Measured 2026-10-02, uncapped, on the live
+  seed 263960012067191:
 
-  | | Before | After |
-  |---|---|---|
-  | Mutations solved | 10 of 10 | 10 of 10, about 10 ms fixed time each, no fallback |
-  | Worst mutation frame | 15.5 ms | 18.1 ms (budget 33.3) |
-  | Frame p95 | 14.9 ms | **17.9 ms**, 18.3 ms with district dressings (budget 16.7) |
-  | Peak resident cells | 60 | 90 |
+  | | Before climbs | Climbs | Climbs and dressings | Now |
+  |---|---|---|---|---|
+  | Frame p95 | 14.9 ms | 17.9 ms | 18.3 ms | **14.2 ms** (budget 16.7) |
+  | Worst mutation frame | 15.5 ms | 18.1 ms | 18.9 ms | 14.5 ms (budget 33.3) |
+  | Peak resident cells | 60 | 90 | 90 | 90 |
 
-  The CPU side is unchanged: main schedule 3-4 ms, fixed p95 under 0.4 ms. The frames
-  are GPU-bound, and worst in the key-shadowed registers. Climb tiles are lighter than
-  halls (15-21 brushes against 23-34). The cost is density: four-cell climbs and
-  branch doors put about half as many cells again inside the streaming radius. This
-  should be closed by render work (culling or LOD), not by thinning the climbs.
+  The GPU passes come to about 4 ms. The cost was the practical lights' shadows:
+  each shadowed fixture redraws every caster within its 14 m range into six cube
+  faces, about 2.5 ms a frame whatever the shadow map's size. With all practical
+  shadows off the median frame falls from 14.3 to 4.1 ms; key and moon shadows off
+  save about 0.3 and 0.4 ms. Climbs put half as many cells again within reach, so
+  the budget of shadowed fixtures went from four to three
+  (`PRACTICAL_SHADOW_BUDGET`). Separately, cells below the viewed storey no longer
+  cast shadows (`sync_storey_shadow_casters`), which saves about 0.4 ms.

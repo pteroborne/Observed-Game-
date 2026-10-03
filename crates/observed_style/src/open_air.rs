@@ -554,14 +554,43 @@ impl SkyMood {
     }
 }
 
+/// How far a floor's sunlight is pulled from its sky's colour toward white.
+const SUNLIGHT_WHITENING: f32 = 0.5;
+
+/// The light a floor's sun or moon casts: the sky's colour, pulled halfway to white.
+///
+/// The sky, the disc and the clouds keep the full hue - the sky is what says dusk - but
+/// the light falls on every surface the floor has, and at full hue a dusk sun painted
+/// the top floor orange over its own plaster and concrete, as the climbs' old route
+/// material had painted every stair teal.
+#[must_use]
+pub fn sunlight(mood: &SkyMood) -> Color {
+    mood.light.mix(&Color::WHITE, SUNLIGHT_WHITENING)
+}
+
+/// How far an open-air fill leans from the moon's neutral toward its sky's light.
+const SKY_FILL_TINT: f32 = 0.25;
+
 /// A district palette taken outdoors under `mood`: as [`open_air`], with the fog fading
-/// into this sky's horizon and the fill from its light.
+/// into this sky's horizon and the fill only leaning toward its light.
+///
+/// The fill was the light itself, and on a dusk floor that is a deep orange: where nothing
+/// else lights a surface the fill is all there is, so every shaded wall, floor and flight
+/// went orange, as the first open-air captures had gone teal under a horizon-coloured
+/// fill. The sun keeps the sky's colour; the fill stays near neutral.
 #[must_use]
 pub fn open_air_under(mut palette: DistrictPalette, mood: &SkyMood) -> DistrictPalette {
     palette = open_air(palette);
     palette.fog_color = mood.horizon;
-    palette.ambient_color = mood.light;
+    palette.ambient_color = sky_fill(mood);
     palette
+}
+
+/// The ambient fill under `mood`: the moon's cool neutral, leaning a little toward the
+/// sky's light so a dusk floor's shadows are not a night's.
+#[must_use]
+pub fn sky_fill(mood: &SkyMood) -> Color {
+    moon().mix(&mood.light, SKY_FILL_TINT)
 }
 
 /// A sun's face as RGBA8, [`MOON_TEXTURE_SIZE`] square: a plain bright disc with a soft
@@ -601,6 +630,47 @@ mod tests {
         ATMOSPHERE_MAX_LUMINANCE, MarkerRole, SIGNAL_MIN_LUMINANCE, SurfaceRole, luminance, marker,
         surface,
     };
+
+    /// No floor's sunlight is saturated enough to paint the floor in its own hue: it is
+    /// the light on every sunlit surface, and the district's materials must still read.
+    #[test]
+    fn no_floors_sunlight_paints_it_one_colour() {
+        for register in observed_content::ArchitectureRegister::ALL {
+            let light = sunlight(&sky_mood(register)).to_srgba();
+            let (max, min) = (
+                light.red.max(light.green).max(light.blue),
+                light.red.min(light.green).min(light.blue),
+            );
+            let saturation = (max - min) / max.max(1e-6);
+            assert!(
+                saturation <= 0.36,
+                "{register:?}: sunlight {light:?} saturation {saturation:.2}"
+            );
+        }
+    }
+
+    /// No floor's open-air fill is more saturated than the moon's neutral: a tinted fill
+    /// is the only light on whatever nothing else lights, and it tints all of it.
+    #[test]
+    fn no_floors_fill_washes_its_open_air_in_one_hue() {
+        let saturation = |color: Color| {
+            let c = color.to_srgba();
+            let (max, min) = (
+                c.red.max(c.green).max(c.blue),
+                c.red.min(c.green).min(c.blue),
+            );
+            (max - min) / max.max(1e-6)
+        };
+        let neutral = saturation(moon());
+        for register in observed_content::ArchitectureRegister::ALL {
+            let fill =
+                open_air_under(crate::architecture(register), &sky_mood(register)).ambient_color;
+            assert!(
+                saturation(fill) <= neutral + 1e-3,
+                "{register:?}: fill {fill:?} is more saturated than the moon's neutral"
+            );
+        }
+    }
 
     /// Every floor's sky keeps the open-air rules: atmosphere never outshines a signal,
     /// down is darkest, and the disc is the brightest thing in its sky without being one.
