@@ -43,7 +43,6 @@ type Prop = Or<(
     With<entities::ExitBeacon>,
     With<kinetic::HeldTool>,
     With<doors::DoorVisual>,
-    With<super::super::thresholds::ThresholdFrame>,
 )>;
 
 /// What a prop's visibility was when the overview hid it.

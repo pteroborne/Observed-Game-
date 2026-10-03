@@ -714,12 +714,16 @@ impl ArchitectLab {
                     return Some(CommandRefusal::WrongDistrict);
                 }
                 // A stair is a climb composition (`docs/climb_compositions_plan.md`): three
-                // cells along the heading on this floor and a landing above the last. One
+                // cells along the flight on this floor and a landing above the last. One
                 // card, four cells, and every one of them has to be buildable.
-                let heading = lateral_face(rotation);
-                let Some(cells) =
-                    observed_facility::hex_wfc::authored_climb(self.world.config, target, heading)
-                else {
+                let (heading, turn, exit) = observed_facility::hex_wfc::stair_shape(rotation);
+                let Some(cells) = observed_facility::hex_wfc::authored_climb_shaped(
+                    self.world.config,
+                    target,
+                    heading,
+                    turn,
+                    exit,
+                ) else {
                     return Some(CommandRefusal::Unbuildable);
                 };
                 let cells = cells.map(|placement| placement.coord);
@@ -876,14 +880,17 @@ impl ArchitectLab {
     }
 
     /// The cells a stair play builds from `target`, turned by `rotation`: a climb
-    /// composition's foot, mid and high cells along the heading and the landing above
+    /// composition's foot, mid and high cells along the flight and the landing above
     /// the last. Legality has already refused one that leaves the facility.
     #[must_use]
     pub fn played_stair(&self, target: HexCoord, rotation: u8) -> [HexPlacement; 4] {
-        observed_facility::hex_wfc::authored_climb(
+        let (heading, turn, exit) = observed_facility::hex_wfc::stair_shape(rotation);
+        observed_facility::hex_wfc::authored_climb_shaped(
             self.world.config,
             target,
-            lateral_face(rotation),
+            heading,
+            turn,
+            exit,
         )
         .expect("legality proved the climb fits the facility")
     }

@@ -232,7 +232,6 @@ pub(super) fn setup_view(
     sky::spawn_moonlight(&mut commands, &mood);
     let skin = exterior::spawn_all(&mut commands, &mut meshes, &assets, facility);
     commands.insert_resource(skin);
-    thresholds::spawn_thresholds(&mut commands, &mut assets, &mut meshes, &runtime);
     let capture_unbounded = capture_requests_deterministic_residency();
     let initial_budget = if capture_unbounded {
         usize::MAX

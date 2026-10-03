@@ -226,23 +226,38 @@ pub(super) fn sync(
                     unlit: true,
                     ..default()
                 });
-                let bars: Vec<(HexFace, f32)> = match card.kind {
+                let bars: Vec<(HexFace, Vec3)> = match card.kind {
                     CardKind::Tile(shape) => HexFace::LATERAL
                         .into_iter()
                         .filter(|face| shape.doors(rotation) & (1 << face.index()) != 0)
-                        .map(|face| (face, 0.0))
+                        .map(|face| (face, Vec3::ZERO))
                         .collect(),
                     _ => {
-                        let heading = HexFace::LATERAL[usize::from(rotation % 6)];
+                        let (heading, turn, exit) =
+                            observed_facility::hex_wfc::stair_shape(rotation);
+                        let exit_face = exit.apply(turn.apply(heading));
+                        let landing_offset = observed_facility::hex_wfc::authored_climb_shaped(
+                            physical.facility.config,
+                            cell,
+                            heading,
+                            turn,
+                            exit,
+                        )
+                        .map(|placements| {
+                            let landing = placements[3].coord;
+                            Vec3::from_array(hex_origin(landing))
+                                - Vec3::from_array(hex_origin(cell))
+                        })
+                        .unwrap_or(Vec3::Y * observed_hex::TILE_LEVEL_HEIGHT);
                         vec![
-                            (heading.opposite(), 0.0),
-                            (heading, observed_hex::TILE_LEVEL_HEIGHT),
+                            (heading.opposite(), Vec3::ZERO),
+                            (exit_face, landing_offset),
                         ]
                     }
                 };
-                for (face, rise) in bars {
+                for (face, offset) in bars {
                     let mut bar = threshold_bar(face);
-                    bar.translation += at - drop + Vec3::Y * rise;
+                    bar.translation += at - drop + offset;
                     spawn(Cuboid::new(1.0, 1.0, 1.0).into(), threshold.clone(), bar);
                 }
             }

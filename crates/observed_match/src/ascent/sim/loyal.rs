@@ -232,8 +232,12 @@ impl ArchitectLab {
             if !matches!(card.kind, CardKind::Tile(_) | CardKind::Stair) {
                 continue;
             }
+            let max_rotations = match card.kind {
+                CardKind::Stair => 120,
+                _ => 6,
+            };
             for &target in &near {
-                for rotation in 0..6 {
+                for rotation in 0..max_rotations {
                     let command = ArchitectCommand::Play {
                         card: card.id,
                         target,

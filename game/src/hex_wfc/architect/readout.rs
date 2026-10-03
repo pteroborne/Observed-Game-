@@ -2,7 +2,7 @@
 //! brought up to date with the rules and the desk's state each frame.
 
 use bevy::prelude::*;
-use observed_match::ascent::sim::{ArchitectCommand, ObserverState, floor_title};
+use observed_match::ascent::sim::{ArchitectCommand, CardKind, ObserverState, floor_title};
 use observed_style::architect::{Role, color};
 
 use super::ArchitectDesk;
@@ -197,19 +197,50 @@ pub(super) fn sync(
             ),
             Line::CardWhere => (
                 match desk.focus() {
-                    Some(cell) => format!(
-                        "Floor {:02}  /  cell {}, {}{}\nOrientation {} / 6",
-                        cell.level + 1,
-                        cell.q,
-                        cell.r,
-                        if desk.aimed.is_some() {
+                    Some(cell) => {
+                        let pointing = if desk.aimed.is_some() {
                             ""
                         } else {
                             "  (pointing)"
-                        },
-                        desk.rotation + 1,
-                    ),
-                    None => format!("No cell aimed\nOrientation {} / 6", desk.rotation + 1),
+                        };
+                        let orientation = if lifted.is_some_and(|(_, c)| c.kind == CardKind::Stair)
+                        {
+                            let (heading, turn, exit) =
+                                observed_facility::hex_wfc::stair_shape(desk.rotation);
+                            let heading_idx = observed_hex::HexFace::LATERAL
+                                .iter()
+                                .position(|&f| f == heading)
+                                .unwrap_or(0)
+                                + 1;
+                            let shape_name = stair_turn_description(turn, exit);
+                            format!("Heading {heading_idx} / 6  /  {shape_name} [T]")
+                        } else {
+                            format!("Orientation {} / 6", (desk.rotation % 6) + 1)
+                        };
+                        format!(
+                            "Floor {:02}  /  cell {}, {}{pointing}\n{orientation}",
+                            cell.level + 1,
+                            cell.q,
+                            cell.r,
+                        )
+                    }
+                    None => {
+                        let orientation = if lifted.is_some_and(|(_, c)| c.kind == CardKind::Stair)
+                        {
+                            let (heading, turn, exit) =
+                                observed_facility::hex_wfc::stair_shape(desk.rotation);
+                            let heading_idx = observed_hex::HexFace::LATERAL
+                                .iter()
+                                .position(|&f| f == heading)
+                                .unwrap_or(0)
+                                + 1;
+                            let shape_name = stair_turn_description(turn, exit);
+                            format!("Heading {heading_idx} / 6  /  {shape_name} [T]")
+                        } else {
+                            format!("Orientation {} / 6", (desk.rotation % 6) + 1)
+                        };
+                        format!("No cell aimed\n{orientation}")
+                    }
                 },
                 Role::Muted,
             ),
@@ -338,5 +369,35 @@ pub(super) fn prompts(
         if **text != said {
             said.clone_into(&mut **text);
         }
+    }
+}
+
+fn stair_turn_description(
+    turn: observed_facility::hex_wfc::ClimbTurn,
+    exit: observed_facility::hex_wfc::ClimbTurn,
+) -> &'static str {
+    use observed_facility::hex_wfc::ClimbTurn;
+    match (turn, exit) {
+        (ClimbTurn::Ahead, ClimbTurn::Ahead) => "Straight",
+        (ClimbTurn::Ahead, ClimbTurn::Left) => "Straight, exit left",
+        (ClimbTurn::Ahead, ClimbTurn::Right) => "Straight, exit right",
+        (ClimbTurn::Ahead, ClimbTurn::Back) => "Switchback",
+        (ClimbTurn::Left, ClimbTurn::Ahead) => "Left bend",
+        (ClimbTurn::Left, ClimbTurn::Left) => "Left bend, exit left",
+        (ClimbTurn::Left, ClimbTurn::Right) => "Left bend, exit right",
+        (ClimbTurn::Left, ClimbTurn::Back) => "Left winder",
+        (ClimbTurn::Right, ClimbTurn::Ahead) => "Right bend",
+        (ClimbTurn::Right, ClimbTurn::Left) => "Right bend, exit left",
+        (ClimbTurn::Right, ClimbTurn::Right) => "Right bend, exit right",
+        (ClimbTurn::Right, ClimbTurn::Back) => "Right winder",
+        (ClimbTurn::SharpLeft, ClimbTurn::Ahead) => "Sharp left bend",
+        (ClimbTurn::SharpLeft, ClimbTurn::Left) => "Sharp left, exit left",
+        (ClimbTurn::SharpLeft, ClimbTurn::Right) => "Sharp left, exit right",
+        (ClimbTurn::SharpLeft, ClimbTurn::Back) => "Sharp left winder",
+        (ClimbTurn::SharpRight, ClimbTurn::Ahead) => "Sharp right bend",
+        (ClimbTurn::SharpRight, ClimbTurn::Left) => "Sharp right, exit left",
+        (ClimbTurn::SharpRight, ClimbTurn::Right) => "Sharp right, exit right",
+        (ClimbTurn::SharpRight, ClimbTurn::Back) => "Sharp right winder",
+        _ => "Turned stair",
     }
 }

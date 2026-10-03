@@ -52,6 +52,39 @@ pub fn authored_climb(
     authored_climb_shaped(config, foot, heading, ClimbTurn::Ahead, ClimbTurn::Ahead)
 }
 
+/// Decompose a stair rotation (0..120) into its lateral heading, flight turn at mid,
+/// and exit at landing (`docs/climb_compositions_plan.md`).
+///
+/// Rotations 0..6 encode the six lateral headings with straight flight (Ahead, Ahead),
+/// ensuring full backwards compatibility with legacy callers.
+#[must_use]
+pub fn stair_shape(rotation: u8) -> (HexFace, ClimbTurn, ClimbTurn) {
+    let heading = HexFace::LATERAL[(rotation % 6) as usize];
+    let shape_index = ((rotation / 6) % 20) as usize;
+    let turn = ClimbTurn::BENDS[shape_index % 5];
+    let exit = ClimbTurn::EXITS[shape_index / 5];
+    (heading, turn, exit)
+}
+
+/// Compose a lateral heading, mid turn and landing exit into a stair rotation (0..120).
+#[must_use]
+pub fn stair_rotation(heading: HexFace, turn: ClimbTurn, exit: ClimbTurn) -> u8 {
+    let heading_index = HexFace::LATERAL
+        .iter()
+        .position(|&f| f == heading)
+        .unwrap_or(0);
+    let bend_index = ClimbTurn::BENDS
+        .iter()
+        .position(|&b| b == turn)
+        .unwrap_or(0);
+    let exit_index = ClimbTurn::EXITS
+        .iter()
+        .position(|&e| e == exit)
+        .unwrap_or(0);
+    let shape_index = exit_index * 5 + bend_index;
+    (shape_index * 6 + heading_index) as u8
+}
+
 /// The climb composition with its foot at `foot`, entered climbing toward `heading`,
 /// its flight turned by `turn` in the mid cell and its landing left by `exit`, both
 /// from the heading the flight has there. `None` where it would leave the lattice,
@@ -479,5 +512,23 @@ mod tests {
         );
         assert_eq!(world.placements, before.placements);
         assert_eq!(world.generation, before.generation);
+    }
+
+    #[test]
+    fn stair_rotations_roundtrip_all_headings_bends_and_exits() {
+        for rotation in 0..120 {
+            let (heading, turn, exit) = stair_shape(rotation);
+            assert!(heading.is_lateral());
+            assert!(ClimbTurn::BENDS.contains(&turn));
+            assert!(ClimbTurn::EXITS.contains(&exit));
+            let encoded = stair_rotation(heading, turn, exit);
+            assert_eq!(encoded, rotation);
+        }
+        for (idx, &heading) in HexFace::LATERAL.iter().enumerate() {
+            let (h, turn, exit) = stair_shape(idx as u8);
+            assert_eq!(h, heading);
+            assert_eq!(turn, ClimbTurn::Ahead);
+            assert_eq!(exit, ClimbTurn::Ahead);
+        }
     }
 }

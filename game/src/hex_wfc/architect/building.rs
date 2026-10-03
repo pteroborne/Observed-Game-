@@ -321,9 +321,15 @@ pub(super) fn built_by(
             )?]
         }
         CardKind::Stair => {
-            let heading = observed_hex::HexFace::LATERAL[usize::from(rotation % 6)];
-            observed_facility::hex_wfc::authored_climb(physical.facility.config, cell, heading)?
-                .to_vec()
+            let (heading, turn, exit) = observed_facility::hex_wfc::stair_shape(rotation);
+            observed_facility::hex_wfc::authored_climb_shaped(
+                physical.facility.config,
+                cell,
+                heading,
+                turn,
+                exit,
+            )?
+            .to_vec()
         }
         CardKind::Door
         | CardKind::Station

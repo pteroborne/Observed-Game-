@@ -18,8 +18,7 @@ use observed_traversal::{ColliderShape, ConvexRenderMesh};
 
 pub(in crate::hex_wfc) use super::mesh_group::MeshGroupKey;
 use super::open_edge_materials::OpenEdgeMaterials;
-use crate::view::assets::ContentScene;
-use crate::view::environment::{cuboid_mesh, load_content_scene, load_repeating_texture};
+use crate::view::environment::{cuboid_mesh, load_repeating_texture};
 
 #[derive(Clone)]
 pub(in crate::hex_wfc) struct RegisterMaterials {
@@ -73,10 +72,6 @@ pub(in crate::hex_wfc) struct HexWfcVisualAssets {
     /// Open-edge pieces are the same in every register: the lip is a signal, and the
     /// railing, walkway and truss belong to the connective structure, not a district.
     open_edge: OpenEdgeMaterials,
-    /// The doorway model stood in a named threshold. `None` when the asset is
-    /// absent, which is a missing frame rather than a missing facility - the
-    /// aperture is authored into the room's own geometry either way.
-    pub(in crate::hex_wfc) threshold_gate: Option<ContentScene>,
 }
 
 impl HexWfcVisualAssets {
@@ -84,7 +79,7 @@ impl HexWfcVisualAssets {
         asset_server: &AssetServer,
         materials: &mut Assets<StandardMaterial>,
         images: &mut Assets<Image>,
-        content: &observed_content::ContentManifest,
+        _content: &observed_content::ContentManifest,
     ) -> Self {
         let wall_texture = load_repeating_texture(asset_server, observed_assets::WALL.path);
         let registers = ArchitectureRegister::ALL
@@ -165,7 +160,6 @@ impl HexWfcVisualAssets {
             cuboid_cache: HashMap::new(),
             merged_hull_cache: HashMap::new(),
             open_edge: OpenEdgeMaterials::new(materials),
-            threshold_gate: load_content_scene(asset_server, content, "kenney_gate"),
         }
     }
 
@@ -188,7 +182,6 @@ impl HexWfcVisualAssets {
             cuboid_cache: HashMap::new(),
             merged_hull_cache: HashMap::new(),
             open_edge: OpenEdgeMaterials::new(materials),
-            threshold_gate: None,
         }
     }
 

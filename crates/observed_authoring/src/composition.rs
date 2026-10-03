@@ -802,7 +802,7 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "fd46cb673167a43e4dd14c3df154b3a56fcd99900032b9c359efff66feea79dc";
+            "2843501cc46cfef9362e5158f9a33e198b0bf4add441763611e6874fa9849a37";
         // The open-air composition (void share 2,000), 2026-09-24, at profile
         // version 6 since the ramps and towers retired and its bias names `climb`.
         const PROFILE_HASH: &str =
@@ -811,7 +811,7 @@ mod tests {
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "a9c6ce8fa512f4f9b0256433e23d60c533df9cb8c1ddcf9fb51e4f6da22ba901";
+            "340fafd82fe5d1c8060e6c723b6657e62b12f41177af658981a4d297a800ebd0";
 
         let root = committed_tiles();
         let compiled_text =

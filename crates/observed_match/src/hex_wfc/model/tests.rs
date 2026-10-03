@@ -760,10 +760,11 @@ fn headless_gate_bot_walks_climbs_deterministically() {
     // (-> 0x18fc_ac97_862c_01a2), and the climb compositions' (-> 0x541d_246f_6472_cf2a),
     // and every district's own climb, with pockets that keep a routed hall's branch
     // (-> 0x273d_ea45_f7f9_3234), the tick unmoved. Turned climbs moved both with the
-    // building (-> 0xf43c_3c63_94dc_3916).
+    // building (-> 0xf43c_3c63_94dc_3916). Monument climbs losing ceilings moved the
+    // digest (-> 0xf2df_3180_289e_b11d), tick unmoved.
     assert_eq!(
         first.snapshot().digest,
-        0xf43c_3c63_94dc_3916,
+        0xf2df_3180_289e_b11d,
         "TR-10 pins the declared-climb final snapshot digest"
     );
 }
@@ -802,6 +803,7 @@ fn compiled_catalog_hash_participates_in_network_snapshot_identity() {
 /// a single stall is a failure. Layouts that fail to generate or expose no
 /// spawn→exit route are skipped (not stalls), and the test asserts that a
 /// meaningful number of real layouts were exercised.
+
 #[test]
 fn bot_soak_has_no_stalls() {
     let mut exercised = 0;

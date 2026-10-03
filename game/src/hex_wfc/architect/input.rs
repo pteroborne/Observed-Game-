@@ -91,11 +91,37 @@ pub(super) fn input(
         .chain(controls.iter().map(|(_, interaction)| interaction))
         .any(|interaction| *interaction != Interaction::None);
 
+    let is_stair = desk
+        .selected
+        .and_then(|i| hand.deck.hand.get(i))
+        .is_some_and(|c| c.kind == observed_match::ascent::sim::CardKind::Stair);
+
     if keys.just_pressed(KeyCode::KeyQ) || pressed(DeskButton::TurnLeft) {
-        desk.rotation = (desk.rotation + 5) % 6;
+        if is_stair {
+            let heading = (desk.rotation % 6 + 5) % 6;
+            let shape = (desk.rotation / 6) % 20;
+            desk.rotation = shape * 6 + heading;
+        } else {
+            desk.rotation = (desk.rotation + 5) % 6;
+        }
     }
     if keys.just_pressed(KeyCode::KeyE) || pressed(DeskButton::TurnRight) {
-        desk.rotation = (desk.rotation + 1) % 6;
+        if is_stair {
+            let heading = (desk.rotation % 6 + 1) % 6;
+            let shape = (desk.rotation / 6) % 20;
+            desk.rotation = shape * 6 + heading;
+        } else {
+            desk.rotation = (desk.rotation + 1) % 6;
+        }
+    }
+    if is_stair && keys.just_pressed(KeyCode::KeyT) {
+        let heading = desk.rotation % 6;
+        let shape = if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) {
+            (desk.rotation / 6 + 19) % 20
+        } else {
+            (desk.rotation / 6 + 1) % 20
+        };
+        desk.rotation = shape * 6 + heading;
     }
     let levels = runtime.match_state.facility.config.levels;
     if keys.just_pressed(KeyCode::BracketLeft) || pressed(DeskButton::FloorDown) {
