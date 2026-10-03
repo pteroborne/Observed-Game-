@@ -35,6 +35,12 @@ use crate::view::components::GameCam;
 /// 2.5 ms a frame, and the shadow map's size makes no difference - it is draws, not fill.
 /// Climbs put half as many cells again within reach, and four took frame p95 to 18.3 ms
 /// against a 16.7 ms budget. Three: 14.0 ms. Two: 10.2 ms. None: 6.9 ms.
+///
+/// Open, seen while choosing three: in the verticals capture's `backrooms_up` pose, a
+/// hall fixture 12 m behind the camera, near the edge of its 14 m range, lights the
+/// floor ahead only while it casts shadows. That holds under CPU and GPU light
+/// clustering alike, and with no clustering resize in the log, so it looks engine-side.
+/// At four it happens to be in the budget, and the floor there is brighter.
 const PRACTICAL_SHADOW_BUDGET: usize = 3;
 
 const BLEND_RATE: f32 = 2.5;
@@ -135,10 +141,18 @@ pub(in crate::hex_wfc) fn sync_practical_shadow_budget(
     runtime: Res<HexWfcRuntime>,
     mut last_cell: Local<Option<observed_facility::hex_wfc::HexCoord>>,
     mut shadowed: Local<Vec<Entity>>,
-    mut practicals: Query<(Entity, &HexPractical, &mut PointLight)>,
+    mut practicals: Query<(
+        Entity,
+        &HexPractical,
+        &mut PointLight,
+        Option<&GlobalTransform>,
+    )>,
+    streamed: Query<(), Added<HexPractical>>,
 ) {
     let current = runtime.viewed().cell;
-    if *last_cell == Some(current) {
+    // Again when fixtures stream in, as well as when the runner moves: a cell that
+    // arrives after the runner does would otherwise wait for its next step.
+    if *last_cell == Some(current) && streamed.is_empty() {
         return;
     }
     *last_cell = Some(current);
@@ -147,7 +161,7 @@ pub(in crate::hex_wfc) fn sync_practical_shadow_budget(
     // Nearest fixtures by squared distance to the runner (small budget → cheap select).
     let mut ranked: Vec<(f32, Entity)> = practicals
         .iter()
-        .filter(|(_, practical, _)| {
+        .filter(|(_, practical, ..)| {
             let register = runtime
                 .match_state
                 .facility
@@ -157,14 +171,18 @@ pub(in crate::hex_wfc) fn sync_practical_shadow_budget(
                 .unwrap_or(ArchitectureRegister::ALL[0]);
             style::hex_practical_light(register, HexComposition::Hall, 1).shadows_allowed
         })
-        .map(|(entity, practical, _)| {
-            (
-                Vec3::from_array(hex_origin(practical.0)).distance_squared(focus),
-                entity,
-            )
+        // By where each fixture is, not its cell: a cell's fixtures share its origin,
+        // so ranked by cell they tied, and the tie went by entity - two lights at 10 and
+        // 12 m kept their shadows while one at 8 m, right by the runner, had none.
+        .map(|(entity, practical, _, placed)| {
+            let at = placed.map_or_else(
+                || Vec3::from_array(hex_origin(practical.0)),
+                GlobalTransform::translation,
+            );
+            (at.distance_squared(focus), entity)
         })
         .collect();
-    ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
+    ranked.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
     let want: Vec<Entity> = ranked
         .into_iter()
         .take(PRACTICAL_SHADOW_BUDGET)
@@ -175,14 +193,14 @@ pub(in crate::hex_wfc) fn sync_practical_shadow_budget(
     // chosen set. Guarded assignments keep change detection quiet on the steady state.
     for entity in std::mem::take(&mut *shadowed) {
         if !want.contains(&entity)
-            && let Ok((_, _, mut light)) = practicals.get_mut(entity)
+            && let Ok((_, _, mut light, _)) = practicals.get_mut(entity)
             && light.shadow_maps_enabled
         {
             light.shadow_maps_enabled = false;
         }
     }
     for &entity in &want {
-        if let Ok((_, _, mut light)) = practicals.get_mut(entity)
+        if let Ok((_, _, mut light, _)) = practicals.get_mut(entity)
             && !light.shadow_maps_enabled
         {
             light.shadow_maps_enabled = true;
@@ -416,6 +434,70 @@ mod tests {
             for (fixture, light) in world.query::<(&HexPractical, &PointLight)>().iter(world) {
                 assert_eq!(light.shadow_maps_enabled, fixture.0 == other);
             }
+        }
+    }
+
+    /// The shadows go to the fixtures nearest the runner by where each one is, not by
+    /// its cell: every fixture in a cell shares the cell's origin, so ranked by cell they
+    /// tied, and the farther ones of a cell could take the shadows from the nearest.
+    #[test]
+    fn the_nearest_fixtures_in_one_cell_get_the_shadows() {
+        use observed_match::hex_wfc::{HexBotDriver, HexMatchConfig, HexWfcMatch};
+        use std::collections::{BTreeMap, BTreeSet};
+        let mut game = HexWfcMatch::new(
+            44,
+            HexMatchConfig::default(),
+            &crate::hex_wfc::sim::load_prototypes(),
+        )
+        .expect("fixture solves");
+        let local_player = *game.players.keys().next().expect("player");
+        let cell = game.players[&local_player].cell;
+        game.facility
+            .architecture
+            .insert(cell, ArchitectureRegister::Monolith);
+        let focus = crate::hex_wfc::ascent::presented_position(&game.players[&local_player]);
+        let mut app = App::new();
+        app.insert_resource(HexWfcRuntime {
+            match_state: game,
+            bot_driver: HexBotDriver::new(),
+            local_player,
+            pending_visual_cells: BTreeSet::new(),
+            presented_revisions: BTreeMap::new(),
+            status: String::new(),
+            map_open: false,
+            map_level: cell.level,
+            results_delay_frames: 0,
+            networked: false,
+            resync_attempts: 0,
+            ascent: None,
+            viewed_player: None,
+        })
+        .add_systems(Update, sync_practical_shadow_budget);
+        // Spawned farthest first, so entity order would pick the farthest on a tie.
+        let count = PRACTICAL_SHADOW_BUDGET + 2;
+        let mut by_distance = BTreeMap::new();
+        for step in (0..count).rev() {
+            #[allow(clippy::cast_precision_loss)]
+            let at = focus + Vec3::X * (1.0 + step as f32);
+            let entity = app
+                .world_mut()
+                .spawn((
+                    HexPractical(cell),
+                    PointLight::default(),
+                    GlobalTransform::from_translation(at),
+                ))
+                .id();
+            by_distance.insert(step, entity);
+        }
+        app.update();
+        for (step, entity) in by_distance {
+            let light = app.world().get::<PointLight>(entity).expect("a light");
+            assert_eq!(
+                light.shadow_maps_enabled,
+                step < PRACTICAL_SHADOW_BUDGET,
+                "the fixture {} m out",
+                step + 1
+            );
         }
     }
 
