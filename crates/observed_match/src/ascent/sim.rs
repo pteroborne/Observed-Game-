@@ -552,9 +552,10 @@ impl ArchitectLab {
             {
                 continue;
             }
-            let a = face_between(config, cell, triple[0]).expect("route neighbors");
-            let b = face_between(config, cell, triple[2]).expect("route neighbors");
-            let required = (1 << a.index()) | (1 << b.index());
+            // The card dealt must rebuild the cell as it was, every door of it: one offered
+            // for the route's two faces alone would leave a solved branch or room door
+            // facing a wall, and the repair would be a contradiction of its own.
+            let required = lab.world.placements[&cell].doors;
             if let Some(shape) = TileShape::ALL
                 .into_iter()
                 .find(|shape| (0..6).any(|rotation| shape.doors(rotation) == required))
@@ -712,29 +713,31 @@ impl ArchitectLab {
                 if card.district != Some(self.district(target.level)) {
                     return Some(CommandRefusal::WrongDistrict);
                 }
+                // A stair is a climb composition (`docs/climb_compositions_plan.md`): three
+                // cells along the heading on this floor and a landing above the last. One
+                // card, four cells, and every one of them has to be buildable.
                 let heading = lateral_face(rotation);
-                let Some((_, head)) = observed_facility::hex_wfc::authored_ramp(
-                    target,
-                    heading,
-                    self.world.config.levels,
-                ) else {
+                let Some(cells) =
+                    observed_facility::hex_wfc::authored_climb(self.world.config, target, heading)
+                else {
                     return Some(CommandRefusal::Unbuildable);
                 };
-                let head = head.coord;
+                let cells = cells.map(|placement| placement.coord);
                 // The climb goes where the team has not been, but not through anything a
                 // play could not touch at its foot.
-                if self.fixed_structure(target) || self.fixed_structure(head) {
+                if cells.iter().any(|&cell| self.fixed_structure(cell)) {
                     return Some(CommandRefusal::FixedStructure);
                 }
-                if !self.world.placements.contains_key(&head)
-                    || self.collapsed_floors.contains(&head.level)
-                {
+                if cells.iter().any(|cell| {
+                    !self.world.placements.contains_key(cell)
+                        || self.collapsed_floors.contains(&cell.level)
+                }) {
                     return Some(CommandRefusal::CollapsedFloor);
                 }
                 // Not up into open sky, nor from it: building in the air re-derives the
                 // whole open-air region, and the edges of it re-project wherever they are -
                 // in front of whoever is watching them.
-                if [target, head].iter().any(|cell| {
+                if cells.iter().any(|cell| {
                     self.world
                         .placements
                         .get(cell)
@@ -742,13 +745,20 @@ impl ArchitectLab {
                 }) {
                     return Some(CommandRefusal::Unbuildable);
                 }
-                if self.observed.contains(&head) {
+                // The foot is the play's own target, judged above like any other; the rest
+                // of the composition is held to the same rules.
+                let rest = &cells[1..];
+                if rest.iter().any(|cell| self.observed.contains(cell)) {
                     return Some(CommandRefusal::Observed);
                 }
-                if self.occupied().contains(&head) {
+                let occupied = self.occupied();
+                if rest.iter().any(|cell| occupied.contains(cell)) {
                     return Some(CommandRefusal::Occupied);
                 }
-                if self.anchored.contains(&head) || self.prison_core.contains(&head) {
+                if rest
+                    .iter()
+                    .any(|cell| self.anchored.contains(cell) || self.prison_core.contains(cell))
+                {
                     return Some(CommandRefusal::Anchored);
                 }
                 // Entered from the side facing away from the climb, off a walkway.
@@ -806,6 +816,17 @@ impl ArchitectLab {
                 if !open {
                     return Some(CommandRefusal::InvalidThreshold);
                 }
+                // A climb composition's span is not a doorway: it is the flight running on,
+                // metres above any floor, and a door there would be a panel across a stair.
+                let face = key_face_from(key, target);
+                if self
+                    .world
+                    .placements
+                    .get(&target)
+                    .is_some_and(|tile| tile.archetype.span_mask() & (1 << face.index()) != 0)
+                {
+                    return Some(CommandRefusal::InvalidThreshold);
+                }
                 // Two cells of one room share no doorway, only open floor: a first-person
                 // door there would be a panel standing in the middle of the room.
                 if self.authored
@@ -854,17 +875,17 @@ impl ArchitectLab {
         }
     }
 
-    /// The two cells a stair play builds from `target`, turned by `rotation`: the foot and
-    /// the head above it. Legality has already refused a stair with no floor above.
+    /// The cells a stair play builds from `target`, turned by `rotation`: a climb
+    /// composition's foot, mid and high cells along the heading and the landing above
+    /// the last. Legality has already refused one that leaves the facility.
     #[must_use]
-    pub fn played_stair(&self, target: HexCoord, rotation: u8) -> [HexPlacement; 2] {
-        let (foot, head) = observed_facility::hex_wfc::authored_ramp(
+    pub fn played_stair(&self, target: HexCoord, rotation: u8) -> [HexPlacement; 4] {
+        observed_facility::hex_wfc::authored_climb(
+            self.world.config,
             target,
             lateral_face(rotation),
-            self.world.config.levels,
         )
-        .expect("legality proved there is a floor above");
-        [foot, head]
+        .expect("legality proved the climb fits the facility")
     }
 
     pub fn submit(&mut self, command: ArchitectCommand) -> Result<(), CommandRefusal> {

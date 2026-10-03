@@ -6,7 +6,7 @@ use observed_facility::hex_wfc::{
 };
 use observed_hex::{HexFace, hex_origin};
 use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
-use observed_traversal::{FpsBody, FpsConfig, StairSpine};
+use observed_traversal::{DeckPath, FpsBody, FpsConfig, StairSpine};
 use player_input::PlayerIntent;
 
 use super::*;
@@ -74,12 +74,11 @@ fn projected_guides_are_the_only_source_of_climb_and_deck_compatibility_maps() {
         }),
         "legacy guides carry exact instance-local identity without inventing a v4 graph"
     );
+    // Since the climb compositions, no module ships a climb and a deck together;
+    // the atomicity that pairing exercised is proved on a built guide below.
     assert!(
-        snapshot
-            .guides
-            .values()
-            .any(|guide| guide.climb.is_some() && guide.deck.is_some()),
-        "the fixture must exercise one atomic climb-plus-deck module guide"
+        snapshot.guides.values().any(|guide| guide.climb.is_some()),
+        "the fixture must exercise climb guides"
     );
 }
 
@@ -87,11 +86,29 @@ fn projected_guides_are_the_only_source_of_climb_and_deck_compatibility_maps() {
 fn guide_delta_replaces_and_removes_climb_and_deck_atomically() {
     let world = showcase();
     let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("projection");
-    let (&coord, original) = snapshot
+    // A module carrying a climb and a deck at once, built from a real climb guide:
+    // no tile in the corpus carries both since the climb compositions, and the
+    // property is the delta's, not the corpus's.
+    let (&coord, climbing) = snapshot
         .guides
         .iter()
-        .find(|(_, guide)| guide.climb.is_some() && guide.deck.is_some())
-        .expect("fixture has a climb-plus-deck guide");
+        .find(|(_, guide)| guide.climb.is_some())
+        .expect("fixture has a climb guide");
+    let origin = Vec3::from_array(hex_origin(coord));
+    let original = ProjectedTraversalGuide {
+        deck: Some(DeckPath {
+            nodes: [-3.0, 0.0, 3.0]
+                .map(|x| origin + Vec3::new(x, observed_hex::FLOOR_SLAB_TOP, 2.0))
+                .to_vec(),
+        }),
+        ..climbing.clone()
+    };
+    let mut snapshot = snapshot;
+    snapshot.guides.insert(coord, original.clone());
+    snapshot
+        .decks
+        .insert(coord, original.deck.clone().expect("just built"));
+    let original = &original;
     let changed = BTreeSet::from([coord]);
     let replacement = ProjectedTraversalGuide {
         instance: original.instance,
@@ -317,7 +334,7 @@ fn selected_tiles(snapshot: &HexWfcGeometrySnapshot) -> BTreeMap<HexCoord, TileK
 #[test]
 fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     // Curation retires 96 alternatives from the production catalogue. Re-pin content;
-    // placement counts and the unchanged stair-tower family remain exact gates.
+    // placement counts and the climb compositions' own selection remain exact gates.
     let catalog = crate::hex_wfc::test_catalog();
     // Re-pinned when the committed profile moved to the open-air composition (void
     // share 300 -> 2,000): the same seeds build about half as many cells, because more
@@ -330,20 +347,25 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     // moved the selection digests and nothing else: the generated wedge no longer
     // shares the ramp's keys, so every ramp is the authored one; and again when each
     // district's ramp got its own dressing.
+    //
+    // Re-pinned when the climb compositions replaced the ramps and stair towers (208 ->
+    // 189 and 184 -> 147 cells, routed around the longer climbs); the gate that
+    // followed the tower family follows the climb cells now: 32 and 24 of them, eight
+    // and six compositions.
     let cases = [
         (
             1u64,
-            208usize,
-            0xb90d_14c1_49f6_401fu64,
-            38usize,
-            0x0aa7_e46f_e4cb_52ddu64,
+            189usize,
+            0x8abd_5923_7682_2728u64,
+            32usize,
+            0x32a6_0ae5_37aa_3e9eu64,
         ),
         (
             10_000_031u64,
-            184usize,
-            0xe8eb_a091_6330_13acu64,
+            147usize,
+            0xb01d_306c_7227_df49u64,
             24usize,
-            0x9ea8_171e_fea2_d7b9u64,
+            0xcb57_2ae3_ce7c_d02cu64,
         ),
     ];
     let mut actual = Vec::new();
@@ -363,18 +385,18 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
                 .expect("production corpus projects");
         let selections = selected_tiles(&snapshot);
         let digest = selection_digest(&selections);
-        let towers = selections
+        let climbs = selections
             .iter()
-            .filter(|(_, tile)| tile.archetype == "stair_tower")
+            .filter(|(_, tile)| tile.archetype.starts_with("climb_"))
             .map(|(coord, tile)| (*coord, tile.clone()))
             .collect::<BTreeMap<_, _>>();
-        let tower_digest = selection_digest(&towers);
+        let climb_digest = selection_digest(&climbs);
         eprintln!(
-            "seed={seed} count={} digest={digest:#018x} tower_count={} tower_digest={tower_digest:#018x}",
+            "seed={seed} count={} digest={digest:#018x} climb_count={} climb_digest={climb_digest:#018x}",
             selections.len(),
-            towers.len()
+            climbs.len()
         );
-        actual.push((seed, selections.len(), digest, towers.len(), tower_digest));
+        actual.push((seed, selections.len(), digest, climbs.len(), climb_digest));
     }
     // Report both seeds together when an intentional content addition moves
     // the selection pin; every count and tower digest remains part of it.
@@ -414,6 +436,7 @@ fn identical_variation_keys_do_not_guarantee_family_coherence() {
             "family_probe",
             "monolith",
             port_signature(&[]),
+            None,
             variation,
             variation,
         )
@@ -424,6 +447,7 @@ fn identical_variation_keys_do_not_guarantee_family_coherence() {
             "family_probe",
             "monolith",
             port_signature(&[(HexFace::Up, PortClass::ShaftOpen)]),
+            None,
             variation,
             variation,
         )
@@ -485,20 +509,18 @@ fn every_non_void_cell_is_covered_by_a_prefab_instance() {
         if placement.space.unbuilt() {
             continue;
         }
-        if placement.archetype == HexArchetype::RampHead {
-            assert!(
-                world
-                    .config
-                    .grid()
-                    .neighbor(placement.coord, HexFace::Down)
-                    .is_some()
-            );
-        } else {
-            assert!(covered.contains(&placement.coord), "missing {placement:?}");
-        }
+        // Every climb cell, the landing included, is a tile of its own: nothing in a
+        // climb composition is the geometry-free half of another cell's prefab.
+        assert!(covered.contains(&placement.coord), "missing {placement:?}");
     }
     assert_eq!(snapshot.blueprint_instances, world.blueprints.len());
-    assert!(snapshot.ramp_heads > 0, "showcase includes paired ramps");
+    assert!(
+        world
+            .placements
+            .values()
+            .any(|placement| matches!(placement.archetype, HexArchetype::Climb { .. })),
+        "showcase includes climb compositions"
+    );
 }
 
 #[test]
@@ -1325,54 +1347,6 @@ fn whole_room_hull_budget_is_shared_across_the_entire_footprint_not_per_cell() {
     );
 }
 
-/// A shaft column must use one tower shape all the way up.
-///
-/// A tower's stairwell opening is the hole the flight below arrives through, so
-/// two shapes in one column leave the lower flight topping out under the upper
-/// cell's solid deck. The surfaces union, so nothing reads as broken — a body
-/// simply climbs into the underside of the floor above and stops. Districts
-/// drift between levels, so a column crossing a district boundary is routine
-/// rather than rare, and choosing the tower per cell made this the common case:
-/// measured as a soak stall the moment a second tower shape shipped.
-#[test]
-fn a_shaft_column_uses_one_tower_shape() {
-    let world = HexWfcWorld::generate(SHOWCASE_SEED, HexWfcConfig::arc_default()).expect("solves");
-    let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("projects");
-    let mut per_column: BTreeMap<(u16, u16), BTreeSet<String>> = BTreeMap::new();
-    for piece in &snapshot.pieces {
-        let Some(tile) = piece.tile.as_ref() else {
-            continue;
-        };
-        if tile.archetype != "stair_tower" {
-            continue;
-        }
-        per_column
-            .entry((piece.source_cell.q, piece.source_cell.r))
-            .or_default()
-            .insert(tile.register.clone());
-    }
-    assert!(
-        !per_column.is_empty(),
-        "the pinned seed should place stair towers"
-    );
-    for (column, registers) in &per_column {
-        assert_eq!(
-            registers.len(),
-            1,
-            "column {column:?} mixes tower shapes: {registers:?}"
-        );
-    }
-
-    // And the handed districts really are reaching their own towers, or the
-    // check above would pass on a facility that still has only one shape.
-    let shapes: BTreeSet<_> = per_column.values().flatten().cloned().collect();
-    assert!(
-        shapes.len() > 1,
-        "every column drew the same tower, so vertical circulation is still a \
-         monoculture: {shapes:?}"
-    );
-}
-
 /// A district-exclusive tile must be unreachable from a foreign district.
 ///
 /// Exclusivity has to be a property of the selector, not a convention about how
@@ -1421,7 +1395,7 @@ fn a_district_exclusive_tile_never_answers_for_another_district() {
             for variation in 0..16u64 {
                 let key = variation.wrapping_mul(0x9E37_79B9_7F4A_7C15);
                 let picked = catalogue
-                    .select(archetype, foreign, tile.signature, key, key)
+                    .select(archetype, foreign, tile.signature, None, key, key)
                     .unwrap_or(None);
                 if let Some(picked) = picked {
                     assert_ne!(
@@ -1519,372 +1493,6 @@ fn check_one_facility_is_built_from_its_own_districts(seed: u64, prototypes: &[T
 }
 
 // ------------------------------------------------- TR-9 acceptance: two families
-
-/// Two declared tower families, distinguishable by their climbs.
-const TOWER_FAMILIES: [(&str, f32); 2] = [("test/tower-a", 7.75), ("test/tower-b", 7.50)];
-/// Two turns each. A turn belongs to the assembly variant, so a column drawing
-/// one turn at one level and another at the next is exactly the fault under
-/// test, not a cosmetic difference.
-const TOWER_ROTATIONS: [u8; 2] = [0, 3];
-
-/// Decode which assembly variant a projected tower came from. The variant
-/// number carries it because `TileKey` is what a projected piece reports.
-fn tower_variant(variant: u16) -> (usize, u8) {
-    let packed = variant / 256;
-    (usize::from(packed / 6), (packed % 6) as u8)
-}
-
-/// The runtime shape a second complete tower family expands into.
-///
-/// `observed_authoring`'s `two_complete_tower_families_expand_into_runtime_prototypes`
-/// proves the same thing one layer down, through the real contract compiler.
-/// Here the point is what selection does with the result, so the kit is built
-/// directly against every `stair_tower` signature the solver can demand: each
-/// family answers all of them, at every turn it accepts, which is what makes it
-/// *complete*. Both families are `generic`, so every district reaches both and
-/// register fallback cannot hide a mix.
-///
-/// The match layer reads only `TilePrototype::assembly`. No bot or match
-/// conditional knows any of these names, and adding one would mean the
-/// selection design had failed.
-fn two_family_tower_kit() -> Vec<TilePrototype> {
-    let template = tiles()
-        .into_iter()
-        .find(|tile| tile.key.archetype == "stair_tower")
-        .expect("the committed corpus ships towers to model");
-    let signatures = observed_facility::hex_wfc::geometry_demands()
-        .into_iter()
-        .filter(|demand| demand.archetype == "stair_tower")
-        .map(|demand| demand.signature)
-        .collect::<Vec<_>>();
-    assert!(
-        signatures.len() > 8,
-        "the tower demand set should be substantial: {}",
-        signatures.len()
-    );
-
-    let mut kit = Vec::new();
-    for (family_index, (family, climb_top)) in TOWER_FAMILIES.into_iter().enumerate() {
-        for (rotation_index, rotation) in TOWER_ROTATIONS.into_iter().enumerate() {
-            for (signature_index, &signature) in signatures.iter().enumerate() {
-                let packed = family_index * 6 + rotation_index;
-                let mut tile = template.clone();
-                tile.key.register = "generic".to_string();
-                tile.key.variant = u16::try_from(packed * 256 + signature_index)
-                    .expect("the synthetic kit fits a variant");
-                tile.signature = signature;
-                tile.weight = 1;
-                // The climbs really do reach different heights, so mixing two
-                // families in one column would leave a flight short of the deck
-                // above it rather than merely looking different.
-                tile.spine = StairSpine {
-                    nodes: vec![
-                        Vec3::new(0.0, 0.5, 0.0),
-                        Vec3::new(0.0, climb_top - f32::from(rotation) * 0.05, 0.0),
-                    ],
-                };
-                tile.contract = None;
-                tile.assembly = Some(observed_authoring::RuntimeAssembly {
-                    variant: observed_authoring::AssemblyVariantId {
-                        family: ModuleFamilyId(family.to_string()),
-                        rotation,
-                    },
-                    scope: AssemblyScope::VerticalColumn,
-                    family_weight: 1,
-                });
-                kit.push(tile);
-            }
-        }
-    }
-    kit
-}
-
-/// Every prototype except the committed towers, which the two declared families
-/// replace wholesale.
-fn tiles_with_two_tower_families() -> Vec<TilePrototype> {
-    let mut prototypes = tiles()
-        .into_iter()
-        .filter(|tile| tile.key.archetype != "stair_tower")
-        .collect::<Vec<_>>();
-    prototypes.extend(two_family_tower_kit());
-    prototypes
-}
-
-/// Which assembly variant each column drew, keyed by its plan cell.
-fn tower_variants_by_column(
-    snapshot: &HexWfcGeometrySnapshot,
-) -> BTreeMap<(u16, u16), BTreeSet<(usize, u8)>> {
-    let mut per_column: BTreeMap<(u16, u16), BTreeSet<(usize, u8)>> = BTreeMap::new();
-    for piece in &snapshot.pieces {
-        let Some(tile) = piece.tile.as_ref() else {
-            continue;
-        };
-        if tile.archetype != "stair_tower" {
-            continue;
-        }
-        per_column
-            .entry((piece.source_cell.q, piece.source_cell.r))
-            .or_default()
-            .insert(tower_variant(tile.variant));
-    }
-    per_column
-}
-
-/// **The TR-9 exit criterion.** Two complete families never mix within a
-/// column, across seeds, door signatures, end caps, and registers.
-///
-/// This is the fault that forced an entire authored stair family to be replaced
-/// atomically. A column drew turn 1 at one level and turn 4 at the next, and the
-/// lower flight topped out under the upper cell's solid deck: the surfaces
-/// union, so nothing reads as broken, and a body simply climbs into the
-/// underside of the floor above and stops. `AssemblyVariantId` exists so that
-/// cannot recur, and this asserts it on real solved facilities rather than on a
-/// unit fixture.
-#[test]
-fn two_declared_families_never_mix_inside_one_column() {
-    let prototypes = tiles_with_two_tower_families();
-    let mut drawn = BTreeSet::new();
-    let mut columns = 0usize;
-    let mut signature_variety = 0usize;
-
-    for seed in [
-        1u64,
-        10_000_031,
-        SHOWCASE_SEED,
-        0x0BAD_C0DE_0000_0001,
-        0x5EED_5EED_5EED_5EED,
-    ] {
-        let world = HexWfcWorld::generate(
-            seed,
-            HexWfcConfig {
-                levels: 4,
-                ..HexWfcConfig::default()
-            },
-        )
-        .expect("seed solves");
-        let snapshot =
-            HexWfcGeometrySnapshot::project(&world, &prototypes).expect("two families project");
-
-        for (column, variants) in tower_variants_by_column(&snapshot) {
-            assert_eq!(
-                variants.len(),
-                1,
-                "seed {seed:#x} column {column:?} mixes assembly variants: {variants:?}"
-            );
-            drawn.extend(variants);
-            columns += 1;
-        }
-
-        // The columns really are being asked different questions at different
-        // levels: end caps, through cells, and varying door counts. Without this
-        // the assertion above could pass on a facility whose towers all
-        // presented one signature.
-        let mut per_column_signatures: BTreeMap<(u16, u16), BTreeSet<u16>> = BTreeMap::new();
-        for piece in &snapshot.pieces {
-            if let Some(tile) = piece.tile.as_ref()
-                && tile.archetype == "stair_tower"
-            {
-                per_column_signatures
-                    .entry((piece.source_cell.q, piece.source_cell.r))
-                    .or_default()
-                    .insert(tile.variant % 256);
-            }
-        }
-        signature_variety += per_column_signatures
-            .values()
-            .filter(|signatures| signatures.len() > 1)
-            .count();
-    }
-
-    assert!(columns > 50, "unexpectedly small sample: {columns} columns");
-    assert!(
-        signature_variety > 0,
-        "no column drew two different tower signatures, so signature-invariance \
-         of the family choice was never actually exercised"
-    );
-    assert_eq!(
-        drawn.len(),
-        TOWER_FAMILIES.len() * TOWER_ROTATIONS.len(),
-        "every declared family and turn should be reachable, or the facility \
-         only ever proved one of them coherent: {drawn:?}"
-    );
-}
-
-/// A bounded relayout keeps the column's assembly identity.
-///
-/// Family and turn are drawn from the column's base cell, and a relayout does
-/// not move that cell's variation key, so replacing part of a column reinstalls
-/// the same family. Losing this would reintroduce the fault mid-match, where it
-/// is hardest to see.
-#[test]
-fn a_relayout_reinstalls_the_same_assembly_variant() {
-    let prototypes = tiles_with_two_tower_families();
-    let mut world = showcase();
-    world.config.retry_budget = 1;
-    let before = HexWfcGeometrySnapshot::project(&world, &prototypes).expect("before");
-    let before_columns = tower_variants_by_column(&before);
-    assert!(!before_columns.is_empty(), "the seed should place towers");
-
-    let mut frame = HexObservationFrame::default();
-    let room = world
-        .blueprints
-        .iter()
-        .find(|blueprint| blueprint.anchor != world.config.spawn())
-        .expect("non-start room");
-    frame.visible_cells.insert(room.cells[0]);
-    if let Some(shaft) = world
-        .placements
-        .values()
-        .find(|placement| placement.archetype == HexArchetype::Shaft)
-    {
-        frame.visible_cells.insert(shaft.coord);
-    }
-    frame.objective_cells.insert(world.config.spawn());
-    let work = world.begin_relayout(&frame);
-    let candidate = match world.advance_relayout(work).expect("advance") {
-        HexRelayoutProgress::Ready(candidate) => candidate,
-        HexRelayoutProgress::Pending(_) => panic!("retry budget one must finish"),
-    };
-    world
-        .commit_relayout_delta(candidate, &frame)
-        .expect("commit");
-
-    let after = HexWfcGeometrySnapshot::project(&world, &prototypes).expect("after");
-    for (column, variants) in tower_variants_by_column(&after) {
-        assert_eq!(
-            variants.len(),
-            1,
-            "column {column:?} mixes assembly variants after relayout: {variants:?}"
-        );
-        if let Some(previous) = before_columns.get(&column) {
-            assert_eq!(
-                *previous, variants,
-                "column {column:?} changed assembly variant across a relayout"
-            );
-        }
-    }
-}
-
-/// A hole in one assembly variant is reported as one, not filled from a sibling
-/// family and not blamed on a missing tile.
-///
-/// Borrowing a member from the other family is the single escape hatch that
-/// would make the exit criterion above unprovable, so the selector has to refuse
-/// it out loud even though a perfectly good member exists one family over.
-#[test]
-fn a_variant_with_a_hole_is_named_rather_than_filled_from_a_sibling() {
-    let complete = two_family_tower_kit();
-    let hole = complete[0].signature;
-    let prototypes = tiles()
-        .into_iter()
-        .filter(|tile| tile.key.archetype != "stair_tower")
-        .chain(complete.into_iter().filter(|tile| {
-            // `test/tower-a` at turn 0 loses exactly one signature. Every other
-            // family and turn still answers it.
-            tower_variant(tile.key.variant) != (0, 0) || tile.signature != hole
-        }))
-        .collect::<Vec<_>>();
-
-    let catalogue = HexTileCatalogue::new(&prototypes);
-    assert_eq!(
-        catalogue.supply("stair_tower", "monolith", hole),
-        HexTileSupply::Missing,
-        "coverage has to see the hole the projector would fall into"
-    );
-
-    // Probe the selector directly: whether one particular seed happens to demand
-    // the missing signature from that exact variant is not the point being
-    // pinned. Some assembly draw lands on it, and that draw must refuse.
-    let key = (0..64u64)
-        .map(|probe| probe.wrapping_mul(0x9E37_79B9_7F4A_7C15))
-        .find(|&key| {
-            catalogue
-                .select("stair_tower", "monolith", hole, key, 0)
-                .is_err()
-        })
-        .expect("some assembly draw must land on the variant with the hole");
-    let error = catalogue
-        .select("stair_tower", "monolith", hole, key, 0)
-        .expect_err("the incomplete variant must refuse");
-    assert_eq!(error.family, ModuleFamilyId("test/tower-a".to_string()));
-    assert_eq!(error.rotation, 0);
-    assert_eq!(error.register, "generic");
-
-    // And a sibling family answers that very signature, so the refusal is a
-    // deliberate choice rather than an absence of geometry.
-    let sibling = (0..64u64)
-        .map(|probe| probe.wrapping_mul(0x9E37_79B9_7F4A_7C15))
-        .filter_map(|key| {
-            catalogue
-                .select("stair_tower", "monolith", hole, key, 0)
-                .ok()
-                .flatten()
-        })
-        .next()
-        .expect("another family answers the signature that was refused");
-    assert_ne!(tower_variant(sibling.key.variant), (0, 0));
-}
-
-/// The column rule survived losing its name.
-///
-/// `"stair_tower"` no longer appears anywhere in selection; assembly width is
-/// now declared, or for compatibility content read from the geometry. This
-/// asserts the *answer*, not the mechanism: a tower cell whose own district
-/// differs from its column's chosen floor still resolves against that floor, and an
-/// ordinary hall still answers for itself. The crossing counter matters — on a
-/// facility where no column ever left its district the two rules would be
-/// indistinguishable and this would pass on nothing.
-#[test]
-fn a_towers_register_still_comes_from_its_column_base() {
-    let tiles = tiles();
-    let catalogue = HexTileCatalogue::new(&tiles);
-    let mut crossings = 0usize;
-    let mut halls = 0usize;
-
-    for seed in [1u64, 10_000_031, SHOWCASE_SEED] {
-        let world = HexWfcWorld::generate(
-            seed,
-            HexWfcConfig {
-                levels: 4,
-                ..HexWfcConfig::default()
-            },
-        )
-        .expect("seed solves");
-        for (coord, placement) in &world.placements {
-            let Some(archetype) = observed_facility::hex_wfc::placement_tile_archetype(placement)
-            else {
-                continue;
-            };
-            let Some(resolved) = catalogue.assembly_register(&world, *coord, archetype) else {
-                continue;
-            };
-            let own = world
-                .architecture
-                .get(coord)
-                .map(|register| register.slug().to_string());
-            if placement.archetype == HexArchetype::Shaft {
-                let base = world
-                    .architecture
-                    .get(&catalogue.register_cell(&world, archetype, *coord))
-                    .map(|register| register.slug().to_string());
-                assert_eq!(Some(resolved), base, "a tower follows its column");
-                if own != base {
-                    crossings += 1;
-                }
-            } else {
-                assert_eq!(Some(resolved), own, "an ordinary cell answers for itself");
-                halls += 1;
-            }
-        }
-    }
-
-    assert!(halls > 100, "unexpectedly small hall sample: {halls}");
-    assert!(
-        crossings > 0,
-        "no tower column crossed a district boundary, so resolving at the column \
-         base was never distinguishable from resolving per cell"
-    );
-}
 
 /// The corpus must be able to build the solver's **whole** vocabulary at
 /// production scale, not merely the part a given profile happens to reach.
@@ -2136,15 +1744,19 @@ fn walk_spine(scene: &RapierTraversalScene, spine: &StairSpine, up: bool) -> Res
     Err(body.position - Vec3::Y * config.half_height)
 }
 
-/// Every stair tower in a production facility climbs and descends by its own spine.
+/// Every climb composition in a production facility climbs and descends end to end.
 ///
-/// The towers' counterpart of the ramp walk below, and the measuring stick for their
-/// redesign: each tower that climbs (a through-tower or a shaft's foot) is walked up
-/// its spine from the foot to the deck above, and back down.
+/// The four cells' spines, chained in climbing order, are one flight from the foot's
+/// door to the landing's: a body stood at the foot steers along it on the production
+/// controller and must reach the landing, and stood at the landing must come back
+/// down. The proof that the cells meet - floor heights at every span, the flight
+/// under the ceilings, the landing's lip - with nothing to step over or catch on.
 #[test]
-fn every_production_tower_climbs_and_descends_by_its_spine() {
+fn every_production_climb_composition_climbs_and_descends_end_to_end() {
+    use observed_facility::hex_wfc::ClimbPart;
+
     let catalog = crate::hex_wfc::test_catalog();
-    let mut towers = 0usize;
+    let mut climbs = 0usize;
     let mut slowest = (0u32, 0u32);
     let mut stalls = Vec::new();
     for seed in [1u64, 2, 3] {
@@ -2159,132 +1771,43 @@ fn every_production_tower_climbs_and_descends_by_its_spine() {
             HexWfcGeometrySnapshot::project_with_rooms(&world, &catalog.cells, &catalog.rooms)
                 .expect("production corpus projects");
         let scene = snapshot.rapier_scene();
-        for placement in world
-            .placements
-            .values()
-            .filter(|placement| placement.archetype == HexArchetype::Shaft)
-        {
-            let Some(spine) = snapshot.climbs.get(&placement.coord) else {
+        let grid = world.config.grid();
+        for placement in world.placements.values() {
+            let HexArchetype::Climb {
+                part: ClimbPart::Foot,
+                heading,
+            } = placement.archetype
+            else {
                 continue;
             };
-            towers += 1;
+            let mid = grid.neighbor(placement.coord, heading).expect("a mid");
+            let high = grid.neighbor(mid, heading).expect("a high cell");
+            let landing = grid.neighbor(high, HexFace::Up).expect("a landing");
+            let mut nodes: Vec<Vec3> = Vec::new();
+            for cell in [placement.coord, mid, high, landing] {
+                for &node in &snapshot.climbs[&cell].nodes {
+                    if nodes.last().is_none_or(|last| last.distance(node) > 0.05) {
+                        nodes.push(node);
+                    }
+                }
+            }
+            let spine = StairSpine { nodes };
+            climbs += 1;
             for up in [true, false] {
-                match walk_spine(&scene, spine, up) {
+                match walk_spine(&scene, &spine, up) {
                     Ok(ticks) if up => slowest.0 = slowest.0.max(ticks),
                     Ok(ticks) => slowest.1 = slowest.1.max(ticks),
-                    Err(at) => stalls.push((seed, placement.coord, up, at)),
+                    Err(at) => stalls.push((seed, placement.coord, heading, up, at)),
                 }
             }
         }
     }
     eprintln!(
-        "towers={towers} slowest climb={} descent={} ticks stalls={}",
+        "climbs={climbs} slowest climb={} descent={} ticks stalls={}",
         slowest.0,
         slowest.1,
         stalls.len()
     );
-    assert!(towers >= 30, "production facilities place towers: {towers}");
-    assert!(stalls.is_empty(), "towers stalled: {stalls:?}");
-}
-
-/// Every ramp in a production facility climbs and descends by its own spine.
-///
-/// A body stood on the spine's first node steers each tick toward the point the spine
-/// says to walk to next - the follower's own rule - on the production controller, and
-/// must arrive at the top; stood on the last, it must come back down. This is the
-/// switchback's proof: it folds a storey into two flights and a balcony, and a body
-/// that misses a turn or catches a seam stalls short of the end.
-#[test]
-fn every_production_ramp_climbs_and_descends_by_its_spine() {
-    let catalog = crate::hex_wfc::test_catalog();
-    let config = FpsConfig::default();
-    let mut ramps = 0usize;
-    let mut slowest = (0u32, 0u32);
-    let mut by_register: BTreeMap<String, usize> = BTreeMap::new();
-    for seed in [1u64, 2, 3] {
-        let world = HexWfcWorld::generate_with_profile(
-            seed,
-            HexWfcConfig::arc_default(),
-            None,
-            &catalog.composition,
-        )
-        .expect("production seed solves");
-        let snapshot =
-            HexWfcGeometrySnapshot::project_with_rooms(&world, &catalog.cells, &catalog.rooms)
-                .expect("production corpus projects");
-        let scene = snapshot.rapier_scene();
-        for placement in world
-            .placements
-            .values()
-            .filter(|placement| placement.archetype == HexArchetype::RampUp)
-        {
-            let spine = &snapshot.climbs[&placement.coord];
-            ramps += 1;
-            if let Some(tile) = selected_tiles(&snapshot).get(&placement.coord) {
-                *by_register.entry(tile.register.clone()).or_default() += 1;
-            }
-            for up in [true, false] {
-                let start = if up {
-                    spine.nodes[0]
-                } else {
-                    *spine.nodes.last().expect("a spine")
-                };
-                let mut body = FpsBody::spawned(start + Vec3::Y * config.half_height, 0.0);
-                let mut ticks = 0u32;
-                loop {
-                    let feet = body.position - Vec3::Y * config.half_height;
-                    let done = if up {
-                        spine.has_arrived(feet)
-                    } else {
-                        spine.has_descended(feet)
-                    };
-                    if done {
-                        break;
-                    }
-                    assert!(
-                        ticks < 1_200,
-                        "seed {seed}: the ramp at {:?} stalled {} at {feet} (tile {:?})",
-                        placement.coord,
-                        if up { "climbing" } else { "descending" },
-                        snapshot
-                            .pieces
-                            .iter()
-                            .find(|piece| piece.source_cell == placement.coord)
-                            .and_then(|piece| piece.tile.clone()),
-                    );
-                    let target = spine.target(feet, up).expect("a target on the spine");
-                    let toward = (target - feet).with_y(0.0).normalize_or_zero();
-                    body.yaw = toward.x.atan2(-toward.z);
-                    let intent = PlayerIntent {
-                        movement: Vec2::Y,
-                        ..PlayerIntent::default()
-                    };
-                    step_character(&scene, &mut body, intent, &config, 1.0 / 60.0);
-                    ticks += 1;
-                }
-                if up {
-                    slowest.0 = slowest.0.max(ticks);
-                } else {
-                    slowest.1 = slowest.1.max(ticks);
-                }
-            }
-        }
-    }
-    eprintln!(
-        "ramps={ramps} slowest climb={} descent={} ticks by register {by_register:?}",
-        slowest.0, slowest.1
-    );
-    assert!(ramps >= 30, "production facilities place ramps: {ramps}");
-    // Every district on the climb, so every dressing, was walked - but the sky's: the top
-    // floor has no floor above it to climb to, so no ramp starts there. Its dressing is
-    // there for a facility whose sky is not the top.
-    let (_, below_the_top) = observed_content::ArchitectureRegister::CLIMB
-        .split_last()
-        .expect("a climb");
-    for &register in below_the_top {
-        assert!(
-            by_register.contains_key(register.slug()),
-            "no {register:?} ramp was walked: {by_register:?}"
-        );
-    }
+    assert!(climbs >= 10, "production facilities place climbs: {climbs}");
+    assert!(stalls.is_empty(), "climbs stalled: {stalls:?}");
 }

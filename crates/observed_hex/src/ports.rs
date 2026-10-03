@@ -13,19 +13,29 @@ pub enum PortClass {
     Sealed = 0,
     /// A walkable doorway. Lateral faces only.
     Door = 1,
-    /// The vertical bond inside a ramp pair: a `RampUp` tile's `Up` face meets
-    /// its `RampHead`'s `Down` face. Vertical faces only.
+    /// The vertical bond inside a climb: a `RampUp` tile's `Up` face meets its
+    /// `RampHead`'s `Down` face, and a climb composition's high cell meets the landing
+    /// above it. Vertical faces only.
     RampOpen = 2,
     /// A climbable shaft opening (wellshaft/silo stacks). Vertical faces only.
     ShaftOpen = 3,
+    /// The lateral bond inside a climb composition: the flight running on from one of
+    /// its cells into the next, at whatever height it has reached there. Lateral
+    /// faces only.
+    ///
+    /// Packed into the lane `RampOpen` uses on vertical faces: no lateral face could
+    /// ever carry that, so every signature from before this class existed reads back
+    /// exactly as it was.
+    Span = 4,
 }
 
 impl PortClass {
-    pub const ALL: [PortClass; 4] = [
+    pub const ALL: [PortClass; 5] = [
         PortClass::Sealed,
         PortClass::Door,
         PortClass::RampOpen,
         PortClass::ShaftOpen,
+        PortClass::Span,
     ];
 
     /// Whether this class may sit on `face` at all.
@@ -33,15 +43,29 @@ impl PortClass {
     pub const fn valid_on(self, face: HexFace) -> bool {
         match self {
             PortClass::Sealed => true,
-            PortClass::Door => face.is_lateral(),
+            PortClass::Door | PortClass::Span => face.is_lateral(),
             PortClass::RampOpen | PortClass::ShaftOpen => face.is_vertical(),
         }
     }
 
-    const fn from_bits(bits: u16) -> PortClass {
+    /// The two bits this class packs to on a face it is valid on.
+    const fn lane(self) -> u16 {
+        match self {
+            PortClass::Sealed => 0,
+            PortClass::Door => 1,
+            PortClass::RampOpen | PortClass::Span => 2,
+            PortClass::ShaftOpen => 3,
+        }
+    }
+
+    /// The class two packed bits mean on `face`. Lane 2 is a span on a lateral face
+    /// and a ramp bond on a vertical one; lane 3 has no lateral meaning and reads as a
+    /// shaft opening, which [`PortSignature::is_valid`] then refuses there.
+    const fn from_bits(bits: u16, face: HexFace) -> PortClass {
         match bits & 0b11 {
             0 => PortClass::Sealed,
             1 => PortClass::Door,
+            2 if face.is_lateral() => PortClass::Span,
             2 => PortClass::RampOpen,
             _ => PortClass::ShaftOpen,
         }
@@ -81,7 +105,7 @@ impl PortSignature {
             if !class.valid_on(face) {
                 return Err(InvalidPort { face, class });
             }
-            packed |= (class as u16) << (face.index() * 2);
+            packed |= class.lane() << (face.index() * 2);
         }
         Ok(PortSignature(packed))
     }
@@ -89,7 +113,7 @@ impl PortSignature {
     /// The class on one face.
     #[must_use]
     pub const fn port(self, face: HexFace) -> PortClass {
-        PortClass::from_bits(self.0 >> (face.index() * 2))
+        PortClass::from_bits(self.0 >> (face.index() * 2), face)
     }
 
     /// Unpack into the readable form.
@@ -151,7 +175,24 @@ mod tests {
             assert_eq!(PortClass::Door.valid_on(face), face.is_lateral());
             assert_eq!(PortClass::RampOpen.valid_on(face), face.is_vertical());
             assert_eq!(PortClass::ShaftOpen.valid_on(face), face.is_vertical());
+            assert_eq!(PortClass::Span.valid_on(face), face.is_lateral());
         }
+    }
+
+    #[test]
+    fn a_span_shares_a_lane_without_changing_any_older_signature() {
+        // A climb's mid cell: spans fore and aft, nothing else.
+        let mut ports = [PortClass::Sealed; 8];
+        ports[HexFace::West.index()] = PortClass::Span;
+        ports[HexFace::East.index()] = PortClass::Span;
+        let signature = PortSignature::try_from_ports(ports).expect("valid mid cell");
+        assert_eq!(signature.ports(), ports);
+        // The same bits on a vertical face are the ramp bond they always were.
+        let mut ramp = [PortClass::Sealed; 8];
+        ramp[HexFace::Up.index()] = PortClass::RampOpen;
+        let packed = PortSignature::try_from_ports(ramp).expect("valid ramp");
+        assert_eq!(packed.0, 2 << (HexFace::Up.index() * 2));
+        assert_eq!(packed.port(HexFace::Up), PortClass::RampOpen);
     }
 
     #[test]

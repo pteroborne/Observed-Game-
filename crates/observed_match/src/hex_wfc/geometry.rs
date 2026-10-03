@@ -187,6 +187,12 @@ pub struct HexTraversalLease {
     pub revision: HexModuleRevision,
     pub entry: TraversalNodeId,
     pub exit: TraversalNodeId,
+    /// Whether the graph was the module's projected guide rather than the fallback
+    /// adapter over its open faces. A guide that disappears leaves the same cell, at
+    /// the same revision, resolving to the adapter instead, whose node ids can
+    /// coincide with the guide's - so identity and revision alone kept a stale leg
+    /// walking toward whatever the adapter numbered the same.
+    pub projected: bool,
 }
 
 /// Non-authoritative local graph progress retained by an input driver.
@@ -369,6 +375,7 @@ impl HexWfcGeometrySnapshot {
                 placement.coord,
                 archetype,
                 placement.ports(),
+                required_turn(placement),
             )?;
             push_tile(
                 world,
@@ -746,7 +753,7 @@ fn project_cell(
             },
         )?;
         let signature = blueprint.cell_signature(blueprint.cells[index]);
-        let tile = tile_for(world, catalogue, coord, archetype, signature)?;
+        let tile = tile_for(world, catalogue, coord, archetype, signature, None)?;
         return push_tile(
             world,
             stamped.anchor,
@@ -760,7 +767,14 @@ fn project_cell(
     let Some(archetype) = placement_tile_archetype(placement) else {
         return Ok(());
     };
-    let tile = tile_for(world, catalogue, coord, archetype, placement.ports())?;
+    let tile = tile_for(
+        world,
+        catalogue,
+        coord,
+        archetype,
+        placement.ports(),
+        required_turn(placement),
+    )?;
     push_tile(world, coord, coord, role, tile, out)
 }
 
@@ -1148,6 +1162,7 @@ impl<'a> HexTileCatalogue<'a> {
         archetype: &str,
         register: &str,
         signature: PortSignature,
+        turn: Option<u16>,
         assembly_variation: u64,
         member_variation: u64,
     ) -> Result<Option<&'a TilePrototype>, AssemblyMiss> {
@@ -1181,8 +1196,16 @@ impl<'a> HexTileCatalogue<'a> {
             .flat
             .get(&(archetype, register, signature))
             .or_else(|| self.flat.get(&(archetype, "generic", signature)));
-        Ok(exact.and_then(|candidates| {
-            weighted_select(candidates, member_variation, |candidate| candidate.weight)
+        Ok(exact.and_then(|candidates| match turn {
+            None => weighted_select(candidates, member_variation, |candidate| candidate.weight),
+            Some(turn) => {
+                let turned = candidates
+                    .iter()
+                    .copied()
+                    .filter(|candidate| candidate.key.variant % 6 == turn)
+                    .collect::<Vec<_>>();
+                weighted_select(&turned, member_variation, |candidate| candidate.weight)
+            }
         }))
     }
 }
@@ -1382,6 +1405,20 @@ fn variation_index(key: u64, candidate_count: usize) -> usize {
     (key % candidate_count as u64) as usize
 }
 
+/// The turn a placement's tile must have, when its ports alone cannot say.
+///
+/// A climb cell's tile is chosen by its heading as well as its ports. A mid cell spans
+/// fore and aft, so its signature reads the same turned half round, and a draw by
+/// ports alone handed every other climb a flight sloping the wrong way. Authored
+/// climbing east, a climb heading `face` is its tile turned `face` times.
+fn required_turn(placement: &HexPlacement) -> Option<u16> {
+    match placement.archetype {
+        #[allow(clippy::cast_possible_truncation)]
+        HexArchetype::Climb { heading, .. } => Some(heading.index() as u16),
+        _ => None,
+    }
+}
+
 /// Resolve one cell to one concrete module.
 ///
 /// Everything that has to agree across an assembly — register fallback, family,
@@ -1394,6 +1431,7 @@ fn tile_for<'a>(
     coord: HexCoord,
     archetype: &'static str,
     signature: PortSignature,
+    turn: Option<u16>,
 ) -> Result<&'a TilePrototype, HexGeometryError> {
     let identity = catalogue.assembly_identity(archetype, coord);
     let register_cell = catalogue.register_cell(world, archetype, coord);
@@ -1406,6 +1444,7 @@ fn tile_for<'a>(
         archetype,
         register,
         signature,
+        turn,
         world.tile_variation_key(identity),
         world.tile_variation_key(coord),
     ) {
@@ -1470,7 +1509,7 @@ fn project_blueprint(
         // Authored room prefabs retain the blueprint signature. The arena
         // shell closes a named threshold physically when it leaves the grid.
         let signature = blueprint.cell_signature(blueprint.cells[index]);
-        let tile = tile_for(world, catalogue, coord, archetype, signature)?;
+        let tile = tile_for(world, catalogue, coord, archetype, signature, None)?;
         push_tile(
             world,
             stamped.anchor,

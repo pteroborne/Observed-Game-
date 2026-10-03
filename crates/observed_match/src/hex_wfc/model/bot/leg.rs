@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use glam::Vec3;
 use observed_facility::hex_wfc::{HexArchetype, HexCoord, HexFace};
-use observed_hex::{face_edge, hex_origin};
+use observed_hex::{TILE_LEVEL_HEIGHT, face_edge, hex_origin};
 use observed_traversal::{
     FollowerPose, GraphFollowDecision, GraphFollowState, TraversalGuide, TraversalGuideBuilder,
     TraversalMode, TraversalNodeId, compile_compatibility_graph, follow_graph,
@@ -90,6 +90,8 @@ pub(super) struct ResolvedModuleGraph {
     /// ends at, and the alternatives are all shape readings - the lowest node,
     /// or the one a level under the top terminal. See [`descent`].
     pub climb_foot: Option<TraversalNodeId>,
+    /// Whether this is the module's projected guide rather than the fallback adapter.
+    pub projected: bool,
 }
 
 impl ResolvedModuleGraph {
@@ -117,6 +119,7 @@ impl ResolvedModuleGraph {
                     revision,
                     graph: graph.clone(),
                     climb_foot: None,
+                    projected: true,
                 });
             }
             let compiled = compile_compatibility_graph(guide.deck.as_ref(), guide.climb.as_ref())?;
@@ -149,6 +152,7 @@ impl ResolvedModuleGraph {
                     port_bindings,
                 },
                 climb_foot,
+                projected: true,
             });
         }
         legacy_cell_adapter(game, cell)
@@ -174,11 +178,21 @@ fn bind_lateral_ports(
     let Some(placement) = game.facility.placements.get(&cell) else {
         return;
     };
+    let spans = placement.archetype.span_mask();
     for face in HexFace::LATERAL {
         if !placement.is_open(face) {
             continue;
         }
-        if let Some(node) = guide.nearest_node_in_plan(doorway(cell, face), PORT_BIND_MAX_RISE) {
+        // A doorway is on the floor it was cut into. A climb composition's span is
+        // not: it is wherever the flight has climbed to at that face, 2.6 m up between
+        // a foot and its mid, so it binds to the climb line nearest it in plan at any
+        // height on the storey - the node the next cell's own climb begins at.
+        let rise = if spans & (1 << face.index()) != 0 {
+            TILE_LEVEL_HEIGHT
+        } else {
+            PORT_BIND_MAX_RISE
+        };
+        if let Some(node) = guide.nearest_node_in_plan(doorway(cell, face), rise) {
             bindings.insert(ProjectedPort { cell, face }, node);
         }
     }
@@ -265,6 +279,7 @@ fn legacy_cell_adapter(game: &HexWfcMatch, cell: HexCoord) -> Option<ResolvedMod
         },
         // The legacy adapter builds a hub and doorways, never a climb.
         climb_foot: None,
+        projected: false,
     })
 }
 
@@ -464,6 +479,7 @@ fn lease_from(
             revision: module.revision,
             entry,
             exit,
+            projected: module.projected,
         },
         local,
     })
@@ -482,6 +498,7 @@ fn lease_between(
             revision: module.revision,
             entry,
             exit,
+            projected: module.projected,
         },
         local,
     })
@@ -505,7 +522,7 @@ pub(super) fn follow(
     let Some(module) = ResolvedModuleGraph::resolve(game, cursor.lease.instance.source_cell) else {
         return invalid;
     };
-    if module.revision != cursor.lease.revision {
+    if module.revision != cursor.lease.revision || module.projected != cursor.lease.projected {
         return invalid;
     }
     follow_graph(

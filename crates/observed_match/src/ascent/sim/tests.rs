@@ -646,10 +646,9 @@ fn every_scenario_still_interrupts_its_route() {
         (ArchitectMode::Pocket, 1usize),
         (ArchitectMode::QuickClimb, 2),
         (ArchitectMode::FullAscent, 3),
-        // Wants five; the route offers three that satisfy the flanking and spacing
-        // rules. It offered four until every floor became one district: a different
-        // building, with a different route, rather than a guard taking a gap away.
-        (ArchitectMode::DeepStack, 3),
+        // All five it wants: since a gap must be a cell a card rebuilds exactly, each
+        // mode's seed is the first whose route offers its full count (`mode.rs`).
+        (ArchitectMode::DeepStack, 5),
     ];
     for (mode, gaps) in expected {
         let lab = ArchitectLab::for_mode(mode).expect("scenario boots");

@@ -57,42 +57,53 @@ fn an_architect_deals_stairs_and_a_stair_play_builds_the_climb() {
     let play = play.unwrap_or_else(|| {
         panic!("a stair was never legal (dealt one at the start: {deck_has_stairs})")
     });
-    let ArchitectCommand::Play { target, .. } = play else {
+    let ArchitectCommand::Play {
+        target, rotation, ..
+    } = play
+    else {
         unreachable!()
     };
+    // A stair is a climb composition: a foot, a mid and a high cell along the
+    // heading, and the landing above the last.
+    let built = game.rules().played_stair(target, rotation);
     let refusals = step(&mut game, Body::Turn(0.0), SeatCommand::Architect(play));
     assert!(refusals.is_empty(), "the rules took it: {refusals:?}");
 
-    // Both halves stand in the rules and in the physical facility.
-    let head = HexCoord {
-        level: target.level + 1,
-        ..target
-    };
-    for (cell, archetype) in [
-        (target, HexArchetype::RampUp),
-        (head, HexArchetype::RampHead),
-    ] {
-        assert_eq!(game.rules().world.placements[&cell].archetype, archetype);
+    // All four cells stand in the rules and in the physical facility, with geometry.
+    for placement in built {
+        let cell = placement.coord;
+        assert!(matches!(placement.archetype, HexArchetype::Climb { .. }));
+        assert_eq!(
+            game.rules().world.placements[&cell].archetype,
+            placement.archetype
+        );
         assert_eq!(
             game.physical().facility.placements[&cell].archetype,
-            archetype,
+            placement.archetype,
             "the physical match built {cell:?}"
         );
+        assert!(
+            game.physical()
+                .geometry
+                .pieces
+                .iter()
+                .any(|piece| piece.source_cell == cell),
+            "{cell:?} has geometry"
+        );
     }
-    assert!(
-        game.physical()
-            .geometry
-            .pieces
-            .iter()
-            .any(|piece| piece.source_cell == target),
-        "the ramp has geometry"
-    );
-    // The way up runs through it: the foot's exits reach the head, when the lights are on.
-    if game.rules().economy.is_powered(target.level) && game.rules().economy.is_powered(head.level)
+    let [foot, _, high, landing] = built.map(|placement| placement.coord);
+    assert_eq!(foot, target, "the play's target is the foot");
+    // The way up runs through it: the high cell's exits reach the landing, when the
+    // lights are on.
+    if game.rules().economy.is_powered(high.level) && game.rules().economy.is_powered(landing.level)
     {
-        assert!(game.rules().exits(target).contains(&head));
+        assert!(game.rules().exits(high).contains(&landing));
     }
-    // And it is fixed now: no tile play can take a stair away.
-    assert!(game.rules().fixed_structure(target) && game.rules().fixed_structure(head));
+    // And it is fixed now: no tile play can take any of it away.
+    assert!(
+        built
+            .iter()
+            .all(|placement| game.rules().fixed_structure(placement.coord))
+    );
     assert_geometry_is_fresh(&game);
 }

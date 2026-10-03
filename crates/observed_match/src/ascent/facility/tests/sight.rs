@@ -35,21 +35,32 @@ fn an_embodied_observer_wards_and_knows_by_what_its_body_sees() {
 #[test]
 fn what_is_seen_far_off_is_known_but_not_warded() {
     let mut game = game(7);
-    step(&mut game, Body::Turn(0.0), SeatCommand::None);
-    let own = game.physical().players[&BODY].cell;
-    let sight = game.physical().sight(BODY).cloned().expect("a body");
-    let far: Vec<HexCoord> = sight
-        .iter()
-        .filter(|&(&cell, &distance)| {
-            distance > WARD_REACH + 4.0
-                && observed_hex::travel_distance(own, cell) > 2
-                && !game.rules().fixed_structure(cell)
-        })
-        .map(|(&cell, _)| cell)
-        .collect();
+    // Turn on the spot until the body looks down something long: what the spawn happens
+    // to face is the layout's to say.
+    let far_off = |game: &AscentMatch| {
+        let own = game.physical().players[&BODY].cell;
+        let sight = game.physical().sight(BODY).cloned().expect("a body");
+        sight
+            .iter()
+            .filter(|&(&cell, &distance)| {
+                distance > WARD_REACH + 4.0
+                    && observed_hex::travel_distance(own, cell) > 2
+                    && !game.rules().fixed_structure(cell)
+            })
+            .map(|(&cell, _)| cell)
+            .collect::<Vec<HexCoord>>()
+    };
+    let mut far = Vec::new();
+    for _ in 0..120 {
+        step(&mut game, Body::Turn(0.2), SeatCommand::None);
+        far = far_off(&game);
+        if !far.is_empty() {
+            break;
+        }
+    }
     assert!(
         !far.is_empty(),
-        "nothing seen far off from the spawn: {sight:?}"
+        "nothing seen far off from the spawn, all round"
     );
     let rules = game.rules();
     for cell in far {

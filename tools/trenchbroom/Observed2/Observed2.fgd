@@ -38,6 +38,7 @@
         "solid" : "Continuous walkable floor required"
         "ramp" : "Continuous one-level ramp required"
         "open" : "Declared shaft/opening; floor is intentionally absent"
+        "flight" : "A stretch of a climb composition's flight"
     ]
 ]
 
@@ -59,6 +60,7 @@
         "door" : "Walkable threshold"
         "ramp_open" : "Ramp continuation"
         "shaft_open" : "Vertical shaft opening"
+        "span" : "Climb continuation"
     ]
     name(string) : "Stable threshold name" : "east_threshold"
 ]

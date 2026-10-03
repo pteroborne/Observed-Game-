@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
-use observed_facility::hex_wfc::{HexArchetype, HexSpace, HexWfcWorld};
+use observed_facility::hex_wfc::{ClimbPart, HexArchetype, HexSpace, HexWfcWorld};
 use observed_hex::HexCoord;
 use observed_match::hex_wfc::{HexMapCellKnowledge, HexMapDiscovery};
 use observed_style::{
@@ -41,6 +41,13 @@ pub(in crate::hex_wfc::view) fn sketch_role(
         HexArchetype::RampUp => HexSketchRole::Ramp,
         HexArchetype::RampHead => HexSketchRole::RampHead,
         HexArchetype::Shaft => HexSketchRole::Shaft,
+        // A climb composition draws as the ramp it replaces until it has a glyph of
+        // its own (`docs/climb_compositions_plan.md`, phase 5).
+        HexArchetype::Climb {
+            part: ClimbPart::Landing,
+            ..
+        } => HexSketchRole::RampHead,
+        HexArchetype::Climb { .. } => HexSketchRole::Ramp,
         HexArchetype::Expanse => HexSketchRole::Expanse,
         HexArchetype::Room => HexSketchRole::Room,
     }

@@ -285,6 +285,7 @@ fn class_label(class: PortClass) -> &'static str {
         PortClass::Door => "door",
         PortClass::RampOpen => "ramp_open",
         PortClass::ShaftOpen => "shaft_open",
+        PortClass::Span => "span",
     }
 }
 

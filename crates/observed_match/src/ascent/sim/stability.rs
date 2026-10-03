@@ -60,7 +60,17 @@ impl ArchitectLab {
     /// forbids an Architect *playing* onto an actor; this is only the
     /// consequential path, and it warns first.
     pub fn retraction_protected(&self, cell: HexCoord) -> bool {
-        self.prison_core.contains(&cell)
+        // A climb composition is a storey's whole way up: retracting one of its cells
+        // would leave the rest a flight to nowhere, and no tile card can put a span
+        // back. Protected on a lab board too, where nothing else is fixed structure.
+        let climbing = self.world.placements.get(&cell).is_some_and(|placement| {
+            matches!(
+                placement.archetype,
+                observed_facility::hex_wfc::HexArchetype::Climb { .. }
+            )
+        });
+        climbing
+            || self.prison_core.contains(&cell)
             || self.fixed_structure(cell)
             || self.observed.contains(&cell)
             || self.anchored.contains(&cell)

@@ -247,6 +247,93 @@ fn ramp_pairs_never_orphan_over_the_3d_corpus() {
     }
 }
 
+/// The four cells of the climb composition with its foot at `foot`, climbing toward
+/// `heading`, as the world has them: `None` where the lattice ends.
+fn composition_at(
+    world: &HexWfcWorld,
+    foot: HexCoord,
+    heading: HexFace,
+) -> Option<[HexArchetype; 4]> {
+    let grid = world.config.grid();
+    let mid = grid.neighbor(foot, heading)?;
+    let high = grid.neighbor(mid, heading)?;
+    let landing = grid.neighbor(high, HexFace::Up)?;
+    Some([foot, mid, high, landing].map(|cell| world.placements[&cell].archetype))
+}
+
+#[test]
+fn every_part_of_a_composition_names_the_same_four_cells() {
+    let config = HexWfcConfig {
+        cols: 8,
+        rows: 8,
+        levels: 3,
+        ..HexWfcConfig::default()
+    };
+    let foot = HexCoord {
+        q: 3,
+        r: 3,
+        level: 0,
+    };
+    for heading in HexFace::LATERAL {
+        let Some(placements) = authored_climb(config, foot, heading) else {
+            continue;
+        };
+        let cells = placements.map(|placement| placement.coord);
+        for placement in placements {
+            assert_eq!(
+                composition_cells(config.grid(), placement.coord, placement.archetype),
+                Some(cells),
+                "{heading:?} from its {:?}",
+                placement.archetype
+            );
+        }
+    }
+}
+
+/// Every climb cell the solver places belongs to a whole composition, in order:
+/// foot, mid and high along one heading and the landing above the high cell. And the
+/// corpus does build them - a mechanism that never fires proves nothing.
+#[test]
+fn climb_compositions_are_always_whole_over_the_3d_corpus() {
+    let config = config_3d();
+    let mut compositions = 0;
+    let mut seeds_with_one = 0;
+    for seed in corpus_seeds_3d() {
+        let world = HexWfcWorld::generate(seed, config).expect("must solve");
+        let mut found = 0;
+        let mut parts = 0;
+        for placement in world.placements.values() {
+            let HexArchetype::Climb { part, heading } = placement.archetype else {
+                continue;
+            };
+            parts += 1;
+            if part != ClimbPart::Foot {
+                continue;
+            }
+            let climb = |part| HexArchetype::Climb { part, heading };
+            assert_eq!(
+                composition_at(&world, placement.coord, heading),
+                Some(ClimbPart::ALL.map(climb)),
+                "seed {seed:#x}: the climb from {:?} is not whole",
+                placement.coord
+            );
+            found += 1;
+        }
+        assert_eq!(
+            parts,
+            found * 4,
+            "seed {seed:#x}: a climb cell outside any composition"
+        );
+        compositions += found;
+        seeds_with_one += usize::from(found > 0);
+    }
+    println!("{compositions} climb compositions across {seeds_with_one} seeds");
+    assert!(
+        seeds_with_one > 0,
+        "the corpus never built a climb composition"
+    );
+}
+
 /// A vertical `GuardianControl` atrium blueprint stamps somewhere on the 3D
 /// corpus, and it carries an internal shaft between its two levels.
 #[test]
@@ -276,71 +363,6 @@ fn a_two_level_atrium_blueprint_stamps_on_the_3d_corpus() {
     assert!(found, "some 3D seed stamps a GuardianControl atrium");
 }
 
-fn tallest_shaft_column(world: &HexWfcWorld) -> u8 {
-    let grid = world.config.grid();
-    let mut best = 0;
-    for q in 0..grid.cols {
-        for r in 0..grid.rows {
-            let mut run = 0u8;
-            for level in 0..grid.levels {
-                let coord = HexCoord { q, r, level };
-                let vertical = world.placements.get(&coord).is_some_and(|p| {
-                    p.up == PortClass::ShaftOpen || p.down == PortClass::ShaftOpen
-                });
-                if vertical {
-                    run += 1;
-                    best = best.max(run);
-                } else {
-                    run = 0;
-                }
-            }
-        }
-    }
-    best
-}
-
-fn tallest_ramp_chain(world: &HexWfcWorld) -> u8 {
-    // Longest ladder of stacked ramp pairs: each `RampUp` climbs one level,
-    // exiting laterally through its `RampHead` into the next base.
-    let grid = world.config.grid();
-    let mut best = 0;
-    for (&coord, placement) in &world.placements {
-        if placement.archetype != HexArchetype::RampUp {
-            continue;
-        }
-        let below_is_head = grid
-            .neighbor(coord, HexFace::Down)
-            .is_some_and(|c| world.placements[&c].archetype == HexArchetype::RampHead);
-        if below_is_head {
-            continue; // count from the base of a chain only
-        }
-        let mut climbed = 0u8;
-        let mut current = coord;
-        loop {
-            climbed += 1;
-            let Some(head) = grid.neighbor(current, HexFace::Up) else {
-                break;
-            };
-            let mut advanced = false;
-            for face in HexFace::LATERAL {
-                if world.placements[&head].is_open(face)
-                    && let Some(next) = grid.neighbor(head, face)
-                    && world.placements[&next].archetype == HexArchetype::RampUp
-                {
-                    current = next;
-                    advanced = true;
-                    break;
-                }
-            }
-            if !advanced {
-                break;
-            }
-        }
-        best = best.max(climbed);
-    }
-    best
-}
-
 /// The showcase seed that opened Arc L. Kept as the *starting* point of the
 /// corpus below rather than as the sole subject: composition changes with every
 /// arc that touches weighting, so a single pinned seed re-breaks this test each
@@ -348,17 +370,14 @@ fn tallest_ramp_chain(world: &HexWfcWorld) -> u8 {
 /// verticals — is untouched.
 const PINNED_3D_SEED: u64 = 0xA11C_E3D0_0000_0008;
 
+/// The facility climbs by climb compositions and by nothing else: at production
+/// scale the spawn-to-exit route rises every storey between them, and each storey
+/// it rises, it rises from a composition's high cell into its landing. This replaced
+/// the test that the solver still built tall shaft columns and ramp chains, which
+/// retired with the single-cell climbs (`docs/climb_compositions_plan.md`).
 #[test]
-fn the_solver_still_builds_full_height_shafts_and_multi_level_ramp_chains() {
-    // Verticality is asserted at **production** scale, not on the compact
-    // fixture. A three-level ramp chain needs three of four levels on a 12x9
-    // grid, which composition changes can legitimately price out without the
-    // solver having lost the capability — measured, the compact config tops out
-    // at two chained ramps while `arc_default` still reaches three and stacks a
-    // full ten-level shaft. The capability is the invariant; the fixture is not.
+fn every_storey_the_route_climbs_it_climbs_by_a_composition() {
     let config = HexWfcConfig::arc_default();
-    let mut best_shaft = 0;
-    let mut best_ramp = 0;
     let mut solved = 0;
     for step in 0u64..3 {
         let seed = PINNED_3D_SEED ^ step.wrapping_mul(0x9E37_79B9_7F4A_7C15);
@@ -366,70 +385,43 @@ fn the_solver_still_builds_full_height_shafts_and_multi_level_ramp_chains() {
             continue;
         };
         solved += 1;
-        best_shaft = best_shaft.max(tallest_shaft_column(&world));
-        best_ramp = best_ramp.max(tallest_ramp_chain(&world));
+        let route = world
+            .route_between(config.spawn(), config.exit())
+            .expect("a production facility routes spawn to exit");
+        let mut storeys = 0usize;
+        for pair in route.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            if a.level == b.level {
+                continue;
+            }
+            storeys += 1;
+            let (lower, upper) = if a.level < b.level { (a, b) } else { (b, a) };
+            assert!(
+                climb_bond(
+                    world.placements[&lower].archetype,
+                    world.placements[&upper].archetype
+                ),
+                "seed {seed:#x}: the route changes storey at {lower:?} by {:?}",
+                world.placements[&lower].archetype
+            );
+        }
+        assert!(
+            storeys >= usize::from(config.exit().level - config.spawn().level),
+            "seed {seed:#x}: the route rises {storeys} storeys"
+        );
     }
     assert!(solved >= 2, "only {solved} of 3 production seeds solved");
-    assert!(
-        best_shaft >= 4,
-        "no production seed built a tall shaft column (best {best_shaft})"
-    );
-    assert!(
-        best_ramp >= 3,
-        "no production seed built a three-level ramp chain (best {best_ramp})"
-    );
 
-    // The pinned compact seed still has to solve and route, even if its own
-    // composition has moved on.
+    // The pinned compact seed still has to solve and climb.
     let config = config_3d();
     let world = HexWfcWorld::generate(PINNED_3D_SEED, config).expect("pinned seed must solve");
-
     let route = world
         .route_between(config.spawn(), config.exit())
         .expect("pinned seed route");
-    let crosses_vertical = route.iter().any(|coord| {
-        let p = &world.placements[coord];
-        p.up != PortClass::Sealed || p.down != PortClass::Sealed
-    });
-    assert!(crosses_vertical, "pinned route stays flat");
-}
-
-/// Diagnostic search used to (re)pin the showcase seeds; ignored in normal
-/// runs. Run with `--ignored` to print candidate seeds.
-#[test]
-#[ignore]
-fn search_for_pinnable_3d_seeds() {
-    let config = config_3d();
-    let mut best_shaft = (0u8, 0u64);
-    let mut best_ramp = (0u8, 0u64);
-    let mut hits = Vec::new();
-    for n in 0..160u64 {
-        let seed = 0xA11C_E3D0_0000_0000 | n;
-        if let Ok(world) = HexWfcWorld::generate(seed, config) {
-            let shaft = tallest_shaft_column(&world);
-            let ramp = tallest_ramp_chain(&world);
-            let route_vertical = world
-                .route_between(config.spawn(), config.exit())
-                .is_some_and(|route| {
-                    route.iter().any(|c| {
-                        let p = &world.placements[c];
-                        p.up != PortClass::Sealed || p.down != PortClass::Sealed
-                    })
-                });
-            if shaft > best_shaft.0 {
-                best_shaft = (shaft, seed);
-            }
-            if ramp > best_ramp.0 {
-                best_ramp = (ramp, seed);
-            }
-            if shaft >= 4 && ramp >= 3 && route_vertical {
-                hits.push((format!("{seed:#x}"), shaft, ramp));
-            }
-        }
-    }
-    println!("best_shaft={best_shaft:x?} best_ramp={best_ramp:x?}");
-    println!("shaft>=4 & ramp>=3 & vertical route: {hits:?}");
-    assert!(!hits.is_empty(), "no pinnable seed found in search range");
+    assert!(
+        route.windows(2).any(|pair| pair[0].level != pair[1].level),
+        "pinned route stays flat"
+    );
 }
 
 fn fnv1a(text: &str) -> u64 {
@@ -521,10 +513,12 @@ fn ports_view_matches_the_placement() {
     for placement in world.placements.values() {
         let ports = placement.ports();
         for face in HexFace::LATERAL {
-            let expected = if placement.is_open(face) {
-                PortClass::Door
-            } else {
+            let expected = if !placement.is_open(face) {
                 PortClass::Sealed
+            } else if placement.archetype.span_mask() & lateral_bit(face) != 0 {
+                PortClass::Span
+            } else {
+                PortClass::Door
             };
             assert_eq!(ports.port(face), expected);
         }

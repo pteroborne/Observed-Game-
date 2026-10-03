@@ -19,7 +19,7 @@
 //! 6. Otherwise hold the card.
 //!
 //! With nobody detected it has nobody to play against, so it **watches the way up**: a
-//! sensor card (`sensor`) at the foot of a stair or ramp, on the floor it watches least -
+//! sensor card (`sensor`) at the foot of a climb, on the floor it watches least -
 //! every climb passes one.
 //!
 //! It never reads where an undetected Observer is: every anchor and every target is a

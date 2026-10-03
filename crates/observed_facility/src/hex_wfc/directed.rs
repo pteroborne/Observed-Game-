@@ -18,8 +18,8 @@ use observed_hex::{HexCoord, HexFace, PortClass};
 
 use super::variants::hall_archetype;
 use super::{
-    HexArchetype, HexMutationRegion, HexPlacement, HexRelayoutDelta, HexSpace, HexWfcError,
-    HexWfcWorld,
+    ClimbPart, HexArchetype, HexMutationRegion, HexPlacement, HexRelayoutDelta, HexSpace,
+    HexWfcError, HexWfcWorld,
 };
 
 /// The flat hall cell with exactly these lateral doors, if the authored corpus has one.
@@ -39,41 +39,39 @@ pub fn authored_hall(coord: HexCoord, doors: u8) -> Option<HexPlacement> {
     })
 }
 
-/// The ramp pair climbing from `foot` to the cell above it toward `heading`: the corpus's
-/// `RampUp` at the foot, entered from the side facing away from the climb, and its
-/// `RampHead` above, which leaves toward `heading`. `None` on the top floor of `levels`
-/// or for a vertical heading.
+/// The climb composition with its foot at `foot`, climbing toward `heading`
+/// (`docs/climb_compositions_plan.md`): foot, mid and high along the heading on the
+/// foot's storey, entered straight on, and the landing above the high cell, left
+/// straight on. `None` where it would leave the lattice, or for a vertical heading.
 #[must_use]
-pub fn authored_ramp(
+pub fn authored_climb(
+    config: super::HexWfcConfig,
     foot: HexCoord,
     heading: HexFace,
-    levels: u8,
-) -> Option<(HexPlacement, HexPlacement)> {
-    if !heading.is_lateral() || foot.level + 1 >= levels {
+) -> Option<[HexPlacement; 4]> {
+    if !heading.is_lateral() {
         return None;
     }
-    let head = HexCoord {
-        level: foot.level + 1,
-        ..foot
+    let grid = config.grid();
+    let mid = grid.neighbor(foot, heading)?;
+    let high = grid.neighbor(mid, heading)?;
+    let landing = grid.neighbor(high, HexFace::Up)?;
+    let cell = |coord, part, doors, up, down| HexPlacement {
+        coord,
+        space: HexSpace::Hall,
+        archetype: HexArchetype::Climb { part, heading },
+        doors,
+        up,
+        down,
     };
-    Some((
-        HexPlacement {
-            coord: foot,
-            space: HexSpace::Hall,
-            archetype: HexArchetype::RampUp,
-            doors: 1 << heading.opposite().index(),
-            up: PortClass::RampOpen,
-            down: PortClass::Sealed,
-        },
-        HexPlacement {
-            coord: head,
-            space: HexSpace::Hall,
-            archetype: HexArchetype::RampHead,
-            doors: 1 << heading.index(),
-            up: PortClass::Sealed,
-            down: PortClass::RampOpen,
-        },
-    ))
+    let (on, back) = (1 << heading.index(), 1 << heading.opposite().index());
+    let sealed = PortClass::Sealed;
+    Some([
+        cell(foot, ClimbPart::Foot, back | on, sealed, sealed),
+        cell(mid, ClimbPart::Mid, back | on, sealed, sealed),
+        cell(high, ClimbPart::High, back, PortClass::RampOpen, sealed),
+        cell(landing, ClimbPart::Landing, on, sealed, PortClass::RampOpen),
+    ])
 }
 
 impl HexWfcWorld {
@@ -181,6 +179,49 @@ fn same_shape(a: &HexPlacement, b: &HexPlacement) -> bool {
 mod tests {
     use super::*;
     use crate::hex_wfc::{HexWfcConfig, geometry_demands, placement_tile_archetype};
+    use crate::hex_wfc::{climb_bond, lateral_bit, spans_join};
+
+    /// A card's climb is a composition the solver itself could have built: every span
+    /// joins its partner in order, the high cell bonds to its landing, and it is
+    /// entered and left straight on.
+    #[test]
+    fn an_authored_climb_is_a_whole_composition() {
+        let config = HexWfcConfig {
+            cols: 8,
+            rows: 8,
+            levels: 3,
+            ..HexWfcConfig::default()
+        };
+        let foot = HexCoord {
+            q: 4,
+            r: 4,
+            level: 0,
+        };
+        for heading in HexFace::LATERAL {
+            let [low, mid, high, landing] =
+                authored_climb(config, foot, heading).expect("inside the lattice");
+            assert!(spans_join(low.archetype, heading, mid.archetype));
+            assert!(spans_join(mid.archetype, heading, high.archetype));
+            assert!(spans_join(mid.archetype, heading.opposite(), low.archetype));
+            assert!(!spans_join(low.archetype, heading, high.archetype));
+            assert!(climb_bond(high.archetype, landing.archetype));
+            assert_eq!(landing.coord.level, 1);
+            assert_eq!(
+                low.doors & !lateral_bit(heading),
+                lateral_bit(heading.opposite())
+            );
+            assert_eq!(landing.doors, lateral_bit(heading));
+        }
+        // Off the edge of the lattice, or off its top, there is no climb.
+        let edge = HexCoord {
+            q: 7,
+            r: 4,
+            level: 0,
+        };
+        assert!(authored_climb(config, edge, HexFace::East).is_none());
+        let top = HexCoord { level: 2, ..foot };
+        assert!(authored_climb(config, top, HexFace::East).is_none());
+    }
 
     fn world() -> HexWfcWorld {
         let mut world = HexWfcWorld::generate(

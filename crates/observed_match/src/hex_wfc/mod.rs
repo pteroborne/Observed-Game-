@@ -79,7 +79,9 @@ pub(crate) fn compatibility_test_content() -> &'static std::sync::Arc<HexMatchCo
                 .iter()
                 .filter(|tile| {
                     // The authored vertical families: the generated library has none.
-                    tile.key.archetype == "stair_tower" || tile.key.archetype == "hall_ramp"
+                    tile.key.archetype == "stair_tower"
+                        || tile.key.archetype == "hall_ramp"
+                        || tile.key.archetype.starts_with("climb_")
                 })
                 .cloned(),
         );

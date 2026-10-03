@@ -1,6 +1,7 @@
-//! The production variant alphabet: grounded lateral rooms/halls, paired
-//! `RampOpen` ramps, and logical `ShaftOpen` links whose physical projection
-//! is a ground-supported switchback stair tower rather than an elevator.
+//! The production variant alphabet: grounded lateral rooms and halls, and climb
+//! compositions - a storey climbed across three cells, bonded by `Span` faces and,
+//! under its landing, by `RampOpen` (`docs/climb_compositions_plan.md`). `ShaftOpen`
+//! survives only inside the two-storey atrium room.
 
 use std::collections::BTreeSet;
 
@@ -9,7 +10,7 @@ use observed_hex::{HexFace, PortClass, PortSignature};
 use crate::map_spec::RoomRole;
 
 use super::blueprint::{blueprint_cell_archetype, blueprint_for_role};
-use super::{HexArchetype, HexPlacement, HexSpace, lateral_bit};
+use super::{ClimbPart, HexArchetype, HexPlacement, HexSpace, lateral_bit};
 
 /// One exact authored-tile requirement emitted by hex geometry projection.
 ///
@@ -36,9 +37,14 @@ impl HexVariant {
     /// The port signature this variant presents to its neighbors.
     pub(super) fn signature(self) -> PortSignature {
         let mut ports = [PortClass::Sealed; 8];
+        let spans = self.archetype.span_mask();
         for face in HexFace::LATERAL {
             if self.doors & lateral_bit(face) != 0 {
-                ports[face.index()] = PortClass::Door;
+                ports[face.index()] = if spans & lateral_bit(face) != 0 {
+                    PortClass::Span
+                } else {
+                    PortClass::Door
+                };
             }
         }
         ports[HexFace::Up.index()] = self.up;
@@ -49,25 +55,13 @@ impl HexVariant {
 
 /// The flat-hall weights, all scaled together.
 ///
-/// **Doubled from 6/2/20/5 when the branching landing arrived**, and the reason
-/// is arithmetic rather than taste. Adding every three- and four-door shaft mask
-/// put 105 new entries into a family that had 64, and the family is weighted per
-/// entry, so its share of the hall alphabet went from 20% to 31% without anyone
-/// choosing that. Measured on solved facilities, stair towers went from 10.8% of
-/// the lattice to 21.0% - past where Phase 109 left backlog #13, whose headline
-/// was a facility that came out 47% stairs.
-///
-/// The family's own comment already names the trap: "equal per-entry weight is
-/// not equal weight at all". The fix it records is to lower the shaft weight,
-/// and that is not available here - the branching landing is already at 1, the
-/// smallest positive weight there is. So the correction goes the other way and
-/// the flat alphabet is raised instead, which restores the balance without
-/// making a legal variant unreachable.
-///
-/// Doubling rather than retuning, deliberately: every flat family moves by the
-/// same factor, so their proportions to *each other* are exactly what they were
-/// and only the flat-against-vertical balance moves. Shaft share returns to
-/// 18.7% of the hall alphabet against the 20.2% it had before the landing.
+/// Doubled from 6/2/20/5 when the stair towers gained their branching landing,
+/// to hold the flat-against-vertical balance against a shaft family that had
+/// grown to 169 entries; every flat family moved by the same factor, so their
+/// proportions to each other were untouched. The towers have retired since, and
+/// the climb compositions that replace them are weighted on their own terms
+/// ([`CLIMB_WEIGHT`]), so these stay where they are rather than reopening a
+/// balance nothing now leans on.
 ///
 /// Nothing here changes how empty the facility is. `SpaceMix` draws the space
 /// before the variant and normalises within each one, so scaling every Hall
@@ -75,46 +69,18 @@ impl HexVariant {
 const FLAT_DEGREE_2: u32 = 12;
 /// Three and four lateral doors, flat. A third of a straight, as before.
 const FLAT_JUNCTION: u32 = 4;
-/// Ramp halves, sparse in a much larger flat alphabet - see the note at the
-/// ramp family for why this is so far above the others.
-const FLAT_RAMP: u32 = 40;
 /// Open expanse cells.
 const FLAT_EXPANSE: u32 = 10;
-
-/// How many lateral doors a climbing hall cell may have.
+/// Every cell of a climb composition, per heading.
 ///
-/// Four, and it was two until the corridor router needed a cell that is both a
-/// junction and a staircase. That cell is what a routed facility produces the
-/// moment every named port is routed rather than a spanning tree's worth of
-/// them: corridors start meeting, and some meet where the route also climbs.
-/// Capped at two, the alphabet had no such variant, so the domain emptied - and
-/// declining to pin the cell did not help, because its neighbours still demanded
-/// the doors and the route still demanded the climb.
-///
-/// Four rather than six, to match `Junction`, which stops there for its own
-/// reasons: past four an opening is an `Expanse` rather than a corridor. The
-/// authored corpus is cut to the same line - `door_patterns` in the tower forge
-/// says why in geometry rather than in alphabet.
-const SHAFT_MAX_DOORS: u32 = 4;
-
-/// A one- or two-door climb: a staircase you enter, or pass through.
-const SHAFT_WEIGHT: u32 = 2;
-
-/// A three- or four-door climb: a stair landing that branches.
-///
-/// Half the weight of a plain climb, on the same reasoning that makes a
-/// `Junction` a third of a `Straight`: a landing several corridors meet at is a
-/// rarer thing than a landing one passes through, and the alphabet should say so
-/// rather than leaving it to the constraints.
-///
-/// It is also arithmetic, and the comment below on the shaft family is the
-/// warning. Thirty-five new masks against three vertical combinations is a
-/// hundred and five new entries, and at the plain weight they would have raised
-/// the shaft family's share of the hall alphabet from 20% to 40% - the shape of
-/// the mistake that made the facility 47% stairs (backlog #13). At 1 it goes to
-/// 31%, and the measured shaft share of a solved facility is what actually
-/// decides whether that is too much.
-const BRANCHING_LANDING_WEIGHT: u32 = 1;
+/// Measured, not reasoned. With seven door masks at either end, at weights
+/// comparable to the ramp family it replaced, climbs took a quarter of every
+/// production storey (65 to 128 cells) and broke its expanses into fragments: 152
+/// of 200 solve attempts failed the open-volume rule, and the slowest solve took
+/// 48 s against a 4 s ceiling. A composition is a third of a storey's plan length,
+/// so one is worth many flat cells, and the family weight has to say so. See the
+/// measurement at `the_production_facility_holds_its_measured_baseline`.
+const CLIMB_WEIGHT: u32 = 4;
 
 pub(super) fn catalogue() -> Vec<HexVariant> {
     let mut variants = vec![HexVariant {
@@ -179,29 +145,41 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
         }
     }
 
-    // 3. Ramp pairs for all six lateral directions. `RampUp(d)` enters
-    //    laterally at `opposite(d)` and offers `RampOpen` above; `RampHead(d)`
-    //    receives `RampOpen` from below and exits laterally at `d`. Face
-    //    compatibility self-assembles the pair — no diagonal constraints.
-    for &d in &HexFace::LATERAL {
-        variants.push(HexVariant {
+    // 3. Climb compositions (`docs/climb_compositions_plan.md`): a straight flight
+    //     across three cells of one storey and a landing above the last, assembled
+    //     by `Span` faces in order along one heading and by `RampOpen` above the
+    //     high cell. Entered straight on at the foot and left straight on at the
+    //     landing: a door on a side face would need flat floor in front of it, and
+    //     at either end of a flight that is most of a cell.
+    for &heading in &HexFace::LATERAL {
+        let climb = |part, doors, up, down, weight| HexVariant {
             space: HexSpace::Hall,
-            archetype: HexArchetype::RampUp,
-            doors: lateral_bit(d.opposite()),
-            up: PortClass::RampOpen,
-            down: PortClass::Sealed,
-            // Ramp halves are sparse in the much larger flat-hall alphabet;
-            // this weight makes three-level chains occur in the seeded corpus.
-            weight: FLAT_RAMP,
-        });
-        variants.push(HexVariant {
-            space: HexSpace::Hall,
-            archetype: HexArchetype::RampHead,
-            doors: lateral_bit(d),
-            up: PortClass::Sealed,
-            down: PortClass::RampOpen,
-            weight: FLAT_RAMP,
-        });
+            archetype: HexArchetype::Climb { part, heading },
+            doors,
+            up,
+            down,
+            weight,
+        };
+        let (on, back) = (lateral_bit(heading), lateral_bit(heading.opposite()));
+        let sealed = PortClass::Sealed;
+        variants.extend([
+            climb(ClimbPart::Foot, back | on, sealed, sealed, CLIMB_WEIGHT),
+            climb(ClimbPart::Mid, back | on, sealed, sealed, CLIMB_WEIGHT),
+            climb(
+                ClimbPart::High,
+                back,
+                PortClass::RampOpen,
+                sealed,
+                CLIMB_WEIGHT,
+            ),
+            climb(
+                ClimbPart::Landing,
+                on,
+                sealed,
+                PortClass::RampOpen,
+                CLIMB_WEIGHT,
+            ),
+        ]);
     }
 
     // 4. Open expanse cells. Only masks of four or more doors qualify: the
@@ -221,55 +199,6 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
             down: PortClass::Sealed,
             weight: FLAT_EXPANSE,
         });
-    }
-
-    // 5. Legacy logical well states remain part of the solver's vertical
-    // alphabet, but presentation resolves them to grounded stair towers.
-    //
-    // Weights here are deliberately low relative to the flat alphabet. The
-    // shaft family is enormous — a doorless through-shaft plus every mask up to
-    // [`SHAFT_MAX_DOORS`] against three vertical combinations, 169 entries
-    // against a handful for a straight — so equal per-entry weight is not equal
-    // weight at all, and that arithmetic is how the facility ended up 47 %
-    // stairs (backlog #13). Verticality now comes from Phase 107's district
-    // profiles, which raise it where it is the identity, rather than from a
-    // baseline that raises it everywhere.
-    //
-    // The family grew from 64 entries to 169 when the branching landing landed,
-    // which is why the two door counts now carry different weights: the count
-    // went up by a factor of two and a half and the mass by a factor of one and
-    // a third. See [`BRANCHING_LANDING_WEIGHT`].
-    variants.push(HexVariant {
-        space: HexSpace::Hall,
-        archetype: HexArchetype::Shaft,
-        doors: 0,
-        up: PortClass::ShaftOpen,
-        down: PortClass::ShaftOpen,
-        weight: 3,
-    });
-    for &up in &[PortClass::Sealed, PortClass::ShaftOpen] {
-        for &down in &[PortClass::Sealed, PortClass::ShaftOpen] {
-            if up == PortClass::Sealed && down == PortClass::Sealed {
-                continue;
-            }
-            for mask in 1u8..64 {
-                let degree = mask.count_ones();
-                if (1..=SHAFT_MAX_DOORS).contains(&degree) {
-                    variants.push(HexVariant {
-                        space: HexSpace::Hall,
-                        archetype: HexArchetype::Shaft,
-                        doors: mask,
-                        up,
-                        down,
-                        weight: if degree <= 2 {
-                            SHAFT_WEIGHT
-                        } else {
-                            BRANCHING_LANDING_WEIGHT
-                        },
-                    });
-                }
-            }
-        }
     }
 
     variants
@@ -304,7 +233,53 @@ pub fn placement_tile_archetype(placement: &HexPlacement) -> Option<&'static str
         HexArchetype::RampUp => Some("hall_ramp"),
         HexArchetype::Shaft => Some("stair_tower"),
         HexArchetype::Expanse => Some("expanse"),
+        HexArchetype::Climb { part, .. } => Some(match part {
+            ClimbPart::Foot => "climb_foot",
+            ClimbPart::Mid => "climb_mid",
+            ClimbPart::High => "climb_high",
+            ClimbPart::Landing => "climb_landing",
+        }),
     }
+}
+
+/// Whether `a`, meeting `b` across its own `face`, joins a climb correctly: a span
+/// meets only a span, and only the next cell of the same composition.
+#[must_use]
+pub fn spans_join(a: HexArchetype, face: HexFace, b: HexArchetype) -> bool {
+    let a_span = a.span_mask() & lateral_bit(face) != 0;
+    let b_span = b.span_mask() & lateral_bit(face.opposite()) != 0;
+    if a_span != b_span {
+        return false;
+    }
+    if !a_span {
+        return true;
+    }
+    let (
+        HexArchetype::Climb {
+            part: a_part,
+            heading: a_heading,
+        },
+        HexArchetype::Climb {
+            part: b_part,
+            heading: b_heading,
+        },
+    ) = (a, b)
+    else {
+        return false;
+    };
+    if a_heading != b_heading {
+        return false;
+    }
+    // Up the flight, or back down it.
+    let (low, high) = if face == a_heading {
+        (a_part, b_part)
+    } else {
+        (b_part, a_part)
+    };
+    matches!(
+        (low, high),
+        (ClimbPart::Foot, ClimbPart::Mid) | (ClimbPart::Mid, ClimbPart::High)
+    )
 }
 
 fn corner_tile_archetype(doors: u8) -> &'static str {
@@ -400,7 +375,7 @@ pub(super) fn variants_compatible(a: HexVariant, b: HexVariant, face: HexFace) -
         if a_open && (a.space.unbuilt() || b.space.unbuilt()) {
             return false;
         }
-        true
+        !a_open || spans_join(a.archetype, face, b.archetype)
     } else {
         let a_port = if face == HexFace::Up { a.up } else { a.down };
         let b_port = if face == HexFace::Up { b.down } else { b.up };
@@ -409,33 +384,25 @@ pub(super) fn variants_compatible(a: HexVariant, b: HexVariant, face: HexFace) -
         }
         // Ramp halves only ever meet their partner across the shared RampOpen
         // face, in the correct vertical orientation and lateral direction.
+        // The only vertical `RampOpen` bond is a climb's high cell under its landing.
         if a_port == PortClass::RampOpen {
             let (lower, upper) = if face == HexFace::Up { (a, b) } else { (b, a) };
-            if lower.archetype != HexArchetype::RampUp || upper.archetype != HexArchetype::RampHead
-            {
-                return false;
-            }
-            if ramp_direction(lower) != ramp_direction(upper) {
-                return false;
-            }
+            return climb_bond(lower.archetype, upper.archetype);
         }
         true
     }
 }
 
-fn ramp_direction(variant: HexVariant) -> Option<HexFace> {
-    match variant.archetype {
-        HexArchetype::RampUp => {
-            let face = HexFace::LATERAL
-                .into_iter()
-                .find(|&f| variant.doors & lateral_bit(f) != 0)?;
-            Some(face.opposite())
-        }
-        HexArchetype::RampHead => HexFace::LATERAL
-            .into_iter()
-            .find(|&f| variant.doors & lateral_bit(f) != 0),
-        _ => None,
-    }
+/// Whether `lower` and `upper` are a climb's high cell and the landing above it.
+#[must_use]
+pub fn climb_bond(lower: HexArchetype, upper: HexArchetype) -> bool {
+    matches!(
+        (lower, upper),
+        (
+            HexArchetype::Climb { part: ClimbPart::High, heading: low },
+            HexArchetype::Climb { part: ClimbPart::Landing, heading: high },
+        ) if low == high
+    )
 }
 
 #[cfg(test)]
@@ -452,23 +419,32 @@ mod geometry_tests {
                 .iter()
                 .any(|demand| demand.archetype.contains("shaft"))
         );
-        assert_eq!(
-            demands
+        // The climb compositions replaced the ramps and the stair towers: none of
+        // either is ever demanded, and each part of a climb once per heading - but
+        // the mid, which spans fore and aft, reads the same to its ports turned half
+        // round, so its six headings are three signatures (and the projector picks
+        // its tile by heading, `geometry::required_turn`).
+        assert!(!demands.iter().any(|demand| demand.archetype == "hall_ramp"));
+        assert!(
+            !demands
                 .iter()
-                .filter(|demand| demand.archetype == "hall_ramp")
-                .count(),
-            6
+                .any(|demand| demand.archetype == "stair_tower")
         );
-        // A doorless through-shaft, plus every one-to-four-door mask against
-        // each of the three vertical connectivities: 1 + 56 * 3. Was 64, when
-        // the family stopped at two doors and had no branching landing.
-        assert_eq!(
-            demands
-                .iter()
-                .filter(|demand| demand.archetype == "stair_tower")
-                .count(),
-            169
-        );
+        for (part, signatures) in [
+            ("climb_foot", 6),
+            ("climb_mid", 3),
+            ("climb_high", 6),
+            ("climb_landing", 6),
+        ] {
+            assert_eq!(
+                demands
+                    .iter()
+                    .filter(|demand| demand.archetype == part)
+                    .count(),
+                signatures,
+                "{part}"
+            );
+        }
         assert!(!demands.iter().any(|demand| demand.archetype == "void"));
         assert!(!demands.iter().any(|demand| demand.archetype == "ramp_head"));
         assert!(!demands.iter().any(|demand| demand.archetype == "room"));

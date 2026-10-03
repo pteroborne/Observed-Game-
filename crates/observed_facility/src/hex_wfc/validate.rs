@@ -8,7 +8,8 @@ use super::HexRoomQuotas;
 use super::blueprint::StampedBlueprint;
 use super::constraints::all_coords;
 use super::topology::route_between;
-use super::{HexArchetype, HexCoord, HexPlacement, HexSpace, HexWfcConfig};
+use super::variants::{climb_bond, spans_join};
+use super::{ClimbPart, HexArchetype, HexCoord, HexPlacement, HexSpace, HexWfcConfig};
 use crate::map_spec::RoomRole;
 
 const OPEN_VOLUME_MIN_CELLS: usize = 7;
@@ -123,12 +124,22 @@ pub(super) fn open_volume_failure(
         .copied()
         .map(|cell| (cell, 0u16))
         .collect::<BTreeMap<_, _>>();
+    // Crossing a climb composition is one step, however many cells it spans: a storey
+    // changed was one edge when it was a stairwell, and the pacing this measures is
+    // about how far a body walks between decisions, not about how a staircase is
+    // built. Moves within one composition cost nothing, so the search is 0-1 BFS.
+    let within_one_climb = |a: &HexPlacement, b: &HexPlacement| {
+        matches!(
+            (a.archetype, b.archetype),
+            (
+                HexArchetype::Climb { heading: x, .. },
+                HexArchetype::Climb { heading: y, .. },
+            ) if x == y
+        )
+    };
     let mut queue = decision_cells.into_iter().collect::<VecDeque<_>>();
     while let Some(cell) = queue.pop_front() {
-        let next_distance = distance[&cell].saturating_add(1);
-        if next_distance > MAX_DECISION_BEAT_DISTANCE {
-            continue;
-        }
+        let here = distance[&cell];
         for face in HexFace::ALL {
             if !super::topology::is_connection_open(&placements[&cell], face, placements, grid) {
                 continue;
@@ -136,9 +147,21 @@ pub(super) fn open_volume_failure(
             let next = grid
                 .neighbor(cell, face)
                 .expect("open connection has neighbor");
-            if let std::collections::btree_map::Entry::Vacant(entry) = distance.entry(next) {
-                entry.insert(next_distance);
-                queue.push_back(next);
+            let free = within_one_climb(&placements[&cell], &placements[&next]);
+            let next_distance = if free { here } else { here.saturating_add(1) };
+            if next_distance > MAX_DECISION_BEAT_DISTANCE {
+                continue;
+            }
+            if distance
+                .get(&next)
+                .is_none_or(|&known| next_distance < known)
+            {
+                distance.insert(next, next_distance);
+                if free {
+                    queue.push_front(next);
+                } else {
+                    queue.push_back(next);
+                }
             }
         }
     }
@@ -202,6 +225,29 @@ pub(super) fn layout_failure(
             let down_neighbor = &placements[&down_coord];
             if down_neighbor.archetype != HexArchetype::RampUp {
                 return Some("RampHead not matched by RampUp below");
+            }
+        }
+        // A climb's high cell and its landing are one bond, like a ramp pair. Its
+        // spans are held in order by `spans_join` in the edge check below.
+        if let HexArchetype::Climb { part, .. } = placement.archetype {
+            let (face, lower_first) = match part {
+                ClimbPart::High => (HexFace::Up, true),
+                ClimbPart::Landing => (HexFace::Down, false),
+                ClimbPart::Foot | ClimbPart::Mid => continue,
+            };
+            let Some(other) = grid
+                .neighbor(placement.coord, face)
+                .map(|coord| placements[&coord].archetype)
+            else {
+                return Some("climb high cell or landing has no partner");
+            };
+            let (lower, upper) = if lower_first {
+                (placement.archetype, other)
+            } else {
+                (other, placement.archetype)
+            };
+            if !climb_bond(lower, upper) {
+                return Some("climb high cell not matched by its landing");
             }
         }
     }
@@ -290,6 +336,7 @@ fn all_edges_match(
                     | HexArchetype::RampHead
                     | HexArchetype::Shaft
                     | HexArchetype::Expanse
+                    | HexArchetype::Climb { .. }
             )
             && !(2..=4).contains(&placement.doors.count_ones())
         {
@@ -311,6 +358,9 @@ fn all_edges_match(
                     && other.space == HexSpace::Room
                     && !internal_room_edges.contains(&(coord, neighbor));
                 if open != other.is_open(face.opposite()) || unexpected_room_seam {
+                    return false;
+                }
+                if open && !spans_join(placement.archetype, face, other.archetype) {
                     return false;
                 }
             } else {

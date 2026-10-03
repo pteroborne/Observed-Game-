@@ -228,13 +228,34 @@ fn a_pull_slides_the_minor_toward_the_observer() {
 #[test]
 fn a_minor_pushed_off_an_open_edge_is_lost() {
     let mut game = game();
-    let (direction, edge) = compass()
-        .find_map(|direction| {
-            let edge = (1..=12).find(|&metre| !floored_at(&game, direction, metre as f32))?;
-            (edge >= 4 && clear_along(&game, direction, edge as f32 + 3.0))
+    // The ground floor's open edges are railed; the floor above's are not. Stand the body
+    // where one of them has a clear line out to open sky.
+    let mut cells: Vec<_> = game
+        .facility
+        .placements
+        .iter()
+        .filter(|(cell, placement)| cell.level == 1 && placement.space.built())
+        .map(|(&cell, _)| cell)
+        .collect();
+    cells.sort();
+    let (direction, edge) = cells
+        .into_iter()
+        .find_map(|cell| {
+            let feet = game.standing_point(cell)?;
+            game.stand_body_for_tests(BODY, cell, feet);
+            compass().find_map(|direction| {
+                let edge = (1..=12).find(|&metre| !floored_at(&game, direction, metre as f32))?;
+                let beyond = game.body_position_for_tests(BODY) + direction * (edge as f32 + 1.5);
+                (edge >= 4
+                    && clear_along(&game, direction, edge as f32 + 3.0)
+                    && game
+                        .physics
+                        .ray_distance(beyond, Vec3::NEG_Y, 60.0)
+                        .is_none())
                 .then_some((direction, edge))
+            })
         })
-        .expect("an unrailed edge near the spawn");
+        .expect("an unrailed edge on the first floor over open sky");
     minor_ahead(&mut game, direction, edge as f32 - 2.5);
     assert!(step(&mut game, PUSH).contains(&HexMatchEventKind::KineticPush));
     let mut lost = false;

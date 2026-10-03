@@ -307,7 +307,7 @@ fn a_dark_station_and_one_out_of_reach_supply_nothing() {
 
 /// A standable site on `level` whose way to the floor's generator stays on the floor, or,
 /// with `on_floor` false, one whose only way there leaves it.
-fn site_reaching_the_generator(game: &AscentMatch, level: u8, on_floor: bool) -> Fixture {
+fn site_reaching_the_generator(game: &AscentMatch, level: u8, on_floor: bool) -> Option<Fixture> {
     let generator = fixture(game, FixtureKind::Generator, level).cell;
     let facility = &game.physical().facility;
     let (&cell, &floor) = game
@@ -319,22 +319,27 @@ fn site_reaching_the_generator(game: &AscentMatch, level: u8, on_floor: bool) ->
             facility
                 .route_between_cells(**cell, generator)
                 .is_some_and(|route| route.cells.iter().all(|at| at.level == level) == on_floor)
-        })
-        .expect("such a site");
-    Fixture {
+        })?;
+    Some(Fixture {
         kind: FixtureKind::Station,
         cell,
         floor,
-    }
+    })
 }
 
 /// A dark generator the body could only reach by climbing off its floor is no errand: the
 /// floor it would arrive on is not the dark one, and it would give up halfway.
 #[test]
 fn a_generator_reachable_only_off_the_floor_is_not_an_errand() {
-    let mut game = game(7);
+    // Whether a floor has such a site is its layout's to say: the first seed from 7 with one.
+    let (mut game, site) = (7..40)
+        .find_map(|seed| {
+            let game = game(seed);
+            let site = site_reaching_the_generator(&game, 0, false)?;
+            Some((game, site))
+        })
+        .expect("such a site");
     let mut driver = HexBotDriver::default();
-    let site = site_reaching_the_generator(&game, 0, false);
     stand_at(&mut game, site, Vec3::ZERO);
     let generator = fixture(&game, FixtureKind::Generator, 0).cell;
     assert!(
@@ -352,7 +357,7 @@ fn a_generator_reachable_only_off_the_floor_is_not_an_errand() {
 fn bot_body_walks_to_a_dark_floors_generator_and_restores_power() {
     let mut game = game(7);
     let mut driver = HexBotDriver::default();
-    let station = site_reaching_the_generator(&game, 0, true);
+    let station = site_reaching_the_generator(&game, 0, true).expect("such a site");
     stand_at(&mut game, station, Vec3::ZERO);
     game.ascent.stage_power(0, false);
     let mut interacted = false;

@@ -666,10 +666,13 @@ fn a_relayout_leaves_routed_corridors_as_narrow_as_it_found_them() {
                 continue;
             };
             checked += 1;
-            assert_eq!(
-                placement.doors, mask,
+            // A routed corridor may grow its one branch, in a relayout as at
+            // generation (`collapse::routed_mask_admits`); never more, and never a turn.
+            assert!(
+                super::collapse::routed_mask_admits(mask, placement.doors),
                 "seed {seed:#x}: relayout moved the corridor at {coord:?}: {:06b} became {:06b}",
-                mask, placement.doors
+                mask,
+                placement.doors
             );
         }
         if checked > 0 {
@@ -805,7 +808,27 @@ fn classifying_air_leaves_the_relayout_solve_unchanged() {
             (from_rock.attempts, from_rock.used_fallback),
             "seed {seed:#x}: air changed how the pocket solved"
         );
-        assert_eq!(from_air.placements, from_rock.placements, "seed {seed:#x}");
+        // An air cell the pocket keeps as it found it stays air, where the rock world
+        // has rock: the same unbuilt cell, classified. It is the solve that must match.
+        let as_drawn = |placements: &BTreeMap<HexCoord, super::HexPlacement>| {
+            placements
+                .iter()
+                .map(|(&at, &placement)| {
+                    (
+                        at,
+                        super::HexPlacement {
+                            space: placement.space.as_drawn(),
+                            ..placement
+                        },
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
+        assert_eq!(
+            as_drawn(&from_air.placements),
+            as_drawn(&from_rock.placements),
+            "seed {seed:#x}"
+        );
     }
     assert!(compared_with_air > 0, "no pocket ever bordered air");
 }

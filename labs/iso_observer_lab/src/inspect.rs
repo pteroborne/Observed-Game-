@@ -81,6 +81,7 @@ fn port_name(class: PortClass) -> &'static str {
         PortClass::Door => "door",
         PortClass::RampOpen => "ramp",
         PortClass::ShaftOpen => "shaft",
+        PortClass::Span => "span",
     }
 }
 
@@ -95,6 +96,7 @@ fn archetype_name(archetype: HexArchetype) -> &'static str {
         HexArchetype::RampHead => "ramp head",
         HexArchetype::Shaft => "shaft",
         HexArchetype::Expanse => "expanse",
+        HexArchetype::Climb { .. } => "climb",
     }
 }
 

@@ -23,6 +23,7 @@ pub mod region;
 mod relayout;
 #[cfg(test)]
 mod relayout_tests;
+mod routing;
 pub mod score;
 #[cfg(test)]
 mod tests;
@@ -42,7 +43,7 @@ pub use blueprint::{
     RoomBlueprint, StampedBlueprint, blueprint_cell_archetype, blueprint_for_role,
 };
 pub use context::{HexInfluenceField, PROFILE_MAX, PROFILE_MIN};
-pub use directed::{authored_hall, authored_ramp};
+pub use directed::{authored_climb, authored_hall};
 pub use neighborhood::{
     FaceDomain, NeighborCandidate, Neighborhood, NeighborhoodError, neighborhood,
 };
@@ -65,7 +66,8 @@ pub use trace::{
     CellTrace, SolveStep, TraceSummary, cells_from_world, fold_trace, summarise_trace,
 };
 pub use variants::{
-    HexGeometryDemand, demandable_signatures, geometry_demands, placement_tile_archetype,
+    HexGeometryDemand, climb_bond, demandable_signatures, geometry_demands,
+    placement_tile_archetype, spans_join,
 };
 
 /// What a collapsed cell is, coarsely.
@@ -149,6 +151,97 @@ pub enum HexArchetype {
     /// volume rather than as a row of tiles — the vocabulary the solver was
     /// missing for a vast space.
     Expanse,
+    /// One cell of a climb composition: a flight that rises a storey across several
+    /// cells rather than inside one (`docs/climb_compositions_plan.md`). `heading` is
+    /// the lateral direction the flight climbs toward. The cells find each other
+    /// through [`PortClass::Span`] faces, in [`ClimbPart`] order along one heading.
+    Climb {
+        part: ClimbPart,
+        #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
+        heading: HexFace,
+    },
+}
+
+/// One cell of a straight climb composition, in the order a body climbs through it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum ClimbPart {
+    /// Entered by its doors on the low side; the flight starts here.
+    Foot,
+    /// The flight carried on, span to span.
+    Mid,
+    /// The flight reaching the next floor, open to the landing above.
+    High,
+    /// The storey above the high cell: open over the flight, left by its doors.
+    Landing,
+}
+
+impl ClimbPart {
+    pub const ALL: [Self; 4] = [Self::Foot, Self::Mid, Self::High, Self::Landing];
+}
+
+impl HexArchetype {
+    /// The lateral faces, as a door mask, where this cell's flight runs on into the
+    /// next cell of its composition. They are open like doors, so routes and topology
+    /// cross them unchanged, and they present [`PortClass::Span`] rather than `Door`.
+    #[must_use]
+    pub const fn span_mask(self) -> u8 {
+        match self {
+            Self::Climb { part, heading } => match part {
+                ClimbPart::Foot => lateral_bit(heading),
+                ClimbPart::Mid => lateral_bit(heading) | lateral_bit(heading.opposite()),
+                ClimbPart::High => lateral_bit(heading.opposite()),
+                ClimbPart::Landing => 0,
+            },
+            _ => 0,
+        }
+    }
+}
+
+/// The four cells of the climb composition the cell at `coord` belongs to, foot first,
+/// if its archetype is a climb's and the lattice holds the whole of it. A composition
+/// is one unit: whatever pins, pockets or rewrites one of its cells takes all four.
+#[must_use]
+pub fn composition_cells(
+    grid: observed_hex::HexGridSize,
+    coord: HexCoord,
+    archetype: HexArchetype,
+) -> Option<[HexCoord; 4]> {
+    let HexArchetype::Climb { part, heading } = archetype else {
+        return None;
+    };
+    let back = heading.opposite();
+    let high = match part {
+        ClimbPart::Foot => grid.neighbor(grid.neighbor(coord, heading)?, heading)?,
+        ClimbPart::Mid => grid.neighbor(coord, heading)?,
+        ClimbPart::High => coord,
+        ClimbPart::Landing => grid.neighbor(coord, HexFace::Down)?,
+    };
+    let mid = grid.neighbor(high, back)?;
+    let foot = grid.neighbor(mid, back)?;
+    let landing = grid.neighbor(high, HexFace::Up)?;
+    Some([foot, mid, high, landing])
+}
+
+/// A climb's heading as its face index, for the optional serialised form:
+/// `observed_hex` stays dependency-free.
+#[cfg(feature = "serde")]
+mod serde_face {
+    use observed_hex::HexFace;
+
+    pub fn serialize<S: serde::Serializer>(face: &HexFace, out: S) -> Result<S::Ok, S::Error> {
+        #[allow(clippy::cast_possible_truncation)]
+        out.serialize_u8(face.index() as u8)
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(input: D) -> Result<HexFace, D::Error> {
+        let index = <u8 as serde::Deserialize>::deserialize(input)?;
+        HexFace::LATERAL
+            .get(usize::from(index))
+            .copied()
+            .ok_or_else(|| serde::de::Error::custom("a climb heads along a lateral face"))
+    }
 }
 
 /// One collapsed cell.
@@ -169,13 +262,19 @@ impl HexPlacement {
         face.is_lateral() && self.doors & lateral_bit(face) != 0
     }
 
-    /// The typed port view of this cell (Phase 88: `Sealed`/`Door` only).
+    /// The typed port view of this cell: doors, a climb's spans, and its vertical
+    /// ports.
     #[must_use]
     pub fn ports(&self) -> PortSignature {
         let mut ports = [PortClass::Sealed; 8];
+        let spans = self.archetype.span_mask();
         for face in HexFace::LATERAL {
             if self.is_open(face) {
-                ports[face.index()] = PortClass::Door;
+                ports[face.index()] = if spans & lateral_bit(face) != 0 {
+                    PortClass::Span
+                } else {
+                    PortClass::Door
+                };
             }
         }
         ports[HexFace::Up.index()] = self.up;

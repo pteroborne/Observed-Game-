@@ -268,3 +268,37 @@ fn a_minor_survives_a_drop_shorter_than_half_a_storey() {
     );
     assert!(!events.contains(&HexMatchEventKind::GuardianLost));
 }
+
+/// A minor released onto a climb's flight stands on the flight, metres above the slab,
+/// not in the clear space under it, which is a drop out of the facility.
+#[test]
+fn a_minor_released_onto_a_climb_stands_on_its_flight() {
+    use observed_facility::hex_wfc::{ClimbPart, HexArchetype};
+    let mut game = prison_match(7);
+    let mid = game
+        .facility
+        .placements
+        .values()
+        .find(|placement| {
+            matches!(
+                placement.archetype,
+                HexArchetype::Climb {
+                    part: ClimbPart::Mid,
+                    ..
+                }
+            )
+        })
+        .expect("a climb in the facility")
+        .coord;
+    assert!(game.release_guardian(1, HexReleasedKind::Minor, mid));
+    for _ in 0..120 {
+        step(&mut game, false);
+    }
+    let minor = minor(&game, 1).expect("the minor is still in the facility");
+    let slab = observed_hex::hex_origin(mid)[1];
+    assert!(
+        minor.position.y > slab + 2.0,
+        "the minor stands {} m over the slab, under the flight",
+        minor.position.y - slab
+    );
+}

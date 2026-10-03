@@ -51,10 +51,18 @@ impl ArchitectMode {
     #[must_use]
     pub const fn seed(self) -> u64 {
         match self {
-            Self::Pocket => 19,
-            Self::QuickClimb => 11,
-            Self::FullAscent => 7,
-            Self::DeepStack => 23,
+            // Re-chosen for the climb compositions, by two measured tests. The route offers
+            // the scenario all its gaps (`wanted` in `generate_with_team_size`): a gap must
+            // be a cell some card rebuilds exactly, and since routed halls carry a branch
+            // many routes have too few - Pocket's old 19 had none. And the bot match is
+            // not decided in its opening beats: with the second Observer two thirds along
+            // the route, many seeds start it a short walk from the exit, and Quick Climb's
+            // and Full Ascent's first full-gap seeds ended in 6 and 9 beats. These play
+            // 233, 336 and 413 beats. Pocket's is a sprint by design.
+            Self::Pocket => 20,
+            Self::QuickClimb => 19,
+            Self::FullAscent => 21,
+            Self::DeepStack => 27,
         }
     }
 

@@ -136,8 +136,9 @@ pub enum CardKind {
     Door,
     /// Deploy a powered-floor recharge station on a standable built cell.
     Station,
-    /// An ascent: a ramp pair climbing from the cell played on to the one above, turned
-    /// to the direction of the climb. The only card that builds the way up.
+    /// An ascent: a climb composition, three cells of flight from the cell played on and
+    /// a landing above the last, turned to the direction of the climb. The only card that
+    /// builds the way up.
     Stair,
     /// The Rogue's: send the major Guardians to the cell played on (`sim::directive`).
     Directive,

@@ -231,6 +231,7 @@ pub(crate) fn class_from_name(name: &str) -> Result<PortClass, TileError> {
         "door" => PortClass::Door,
         "ramp_open" => PortClass::RampOpen,
         "shaft_open" => PortClass::ShaftOpen,
+        "span" => PortClass::Span,
         other => return Err(TileError::UnknownClass(other.to_string())),
     })
 }
@@ -241,6 +242,7 @@ pub(crate) fn class_name(class: PortClass) -> &'static str {
         PortClass::Door => "door",
         PortClass::RampOpen => "ramp_open",
         PortClass::ShaftOpen => "shaft_open",
+        PortClass::Span => "span",
     }
 }
 

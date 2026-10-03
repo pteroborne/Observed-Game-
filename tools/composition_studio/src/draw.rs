@@ -41,7 +41,7 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
-use observed_facility::hex_wfc::{HexArchetype, HexPlacement, HexSpace, HexWfcWorld};
+use observed_facility::hex_wfc::{ClimbPart, HexArchetype, HexPlacement, HexSpace, HexWfcWorld};
 use observed_hex::{CORNERS, HexCoord, HexFace, PortClass, hex_origin};
 use observed_style::{HexSketch, HexSketchRole, SchematicRole, Treatment, hex_sketch, schematic};
 
@@ -247,6 +247,13 @@ pub fn sketch_role(archetype: HexArchetype, space: HexSpace, in_blueprint: bool)
         HexArchetype::RampUp => HexSketchRole::Ramp,
         HexArchetype::RampHead => HexSketchRole::RampHead,
         HexArchetype::Shaft => HexSketchRole::Shaft,
+        // A climb composition draws as the ramp it replaces until it has a glyph of
+        // its own (`docs/climb_compositions_plan.md`, phase 5).
+        HexArchetype::Climb {
+            part: ClimbPart::Landing,
+            ..
+        } => HexSketchRole::RampHead,
+        HexArchetype::Climb { .. } => HexSketchRole::Ramp,
         HexArchetype::Expanse => HexSketchRole::Expanse,
         HexArchetype::Room => HexSketchRole::Room,
     }

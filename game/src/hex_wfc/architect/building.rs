@@ -184,7 +184,7 @@ pub(super) fn draw(
         let signature = {
             use std::hash::{Hash, Hasher};
             let mut hasher = std::hash::DefaultHasher::new();
-            (tone, as_it_is, remembered.doors, remembered.archetype as u8).hash(&mut hasher);
+            (tone, as_it_is, remembered.doors, remembered.archetype).hash(&mut hasher);
             if as_it_is {
                 generation.hash(&mut hasher);
             }
@@ -322,12 +322,8 @@ pub(super) fn built_by(
         }
         CardKind::Stair => {
             let heading = observed_hex::HexFace::LATERAL[usize::from(rotation % 6)];
-            let (foot, head) = observed_facility::hex_wfc::authored_ramp(
-                cell,
-                heading,
-                physical.facility.config.levels,
-            )?;
-            vec![foot, head]
+            observed_facility::hex_wfc::authored_climb(physical.facility.config, cell, heading)?
+                .to_vec()
         }
         CardKind::Door
         | CardKind::Station

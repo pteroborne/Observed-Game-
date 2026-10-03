@@ -770,6 +770,10 @@ mod tests {
         // or not an old file still parses. A schema-only move is still a LAN
         // lockout, and there is no way to add a control without one.
         //
+        // Moved when the climb compositions arrived (2026-10): four new sources, the
+        // cells of a storey climbed across three tiles, and `COMPOSITION_PROFILE_VERSION`
+        // at 5 because the solver's alphabet grew to place them.
+        //
         // Moved when the stair tower became a spiral (2026-10): every one of the 171
         // towers changed shape, and no source was added or retired.
         //
@@ -791,15 +795,16 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "b565931b3e8ffb6bad198388ac3d49ef572213979068a25cc309555df8cb7a8e";
-        // The open-air composition (void share 2,000), 2026-09-24.
+            "2592d7d769f167ed7c9afcb4c4b5e4a3f6091afc5a2b13b62432404e3ebf8e08";
+        // The open-air composition (void share 2,000), 2026-09-24, at profile
+        // version 5 since the climb compositions.
         const PROFILE_HASH: &str =
-            "bb9b542142f32c11b9dbfbba01cebb1e6903db4ba0f30c10b6c0b087fcd95ea3";
+            "ce7ba47ecea2197120fad09f60cda2f25462f622a9da38e258efc7893f631d4f";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "139ab9146387ff1fc20c6e3ce831175b7216072113f43cc7e3d34519aca20980";
+            "15abdddf787ba3930dfa5a185869777d807c685ebc293b46d84ddddd571e32ba";
 
         let root = committed_tiles();
         let compiled_text =
@@ -812,7 +817,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 331, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 335, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.

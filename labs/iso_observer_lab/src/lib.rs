@@ -40,7 +40,7 @@ use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
 use observed_authoring::{RoomPrototype, RuntimeHexCatalog, TilePrototype};
 use observed_content::ArchitectureRegister;
-use observed_facility::hex_wfc::{HexArchetype, HexSpace, HexWfcConfig, HexWfcWorld};
+use observed_facility::hex_wfc::{ClimbPart, HexArchetype, HexSpace, HexWfcConfig, HexWfcWorld};
 use observed_hex::{HexCoord, HexFace, PortClass};
 use observed_match::hex_wfc::HexWfcGeometrySnapshot;
 use observed_style::{HexSketch, HexSketchRole, SchematicRole, hex_sketch, schematic_screen};
@@ -387,6 +387,13 @@ pub fn sketch_role(archetype: HexArchetype, space: HexSpace, in_blueprint: bool)
         HexArchetype::RampUp => HexSketchRole::Ramp,
         HexArchetype::RampHead => HexSketchRole::RampHead,
         HexArchetype::Shaft => HexSketchRole::Shaft,
+        // A climb composition draws as the ramp it replaces until it has a glyph of
+        // its own (`docs/climb_compositions_plan.md`, phase 5).
+        HexArchetype::Climb {
+            part: ClimbPart::Landing,
+            ..
+        } => HexSketchRole::RampHead,
+        HexArchetype::Climb { .. } => HexSketchRole::Ramp,
         HexArchetype::Expanse => HexSketchRole::Expanse,
         HexArchetype::Room => HexSketchRole::Room,
     }
@@ -415,6 +422,7 @@ pub fn archetype_label(archetype: HexArchetype) -> &'static str {
         HexArchetype::RampHead => "ramp head",
         HexArchetype::Shaft => "shaft",
         HexArchetype::Expanse => "expanse",
+        HexArchetype::Climb { .. } => "climb",
     }
 }
 

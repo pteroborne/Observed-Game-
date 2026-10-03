@@ -296,37 +296,17 @@ fn teammate_observations_share_one_survivor_map() {
     assert_eq!(game.player_map(PlayerId(0)), game.player_map(PlayerId(1)));
 }
 
-/// Classify the vertical transitions on the solved spawn→exit route.
-/// Returns `(ramp_transitions, stair_transitions)`.
-fn route_vertical_profile(world: &HexWfcWorld) -> (u32, u32) {
+/// How many storeys the solved spawn→exit route changes. Every storey a facility
+/// climbs it climbs by a climb composition (`docs/climb_compositions_plan.md`), so
+/// this is how many compositions the route takes.
+fn route_climbs(world: &HexWfcWorld) -> u32 {
     let Some(route) = world.route_between(world.config.spawn(), world.config.exit()) else {
-        return (0, 0);
+        return 0;
     };
-    let mut ramps = 0;
-    let mut stairs = 0;
-    for pair in route.windows(2) {
-        let (a, b) = (pair[0], pair[1]);
-        if a.level == b.level {
-            continue;
-        }
-        let face = if b.level > a.level {
-            HexFace::Up
-        } else {
-            HexFace::Down
-        };
-        let placement = &world.placements[&a];
-        let class = if face == HexFace::Up {
-            placement.up
-        } else {
-            placement.down
-        };
-        match class {
-            PortClass::RampOpen => ramps += 1,
-            PortClass::ShaftOpen => stairs += 1,
-            _ => {}
-        }
-    }
-    (ramps, stairs)
+    route
+        .windows(2)
+        .filter(|pair| pair[0].level != pair[1].level)
+        .count() as u32
 }
 
 fn run_bot_to_exit(game: &mut HexWfcMatch, max_ticks: u64) -> Option<u64> {
@@ -418,11 +398,9 @@ fn scan_gate_seeds() {
             let Ok(world) = HexWfcWorld::generate(seed, showcase_config(levels)) else {
                 continue;
             };
-            let (ramps, stairs) = route_vertical_profile(&world);
-            if ramps >= 2 && stairs >= 1 {
-                eprintln!(
-                    "GATE_CANDIDATE levels={levels} seed={seed:#018x} ramps={ramps} stairs={stairs}"
-                );
+            let climbs = route_climbs(&world);
+            if climbs >= 3 {
+                eprintln!("GATE_CANDIDATE levels={levels} seed={seed:#018x} climbs={climbs}");
                 found += 1;
                 if found >= 12 {
                     break;
@@ -615,20 +593,24 @@ fn diagnose_bot() {
 /// (0x1d15_2f9e_cb87_de12, `ramps=3 stairs=5`) stalled short of the exit in 40,000
 /// ticks - the first stall the scan has turned up since the descent fixes. This one
 /// was taken for `ramps=4 stairs=4`, the most verticality on offer.
+///
+/// Kept when the climb compositions replaced the ramps and towers: its route climbs
+/// four storeys by composition, which is all the verticality five levels hold.
 const GATE_SEED: u64 = 0x6d7e_3af8_7833_54e7;
 const GATE_LEVELS: u8 = 5;
 
 /// Phase 94 success criterion 1 — the headless gate. On a pinned seed whose
-/// solved route crosses ≥2 ramp levels and ≥1 stair tower, an objective bot completes
-/// spawn→exit, and it does so deterministically: two independent runs reach the
-/// exit on the identical tick and end on the identical snapshot digest.
+/// solved route climbs at least three storeys - each by a climb composition, since
+/// those replaced the ramps and stair towers - an objective bot completes spawn→exit,
+/// and it does so deterministically: two independent runs reach the exit on the
+/// identical tick and end on the identical snapshot digest.
 #[test]
-fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
+fn headless_gate_bot_walks_climbs_deterministically() {
     let world = HexWfcWorld::generate(GATE_SEED, showcase_config(GATE_LEVELS)).expect("world");
-    let (ramps, stairs) = route_vertical_profile(&world);
+    let climbs = route_climbs(&world);
     assert!(
-        ramps >= 2 && stairs >= 1,
-        "gate route must cross >=2 ramp levels and >=1 stair tower, got ramps={ramps} stairs={stairs}"
+        climbs >= 3,
+        "gate route must climb at least three storeys, got {climbs}"
     );
 
     let mut first = showcase_match(GATE_SEED, GATE_LEVELS, 1);
@@ -723,7 +705,12 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // Twelfth (14,172 -> 12,928), the same seed and route: the stair towers became
     // spiral stairs, and a storey of spiral is a shorter walk than a storey of helix
     // and the ring round to its foot.
-    assert_eq!(a, 12_928, "TR-10 pins the declared-ramp completion tick");
+    //
+    // Thirteenth (12,928 -> 8,684), the same seed: the climb compositions replaced
+    // both. The route now climbs its four storeys by straight flights three cells
+    // long, a gentler and more direct walk than a switchback or a spiral, and the
+    // solver routed the building around them, so the route is not the same one.
+    assert_eq!(a, 8_684, "TR-10 pins the declared-climb completion tick");
     // Moved again by twenty open halls and by churn becoming a district
     // property, and again *without* moving the tick above - the same pairing,
     // and the same proof. The bot's route through the gate seed is tick for
@@ -764,221 +751,11 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // (0x0fde_68b8_5aa8_5dda -> 0x9c35_1a54_6fd7_787e), and per-floor openness's again
     // (-> 0x6868_4c8f_72ff_5fb3), and the switchback ramp's (-> 0x6776_8f80_b021_bd38,
     // then dressed by district -> 0xd8a4_56f3_de5d_1e26), and the spiral tower's
-    // (-> 0x18fc_ac97_862c_01a2).
+    // (-> 0x18fc_ac97_862c_01a2), and the climb compositions' (-> 0x541d_246f_6472_cf2a).
     assert_eq!(
         first.snapshot().digest,
-        0x18fc_ac97_862c_01a2,
-        "TR-10 pins the declared-ramp final snapshot digest"
-    );
-}
-
-fn mix_trace(digest: &mut u64, value: u64) {
-    *digest ^= value;
-    *digest = digest.wrapping_mul(0x0000_0100_0000_01b3);
-}
-
-/// Pin the current shape-specific bot follower against a real projected
-/// perimeter tower and the production Rapier controller. TR-1 can run the
-/// extracted follower against this exact intent/body trace before deleting
-/// the current `climb_command` implementation.
-#[test]
-fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
-    let mut game = showcase_match(GATE_SEED, GATE_LEVELS, 1);
-    let tower_cells = game
-        .geometry
-        .pieces
-        .iter()
-        .filter_map(|piece| {
-            piece
-                .tile
-                .as_ref()
-                .filter(|tile| tile.archetype == "stair_tower")
-                .map(|tile| (piece.source_cell, tile.clone()))
-        })
-        .collect::<BTreeMap<_, _>>();
-    const TRACE_SEED: u64 = 0xcbf2_9ce4_8422_2325;
-    let mut trace = TRACE_SEED;
-    let mut traced_tower = None;
-    let mut traced_ticks = 0u64;
-    let mut completion = None;
-    let id = PlayerId(0);
-    let mut driver = HexBotDriver::new();
-    let half_height = game
-        .content()
-        .traversal_profile()
-        .requirements()
-        .capsule_half_height;
-    for tick in 0..40_000u64 {
-        let feet = game.bodies[&id].position - Vec3::Y * half_height;
-        let touching = tower_cells.keys().copied().find(|cell| {
-            game.geometry.climbs.get(cell).is_some_and(|spine| {
-                !spine.is_empty()
-                    && spine.distance(feet).is_some_and(|distance| distance <= 1.6)
-                    && !spine.has_arrived(feet)
-            })
-        });
-        let command = driver.command(&game, id);
-        if let Some(cell) = touching {
-            // Follow the tower the body is *on*, restarting the trace when it
-            // moves to another one.
-            //
-            // This used to latch onto the first tower it came within 1.6 m of
-            // and hold it for the rest of the run, which was only ever right
-            // because the old gate seed's first tower was also the one the bot
-            // climbed. On the seed after it, the bot brushes past a tower for
-            // thirty-six ticks on its way somewhere else, and the fixture spent
-            // the remaining 39,964 recording nothing and reported
-            // `completion=None` - a pin of a walk-past rather than of a climb.
-            //
-            // The trace this pins is the climb that finishes, which is what the
-            // test is named for.
-            if traced_tower != Some(cell) {
-                traced_tower = Some(cell);
-                traced_ticks = 0;
-                trace = TRACE_SEED;
-            }
-            traced_ticks += 1;
-            for bits in [
-                command.intent.movement.x.to_bits(),
-                command.intent.movement.y.to_bits(),
-                command.intent.look.x.to_bits(),
-                command.intent.look.y.to_bits(),
-            ] {
-                mix_trace(&mut trace, u64::from(bits));
-            }
-            mix_trace(&mut trace, u64::from(command.intent.sprint_held));
-        }
-        game.step(&HexInputFrame {
-            version: HEX_INPUT_VERSION,
-            tick,
-            commands: [(id, command)].into_iter().collect(),
-        });
-        if touching.is_some_and(|cell| traced_tower == Some(cell)) {
-            let body = game.bodies[&id];
-            for bits in [
-                body.position.x.to_bits(),
-                body.position.y.to_bits(),
-                body.position.z.to_bits(),
-                body.velocity.x.to_bits(),
-                body.velocity.y.to_bits(),
-                body.velocity.z.to_bits(),
-                body.yaw.to_bits(),
-            ] {
-                mix_trace(&mut trace, u64::from(bits));
-            }
-            mix_trace(&mut trace, u64::from(body.grounded));
-            let feet = body.position - Vec3::Y * half_height;
-            let cell = traced_tower.expect("touching sets the tower");
-            if game.geometry.climbs[&cell].has_arrived(feet) {
-                completion = Some(tick + 1);
-                break;
-            }
-        }
-    }
-    let cell = traced_tower.expect("gate bot reaches a perimeter tower");
-    let tile = tower_cells[&cell].clone();
-    let body = game.bodies[&id];
-    eprintln!(
-        "tower cell={cell:?} tile={tile:?} completion={completion:?} traced_ticks={traced_ticks} trace={trace:#018x} body={body:?}"
-    );
-    assert_eq!(
-        cell,
-        HexCoord {
-            q: 10,
-            r: 8,
-            level: 0
-        }
-    );
-    assert_eq!(tile.archetype, "stair_tower");
-    // Register and variant moved with `GATE_SEED`, and only those two: the cell,
-    // the archetype, the completion tick, the traced tick count and the body
-    // trace below are all bit-identical to the old seed's. So the bot climbs the
-    // same tower through the same geometry and the *dressing* changed - a
-    // different district owns that cell now, and the projector picks a different
-    // authored variation for it. Worth keeping distinct from a move where the
-    // climb itself changed, which is what the trace pin exists to catch.
-    //
-    // A new gate seed moved all of it again - different facility, different
-    // cell, different register - except for the one number that matters, and
-    // that exception is the finding. **`traced_ticks` is still 973**, bit for
-    // bit, across three seed changes, a widened alphabet, a resized facility and
-    // a rebalanced one. The bot spends the identical number of ticks on the
-    // climb because it is the identical climb: a fixed sweep, a fixed outer
-    // scale, one authored helix for every tower in the corpus. If the branching
-    // landing had disturbed the climb geometry - which was the risk in authoring
-    // 105 new towers - this is the number that would have said so.
-    //
-    // Stronger than that here: the completion tick, the traced-tick count *and*
-    // the whole body trace have come back to the values they held before T-4
-    // moved anything. A different seed put the bot on a different tower in a
-    // different district and it climbed it identically, which is the clearest
-    // statement this suite makes that the tower family is one shape.
-    //
-    // One district per floor and its new gate seed moved it all again, and once
-    // more **`traced_ticks` is 973**. The tower is on the third floor now, so the
-    // body ends 16 m higher; its x moved by the tower's offset and nothing else
-    // in the body differs past the fourth significant figure.
-    //
-    // **And then it moved: 997.** Each floor drawing its own openness, and the gate seed
-    // that came with it, put the bot on a ground-floor tower in the closed Backrooms, and
-    // it spends 24 more ticks touching it. The climb still completes and ends on the
-    // same tread - the body's height is the old ground-floor tower's to four figures
-    // (9.40996 against 9.40971), and its velocity and yaw agree as closely - so the
-    // helix is the same; where the
-    // extra 0.4 s goes (the approach, a wall the closed floor stands beside the tower,
-    // or the climb) is not yet known. Recorded rather than explained away.
-    //
-    // The switchback ramp moved the completion tick (6,406 -> 9,708): the bot walks
-    // longer ramps on its way to this tower. The climb itself is 995 traced ticks, two
-    // fewer than before, and ends on the same tread. Dressing each district's ramp
-    // moved it a tick (9,707, 996 traced).
-    //
-    // **The helix is gone, and its numbers with it.** The tower is a spiral stair
-    // now: a full turn round a pier, each storey ending where the next begins. The
-    // bot climbs it in 957 traced ticks, against the helix's 973 to 997, and ends
-    // on the spiral's head - a different tread, so a different body. This pin now
-    // holds the spiral, the way it held the helix: one shape for every tower, so a
-    // seed or a district that moves which tower is climbed should move none of
-    // these but the cell and the completion tick.
-    assert_eq!(tile.register, "facet_monument");
-    assert_eq!(tile.variant, 180);
-    // TR-11 moved this trace on purpose, and it is the only pin in that packet
-    // permitted to move: the tower is now climbed by a graph leg instead of by
-    // the compatibility follower beside it.
-    //
-    // The climb still *completes*, which is the property worth having. It
-    // arrives on tick 1,075 against the 1,066 pinned before — nine ticks, 0.15
-    // s — and the body ends 0.17 m from where it used to, at the same height,
-    // on the same tread. The graph follower picks its next target slightly
-    // differently along the same authored spine; nothing here is a regression.
-    //
-    // Selection is not steering: the catalog hash, the composition profile, the
-    // simulation hash and both spectator selection digests are unmoved.
-    // Bevy 0.19 changed the intermediate floating-point trace while preserving
-    // the pinned completion tick, traced-tick count, and terminal body bits.
-    //
-    assert_eq!(completion, Some(9_935));
-    assert_eq!(traced_ticks, 957);
-    assert_eq!(trace, 0xaece_eb3c_db69_6c29);
-    assert_eq!(
-        [
-            body.position.x.to_bits(),
-            body.position.y.to_bits(),
-            body.position.z.to_bits(),
-            body.velocity.x.to_bits(),
-            body.velocity.y.to_bits(),
-            body.velocity.z.to_bits(),
-            body.yaw.to_bits(),
-        ],
-        [
-            1_128_714_728,
-            1_091_829_108,
-            1_119_616_385,
-            1_067_260_020,
-            0,
-            1_065_705_735,
-            1_074_894_116,
-        ]
+        0x541d_246f_6472_cf2a,
+        "TR-10 pins the declared-climb final snapshot digest"
     );
 }
 
@@ -1058,6 +835,81 @@ fn bot_soak_has_no_stalls() {
         exercised >= 12,
         "soak exercised too few layouts: {exercised}"
     );
+}
+
+/// Bots climb by climb compositions, not only past them: across the soak's layouts,
+/// bodies driven by the production bot step from a composition's high cell up into
+/// its landing, and every bot still escapes. The soak alone cannot say this - it
+/// passes just as well if every route climbs by the older ramps and towers.
+#[test]
+fn bots_climb_storeys_by_climb_compositions() {
+    use observed_facility::hex_wfc::{ClimbPart, HexArchetype};
+
+    let mut climbed = 0usize;
+    let mut exercised = 0usize;
+    for raw in 0u64..14 {
+        let seed = 0x50A6_0000_0000_0000 ^ raw.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        for &levels in &[4u8, 5u8] {
+            let Ok(world) = HexWfcWorld::generate(seed, showcase_config(levels)) else {
+                continue;
+            };
+            if world
+                .route_between(world.config.spawn(), world.config.exit())
+                .is_none()
+            {
+                continue;
+            }
+            let mut game = showcase_match(seed, levels, 4);
+            pin_guardian_for_path_soak(&mut game);
+            let part = |game: &HexWfcMatch, cell: HexCoord| match game.facility.placements[&cell]
+                .archetype
+            {
+                HexArchetype::Climb { part, .. } => Some(part),
+                _ => None,
+            };
+            let mut cells: BTreeMap<PlayerId, HexCoord> = game
+                .players
+                .iter()
+                .map(|(&id, player)| (id, player.cell))
+                .collect();
+            let mut driver = HexBotDriver::new();
+            let mut finished = false;
+            for tick in 0..40_000 {
+                let commands = game
+                    .players
+                    .keys()
+                    .copied()
+                    .filter(|id| !game.players[id].escaped)
+                    .map(|id| (id, bot_player_command(&mut driver, &game, id)))
+                    .collect();
+                game.step(&HexInputFrame {
+                    version: HEX_INPUT_VERSION,
+                    tick,
+                    commands,
+                });
+                for (&id, player) in &game.players {
+                    let before = cells.insert(id, player.cell).expect("a known body");
+                    if before != player.cell
+                        && part(&game, before) == Some(ClimbPart::High)
+                        && part(&game, player.cell) == Some(ClimbPart::Landing)
+                    {
+                        climbed += 1;
+                    }
+                }
+                if game.status == HexMatchStatus::Finished {
+                    finished = true;
+                    break;
+                }
+            }
+            assert!(
+                finished,
+                "seed={seed:#018x} levels={levels}: not every bot escaped"
+            );
+            exercised += 1;
+        }
+    }
+    eprintln!("{climbed} storeys climbed by composition across {exercised} layouts");
+    assert!(climbed > 0, "no bot ever climbed by a composition");
 }
 
 /// Phase 94 success criterion 3 — every open blueprint door port is a two-way

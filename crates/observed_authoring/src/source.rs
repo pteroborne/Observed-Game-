@@ -86,6 +86,11 @@ pub enum FloorPolicy {
     Solid,
     Ramp,
     Open,
+    /// One stretch of a climb composition's flight (`docs/climb_compositions_plan.md`):
+    /// a walking surface that climbs part of a storey across the cell, so neither a
+    /// level floor nor a storey's rise. Judged by its climb line - present, and never
+    /// steeper than [`FLIGHT_MAX_SLOPE`] - rather than by either.
+    Flight,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -595,7 +600,9 @@ fn floor_top_at(module: &AuthoredModule, bounds: &[Bounds], point: Vec3) -> Opti
 fn validate_floor_and_headroom(module: &AuthoredModule) -> Result<(), SourceError> {
     let hull_bounds: Vec<Bounds> = module.prototype.hulls.iter().map(|h| bounds(h)).collect();
     for authored_cell in &module.footprint {
-        if authored_cell.floor == FloorPolicy::Open {
+        // A flight's floor climbs across the cell, so the level-floor samples below
+        // cannot see it; `validate_flights` judges it by its climb line instead.
+        if matches!(authored_cell.floor, FloorPolicy::Open | FloorPolicy::Flight) {
             continue;
         }
         let cell = ModuleCellRef {
@@ -711,6 +718,40 @@ fn validate_ramps(module: &AuthoredModule) -> Result<(), SourceError> {
     Ok(())
 }
 
+/// The steepest a climb composition's flight may climb anywhere: rise over plan run.
+///
+/// About 17 degrees, against the 0.44 of the single-cell climbs it replaces, which
+/// the first-person captures showed were too steep to read as stairs at all.
+pub const FLIGHT_MAX_SLOPE: f32 = 0.3;
+
+/// Every flight cell carries a climb line, and no stretch of it is steeper than
+/// [`FLIGHT_MAX_SLOPE`].
+fn validate_flights(module: &AuthoredModule) -> Result<(), SourceError> {
+    for authored_cell in &module.footprint {
+        if authored_cell.floor != FloorPolicy::Flight {
+            continue;
+        }
+        let cell = ModuleCellRef {
+            q: authored_cell.q,
+            r: authored_cell.r,
+            level: authored_cell.level,
+        };
+        let spine = &module.prototype.spine;
+        if spine.nodes.len() < 2 {
+            return Err(SourceError::MissingRampSurface(cell));
+        }
+        for pair in spine.nodes.windows(2) {
+            let rise = (pair[1].y - pair[0].y).abs();
+            let run = (pair[1].x - pair[0].x).hypot(pair[1].z - pair[0].z);
+            let slope = rise / run.max(0.01);
+            if rise > 0.05 && slope > FLIGHT_MAX_SLOPE + 1e-3 {
+                return Err(SourceError::RampTooSteep { cell, slope });
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn validate_module(module: &AuthoredModule) -> Result<(), SourceError> {
     let maximum = match module.kind {
         ModuleKind::Cell => CELL_HULL_BUDGET,
@@ -728,6 +769,7 @@ pub fn validate_module(module: &AuthoredModule) -> Result<(), SourceError> {
     if module.authoring_version >= 2 {
         validate_floor_and_headroom(module)?;
         validate_ramps(module)?;
+        validate_flights(module)?;
     }
     Ok(())
 }
@@ -1111,6 +1153,7 @@ pub(crate) fn floor_from_name(name: &str) -> Option<FloorPolicy> {
         "solid" => FloorPolicy::Solid,
         "ramp" => FloorPolicy::Ramp,
         "open" => FloorPolicy::Open,
+        "flight" => FloorPolicy::Flight,
         _ => return None,
     })
 }
@@ -1120,6 +1163,7 @@ pub(crate) fn floor_name(policy: FloorPolicy) -> &'static str {
         FloorPolicy::Solid => "solid",
         FloorPolicy::Ramp => "ramp",
         FloorPolicy::Open => "open",
+        FloorPolicy::Flight => "flight",
     }
 }
 
@@ -1160,6 +1204,7 @@ pub fn port_class_counts(module: &AuthoredModule) -> BTreeMap<&'static str, usiz
             PortClass::Door => "door",
             PortClass::RampOpen => "ramp_open",
             PortClass::ShaftOpen => "shaft_open",
+            PortClass::Span => "span",
         };
         *counts.entry(name).or_insert(0) += 1;
     }

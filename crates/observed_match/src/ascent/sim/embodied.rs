@@ -29,6 +29,10 @@ pub struct Embodiment {
 }
 
 /// Whether a stair or ramp in `world` links `cell` to the floor above or below it.
+///
+/// Every cell of a climb composition does: its foot and mid carry the flight to the
+/// high cell as surely as the high cell carries it through the floor, though only the
+/// high cell and its landing have a vertical port to show for it.
 #[must_use]
 pub fn linked_vertically(world: &HexWfcWorld, cell: HexCoord) -> bool {
     let vertical = |at: Option<HexCoord>, face: HexFace| {
@@ -36,7 +40,14 @@ pub fn linked_vertically(world: &HexWfcWorld, cell: HexCoord) -> bool {
             .is_some_and(|p| p.ports().port(face) != PortClass::Sealed)
     };
     let grid = world.config.grid();
-    vertical(Some(cell), HexFace::Up)
+    let climbing = world.placements.get(&cell).is_some_and(|placement| {
+        matches!(
+            placement.archetype,
+            observed_facility::hex_wfc::HexArchetype::Climb { .. }
+        )
+    });
+    climbing
+        || vertical(Some(cell), HexFace::Up)
         || vertical(Some(cell), HexFace::Down)
         || vertical(grid.neighbor(cell, HexFace::Down), HexFace::Up)
         || vertical(grid.neighbor(cell, HexFace::Up), HexFace::Down)

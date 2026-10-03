@@ -446,6 +446,7 @@ fn class_tag(class: PortClass) -> u8 {
         PortClass::Door => 1,
         PortClass::RampOpen => 2,
         PortClass::ShaftOpen => 3,
+        PortClass::Span => 4,
     }
 }
 
@@ -529,6 +530,7 @@ mod class_serde {
             PortClass::Door => "door",
             PortClass::RampOpen => "ramp_open",
             PortClass::ShaftOpen => "shaft_open",
+            PortClass::Span => "span",
         })
     }
 
@@ -539,6 +541,7 @@ mod class_serde {
             "door" => Ok(PortClass::Door),
             "ramp_open" => Ok(PortClass::RampOpen),
             "shaft_open" => Ok(PortClass::ShaftOpen),
+            "span" => Ok(PortClass::Span),
             _ => Err(serde::de::Error::unknown_variant(
                 &value,
                 &["sealed", "door", "ramp_open", "shaft_open"],

@@ -1021,11 +1021,21 @@ fn is_the_generator_reachable_at_all() {
         let sim = ArchitectLab::for_mode(mode).expect("scenario boots");
         println!("\n{}:", mode.short_label());
         let starts: Vec<HexCoord> = sim.observers.values().map(|o| o.cell).collect();
+        // "Ever": the scenario voids a few route tiles on purpose, for the Architect to
+        // repair (`every_scenario_still_interrupts_its_route`), so a generator behind one
+        // of those gaps is the pressure loop, not a stranded fixture. Reachable now, or
+        // in the facility as it was solved, before the damage.
+        let pristine =
+            observed_facility::hex_wfc::HexWfcWorld::generate(mode.seed(), sim.world.config)
+                .expect("the pinned mode solves");
+        let ever = |start: HexCoord, cell: HexCoord| {
+            sim.route(start, cell).is_some() || pristine.route_between(start, cell).is_some()
+        };
         for (&level, &generator) in &sim.economy.generators {
             let exits = sim.exits(generator).len();
             let reachable = starts
                 .iter()
-                .filter(|&&start| sim.route(start, generator).is_some())
+                .filter(|&&start| ever(start, generator))
                 .count();
             println!(
                 "  level {level}: generator {generator:?}, {exits} exits, \
@@ -1049,13 +1059,13 @@ fn is_the_generator_reachable_at_all() {
             .economy
             .stations
             .iter()
-            .filter(|&&cell| !starts.iter().any(|&s| sim.route(s, cell).is_some()))
+            .filter(|&&cell| !starts.iter().any(|&s| ever(s, cell)))
             .count();
         let unreachable_pads = sim
             .economy
             .pads
             .iter()
-            .filter(|&&cell| !starts.iter().any(|&s| sim.route(s, cell).is_some()))
+            .filter(|&&cell| !starts.iter().any(|&s| ever(s, cell)))
             .count();
         println!(
             "  stations unreachable from every start: {unreachable_stations}/{}, \

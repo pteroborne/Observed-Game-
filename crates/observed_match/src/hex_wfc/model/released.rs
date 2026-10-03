@@ -202,8 +202,14 @@ impl HexWfcMatch {
             HexReleasedKind::Minor => {
                 let config = self.content.traversal_config();
                 let origin = Vec3::from_array(hex_origin(cell));
+                let lift = Vec3::Y * (config.half_height + 0.02);
+                // A clear spot is only a place to stand if something holds it up: on a
+                // climb's flight the floor is metres above the slab, and the clear space
+                // under it is a drop out of the facility.
                 let position =
                     super::clear_spawn_position(&self.physics, origin, &config, (id % 8) as u8)
+                        .filter(|&centre| self.stands_at(centre - lift).is_some())
+                        .or_else(|| self.surface_point(cell).map(|feet| feet + lift))
                         .unwrap_or(origin + Vec3::Y * (FLOOR_SLAB_TOP + config.half_height));
                 HexReleasedGuardian::Minor(HexMinorState {
                     cell,
@@ -226,6 +232,31 @@ impl HexWfcMatch {
             cell: Some(cell),
         });
         true
+    }
+
+    /// Where a body fits standing on `cell`'s own walking surface, found from above: as
+    /// near the centre as it can, on a flight's slope as on a level floor. `None` where no
+    /// body fits anywhere near the centre.
+    fn surface_point(&self, cell: HexCoord) -> Option<Vec3> {
+        const RINGS: [f32; 4] = [0.0, 1.5, 3.0, 4.0];
+        const STEPS: u8 = 12;
+        // Under the lowest ceiling a cell has, a climb's Foot and Mid at 7.5 m.
+        const PROBE: f32 = 7.4;
+        let top = Vec3::from_array(hex_origin(cell)) + Vec3::Y * PROBE;
+        RINGS
+            .into_iter()
+            .flat_map(|radius| {
+                let steps = if radius == 0.0 { 1 } else { STEPS };
+                (0..steps).map(move |step| {
+                    let angle = f32::from(step) * std::f32::consts::TAU / f32::from(STEPS);
+                    Vec3::new(angle.cos() * radius, 0.0, angle.sin() * radius)
+                })
+            })
+            .find_map(|offset| {
+                let from = top + offset;
+                let drop = self.physics.ray_distance(from, Vec3::NEG_Y, PROBE)?;
+                self.stands_at(from - Vec3::Y * drop)
+            })
     }
 
     /// Take a released Guardian out of the facility, as a floor's collapse does. Whether

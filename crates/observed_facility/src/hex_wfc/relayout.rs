@@ -1086,6 +1086,14 @@ fn close_units(
                         }
                     }
                 }
+                // A climb composition is re-solved whole or not at all.
+                archetype @ HexArchetype::Climb { .. } => {
+                    if let Some(unit) =
+                        super::composition_cells(world.config.grid(), coord, archetype)
+                    {
+                        cells.extend(unit);
+                    }
+                }
                 _ => {}
             }
         }

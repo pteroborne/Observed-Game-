@@ -402,6 +402,13 @@ pub(super) fn corridor_skeleton(
         })
         .collect();
 
+    // Every door's outside cell stays corridor: no climb may be laid through one.
+    let doorsteps: BTreeSet<HexCoord> = attachments
+        .iter()
+        .flatten()
+        .map(|&(outside, _)| outside)
+        .collect();
+
     // Nearest-first spanning tree, so every room is reachable and no edge is
     // spent twice. Deterministic: ties break on index, and the anchors it
     // measures are already fixed by the stamp.
@@ -429,13 +436,19 @@ pub(super) fn corridor_skeleton(
     let mut adjacency: BTreeMap<HexCoord, BTreeSet<HexCoord>> = BTreeMap::new();
     let mut up: BTreeMap<HexCoord, PortClass> = BTreeMap::new();
     let mut down: BTreeMap<HexCoord, PortClass> = BTreeMap::new();
+    // Climb compositions laid so far, and their cells: a later route may take one
+    // whole, and pass through none.
+    let mut reserved: BTreeSet<HexCoord> = BTreeSet::new();
+    let mut climbs: BTreeSet<[HexCoord; 4]> = BTreeSet::new();
     // Claiming a path is the same work whichever pass asks for it, and the two
     // passes below disagreeing about it is the kind of drift that shows up as a
     // corridor that stops one cell short of a door.
     let claim = |path: &[HexCoord],
                  adjacency: &mut BTreeMap<HexCoord, BTreeSet<HexCoord>>,
                  up: &mut BTreeMap<HexCoord, PortClass>,
-                 down: &mut BTreeMap<HexCoord, PortClass>| {
+                 down: &mut BTreeMap<HexCoord, PortClass>,
+                 reserved: &mut BTreeSet<HexCoord>,
+                 climbs: &mut BTreeSet<[HexCoord; 4]>| {
         for window in path.windows(2) {
             let (here, next) = (window[0], window[1]);
             if here.level == next.level {
@@ -443,18 +456,25 @@ pub(super) fn corridor_skeleton(
                 adjacency.entry(next).or_default().insert(here);
                 continue;
             }
-            // A climb is a port class, not a door bit. Both cells still enter
+            // The one vertical step a route takes is a climb's high cell to its
+            // landing: a port class, not a door bit. Both cells still enter
             // `adjacency` so a purely vertical stop is not mistaken for an
-            // unvisited cell and left without a mask.
+            // unvisited cell and left without a mask. The spans along the flight
+            // are door bits, claimed above like any lateral step; propagation
+            // makes the rest of the composition out of them.
             let (lower, upper) = if here.level < next.level {
                 (here, next)
             } else {
                 (next, here)
             };
-            up.insert(lower, PortClass::ShaftOpen);
-            down.insert(upper, PortClass::ShaftOpen);
+            up.insert(lower, PortClass::RampOpen);
+            down.insert(upper, PortClass::RampOpen);
             adjacency.entry(here).or_default();
             adjacency.entry(next).or_default();
+        }
+        for climb in super::routing::climbs_in(path) {
+            reserved.extend(climb);
+            climbs.insert(climb);
         }
     };
 
@@ -463,8 +483,16 @@ pub(super) fn corridor_skeleton(
             .iter()
             .flat_map(|start| attachments[to].iter().map(move |end| (*start, *end)))
             .filter_map(|((start, start_port), (end, end_port))| {
-                skeleton_path(config, &room_cells, start, end)
-                    .map(|path| (path, start_port, end_port))
+                skeleton_path(
+                    config,
+                    &room_cells,
+                    (&reserved, &climbs),
+                    &doorsteps,
+                    &adjacency,
+                    start,
+                    end,
+                )
+                .map(|path| (path, start_port, end_port))
             })
             .min_by_key(|(path, _, _)| path.len())?;
         // Open each end onto the door it serves, so an endpoint is a passage
@@ -473,7 +501,14 @@ pub(super) fn corridor_skeleton(
             adjacency.entry(first).or_default().insert(start_port);
             adjacency.entry(last).or_default().insert(end_port);
         }
-        claim(&path, &mut adjacency, &mut up, &mut down);
+        claim(
+            &path,
+            &mut adjacency,
+            &mut up,
+            &mut down,
+            &mut reserved,
+            &mut climbs,
+        );
     }
 
     // The second pass: every door the tree did not use, joined to the nearest
@@ -494,8 +529,22 @@ pub(super) fn corridor_skeleton(
                 {
                     continue;
                 }
-                let path = skeleton_path_to_skeleton(config, &room_cells, &adjacency, outside)?;
-                claim(&path, &mut adjacency, &mut up, &mut down);
+                let path = skeleton_path_to_skeleton(
+                    config,
+                    &room_cells,
+                    (&reserved, &climbs),
+                    &doorsteps,
+                    &adjacency,
+                    outside,
+                )?;
+                claim(
+                    &path,
+                    &mut adjacency,
+                    &mut up,
+                    &mut down,
+                    &mut reserved,
+                    &mut climbs,
+                );
                 adjacency.entry(outside).or_default().insert(port_cell);
             }
         }
@@ -533,45 +582,30 @@ pub(super) fn corridor_skeleton(
 /// probe that sized the idea missed it by routing over a *solved* lattice,
 /// where the shafts already existed.)
 ///
-/// A vertical step is claimed the way [`forced_route_edges`] claims one: as a
-/// `ShaftOpen` pair on the two cells' facing vertical ports, never as a door
-/// bit. Doors and shafts are different port classes and a mask cannot express
-/// one of them.
+/// A vertical move is a whole climb composition (`super::routing`): three cells
+/// along one heading, the landing above the last, and out beyond it. Its spans are
+/// door bits; its one vertical bond, high cell to landing, is a `RampOpen` pair,
+/// claimed the way [`forced_route_edges`] claims one. `reserved` cells - earlier
+/// climbs - are never entered, and a climb is never laid through a cell the
+/// skeleton has already claimed.
 fn skeleton_path(
     config: HexWfcConfig,
     room_cells: &BTreeSet<HexCoord>,
+    (reserved, climbs): (&BTreeSet<HexCoord>, &BTreeSet<[HexCoord; 4]>),
+    doorsteps: &BTreeSet<HexCoord>,
+    skeleton: &BTreeMap<HexCoord, BTreeSet<HexCoord>>,
     start: HexCoord,
     end: HexCoord,
 ) -> Option<Vec<HexCoord>> {
-    let grid = config.grid();
-    let mut came_from: BTreeMap<HexCoord, HexCoord> = BTreeMap::new();
-    let mut queue = std::collections::VecDeque::from([start]);
-    let mut seen: BTreeSet<HexCoord> = BTreeSet::from([start]);
-    while let Some(cell) = queue.pop_front() {
-        if cell == end {
-            let mut path = vec![cell];
-            let mut here = cell;
-            while let Some(&previous) = came_from.get(&here) {
-                path.push(previous);
-                here = previous;
-            }
-            path.reverse();
-            return Some(path);
-        }
-        for face in HexFace::ALL {
-            let Some(next) = grid.neighbor(cell, face) else {
-                continue;
-            };
-            if room_cells.contains(&next) && next != end {
-                continue;
-            }
-            if seen.insert(next) {
-                came_from.insert(next, cell);
-                queue.push_back(next);
-            }
-        }
-    }
-    None
+    let claimed = |cell: HexCoord| skeleton.contains_key(&cell);
+    let ground = super::routing::Ground {
+        rooms: room_cells,
+        reserved,
+        climbs,
+        claimed: &claimed,
+        keep_clear: doorsteps,
+    };
+    super::routing::corridor_route(config, &ground, start, |cell| cell == end, Some(end))
 }
 
 /// Shortest path from a stray door's outside cell to the corridor network that
@@ -590,53 +624,42 @@ fn skeleton_path(
 fn skeleton_path_to_skeleton(
     config: HexWfcConfig,
     room_cells: &BTreeSet<HexCoord>,
+    (reserved, climbs): (&BTreeSet<HexCoord>, &BTreeSet<[HexCoord; 4]>),
+    doorsteps: &BTreeSet<HexCoord>,
     skeleton: &BTreeMap<HexCoord, BTreeSet<HexCoord>>,
     start: HexCoord,
 ) -> Option<Vec<HexCoord>> {
-    if skeleton.contains_key(&start) {
+    if skeleton.contains_key(&start) && !reserved.contains(&start) {
         return Some(vec![start]);
     }
-    let grid = config.grid();
-    let mut came_from: BTreeMap<HexCoord, HexCoord> = BTreeMap::new();
-    let mut queue = std::collections::VecDeque::from([start]);
-    let mut seen: BTreeSet<HexCoord> = BTreeSet::from([start]);
-    while let Some(cell) = queue.pop_front() {
-        if skeleton.contains_key(&cell) {
-            let mut path = vec![cell];
-            let mut here = cell;
-            while let Some(&previous) = came_from.get(&here) {
-                path.push(previous);
-                here = previous;
-            }
-            path.reverse();
-            return Some(path);
-        }
-        for face in HexFace::ALL {
-            let Some(next) = grid.neighbor(cell, face) else {
-                continue;
-            };
-            if room_cells.contains(&next) {
-                continue;
-            }
-            if seen.insert(next) {
-                came_from.insert(next, cell);
-                queue.push_back(next);
-            }
-        }
-    }
-    None
+    let claimed = |cell: HexCoord| skeleton.contains_key(&cell);
+    let ground = super::routing::Ground {
+        rooms: room_cells,
+        reserved,
+        climbs,
+        claimed: &claimed,
+        keep_clear: doorsteps,
+    };
+    super::routing::corridor_route(
+        config,
+        &ground,
+        start,
+        |cell| skeleton.contains_key(&cell) && !reserved.contains(&cell),
+        None,
+    )
 }
 
 fn coord_key(coord: HexCoord) -> u64 {
     u64::from(coord.q) | (u64::from(coord.r) << 16) | (u64::from(coord.level) << 32)
 }
 
-/// The forced spawn→exit constraint: a randomized monotone staircase where
-/// each step goes `East` (q+1), `SouthEast` (r+1), or `Up` (level+1). Lateral
-/// steps honor blueprint signatures (a route only crosses a room face that is
-/// a `Door` port, and only enters the exit room among stamped rooms); vertical
-/// steps avoid blueprint cells entirely, claiming `ShaftOpen` pairs instead of
-/// door bits. Returns `None` when the stamped blueprints block every sampled
+/// The forced spawn→exit constraint: a randomized monotone staircase where each
+/// step goes `East` (q+1), `SouthEast` (r+1), or up a storey by a whole climb
+/// composition heading one of those two ways. Lateral steps honor blueprint
+/// signatures (a route only crosses a room face that is a `Door` port, and only
+/// enters the exit room among stamped rooms); climbs avoid blueprint cells
+/// entirely, claiming their spans as door bits and their landing as a `RampOpen`
+/// pair. Returns `None` when the stamped blueprints block every sampled
 /// staircase — the caller restamps on the next attempt.
 #[allow(clippy::type_complexity)]
 pub(super) fn forced_route_edges(
@@ -692,32 +715,53 @@ pub(super) fn forced_route_edges(
                     candidates.push(face);
                 }
             }
-            if current.level < exit.level
-                && !blueprint_cells.contains(&current)
-                && let Some(next) = grid.neighbor(current, HexFace::Up)
-                && !blueprint_cells.contains(&next)
-            {
-                // Weight vertical steps so the forced route tends to climb a
-                // column in one run — this is what grows tall wellshafts.
-                candidates.push(HexFace::Up);
-                candidates.push(HexFace::Up);
-                candidates.push(HexFace::Up);
-            }
-            if candidates.is_empty() {
+            // A storey is climbed by a whole composition along East or SouthEast,
+            // so the climb advances the route too: three cells, the landing over
+            // the last, and out one beyond it, all short of the exit's column.
+            let climbs: Vec<(HexFace, [HexCoord; 5])> = if current.level < exit.level {
+                [HexFace::East, HexFace::SouthEast]
+                    .into_iter()
+                    .filter_map(|face| {
+                        let run = super::routing::climb_move(grid, current, face, true)?;
+                        let out = run[4];
+                        let short_of_exit = out.q <= exit.q && out.r <= exit.r;
+                        let clear = run[..4].iter().all(|cell| !blueprint_cells.contains(cell))
+                            && (!blueprint_cells.contains(&out) || out == exit);
+                        (short_of_exit && clear).then_some((face, run))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            // Weight climbs so the route tends to take them when it can.
+            let lateral = candidates.len();
+            let total = lateral + climbs.len() * 3;
+            if total == 0 {
                 break;
             }
-            let face = candidates[(rng.next_u64() % candidates.len() as u64) as usize];
-            let next = grid
-                .neighbor(current, face)
-                .expect("candidate faces stay inside the grid");
-            if face.is_lateral() {
+            let pick = (rng.next_u64() % total as u64) as usize;
+            if pick < lateral {
+                let face = candidates[pick];
+                let next = grid
+                    .neighbor(current, face)
+                    .expect("candidate faces stay inside the grid");
                 *doors.entry(current).or_default() |= lateral_bit(face);
                 *doors.entry(next).or_default() |= lateral_bit(face.opposite());
+                current = next;
             } else {
-                up.insert(current, PortClass::ShaftOpen);
-                down.insert(next, PortClass::ShaftOpen);
+                let (face, [foot, mid, high, landing, out]) = climbs[(pick - lateral) / 3];
+                let (on, back) = (lateral_bit(face), lateral_bit(face.opposite()));
+                *doors.entry(current).or_default() |= on;
+                for cell in [foot, mid] {
+                    *doors.entry(cell).or_default() |= back | on;
+                }
+                *doors.entry(high).or_default() |= back;
+                *doors.entry(landing).or_default() |= on;
+                *doors.entry(out).or_default() |= back;
+                up.insert(high, PortClass::RampOpen);
+                down.insert(landing, PortClass::RampOpen);
+                current = out;
             }
-            current = next;
         }
         if current == exit {
             return Some((doors, up, down));

@@ -54,7 +54,9 @@ use super::{HexArchetype, HexSpace, PortClass};
 /// profile digest, moves the folded hash, and makes the handshake refuse a
 /// mismatched peer instead. It is the only channel by which a solver change can
 /// reach that hash; nothing else will notice.
-pub const COMPOSITION_PROFILE_VERSION: u16 = 4;
+///
+/// 5 since the climb compositions joined the alphabet (`docs/climb_compositions_plan.md`).
+pub const COMPOSITION_PROFILE_VERSION: u16 = 5;
 
 /// The widest a score component's weight may be set. Unlike the lottery
 /// multipliers, `0.0` *is* legal here: scoring is post-hoc and disabling a
@@ -434,6 +436,7 @@ pub enum PinPortClass {
     Door,
     RampOpen,
     ShaftOpen,
+    Span,
 }
 
 impl From<PortClass> for PinPortClass {
@@ -443,6 +446,7 @@ impl From<PortClass> for PinPortClass {
             PortClass::Door => Self::Door,
             PortClass::RampOpen => Self::RampOpen,
             PortClass::ShaftOpen => Self::ShaftOpen,
+            PortClass::Span => Self::Span,
         }
     }
 }
@@ -454,6 +458,7 @@ impl From<PinPortClass> for PortClass {
             PinPortClass::Door => Self::Door,
             PinPortClass::RampOpen => Self::RampOpen,
             PinPortClass::ShaftOpen => Self::ShaftOpen,
+            PinPortClass::Span => Self::Span,
         }
     }
 }
@@ -565,7 +570,9 @@ impl ArchetypeBias {
             HexArchetype::Straight => self.straight,
             HexArchetype::Corner => self.corner,
             HexArchetype::Junction => self.junction,
-            HexArchetype::RampUp => self.ramp_up,
+            // A climb composition takes the ramp's weight until the ramps retire
+            // and the field is renamed (`docs/climb_compositions_plan.md`, phase 4).
+            HexArchetype::RampUp | HexArchetype::Climb { .. } => self.ramp_up,
             HexArchetype::RampHead => self.ramp_head,
             HexArchetype::Shaft => self.shaft,
             HexArchetype::Expanse => self.expanse,
@@ -581,7 +588,7 @@ impl ArchetypeBias {
             HexArchetype::Straight => self.straight = factor,
             HexArchetype::Corner => self.corner = factor,
             HexArchetype::Junction => self.junction = factor,
-            HexArchetype::RampUp => self.ramp_up = factor,
+            HexArchetype::RampUp | HexArchetype::Climb { .. } => self.ramp_up = factor,
             HexArchetype::RampHead => self.ramp_head = factor,
             HexArchetype::Shaft => self.shaft = factor,
             HexArchetype::Expanse => self.expanse = factor,

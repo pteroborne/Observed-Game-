@@ -435,6 +435,8 @@ fn owning_set(profile: &HexCompositionProfile, coord: HexCoord) -> Option<String
 
 #[cfg(test)]
 mod tests {
+    use observed_hex::HexFace;
+
     use super::super::profile::{HexPin, PinPortClass};
     use super::*;
 
@@ -561,7 +563,7 @@ mod tests {
     #[test]
     fn forbidding_every_archetype_is_unsatisfiable() {
         let variants = super::super::variants::catalogue();
-        let all = vec![
+        let mut all = vec![
             HexArchetype::Void,
             HexArchetype::Room,
             HexArchetype::Straight,
@@ -572,6 +574,12 @@ mod tests {
             HexArchetype::Shaft,
             HexArchetype::Expanse,
         ];
+        // A climb is one archetype per part and heading.
+        for heading in HexFace::LATERAL {
+            all.extend(
+                super::super::ClimbPart::ALL.map(|part| HexArchetype::Climb { part, heading }),
+            );
+        }
         let profile = profile_with(vec![pin(3, 3, PinIntent::Forbid(all))]);
         let (resolved, _) = resolved_pins(compact(), &profile);
         assert_eq!(
@@ -652,18 +660,20 @@ mod tests {
                 // the blueprint case it is reported, as
                 // `PinDiagnostic::CorridorCollision`.
                 //
-                // The exact mask is asserted rather than waved through: what the
-                // route promised is what has to be built, or this exception
-                // would excuse any outcome at all on a routed cell.
+                // The mask is asserted rather than waved through: what the route
+                // promised is what has to be built - give or take the one branch
+                // a routed corridor may grow - or this exception would excuse any
+                // outcome at all on a routed cell.
                 let skeleton =
                     super::super::constraints::corridor_skeleton(config, &world.blueprints, false)
                         .map(|(doors, _, _)| doors)
                         .unwrap_or_default();
                 if let Some(&mask) = skeleton.get(&coord) {
-                    assert_eq!(
-                        placed.doors, mask,
-                        "seed {seed:#x}: the router claimed ({q},{r}) and the \
-                         facility did not build the mask it decided"
+                    assert!(
+                        super::super::collapse::routed_mask_admits(mask, placed.doors),
+                        "seed {seed:#x}: the router claimed ({q},{r}) as {mask:06b} and the \
+                         facility built {:06b}",
+                        placed.doors
                     );
                     continue;
                 }
@@ -887,35 +897,33 @@ mod tests {
     #[test]
     fn pin_admits_matches_each_intent_shape() {
         let variants = super::super::variants::catalogue();
-        let shaft = variants
+        let climb = HexArchetype::Climb {
+            part: super::super::ClimbPart::High,
+            heading: HexFace::East,
+        };
+        let high = variants
             .iter()
-            .find(|variant| variant.archetype == HexArchetype::Shaft)
-            .expect("the catalogue has shafts");
+            .find(|variant| variant.archetype == climb)
+            .expect("the catalogue has climbs");
 
-        assert!(pin_admits(
-            &PinIntent::Archetype(HexArchetype::Shaft),
-            shaft
-        ));
+        assert!(pin_admits(&PinIntent::Archetype(climb), high));
         assert!(!pin_admits(
             &PinIntent::Archetype(HexArchetype::Junction),
-            shaft
+            high
         ));
-        assert!(pin_admits(&PinIntent::Space(shaft.space), shaft));
-        assert!(!pin_admits(
-            &PinIntent::Forbid(vec![HexArchetype::Shaft]),
-            shaft
-        ));
+        assert!(pin_admits(&PinIntent::Space(high.space), high));
+        assert!(!pin_admits(&PinIntent::Forbid(vec![climb]), high));
         assert!(pin_admits(
             &PinIntent::Forbid(vec![HexArchetype::Junction]),
-            shaft
+            high
         ));
         assert!(pin_admits(
             &PinIntent::Ports {
-                doors: shaft.doors,
-                up: shaft.up.into(),
-                down: shaft.down.into(),
+                doors: high.doors,
+                up: high.up.into(),
+                down: high.down.into(),
             },
-            shaft
+            high
         ));
     }
 }

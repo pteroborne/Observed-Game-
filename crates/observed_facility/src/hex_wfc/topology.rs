@@ -331,8 +331,9 @@ pub(super) fn pinned_cells(
         }
     }
 
-    // RampOpen is a two-cell traversal unit. Expand until stable so a cell
-    // reached as an attached threshold cannot leave the other half mutable.
+    // A ramp pair and a climb composition are each one traversal unit. Expand until
+    // stable so a cell reached as an attached threshold cannot leave the rest of its
+    // unit mutable.
     loop {
         let mut mates = Vec::new();
         for &coord in &pins {
@@ -346,6 +347,10 @@ pub(super) fn pinned_cells(
                 && !pins.contains(&mate)
             {
                 mates.push(mate);
+            }
+            if let Some(unit) = super::composition_cells(config.grid(), coord, placement.archetype)
+            {
+                mates.extend(unit.into_iter().filter(|cell| !pins.contains(cell)));
             }
         }
         if mates.is_empty() {

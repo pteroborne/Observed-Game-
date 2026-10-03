@@ -309,8 +309,8 @@ fn a_contradiction_retracts_out_of_the_physical_facility() {
 #[test]
 fn a_tile_ahead_of_the_body_is_held_by_its_sight() {
     let mut game = game(7);
-    // Explore until the body sees past its own cell: a body inside a spiral tower,
-    // between its pier and its guard wall, sees nothing else, and fairly.
+    // Explore until the body sees past its own cell: a body hemmed in by walls sees
+    // nothing else, and fairly.
     for tick in 0..6_000 {
         step(&mut game, Body::Explore, SeatCommand::None);
         let rules = game.rules();
@@ -889,9 +889,10 @@ fn production_ascent_tick_times() {
 /// mazes carved on other threads and all - or every client desyncs.
 #[test]
 fn two_peers_stepping_the_same_frames_stay_in_step() {
-    // Seed 13: seed 11's facility, since one district a floor, ran 12,000 ticks without a
-    // catch, which is the part of the match this is here to cover.
-    const SEED: u64 = 13;
+    // Seed 15: a seed whose match reaches a catch, which is the part of the match this is
+    // here to cover. 13's facility, since the climb compositions, ran 12,000 ticks without
+    // one; 15's catches by tick 900 and ends by 3,400.
+    const SEED: u64 = 15;
     let config = HexMatchConfig {
         teams: 2,
         members_per_team: 2,

@@ -8,6 +8,7 @@
 pub mod audience;
 pub mod back;
 pub mod borrowed;
+pub mod climb;
 pub mod courtyard;
 pub mod entities;
 pub mod geometry;
@@ -57,6 +58,7 @@ pub fn builders() -> Vec<Builder> {
     let mut all = halls::builders();
     all.extend(silos::builders());
     all.extend(ramp::builders());
+    all.extend(climb::builders());
     all.extend(rooms::builders());
     all.extend(program::builders());
     all.extend(witness::builders());

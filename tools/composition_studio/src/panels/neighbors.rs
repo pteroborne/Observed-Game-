@@ -177,5 +177,6 @@ fn short(archetype: HexArchetype) -> &'static str {
         HexArchetype::RampHead => "rmph",
         HexArchetype::Shaft => "shft",
         HexArchetype::Expanse => "expn",
+        HexArchetype::Climb { .. } => "clmb",
     }
 }

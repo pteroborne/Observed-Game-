@@ -38,7 +38,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use glam::Vec3;
 use observed_core::{PlayerId, TeamId};
 use observed_facility::hex_wfc::{
-    HexObservationFrame, HexRelayoutDelta, HexThresholdKey, HexWfcError, HexWfcWorld,
+    ClimbPart, HexArchetype, HexObservationFrame, HexRelayoutDelta, HexThresholdKey, HexWfcError,
+    HexWfcWorld,
 };
 use observed_facility::map_spec::RoomRole;
 use observed_hex::{HexCoord, hex_origin};
@@ -1083,7 +1084,7 @@ impl TacticsGame {
         for (&cell, placement) in &self.world.placements {
             mix(cell_key(cell));
             mix(u64::from(placement.doors));
-            mix(placement.archetype as u64);
+            mix(archetype_code(placement.archetype));
         }
         for anchor in self.anchors.deployed.values() {
             mix(cell_key(anchor.cell));
@@ -1130,5 +1131,25 @@ fn cell_anchor_key(cell: HexCoord) -> HexThresholdKey {
     HexThresholdKey {
         room_generation_key: cell_key(cell),
         port: CELL_ANCHOR_PORT,
+    }
+}
+
+/// A stable code for an archetype, for the digest: each one's old discriminant, so
+/// digests of facilities without climbs are what they were, and climbs after them.
+fn archetype_code(archetype: HexArchetype) -> u64 {
+    match archetype {
+        HexArchetype::Void => 0,
+        HexArchetype::Room => 1,
+        HexArchetype::Straight => 2,
+        HexArchetype::Corner => 3,
+        HexArchetype::Junction => 4,
+        HexArchetype::RampUp => 5,
+        HexArchetype::RampHead => 6,
+        HexArchetype::Shaft => 7,
+        HexArchetype::Expanse => 8,
+        HexArchetype::Climb { part, heading } => {
+            let part = ClimbPart::ALL.iter().position(|&p| p == part).unwrap_or(0) as u64;
+            9 + part * 6 + heading.index() as u64
+        }
     }
 }

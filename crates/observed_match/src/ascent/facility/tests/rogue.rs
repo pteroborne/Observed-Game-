@@ -1,5 +1,5 @@
 //! The bot Rogue every Ascent match seats: it plays on the real facility, and only against
-//! an Observer a Guardian has detected.
+//! an Observer it has detected, by a Guardian's sight or by a sensor.
 
 use super::*;
 
@@ -58,7 +58,7 @@ fn the_bot_rogue_plays_only_against_a_detected_observer() {
         let detected_before: Vec<(crate::ascent::sim::ObserverId, HexCoord)> = {
             let rules = game.rules();
             rules
-                .detected_observers()
+                .rogue_detected()
                 .iter()
                 .map(|id| (*id, rules.observers[id].cell))
                 .collect()
@@ -100,7 +100,7 @@ fn the_bot_rogue_plays_only_against_a_detected_observer() {
                 panic!("tick {tick}: the Rogue plays tiles, not {command:?}");
             };
             let near_prey = rules
-                .detected_observers()
+                .rogue_detected()
                 .iter()
                 .map(|id| rules.observers[id].cell)
                 .chain(detected_before.iter().map(|&(_, cell)| cell))

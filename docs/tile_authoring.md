@@ -274,7 +274,7 @@ center, level-0 floor at z = 0, one level = 128 units (8 m).
 
   Add `128 * level` to z for upper levels; `up`/`down` ports sit at
   `0 0 (level+1)*128` / `0 0 level*128`. Port classes: `door`, `ramp_open`,
-  `shaft_open` (undeclared faces are sealed).
+  `shaft_open`, `span` (undeclared faces are sealed).
 - **Seam conventions** (match these or adjacent tiles misalign visually):
   wall thickness 8 (0.5 m), door aperture 72 wide (4.5 m) centered on the
   face, sill at 8, lintel at 72; floor slab 0..8.
@@ -297,7 +297,8 @@ center, level-0 floor at z = 0, one level = 128 units (8 m).
    verifies the content hash and will reject a hand-edited catalog.
 2. **A new archetype string does not reach the game.** The in-game WFC solver
    demands a closed set of archetypes (`hall_straight`, `hall_corner`,
-   `hall_junction`, `hall_cap`, `hall_ramp`, `stair_tower`, plus room-role
+   `hall_junction`, `hall_cap`, `climb_foot`, `climb_mid`, `climb_high`,
+   `climb_landing`, plus room-role
    blueprints — see `crates/observed_facility/src/hex_wfc/variants.rs`).
    A novel archetype (`sanctuary`, `rotunda`, ...) loads in hex_tile_lab but
    is never placed in-game until the solver's demand table knows about it.
@@ -327,44 +328,34 @@ center, level-0 floor at z = 0, one level = 128 units (8 m).
 7. `cargo check -p observed_facility` silently skips the solver — full WFC is
    behind the off-by-default `wfc` cargo feature.
 
-## Ramps: the switchback family (`forge::ramp`)
+## Climbs: four-cell compositions (`forge::climb`)
 
-Every ramp is one skeleton: a storey folded into two 4 m flights at 0.44, a
-turning landing, a top landing and a balcony out to the upper door. The plan and
-the spine are shared, so every ramp climbs the same way; each district on the
-climb dresses it differently - stacks in the Library, slabs over open floor in
-Lumen, screens in Zen, piers in the Monument, a catwalk on struts in the Reactor,
-no rails in the Sky - and the plain one serves the Backrooms and the registers
-off the climb. One ramp per register, tested. The straight wedges it replaced
-are retired in `.tileignore`, and the generated library's wedge is dropped from
-the runtime compatibility cells, where it shared the authored ramp's keys.
+Every storey is climbed by a composition of four cells, played by one Stair card.
+Three cells of flight run on storey L along one heading, and a landing sits on L+1
+above the last. The single-cell switchback ramp (`forge::ramp`) and the spiral stair
+tower (`forge::tower`) are retired from the catalogue. Their sources remain, but no
+solver variant demands them. See [climb_compositions_plan.md](climb_compositions_plan.md)
+for the design and the router that lays them.
 
-`every_production_ramp_climbs_and_descends_by_its_spine` (observed_match) walks
-every ramp in three production facilities up and down its own spine on the
-production controller. Change a ramp and run it.
+| Tile | Floor | Ports |
+|---|---|---|
+| `climb_foot` | entry pad, then a flight to 2.6 m | door behind, `span` ahead |
+| `climb_mid` | flight to 5.0 m | `span` both ways |
+| `climb_high` | flight to 8.0 m, no ceiling | `span` behind, `ramp_open` up |
+| `climb_landing` | lip over the flight, pad to the door | `ramp_open` down, door ahead |
 
-![The seven ramps in section](evidence/ramp_switchback_sections.jpg)
+- **`span`** is the lateral port inside a composition. It meets only another span.
+  Each ends at its partner's floor height mid-flight, not at the door sill.
+- **`floor="flight"`** (`FloorPolicy::Flight`) is how these cells declare a sloped
+  floor. Validation holds every flight to `FLIGHT_MAX_SLOPE` (0.3, about 17°). The
+  floors run wall to wall: the flight is the whole cell's width.
+- **Never turned by the solver's choice:** projection pins each climb cell's turn to
+  its heading (`geometry::required_turn`). The Mid's ports are symmetric under a half
+  turn, so a signature alone would let it face backwards.
 
-## Stair towers: the spiral (`forge::tower`)
-
-Each cell of a shaft column is one storey of one continuous spiral stair: a full
-turn of flight round a hexagonal pier, six sectors of two planar facets each, a
-guard wall rising with the flight on its outside and open only at its foot, and
-a gallery ring between that wall and the tower's own walls that every door opens
-onto. Every storey ends exactly where the next begins, so a column is one
-staircase; that is also why a tower is never turned (`no_tower_is_ever_turned_and_here_is_why`
-counts the turns that would break the column). A shaft head has no flight: its
-floor is solid but over the last third of the band, where the flight below comes
-up through it, railed round. The family is 171 sources - every door pattern of up
-to four doors, in three connectivities - and a four-door through tower is the
-cell hull budget, 45.
-
-`every_production_tower_climbs_and_descends_by_its_spine` (observed_match) walks
-every tower in three production facilities. A bot descending into a shaft walks
-the floor's own gallery path to the head of the flight first (`leg::descent`): the
-head is out past the pier, so a straight line from a door does not reach it.
-
-![A spiral column in section, the foot from the gallery, and the climb](evidence/stair_tower_spiral.jpg)
+`every_production_climb_composition_climbs_and_descends_end_to_end` (observed_match)
+walks every composition in three production facilities up and down on the production
+controller. Change a climb tile and run it.
 
 ## Showcase reference: the silo wellshaft (multi-tile composition)
 

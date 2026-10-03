@@ -113,7 +113,10 @@ pub(super) fn context_multiplier(
     match archetype {
         // Verticals (ramps, shafts) cluster toward the central axis and thin
         // out toward the edges, so the facility grows a legible vertical core.
-        HexArchetype::RampUp | HexArchetype::RampHead | HexArchetype::Shaft => lerp(
+        HexArchetype::RampUp
+        | HexArchetype::RampHead
+        | HexArchetype::Shaft
+        | HexArchetype::Climb { .. } => lerp(
             tendencies.vertical_center_boost,
             tendencies.vertical_edge_falloff,
             radial_fraction(coord, config),
@@ -170,7 +173,9 @@ fn slot(archetype: HexArchetype) -> Option<usize> {
         HexArchetype::Straight => 1,
         HexArchetype::Corner => 2,
         HexArchetype::Junction => 3,
-        HexArchetype::RampUp => 4,
+        // A climb composition shares the ramp's slot until the ramps retire
+        // (`docs/climb_compositions_plan.md`, phase 4).
+        HexArchetype::RampUp | HexArchetype::Climb { .. } => 4,
         HexArchetype::RampHead => 5,
         HexArchetype::Shaft => 6,
         HexArchetype::Expanse => 7,
@@ -276,7 +281,7 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Straight => 1.5,
             A::Corner => 0.9,
             A::Junction => 2.4,
-            A::RampUp | A::RampHead => 0.6,
+            A::RampUp | A::RampHead | A::Climb { .. } => 0.6,
             A::Shaft => 0.3,
             A::Room => 1.2,
             // The district the archetype exists for.
@@ -288,7 +293,7 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Straight => 1.8,
             A::Corner => 2.4,
             A::Junction => 0.45,
-            A::RampUp | A::RampHead => 0.8,
+            A::RampUp | A::RampHead | A::Climb { .. } => 0.8,
             A::Shaft => 0.4,
             A::Room => 1.0,
             // A winding district is the opposite of an open one, but a whole floor
@@ -304,7 +309,7 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Straight => 0.7,
             A::Corner => 0.8,
             A::Junction => 0.8,
-            A::RampUp | A::RampHead => 1.6,
+            A::RampUp | A::RampHead | A::Climb { .. } => 1.6,
             A::Shaft => 1.0,
             A::Room => 0.9,
             A::Expanse => 0.5,
@@ -314,7 +319,7 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Straight => 0.8,
             A::Corner => 0.8,
             A::Junction => 1.1,
-            A::RampUp | A::RampHead => 2.6,
+            A::RampUp | A::RampHead | A::Climb { .. } => 2.6,
             A::Shaft => 0.8,
             A::Room => 1.0,
             // A megastructure earns its scale from open floor as well as ramps.

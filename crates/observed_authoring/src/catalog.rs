@@ -605,14 +605,9 @@ pub(crate) fn face_from_compiled_name(name: &str) -> Option<HexFace> {
 }
 
 pub(crate) fn class_from_compiled_name(name: &str) -> Option<PortClass> {
-    [
-        PortClass::Sealed,
-        PortClass::Door,
-        PortClass::RampOpen,
-        PortClass::ShaftOpen,
-    ]
-    .into_iter()
-    .find(|&class| class_name(class) == name)
+    PortClass::ALL
+        .into_iter()
+        .find(|&class| class_name(class) == name)
 }
 
 fn validate_compiled_contract(
@@ -800,6 +795,7 @@ fn class_name(class: PortClass) -> &'static str {
         PortClass::Door => "door",
         PortClass::RampOpen => "ramp_open",
         PortClass::ShaftOpen => "shaft_open",
+        PortClass::Span => "span",
     }
 }
 
@@ -1237,7 +1233,8 @@ mod tests {
         let built = build_catalog(&root).expect("curated catalog builds");
         let ignored = ignored_paths(&root).expect("retirement list reads");
         assert_eq!(ignored.len(), 103);
-        assert_eq!(built.catalog.modules.len(), 331);
+        // 335 since the climb composition's four cells (`forge::climb`).
+        assert_eq!(built.catalog.modules.len(), 335);
         let registers = crate::tile_source::REGISTERS;
         for path in ignored {
             let text = std::fs::read_to_string(root.join(&path)).expect("retired source exists");

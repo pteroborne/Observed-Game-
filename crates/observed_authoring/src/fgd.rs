@@ -148,6 +148,7 @@ fn class_label(class: PortClass) -> &'static str {
         PortClass::Door => "Walkable threshold",
         PortClass::RampOpen => "Ramp continuation",
         PortClass::ShaftOpen => "Vertical shaft opening",
+        PortClass::Span => "Climb continuation",
     }
 }
 
@@ -156,6 +157,7 @@ fn floor_label(policy: FloorPolicy) -> &'static str {
         FloorPolicy::Solid => "Continuous walkable floor required",
         FloorPolicy::Ramp => "Continuous one-level ramp required",
         FloorPolicy::Open => "Declared shaft/opening; floor is intentionally absent",
+        FloorPolicy::Flight => "A stretch of a climb composition's flight",
     }
 }
 
@@ -209,16 +211,11 @@ fn face_choices() -> Vec<(String, &'static str)> {
 /// list, so if `Sealed` ever became parseable this would offer it without
 /// anyone remembering to come back here.
 fn class_choices() -> Vec<(String, &'static str)> {
-    [
-        PortClass::Sealed,
-        PortClass::Door,
-        PortClass::RampOpen,
-        PortClass::ShaftOpen,
-    ]
-    .into_iter()
-    .filter(|class| crate::tile::class_from_name(class_name(*class)).is_ok())
-    .map(|class| (class_name(class).to_string(), class_label(class)))
-    .collect()
+    PortClass::ALL
+        .into_iter()
+        .filter(|class| crate::tile::class_from_name(class_name(*class)).is_ok())
+        .map(|class| (class_name(class).to_string(), class_label(class)))
+        .collect()
 }
 
 fn entities() -> Vec<Entity> {
@@ -322,10 +319,15 @@ fn entities() -> Vec<Entity> {
                     "floor",
                     "Floor contract",
                     floor_name(FloorPolicy::Solid),
-                    [FloorPolicy::Solid, FloorPolicy::Ramp, FloorPolicy::Open]
-                        .into_iter()
-                        .map(|policy| (floor_name(policy).to_string(), floor_label(policy)))
-                        .collect(),
+                    [
+                        FloorPolicy::Solid,
+                        FloorPolicy::Ramp,
+                        FloorPolicy::Open,
+                        FloorPolicy::Flight,
+                    ]
+                    .into_iter()
+                    .map(|policy| (floor_name(policy).to_string(), floor_label(policy)))
+                    .collect(),
                 ),
             ],
         },
@@ -523,12 +525,7 @@ mod tests {
         }
 
         let classes = choices_for("tile_port", "class");
-        for class in [
-            PortClass::Sealed,
-            PortClass::Door,
-            PortClass::RampOpen,
-            PortClass::ShaftOpen,
-        ] {
+        for class in PortClass::ALL {
             let name = class_name(class).to_string();
             assert_eq!(
                 crate::tile::class_from_name(&name).is_ok(),

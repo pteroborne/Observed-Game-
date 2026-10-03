@@ -20,17 +20,16 @@ use super::{HexArchetype, HexPlacement, HexRoomQuotas, HexSpace, HexWfcConfig, H
 
 type CollapseOutput = (BTreeMap<HexCoord, HexPlacement>, Vec<StampedBlueprint>, u32);
 
-/// Fixed-width bitset over catalogue variant indices. The catalogue holds 509
-/// variants since the shaft family gained its branching landing — every three-
-/// and four-door mask against three vertical connectivities, 105 entries, which
-/// took it past the 448 slots seven words gave. Eight give 512 against 509 in
-/// use. `solver_tables` asserts the fit.
+/// Fixed-width bitset over catalogue variant indices. The catalogue holds 352
+/// variants since the climb compositions replaced the ramp pairs and the 169-entry
+/// stair-tower family (`docs/climb_compositions_plan.md`). Six words give 384.
+/// `solver_tables` asserts the fit.
 ///
-/// It was seven since Phase 108 added `Expanse`, and six before that — 384 slots
-/// against 382 in use. The margin has always been a handful, deliberately: the
-/// assertion is the notice, and a word of slack is a word copied on every
-/// propagation step.
-const MASK_WORDS: usize = 8;
+/// It was eight at 509 variants, when the shaft family gained its branching
+/// landing, seven since Phase 108 added `Expanse`, and six before that. The margin
+/// has always been a handful, deliberately: the assertion is the notice, and a
+/// word of slack is a word copied on every propagation step.
+const MASK_WORDS: usize = 6;
 /// A cadence event refreshes the architecture register across its full
 /// target-32 pocket, but only this connected structural core is allowed to
 /// change topology. This keeps collision churn bounded independently of
@@ -113,6 +112,24 @@ impl SolverTables {
     pub(super) fn compat(&self, variant: usize, face: HexFace) -> &VariantSet {
         &self.compat[variant * 8 + face.index()]
     }
+}
+
+/// Whether a cell the corridor router fixed to `mask` may be built with `doors`.
+///
+/// Exactly the routed mask, or that mask and one door more up to three: a straight
+/// may become a branch, never a crossroads. Since the climb compositions replaced the
+/// stair towers, a corridor network grown off a room's spare door had no cheap way off
+/// its storey, and exact masks gave it no way into the routed corridors beside it
+/// either, so it was an orphan: 12 of 17 failed production attempts. Exact-or-wider
+/// took the solve to two attempts but gave back nearly all the routing bought
+/// (four-way cells 44.4% of halls, against 36.0% exact and 45.6% unrouted); one
+/// branch kept 37.0% and let the pockets reach the network.
+#[must_use]
+pub(super) fn routed_mask_admits(mask: u8, doors: u8) -> bool {
+    doors == mask
+        || (doors & mask == mask
+            && mask.count_ones() <= 2
+            && doors.count_ones() == mask.count_ones() + 1)
 }
 
 pub(super) fn solver_tables() -> &'static SolverTables {
@@ -1084,8 +1101,9 @@ pub(super) fn initial_domain_for(
             // difference is the whole reason a routed corridor can be narrow.
             // Forcing a route with the floor alone guarantees the cell opens
             // toward its neighbours and leaves it free to open four more ways,
-            // which is precisely the shape the routing exists to avoid.
-            if exact_doors.is_some_and(|mask| variant.doors != mask) {
+            // which is precisely the shape the routing exists to avoid - so the
+            // ceiling holds, give or take one branch (`routed_mask_admits`).
+            if exact_doors.is_some_and(|mask| !routed_mask_admits(mask, variant.doors)) {
                 return false;
             }
             if required_up != PortClass::Sealed && variant.up != required_up {

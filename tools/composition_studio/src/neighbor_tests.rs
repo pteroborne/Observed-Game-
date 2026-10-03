@@ -55,6 +55,12 @@ fn the_previewed_wireframe_is_the_same_geometry_the_solid_pass_draws() {
 
     let mut compared = 0;
     for domain in &hood.faces {
+        // A stamped room's pieces are filed under its anchor cell, so the snapshot's
+        // pieces for an anchor are the whole room's, and a room cell's are none. The
+        // per-cell preview has nothing to compare there.
+        if solved.world.room_id_at(domain.coord).is_some() {
+            continue;
+        }
         // The *actual* placement, so the snapshot has something to compare to.
         let projected: Vec<Vec<Vec3>> = snapshot
             .pieces
@@ -76,12 +82,8 @@ fn the_previewed_wireframe_is_the_same_geometry_the_solid_pass_draws() {
                 );
                 compared += 1;
             }
-            // A cell whose geometry a stamped room supplies is projected once
-            // from its anchor, not per cell, so the per-cell path has nothing
-            // to say about it. Not a disagreement.
             Err(_) => assert!(
-                solved.world.room_id_at(domain.coord).is_some()
-                    || solved.world.placements[&domain.coord].archetype == HexArchetype::Void,
+                solved.world.placements[&domain.coord].archetype == HexArchetype::Void,
                 "a per-cell placement failed to project for the preview"
             ),
         }
