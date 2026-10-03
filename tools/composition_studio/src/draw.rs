@@ -42,7 +42,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use observed_facility::hex_wfc::{ClimbPart, HexArchetype, HexPlacement, HexSpace, HexWfcWorld};
-use observed_hex::{CORNERS, HexCoord, HexFace, PortClass, hex_origin};
+use observed_hex::{CORNERS, HexCoord, HexFace, hex_origin};
 use observed_style::{HexSketch, HexSketchRole, SchematicRole, Treatment, hex_sketch, schematic};
 
 use crate::{Layer, StudioState};
@@ -244,9 +244,6 @@ pub fn sketch_role(archetype: HexArchetype, space: HexSpace, in_blueprint: bool)
         HexArchetype::Void => HexSketchRole::Void,
         HexArchetype::Straight | HexArchetype::Corner => HexSketchRole::Corridor,
         HexArchetype::Junction => HexSketchRole::Junction,
-        HexArchetype::RampUp => HexSketchRole::Ramp,
-        HexArchetype::RampHead => HexSketchRole::RampHead,
-        HexArchetype::Shaft => HexSketchRole::Shaft,
         // A climb composition draws as the ramp it replaces until it has a glyph of
         // A climb composition steps up the way it climbs.
         HexArchetype::Climb { part, .. } => match part {
@@ -500,8 +497,13 @@ pub fn rebuild_visuals(
             target.segment(origin + a, origin + b);
         }
 
-        let climbs = matches!(placement.archetype, HexArchetype::RampUp)
-            || (placement.archetype == HexArchetype::Shaft && placement.up != PortClass::Sealed);
+        let climbs = matches!(
+            placement.archetype,
+            HexArchetype::Climb {
+                part: ClimbPart::Foot | ClimbPart::Mid | ClimbPart::High,
+                ..
+            }
+        );
         if climbs {
             for (a, b) in vertical_glyph(height) {
                 target.segment(origin + a, origin + b);

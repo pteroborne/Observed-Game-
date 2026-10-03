@@ -220,18 +220,15 @@ pub fn demandable_signatures() -> Vec<PortSignature> {
 
 /// Manifest archetype for a non-room placement, or `None` when the cell emits
 /// no prefab. Rooms are projected once per stamped blueprint through
-/// [`blueprint_cell_archetype`]; `RampHead` is the empty upper half of the
-/// two-level prefab emitted by its `RampUp` below.
+/// [`blueprint_cell_archetype`].
 #[must_use]
 pub fn placement_tile_archetype(placement: &HexPlacement) -> Option<&'static str> {
     match placement.archetype {
-        HexArchetype::Void | HexArchetype::Room | HexArchetype::RampHead => None,
+        HexArchetype::Void | HexArchetype::Room => None,
         HexArchetype::Straight => Some("hall_straight"),
         HexArchetype::Corner => Some(corner_tile_archetype(placement.doors)),
         HexArchetype::Junction if placement.doors.count_ones() == 3 => Some("hall_junction_3way"),
         HexArchetype::Junction => Some("hall_junction_4way"),
-        HexArchetype::RampUp => Some("hall_ramp"),
-        HexArchetype::Shaft => Some("stair_tower"),
         HexArchetype::Expanse => Some("expanse"),
         HexArchetype::Climb { part, .. } => Some(match part {
             ClimbPart::Foot => "climb_foot",
@@ -301,7 +298,7 @@ fn corner_tile_archetype(doors: u8) -> &'static str {
 ///
 /// This is intentionally narrower than [`demandable_signatures`], which is the
 /// WFC propagation alphabet and includes generic Room variants that can never
-/// leave a blueprint domain plus the geometry-free `RampHead`. The manifest
+/// leave a blueprint domain. The manifest
 /// coverage gate and projector both consume this function so the contract
 /// cannot drift back to a hand-written subset.
 #[must_use]
@@ -446,27 +443,6 @@ mod geometry_tests {
             );
         }
         assert!(!demands.iter().any(|demand| demand.archetype == "void"));
-        assert!(!demands.iter().any(|demand| demand.archetype == "ramp_head"));
         assert!(!demands.iter().any(|demand| demand.archetype == "room"));
-    }
-
-    #[test]
-    fn ramp_head_is_geometry_free_but_ramp_up_selects_the_prefab() {
-        let placement = |archetype| HexPlacement {
-            coord: observed_hex::HexCoord::default(),
-            space: HexSpace::Hall,
-            archetype,
-            doors: lateral_bit(HexFace::East),
-            up: PortClass::Sealed,
-            down: PortClass::RampOpen,
-        };
-        assert_eq!(
-            placement_tile_archetype(&placement(HexArchetype::RampHead)),
-            None
-        );
-        assert_eq!(
-            placement_tile_archetype(&placement(HexArchetype::RampUp)),
-            Some("hall_ramp")
-        );
     }
 }

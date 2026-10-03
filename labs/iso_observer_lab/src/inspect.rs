@@ -92,9 +92,6 @@ fn archetype_name(archetype: HexArchetype) -> &'static str {
         HexArchetype::Corner => "corner",
         HexArchetype::Junction => "junction",
         HexArchetype::Room => "room",
-        HexArchetype::RampUp => "ramp up",
-        HexArchetype::RampHead => "ramp head",
-        HexArchetype::Shaft => "shaft",
         HexArchetype::Expanse => "expanse",
         HexArchetype::Climb { .. } => "climb",
     }
@@ -251,15 +248,15 @@ mod tests {
     }
 
     #[test]
-    fn a_shaft_reads_as_structural_and_a_corridor_does_not() {
+    fn a_climb_reads_as_structural_and_a_corridor_does_not() {
         let mut state = LabState::new(0);
-        let shaft = state
+        let climb = state
             .world
             .placements
             .iter()
-            .find(|(_, placement)| placement.archetype == HexArchetype::Shaft)
+            .find(|(_, placement)| matches!(placement.archetype, HexArchetype::Climb { .. }))
             .map(|(coord, _)| *coord);
-        if let Some(coord) = shaft {
+        if let Some(coord) = climb {
             state.selected = Some(coord);
             assert!(diagnostics(&state).contains("will not rewire"));
         }

@@ -10,8 +10,10 @@
 use std::collections::BTreeSet;
 
 use observed_facility::hex_wfc::profile::{HexPin, PinIntent, PinSet};
-use observed_facility::hex_wfc::{HexArchetype, HexCompositionProfile, HexSpace, HexWfcConfig};
-use observed_hex::HexCoord;
+use observed_facility::hex_wfc::{
+    ClimbPart, HexArchetype, HexCompositionProfile, HexSpace, HexWfcConfig,
+};
+use observed_hex::{HexCoord, HexFace};
 
 /// The pin set the studio paints into. One named set keeps the artifact
 /// readable; multiple sets are an authoring convention, not a tool feature.
@@ -28,23 +30,19 @@ pub enum Brush {
     Junction,
     Straight,
     Corner,
-    Shaft,
-    RampUp,
     Expanse,
-    /// "Never a vertical here" — the checked form of a prohibition, which a
-    /// weight can never express.
+    /// "Never a climb here" — the checked form of a prohibition, which a weight
+    /// can never express.
     ForbidVertical,
     /// "Keep this connective" — hall space, whatever shape.
     Hall,
 }
 
 impl Brush {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 6] = [
         Self::Junction,
         Self::Straight,
         Self::Corner,
-        Self::Shaft,
-        Self::RampUp,
         Self::Expanse,
         Self::ForbidVertical,
         Self::Hall,
@@ -56,10 +54,8 @@ impl Brush {
             Self::Junction => "junction",
             Self::Straight => "straight",
             Self::Corner => "corner",
-            Self::Shaft => "shaft",
-            Self::RampUp => "ramp up",
             Self::Expanse => "expanse",
-            Self::ForbidVertical => "forbid vertical",
+            Self::ForbidVertical => "forbid climb",
             Self::Hall => "hall (any shape)",
         }
     }
@@ -70,14 +66,17 @@ impl Brush {
             Self::Junction => PinIntent::Archetype(HexArchetype::Junction),
             Self::Straight => PinIntent::Archetype(HexArchetype::Straight),
             Self::Corner => PinIntent::Archetype(HexArchetype::Corner),
-            Self::Shaft => PinIntent::Archetype(HexArchetype::Shaft),
-            Self::RampUp => PinIntent::Archetype(HexArchetype::RampUp),
             Self::Expanse => PinIntent::Archetype(HexArchetype::Expanse),
-            Self::ForbidVertical => PinIntent::Forbid(vec![
-                HexArchetype::Shaft,
-                HexArchetype::RampUp,
-                HexArchetype::RampHead,
-            ]),
+            // Every cell of a climb, in every heading: a lone climb cell cannot be
+            // placed, so forbidding the composition means forbidding all of them.
+            Self::ForbidVertical => PinIntent::Forbid(
+                HexFace::LATERAL
+                    .into_iter()
+                    .flat_map(|heading| {
+                        ClimbPart::ALL.map(|part| HexArchetype::Climb { part, heading })
+                    })
+                    .collect(),
+            ),
             Self::Hall => PinIntent::Space(HexSpace::Hall),
         }
     }
@@ -239,10 +238,10 @@ mod tests {
     #[test]
     fn painting_creates_the_studio_set_and_pins_the_cell() {
         let mut profile = HexCompositionProfile::baseline();
-        assert!(paint(&mut profile, config(), coord(3, 3), Brush::Shaft));
+        assert!(paint(&mut profile, config(), coord(3, 3), Brush::Corner));
         assert_eq!(
             intent_at(&profile, coord(3, 3)),
-            Some(&PinIntent::Archetype(HexArchetype::Shaft))
+            Some(&PinIntent::Archetype(HexArchetype::Corner))
         );
         assert_eq!(profile.validate(), Ok(()));
     }
@@ -252,8 +251,8 @@ mod tests {
     #[test]
     fn repainting_the_same_intent_reports_no_change() {
         let mut profile = HexCompositionProfile::baseline();
-        assert!(paint(&mut profile, config(), coord(3, 3), Brush::Shaft));
-        assert!(!paint(&mut profile, config(), coord(3, 3), Brush::Shaft));
+        assert!(paint(&mut profile, config(), coord(3, 3), Brush::Corner));
+        assert!(!paint(&mut profile, config(), coord(3, 3), Brush::Corner));
         assert!(paint(&mut profile, config(), coord(3, 3), Brush::Junction));
     }
 
@@ -263,7 +262,7 @@ mod tests {
     #[test]
     fn unpinning_the_last_pin_restores_the_baseline_profile() {
         let mut profile = HexCompositionProfile::baseline();
-        paint(&mut profile, config(), coord(3, 3), Brush::Shaft);
+        paint(&mut profile, config(), coord(3, 3), Brush::Corner);
         assert!(!profile.is_baseline());
         assert!(unpin(&mut profile, coord(3, 3)));
         assert!(

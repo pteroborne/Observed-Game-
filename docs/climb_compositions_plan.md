@@ -77,11 +77,22 @@ Each phase leaves the tree green and the game playable.
    apart. Projection pins each climb cell's turn (`geometry::required_turn`), because the
    Mid's signature is symmetric under a half turn. The bot soak climbs 404 storeys by
    composition, and the headless gate is re-pinned.
-4. **Retire.** Mostly done. The ramp and shaft families are out of the catalogue
-   (352 variants). The Stair card plays `authored_climb` and places four cells. Its
-   legality covers all of them, and no climb cell is ever retracted. Still left as
-   dead code: the `RampUp`, `RampHead` and `Shaft` enum variants, the tower and ramp
-   forge sources, and the column-assembly machinery.
+4. **Retire.** Done. The ramp and shaft families are out of the solver (352
+   variants). The Stair card plays `authored_climb` and places four cells. Its
+   legality covers all of them, and no climb cell is ever retracted. The `RampUp`,
+   `RampHead` and `Shaft` archetypes are gone. So are the ramp, tower and perimeter
+   forge families, the kits' wedge ascents and the generated library's ramps, along
+   with their 185 sources. The catalogue went from 359 modules to 181, and the
+   profile's archetype bias names `climb` (profile version 6). Two pieces stay on
+   purpose:
+   - The `shaft_open` port class: the Backrooms sanctuary modules still declare it,
+     and removing it would reshuffle every packed signature.
+   - The `vertical_column` assembly scope: it is part of the authoring format, in the
+     TrenchBroom entity definitions and in certification, though nothing uses it now.
+
+   The district benchmark scenes in `docs/compositions/` lost their one-cell ramps.
+   Each tier is still checked for internal connectivity, but the tiers are no longer
+   joined; a benchmark that climbs again will climb by a composition.
 5. **Districts.** Done. Every register has its own climb: seven dressings
    (`forge::climb`), 28 cells in all. The flight, its spans and its spine are the
    same in every district. The hexagon's flat east and west faces leave a straight

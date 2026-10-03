@@ -1,12 +1,10 @@
 //! The Same Door Twice: repeated coved rooms and floating ceiling rafts.
 //! Four ordinary Overlit Grid candidates form two loops and an enclosed ascent.
 
-use super::entities::{
-    Meta, lateral_port, stair_node, tile_cell, tile_light, vertical_port, wall_fixture, worldspawn,
-};
+use super::entities::{Meta, lateral_port, tile_cell, wall_fixture, worldspawn};
 use super::geometry::{
-    FLOOR_TOP, LEVEL, P2, band, boxed, centroid, corners, custom_plane, door_wall, edge,
-    flat_plane, hex_slab, offset_inward, prism, side_plane, sloped_prism, wall,
+    FLOOR_TOP, LEVEL, band, corners, custom_plane, door_wall, edge, flat_plane, hex_slab,
+    offset_inward, prism, wall,
 };
 use super::{Builder, GENERATED_NOTE};
 
@@ -76,99 +74,6 @@ fn room(name: &str, archetype: &str, doors: &[usize]) -> String {
     out
 }
 
-/// A thin sloping ceiling, kept distinct from the solid ramp beneath it.
-fn shell(plan: &[P2], height: impl Fn(P2) -> f64) -> String {
-    let hint = centroid(plan);
-    let mut out = String::from("{\n");
-    for i in 0..plan.len() {
-        out.push_str(&side_plane(plan[i], plan[(i + 1) % plan.len()], 0.0, hint));
-    }
-    let p = [plan[0], plan[1], plan[2]].map(|p| (p.0, p.1, height(p)));
-    out.push_str(&custom_plane(p[0], p[1], p[2], true));
-    let p = p.map(|p| (p.0, p.1, p.2 - 8.0));
-    out.push_str(&custom_plane(p[0], p[1], p[2], false));
-    out.push_str("}\n");
-    out
-}
-
-pub fn ascent() -> String {
-    let height = |x: f64| FLOOR_TOP + (x + 112.0) * LEVEL / 224.0;
-    let mut brushes = hex_slab(0.0, FLOOR_TOP, 0.0, 0.0);
-    brushes.push_str(&sloped_prism(
-        &[
-            (-112.0, -36.0),
-            (112.0, -36.0),
-            (112.0, 36.0),
-            (-112.0, 36.0),
-        ],
-        0.0,
-        [
-            (-112.0, -36.0, height(-112.0)),
-            (-112.0, 36.0, height(-112.0)),
-            (112.0, -36.0, height(112.0)),
-        ],
-        None,
-    ));
-    for sign in [-1.0, 1.0] {
-        for i in 0..4 {
-            let a = f64::from(i) * std::f64::consts::FRAC_PI_2 / 4.0;
-            let b = f64::from(i + 1) * std::f64::consts::FRAC_PI_2 / 4.0;
-            let (y0, z0) = (sign * (36.0 + 24.0 * a.sin()), 24.0 * (1.0 - a.cos()));
-            let (y1, z1) = (sign * (36.0 + 24.0 * b.sin()), 24.0 * (1.0 - b.cos()));
-            brushes.push_str(&sloped_prism(
-                &[(-76.0, y0), (76.0, y0), (76.0, y1), (-76.0, y1)],
-                0.0,
-                [
-                    (-76.0, y0, height(-76.0) + z0),
-                    (76.0, y0, height(76.0) + z0),
-                    (-76.0, y1, height(-76.0) + z1),
-                ],
-                None,
-            ));
-        }
-    }
-    for face in [1, 2, 4, 5] {
-        brushes.push_str(&wall(face, 0.0, 2.0 * LEVEL));
-    }
-    brushes.push_str(&door_wall(3, 0.0, LEVEL, 0.0, 72.0, 12.0, 8.0));
-    brushes.push_str(&door_wall(
-        0,
-        0.0,
-        2.0 * LEVEL,
-        LEVEL + FLOOR_TOP,
-        LEVEL + 72.0,
-        12.0,
-        8.0,
-    ));
-    brushes.push_str(&hex_slab(248.0, 256.0, 0.0, 0.0));
-    brushes.push_str(&shell(
-        &[(-88.0, -44.0), (88.0, -44.0), (88.0, 44.0), (-88.0, 44.0)],
-        |p| height(p.0) + 80.0,
-    ));
-    let mut lights = String::new();
-    for x in [-64.0, 64.0] {
-        let z = height(x) + 96.0;
-        brushes.push_str(&boxed((x - 12.0, 46.0, z - 4.0), (x + 12.0, 54.0, z + 4.0)));
-        lights.push_str(&tile_light(x, 45.0, z));
-    }
-    let mut out = format!("// The Same Door Twice: enclosed coved ascent.\n{GENERATED_NOTE}");
-    out.push_str(&worldspawn(&brushes));
-    out.push_str(
-        &Meta::cell("authored/noon_ascent", "hall_ramp", BASE, 2, 3)
-            .with_register_scope("overlit_grid")
-            .emit(),
-    );
-    out.push_str(&tile_cell(0, 0, 0, 2, "ramp"));
-    out.push_str(&lateral_port(3, "door", "noon_entry", 0, 0, 0));
-    out.push_str(&vertical_port("up", "ramp_open", "noon_ascent", 0));
-    for index in 0..5u16 {
-        let x = -112.0 + f64::from(index) * 56.0;
-        out.push_str(&stair_node(index, x, 0.0, height(x)));
-    }
-    out.push_str(&lights);
-    out
-}
-
 pub fn straight() -> String {
     room("noon_straight", "hall_straight", &[0, 3])
 }
@@ -183,7 +88,6 @@ pub fn builders() -> Vec<Builder> {
         ("noon_straight", straight),
         ("noon_bend", bend),
         ("noon_fork", fork),
-        ("noon_ascent", ascent),
     ]
 }
 

@@ -709,12 +709,12 @@ fn bounded_delta_matches_full_projection_and_preserves_pinned_pieces() {
     {
         frame.visible_cells.insert(straight.coord);
     }
-    if let Some(ramp) = world
+    if let Some(climb) = world
         .placements
         .values()
-        .find(|placement| placement.archetype == HexArchetype::RampUp)
+        .find(|placement| matches!(placement.archetype, HexArchetype::Climb { .. }))
     {
-        frame.visible_cells.insert(ramp.coord);
+        frame.visible_cells.insert(climb.coord);
     }
     frame.objective_cells.insert(world.config.spawn());
 
@@ -794,7 +794,6 @@ fn bounded_delta_matches_full_projection_and_preserves_pinned_pieces() {
     );
     assert_eq!(incremental.climbs, after.climbs);
     assert_eq!(incremental.decks, after.decks);
-    assert_eq!(incremental.ramp_heads, after.ramp_heads);
     assert_eq!(incremental.blueprint_instances, after.blueprint_instances);
     assert_eq!(scene.collider_count(), after.arena.colliders.len());
     for (id, before_piece) in before_pinned {

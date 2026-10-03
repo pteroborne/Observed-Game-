@@ -11,7 +11,6 @@ use super::halls::{
     expanse_map, hall_cap_map, hall_corner_map, hall_junction_map, hall_straight_map,
 };
 use super::rooms::{room_atrium_lower_map, room_atrium_upper_map, room_single_map, room_wing_map};
-use super::verticals::ramp_map;
 use super::{REGISTERS, face_name};
 
 pub(crate) struct GeneratedTile {
@@ -156,27 +155,8 @@ pub(crate) fn library_for(registers: &[&'static str]) -> Vec<GeneratedTile> {
                 }
             }
         }
-        // Ramps: an explicit prefab per exit direction.
-        for (i, exit) in HexFace::LATERAL.into_iter().enumerate() {
-            let mut ports = door_ports(&[exit.opposite()]);
-            ports.push(("up", "ramp_open"));
-            push(
-                format!("{reg}_ramp_{i}.map"),
-                ramp_map(reg, exit),
-                "ramp",
-                reg,
-                i as u16,
-                2,
-                ports,
-            );
-        }
-        // The stair-tower family is authored now - see `forge::tower`. It
-        // used to be enumerated here as 66 variants per register: three
-        // doorless, eighteen with one door, forty-five with two. The authored
-        // family covers the same demand from fifteen sources under sixfold
-        // rotation, and had to replace it in one change rather than stand
-        // beside it - a shaft column draws its tile per cell, so two families
-        // sharing the bucket let one column mix two climb shapes.
+        // Vertical circulation is the climb compositions (`forge::climb`), authored for
+        // every register; the generated ramps and stair segments are retired.
         // Rooms: single and blueprint strip / triangle / diamond cells.
         // Expanses: open floor with walls only where a face is sealed, so a
         // run of them merges into one volume. Geometry is the junction's —
@@ -332,7 +312,6 @@ pub fn sources() -> Vec<(String, String)> {
             super::hall_straight_ew_map(),
         ),
         ("hall_cap_e.map".to_string(), super::hall_cap_e_map()),
-        ("ramp_e.map".to_string(), super::ramp_e_map()),
     ];
     for tile in library() {
         s.push((tile.file, tile.text));

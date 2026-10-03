@@ -5,7 +5,7 @@ use observed_core::PlayerId;
 
 use super::relayout::fallback_geometry_relayout;
 use super::{
-    DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, HexArchetype, HexCoord, HexFace,
+    DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, HexCoord, HexFace,
     HexInfluenceField, HexObservationFrame, HexRelayoutProgress, HexSpace, HexThresholdKey,
     HexWfcConfig, HexWfcError, HexWfcWorld,
 };
@@ -221,26 +221,11 @@ fn pocket_is_bounded_and_closes_indivisible_units() {
             );
         }
     }
+    // A climb composition is in the pocket whole or not at all.
     for &coord in &region.cells {
-        match world.placements[&coord].archetype {
-            HexArchetype::RampUp => {
-                let mate = world.config.grid().neighbor(coord, HexFace::Up).unwrap();
-                assert!(region.cells.contains(&mate));
-            }
-            HexArchetype::RampHead => {
-                let mate = world.config.grid().neighbor(coord, HexFace::Down).unwrap();
-                assert!(region.cells.contains(&mate));
-            }
-            HexArchetype::Shaft => {
-                for face in [HexFace::Up, HexFace::Down] {
-                    if let Some(mate) = world.config.grid().neighbor(coord, face)
-                        && world.placements[&mate].archetype == HexArchetype::Shaft
-                    {
-                        assert!(region.cells.contains(&mate));
-                    }
-                }
-            }
-            _ => {}
+        let archetype = world.placements[&coord].archetype;
+        if let Some(unit) = super::composition_cells(world.config.grid(), coord, archetype) {
+            assert!(unit.iter().all(|cell| region.cells.contains(cell)));
         }
     }
 }

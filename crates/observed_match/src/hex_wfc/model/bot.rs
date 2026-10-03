@@ -5,7 +5,7 @@ use std::f32::consts::PI;
 
 use glam::{Vec2, Vec3};
 use observed_core::PlayerId;
-use observed_facility::hex_wfc::{HexArchetype, HexCoord, HexFace, HexRoute};
+use observed_facility::hex_wfc::{HexCoord, HexFace, HexRoute};
 use observed_hex::hex_origin;
 use observed_traversal::{DeckHandoff, FollowTarget, FollowerPose, follow_stateless};
 use player_input::PlayerIntent;
@@ -237,12 +237,9 @@ impl HexWfcMatch {
         else {
             return steer_toward(yaw, position, Vec3::from_array(hex_origin(cell)));
         };
-        // A `RampUp` rises from the face it opens on toward the face opposite;
-        // a `RampHead` is the upper half and rises toward its own open face.
-        let rise = match placement.archetype {
-            HexArchetype::RampUp => open.opposite(),
-            _ => open,
-        };
+        // Toward the cell's first open face, as for a ramp's head, which a climb's
+        // landing is in this: its door is the way it leaves the flight.
+        let rise = open;
         let up = next.level > cell.level;
         let dir = face_plan_dir(if up { rise } else { rise.opposite() });
         steer_toward(

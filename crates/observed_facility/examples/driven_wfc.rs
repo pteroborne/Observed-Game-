@@ -29,9 +29,6 @@ fn archetype_label(archetype: HexArchetype) -> &'static str {
         HexArchetype::Straight => "straight",
         HexArchetype::Corner => "corner",
         HexArchetype::Junction => "junction",
-        HexArchetype::RampUp => "ramp_up",
-        HexArchetype::RampHead => "ramp_head",
-        HexArchetype::Shaft => "shaft",
         HexArchetype::Expanse => "expanse",
         HexArchetype::Climb { .. } => "climb",
     }

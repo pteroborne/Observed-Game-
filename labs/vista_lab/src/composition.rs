@@ -267,17 +267,20 @@ impl Author {
             .grid()
             .neighbor(foot, HexFace::Up)
             .expect("head on lattice");
+        // Hall cells joined by a ramp port: the facility reads them as a flight and
+        // its landing by the port (`exposure::Form`). The production facility climbs
+        // by compositions; this one-cell stair is the lab's own.
         self.put(
             foot,
             HexSpace::Hall,
-            HexArchetype::RampUp,
+            HexArchetype::Straight,
             register,
             landmark,
         );
         self.put(
             head,
             HexSpace::Hall,
-            HexArchetype::RampHead,
+            HexArchetype::Straight,
             register,
             landmark,
         );

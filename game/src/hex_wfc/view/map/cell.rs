@@ -38,9 +38,6 @@ pub(in crate::hex_wfc::view) fn sketch_role(
         HexArchetype::Void => HexSketchRole::Void,
         HexArchetype::Straight | HexArchetype::Corner => HexSketchRole::Corridor,
         HexArchetype::Junction => HexSketchRole::Junction,
-        HexArchetype::RampUp => HexSketchRole::Ramp,
-        HexArchetype::RampHead => HexSketchRole::RampHead,
-        HexArchetype::Shaft => HexSketchRole::Shaft,
         // A climb composition draws as the ramp it replaces until it has a glyph of
         // A climb composition steps up the way it climbs.
         HexArchetype::Climb { part, .. } => match part {
@@ -223,6 +220,12 @@ pub(super) fn marker_key(role: MarkerRole) -> u8 {
 mod tests {
     use super::*;
 
+    /// A climb's tallest cell: the composition reads as vertical circulation.
+    const CLIMB_HIGH: HexArchetype = HexArchetype::Climb {
+        part: ClimbPart::High,
+        heading: observed_hex::HexFace::East,
+    };
+
     #[test]
     fn void_is_the_only_archetype_the_map_does_not_draw() {
         assert!(archetype_height(HexArchetype::Void).is_none());
@@ -231,9 +234,7 @@ mod tests {
             HexArchetype::Straight,
             HexArchetype::Corner,
             HexArchetype::Junction,
-            HexArchetype::RampUp,
-            HexArchetype::RampHead,
-            HexArchetype::Shaft,
+            CLIMB_HIGH,
         ] {
             assert!(archetype_height(archetype).is_some_and(|h| h > 0.0));
         }
@@ -244,8 +245,8 @@ mod tests {
         let straight = archetype_height(HexArchetype::Straight).expect("draws");
         let junction = archetype_height(HexArchetype::Junction).expect("draws");
         let room = archetype_height(HexArchetype::Room).expect("draws");
-        let shaft = archetype_height(HexArchetype::Shaft).expect("draws");
-        assert!(straight < junction && junction < room && room < shaft);
+        let climb = archetype_height(CLIMB_HIGH).expect("draws");
+        assert!(straight < junction && junction < room && room < climb);
     }
 
     #[test]
@@ -261,7 +262,7 @@ mod tests {
             HexComposition::Hall
         );
         assert_eq!(
-            composition(HexArchetype::Shaft, HexSpace::Hall, false),
+            composition(CLIMB_HIGH, HexSpace::Hall, false),
             HexComposition::Vertical
         );
         // And a blueprint cell is drawn seam-free whatever its archetype is.
@@ -271,14 +272,9 @@ mod tests {
 
     #[test]
     fn only_topology_mutable_archetypes_can_rewire() {
-        // Mirrors `collapse::placement_is_mutable_topology`. Rooms, ramps and
-        // shafts are structural and survive relayout; plain circulation does not.
-        for archetype in [
-            HexArchetype::Room,
-            HexArchetype::RampUp,
-            HexArchetype::RampHead,
-            HexArchetype::Shaft,
-        ] {
+        // Mirrors `collapse::placement_is_mutable_topology`. Rooms and climbs are
+        // structural and survive relayout; plain circulation does not.
+        for archetype in [HexArchetype::Room, CLIMB_HIGH] {
             assert_eq!(
                 Stability::of(archetype, false, false),
                 Stability::Permanent,

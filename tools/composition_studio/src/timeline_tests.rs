@@ -334,7 +334,7 @@ fn redo_retraces_an_undo_and_a_fresh_edit_forgets_it() {
     // A new edit after an undo makes the abandoned branch unreachable, which is
     // what every editor does and what the redo stack must reflect.
     assert!(state.undo(30.0));
-    state.profile.archetype_bias = state.profile.archetype_bias.with(HexArchetype::Shaft, 2.0);
+    state.profile.archetype_bias = state.profile.archetype_bias.with(HexArchetype::Corner, 2.0);
     state.touch_profile(40.0);
     assert!(state.redo_stack.is_empty());
 }
@@ -377,7 +377,7 @@ fn the_history_is_bounded() {
         state.profile.archetype_bias = state
             .profile
             .archetype_bias
-            .with(HexArchetype::Shaft, 1.0 + f64::from(step) * 0.01);
+            .with(HexArchetype::Corner, 1.0 + f64::from(step) * 0.01);
         // Past the coalescing window each time, so each is its own entry.
         state.touch_profile(f64::from(step) as f32);
     }

@@ -158,8 +158,10 @@ pub(crate) fn capture_progress(
                     .iter()
                     .find(|(coord, placement)| {
                         coord.level == 0
-                            && placement.archetype
-                                == observed_facility::hex_wfc::HexArchetype::Shaft
+                            && matches!(
+                                placement.archetype,
+                                observed_facility::hex_wfc::HexArchetype::Climb { .. }
+                            )
                     })
                     .or_else(|| state.world.placements.iter().next())
                     .map(|(coord, _)| *coord);

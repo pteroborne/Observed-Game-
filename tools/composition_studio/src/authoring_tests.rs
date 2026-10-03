@@ -112,7 +112,7 @@ fn painting_a_pin_marks_the_profile_unsaved_and_moves_the_hash() {
         &mut state.profile,
         config,
         coord,
-        crate::brush::Brush::Shaft,
+        crate::brush::Brush::Corner,
     );
 
     assert!(state.is_unsaved(), "a pin is an unsaved profile edit");

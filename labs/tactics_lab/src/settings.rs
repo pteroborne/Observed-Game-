@@ -555,9 +555,13 @@ impl MatchSettings {
             .with(HexArchetype::Straight, 0.55)
             .with(HexArchetype::Corner, 1.35)
             .with(HexArchetype::Junction, 1.65)
-            .with(HexArchetype::RampUp, 1.45)
-            .with(HexArchetype::RampHead, 1.45)
-            .with(HexArchetype::Shaft, 0.50)
+            .with(
+                HexArchetype::Climb {
+                    part: observed_facility::hex_wfc::ClimbPart::Mid,
+                    heading: observed_hex::HexFace::East,
+                },
+                1.45,
+            )
             .with(HexArchetype::Expanse, 1.70);
         profile
     }

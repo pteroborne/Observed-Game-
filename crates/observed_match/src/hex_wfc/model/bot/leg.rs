@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 
 use glam::Vec3;
-use observed_facility::hex_wfc::{HexArchetype, HexCoord, HexFace};
+use observed_facility::hex_wfc::{HexCoord, HexFace};
 use observed_hex::{TILE_LEVEL_HEIGHT, face_edge, hex_origin};
 use observed_traversal::{
     FollowerPose, GraphFollowDecision, GraphFollowState, TraversalGuide, TraversalGuideBuilder,
@@ -238,32 +238,6 @@ fn legacy_cell_adapter(game: &HexWfcMatch, cell: HexCoord) -> Option<ResolvedMod
         doors.push((face, node));
     }
 
-    // A ramp rises between the face it opens on and the face opposite. That is
-    // the same rule the compatibility `ramp_walk_dir` applied, moved out of
-    // steering and into data, where a second ramp shape can replace it by
-    // shipping a graph instead of by editing a follower.
-    if matches!(
-        placement.archetype,
-        HexArchetype::RampUp | HexArchetype::RampHead
-    ) && let Some(&(low, high)) = ramp_faces(placement.archetype, &doors).as_ref()
-    {
-        builder.connect(low, high, TraversalMode::Climb);
-        bindings.insert(
-            ProjectedPort {
-                cell,
-                face: HexFace::Up,
-            },
-            high,
-        );
-        bindings.insert(
-            ProjectedPort {
-                cell,
-                face: HexFace::Down,
-            },
-            low,
-        );
-    }
-
     let guide = builder.build().ok()?;
     // A sealed cell yields the hub and nothing else. That is not a route, and
     // presenting it as one would let a bot lease a leg it can never finish.
@@ -281,29 +255,6 @@ fn legacy_cell_adapter(game: &HexWfcMatch, cell: HexCoord) -> Option<ResolvedMod
         climb_foot: None,
         projected: false,
     })
-}
-
-/// The low and high doorway nodes of a legacy ramp.
-///
-/// The rise face is chosen exactly as the compatibility `ramp_walk_dir` chose
-/// it: from the first open lateral face in `HexFace` order, opposite for a
-/// `RampUp` and the face itself for a `RampHead`.
-fn ramp_faces(
-    archetype: HexArchetype,
-    doors: &[(HexFace, TraversalNodeId)],
-) -> Option<(TraversalNodeId, TraversalNodeId)> {
-    let &(open, _) = doors.first()?;
-    let rise = match archetype {
-        HexArchetype::RampUp => open.opposite(),
-        _ => open,
-    };
-    let node_at = |face: HexFace| {
-        doors
-            .iter()
-            .find(|(candidate, _)| *candidate == face)
-            .map(|&(_, node)| node)
-    };
-    Some((node_at(rise.opposite())?, node_at(rise)?))
 }
 
 /// Whether the module at `cell` presents a traversal graph.

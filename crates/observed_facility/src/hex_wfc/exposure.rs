@@ -140,14 +140,20 @@ fn form(world: &HexWfcWorld, placement: &HexPlacement) -> Form {
         .into_iter()
         .filter(|&face| placement.is_open(face))
         .collect();
-    match placement.archetype {
-        HexArchetype::RampUp if placement.up == PortClass::RampOpen => {
-            if let [entry] = open[..] {
-                return Form::Flight { entry };
-            }
+    // A storey climbed inside one cell, as the vista lab authors one: a hall open above
+    // through a ramp port is its flight, and the hall over it, open below, its landing.
+    // The facility climbs by compositions, whose cells keep the forms below.
+    if placement.space == HexSpace::Hall
+        && !matches!(placement.archetype, HexArchetype::Climb { .. })
+    {
+        if placement.up == PortClass::RampOpen
+            && let [entry] = open[..]
+        {
+            return Form::Flight { entry };
         }
-        HexArchetype::RampHead if placement.down == PortClass::RampOpen => return Form::Landing,
-        _ => {}
+        if placement.down == PortClass::RampOpen {
+            return Form::Landing;
+        }
     }
     match placement.space {
         HexSpace::Room if built_at(world, above) => Form::Storey,

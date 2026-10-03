@@ -1531,9 +1531,7 @@ fn composition(
     };
     match placement.archetype {
         HexArchetype::Room | HexArchetype::Expanse => observed_style::HexComposition::Room,
-        HexArchetype::RampUp | HexArchetype::RampHead | HexArchetype::Shaft => {
-            observed_style::HexComposition::Vertical
-        }
+        HexArchetype::Climb { .. } => observed_style::HexComposition::Vertical,
         _ => observed_style::HexComposition::Hall,
     }
 }

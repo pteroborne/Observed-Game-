@@ -55,8 +55,10 @@ use super::{HexArchetype, HexSpace, PortClass};
 /// mismatched peer instead. It is the only channel by which a solver change can
 /// reach that hash; nothing else will notice.
 ///
-/// 5 since the climb compositions joined the alphabet (`docs/climb_compositions_plan.md`).
-pub const COMPOSITION_PROFILE_VERSION: u16 = 5;
+/// 5 since the climb compositions joined the alphabet (`docs/climb_compositions_plan.md`);
+/// 6 since the ramps and towers left it, and the archetype bias names `climb` where it
+/// named `ramp_up`, `ramp_head` and `shaft`.
+pub const COMPOSITION_PROFILE_VERSION: u16 = 6;
 
 /// The widest a score component's weight may be set. Unlike the lottery
 /// multipliers, `0.0` *is* legal here: scoring is post-hoc and disabling a
@@ -319,9 +321,10 @@ pub struct ArchetypeBias {
     pub straight: f64,
     pub corner: f64,
     pub junction: f64,
-    pub ramp_up: f64,
-    pub ramp_head: f64,
-    pub shaft: f64,
+    /// Every cell of a climb composition. Was `ramp_up`, when the ramps and towers
+    /// had `ramp_head` and `shaft` beside it; an older profile still reads.
+    #[cfg_attr(feature = "serde", serde(alias = "ramp_up"))]
+    pub climb: f64,
     pub expanse: f64,
 }
 
@@ -554,9 +557,7 @@ impl ArchetypeBias {
             straight: 1.0,
             corner: 1.0,
             junction: 1.0,
-            ramp_up: 1.0,
-            ramp_head: 1.0,
-            shaft: 1.0,
+            climb: 1.0,
             expanse: 1.0,
         }
     }
@@ -570,11 +571,7 @@ impl ArchetypeBias {
             HexArchetype::Straight => self.straight,
             HexArchetype::Corner => self.corner,
             HexArchetype::Junction => self.junction,
-            // A climb composition takes the ramp's weight until the ramps retire
-            // and the field is renamed (`docs/climb_compositions_plan.md`, phase 4).
-            HexArchetype::RampUp | HexArchetype::Climb { .. } => self.ramp_up,
-            HexArchetype::RampHead => self.ramp_head,
-            HexArchetype::Shaft => self.shaft,
+            HexArchetype::Climb { .. } => self.climb,
             HexArchetype::Expanse => self.expanse,
         }
     }
@@ -588,9 +585,7 @@ impl ArchetypeBias {
             HexArchetype::Straight => self.straight = factor,
             HexArchetype::Corner => self.corner = factor,
             HexArchetype::Junction => self.junction = factor,
-            HexArchetype::RampUp | HexArchetype::Climb { .. } => self.ramp_up = factor,
-            HexArchetype::RampHead => self.ramp_head = factor,
-            HexArchetype::Shaft => self.shaft = factor,
+            HexArchetype::Climb { .. } => self.climb = factor,
             HexArchetype::Expanse => self.expanse = factor,
         }
         self
@@ -599,16 +594,14 @@ impl ArchetypeBias {
     /// Every field paired with its serialized name, for validation and for the
     /// authoring tool's slider list.
     #[must_use]
-    pub const fn fields(&self) -> [(&'static str, f64); 9] {
+    pub const fn fields(&self) -> [(&'static str, f64); 7] {
         [
             ("void", self.void),
             ("room", self.room),
             ("straight", self.straight),
             ("corner", self.corner),
             ("junction", self.junction),
-            ("ramp_up", self.ramp_up),
-            ("ramp_head", self.ramp_head),
-            ("shaft", self.shaft),
+            ("climb", self.climb),
             ("expanse", self.expanse),
         ]
     }
@@ -866,6 +859,12 @@ impl Default for HexCompositionProfile {
 mod tests {
     use super::*;
 
+    /// Any climb cell: the bias is the composition's, whichever cell and heading.
+    const CLIMB: HexArchetype = HexArchetype::Climb {
+        part: super::super::ClimbPart::Mid,
+        heading: observed_hex::HexFace::East,
+    };
+
     #[test]
     fn the_baseline_profile_validates() {
         assert_eq!(HexCompositionProfile::baseline().validate(), Ok(()));
@@ -880,9 +879,7 @@ mod tests {
             HexArchetype::Straight,
             HexArchetype::Corner,
             HexArchetype::Junction,
-            HexArchetype::RampUp,
-            HexArchetype::RampHead,
-            HexArchetype::Shaft,
+            CLIMB,
             HexArchetype::Expanse,
         ] {
             assert_eq!(profile.bias_for(archetype), 1.0, "{archetype:?}");
@@ -931,16 +928,14 @@ mod tests {
     fn a_bias_outside_the_shared_band_is_rejected() {
         for out_of_range in [0.0, 0.1, 4.5, -1.0] {
             let mut profile = HexCompositionProfile::baseline();
-            profile.archetype_bias = profile
-                .archetype_bias
-                .with(HexArchetype::Shaft, out_of_range);
+            profile.archetype_bias = profile.archetype_bias.with(CLIMB, out_of_range);
             let defects = profile
                 .validate()
                 .expect_err("{out_of_range} must be rejected");
             assert!(
                 defects
                     .iter()
-                    .any(|defect| matches!(defect, ProfileDefect::BiasOutOfRange { field, .. } if *field == "shaft")),
+                    .any(|defect| matches!(defect, ProfileDefect::BiasOutOfRange { field, .. } if *field == "climb")),
                 "{out_of_range} produced {defects:?}"
             );
         }
@@ -953,7 +948,7 @@ mod tests {
             super::super::context::PROFILE_MAX,
         ] {
             let mut profile = HexCompositionProfile::baseline();
-            profile.archetype_bias = profile.archetype_bias.with(HexArchetype::Shaft, edge);
+            profile.archetype_bias = profile.archetype_bias.with(CLIMB, edge);
             assert_eq!(profile.validate(), Ok(()), "edge {edge} must be legal");
         }
     }
@@ -980,7 +975,7 @@ mod tests {
         assert_eq!(profile.validate(), Ok(()));
 
         let mut profile = HexCompositionProfile::baseline();
-        profile.archetype_bias = profile.archetype_bias.with(HexArchetype::Shaft, 0.0);
+        profile.archetype_bias = profile.archetype_bias.with(CLIMB, 0.0);
         assert!(profile.validate().is_err());
     }
 
@@ -1004,13 +999,10 @@ mod tests {
             let mut profile = HexCompositionProfile::baseline();
             profile.district_bias.push(DistrictBias {
                 register: register.slug().to_string(),
-                bias: ArchetypeBias::neutral().with(HexArchetype::Shaft, 2.0),
+                bias: ArchetypeBias::neutral().with(CLIMB, 2.0),
             });
             assert_eq!(profile.validate(), Ok(()), "{register:?}");
-            assert!(
-                (profile.district_bias_for(register, HexArchetype::Shaft) - 2.0).abs()
-                    < f64::EPSILON
-            );
+            assert!((profile.district_bias_for(register, CLIMB) - 2.0).abs() < f64::EPSILON);
         }
     }
 
@@ -1075,7 +1067,7 @@ mod tests {
     fn validate_reports_every_defect_at_once() {
         let mut profile = HexCompositionProfile::baseline();
         profile.version = 99;
-        profile.archetype_bias = profile.archetype_bias.with(HexArchetype::Shaft, 0.0);
+        profile.archetype_bias = profile.archetype_bias.with(CLIMB, 0.0);
         profile.search.candidates = 0;
         let defects = profile.validate().expect_err("three defects");
         assert_eq!(defects.len(), 3, "{defects:?}");
@@ -1100,7 +1092,7 @@ mod tests {
     fn is_baseline_tracks_any_edit() {
         let mut profile = HexCompositionProfile::baseline();
         assert!(profile.is_baseline());
-        profile.archetype_bias = profile.archetype_bias.with(HexArchetype::Shaft, 1.5);
+        profile.archetype_bias = profile.archetype_bias.with(CLIMB, 1.5);
         assert!(!profile.is_baseline());
     }
 }

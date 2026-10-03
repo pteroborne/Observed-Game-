@@ -17,7 +17,7 @@ use super::blueprint::StampedBlueprint;
 use super::collapse::collapse_pocket_attempt;
 use super::context::HexInfluenceField;
 use super::topology::pinned_cells;
-use super::{HexArchetype, HexPlacement, HexSpace, HexWfcConfig, HexWfcError, HexWfcWorld};
+use super::{HexPlacement, HexSpace, HexWfcConfig, HexWfcError, HexWfcWorld};
 
 pub const DEFAULT_MUTATION_TARGET_CELLS: usize = 32;
 pub const DEFAULT_MUTATION_MAX_CELLS: usize = 64;
@@ -1065,36 +1065,10 @@ fn close_units(
         }
         let snapshot = cells.clone();
         for coord in snapshot {
-            let placement = &world.placements[&coord];
-            match placement.archetype {
-                HexArchetype::RampUp => {
-                    if let Some(mate) = world.config.grid().neighbor(coord, HexFace::Up) {
-                        cells.insert(mate);
-                    }
-                }
-                HexArchetype::RampHead => {
-                    if let Some(mate) = world.config.grid().neighbor(coord, HexFace::Down) {
-                        cells.insert(mate);
-                    }
-                }
-                HexArchetype::Shaft => {
-                    for face in [HexFace::Up, HexFace::Down] {
-                        if let Some(mate) = world.config.grid().neighbor(coord, face)
-                            && world.placements[&mate].archetype == HexArchetype::Shaft
-                        {
-                            cells.insert(mate);
-                        }
-                    }
-                }
-                // A climb composition is re-solved whole or not at all.
-                archetype @ HexArchetype::Climb { .. } => {
-                    if let Some(unit) =
-                        super::composition_cells(world.config.grid(), coord, archetype)
-                    {
-                        cells.extend(unit);
-                    }
-                }
-                _ => {}
+            // A climb composition is re-solved whole or not at all.
+            let archetype = world.placements[&coord].archetype;
+            if let Some(unit) = super::composition_cells(world.config.grid(), coord, archetype) {
+                cells.extend(unit);
             }
         }
         if cells.len() > max || cells.iter().any(|cell| protected.contains(cell)) {

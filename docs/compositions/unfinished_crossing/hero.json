@@ -78,24 +78,10 @@
       "level": 0
     },
     {
-      "tile": "hall_ramp:150",
-      "q": 6,
-      "r": 3,
-      "turn": 5,
-      "level": 0
-    },
-    {
       "tile": "hall_turn_120:960",
       "q": 7,
       "r": 2,
       "turn": 2,
-      "level": 1
-    },
-    {
-      "tile": "hall_ramp:150",
-      "q": 7,
-      "r": 1,
-      "turn": 4,
       "level": 1
     },
     {

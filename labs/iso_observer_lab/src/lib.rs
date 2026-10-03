@@ -384,9 +384,6 @@ pub fn sketch_role(archetype: HexArchetype, space: HexSpace, in_blueprint: bool)
         HexArchetype::Void => HexSketchRole::Void,
         HexArchetype::Straight | HexArchetype::Corner => HexSketchRole::Corridor,
         HexArchetype::Junction => HexSketchRole::Junction,
-        HexArchetype::RampUp => HexSketchRole::Ramp,
-        HexArchetype::RampHead => HexSketchRole::RampHead,
-        HexArchetype::Shaft => HexSketchRole::Shaft,
         // A climb composition draws as the ramp it replaces until it has a glyph of
         // A climb composition steps up the way it climbs.
         HexArchetype::Climb { part, .. } => match part {
@@ -419,9 +416,6 @@ pub fn archetype_label(archetype: HexArchetype) -> &'static str {
         HexArchetype::Corner => "corner",
         HexArchetype::Junction => "junction",
         HexArchetype::Room => "room",
-        HexArchetype::RampUp => "ramp",
-        HexArchetype::RampHead => "ramp head",
-        HexArchetype::Shaft => "shaft",
         HexArchetype::Expanse => "expanse",
         HexArchetype::Climb { .. } => "climb",
     }
@@ -940,8 +934,15 @@ mod tests {
     #[test]
     fn the_lab_and_the_game_share_one_sketch_table() {
         assert_eq!(
-            sketch_role(HexArchetype::Shaft, HexSpace::Hall, false),
-            HexSketchRole::Shaft
+            sketch_role(
+                HexArchetype::Climb {
+                    part: ClimbPart::High,
+                    heading: observed_hex::HexFace::East,
+                },
+                HexSpace::Hall,
+                false
+            ),
+            HexSketchRole::ClimbHigh
         );
         assert_eq!(
             sketch_role(HexArchetype::Junction, HexSpace::Hall, true),

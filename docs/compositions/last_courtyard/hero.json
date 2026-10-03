@@ -50,13 +50,6 @@
       "level": 0
     },
     {
-      "tile": "hall_ramp:156",
-      "q": 6,
-      "r": 4,
-      "turn": 0,
-      "level": 0
-    },
-    {
       "tile": "hall_straight:720",
       "q": 7,
       "r": 4,

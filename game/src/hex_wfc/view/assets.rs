@@ -41,14 +41,13 @@ impl RegisterMaterials {
             // ceiling, like any hall. They had materials of their own - a route
             // treatment with a cyan glow, and a generic stone - which put every climb
             // in the same teal, in every district.
-            HexStructureRole::Room
-            | HexStructureRole::Hall
-            | HexStructureRole::Ramp
-            | HexStructureRole::Shaft => match horizontal_surface {
-                HorizontalSurface::Floor => self.floor.clone(),
-                HorizontalSurface::Wall => self.wall.clone(),
-                HorizontalSurface::Ceiling => self.ceiling.clone(),
-            },
+            HexStructureRole::Room | HexStructureRole::Hall | HexStructureRole::Climb => {
+                match horizontal_surface {
+                    HorizontalSurface::Floor => self.floor.clone(),
+                    HorizontalSurface::Wall => self.wall.clone(),
+                    HorizontalSurface::Ceiling => self.ceiling.clone(),
+                }
+            }
             HexStructureRole::Boundary => self.boundary.clone(),
         }
     }

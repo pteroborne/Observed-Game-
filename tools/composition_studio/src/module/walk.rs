@@ -495,16 +495,15 @@ mod tests {
     /// A ramp must register as climbed, or the probe is silently walking a
     /// flat interpretation of sloped geometry.
     #[test]
-    fn a_ramp_reports_the_height_it_gains() {
-        let ramp = module("hall_ramp");
-        let probe = Probe::from_prototype(&ramp.prototype);
-        // The ramp's own climb line: it folds, so a straight walk across it is a walk
-        // into the centre wall.
-        let route = ramp.prototype.spine.nodes.clone();
+    fn a_climb_reports_the_height_it_gains() {
+        let climb = module("climb_mid");
+        let probe = Probe::from_prototype(&climb.prototype);
+        // The cell's own climb line, up the middle of its flight.
+        let route = climb.prototype.spine.nodes.clone();
         let report = walk(&probe, &route, &Thresholds::default());
         assert!(
-            report.climbed > 3.0,
-            "a full-level ramp should gain height; got {:.2} m ({:?})",
+            report.climbed > 2.0,
+            "a climb's middle cell rises 2.4 m; got {:.2} m ({:?})",
             report.climbed,
             report.failure
         );

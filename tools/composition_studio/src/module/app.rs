@@ -527,10 +527,7 @@ mod tests {
     #[test]
     fn selection_refreshes_an_enabled_audit_without_inventing_flat_routes() {
         let mut state = ModuleState {
-            diagnoses: vec![
-                diagnosis("hall_ramp_perimeter_120"),
-                diagnosis("hall_straight"),
-            ],
+            diagnoses: vec![diagnosis("climb_mid"), diagnosis("hall_straight")],
             rapier_audit: RapierAuditState::NotApplicable,
             ..ModuleState::default()
         };

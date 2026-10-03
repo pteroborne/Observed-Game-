@@ -1720,14 +1720,8 @@ pub enum HexSketchRole {
     Corridor,
     /// Flat circulation with three or more doors.
     Junction,
-    /// The empty upper half of a ramp pair.
-    RampHead,
     /// Any cell inside a stamped room footprint.
     Room,
-    /// The lower, walkable half of a ramp pair.
-    Ramp,
-    /// A vertical shaft.
-    Shaft,
     /// A climb composition's foot: the first of three flight cells, drawn lowest so the
     /// three read as a stair rising the way it climbs.
     ClimbFoot,
@@ -1743,14 +1737,11 @@ pub enum HexSketchRole {
 }
 
 impl HexSketchRole {
-    pub const ALL: [HexSketchRole; 12] = [
+    pub const ALL: [HexSketchRole; 9] = [
         HexSketchRole::Void,
         HexSketchRole::Corridor,
         HexSketchRole::Junction,
-        HexSketchRole::RampHead,
         HexSketchRole::Room,
-        HexSketchRole::Ramp,
-        HexSketchRole::Shaft,
         HexSketchRole::ClimbFoot,
         HexSketchRole::ClimbMid,
         HexSketchRole::ClimbHigh,
@@ -1764,13 +1755,9 @@ impl HexSketchRole {
     pub fn composition(self) -> HexComposition {
         match self {
             Self::Room => HexComposition::Room,
-            Self::Ramp
-            | Self::RampHead
-            | Self::Shaft
-            | Self::ClimbFoot
-            | Self::ClimbMid
-            | Self::ClimbHigh
-            | Self::ClimbLanding => HexComposition::Vertical,
+            Self::ClimbFoot | Self::ClimbMid | Self::ClimbHigh | Self::ClimbLanding => {
+                HexComposition::Vertical
+            }
             // An expanse is a place, not a way between places: it fills its
             // hex so a run of them reads as one room-scale volume, which is the
             // whole reason the archetype exists.
@@ -2086,11 +2073,7 @@ pub fn hex_sketch(role: HexSketchRole) -> HexSketch {
         HexSketchRole::Void => None,
         HexSketchRole::Corridor => Some(0.9),
         HexSketchRole::Junction => Some(1.5),
-        HexSketchRole::RampHead => Some(0.6),
         HexSketchRole::Room => Some(2.6),
-        HexSketchRole::Ramp => Some(4.5),
-        // A shaft nearly spans its level, so a stack of them reads as a column.
-        HexSketchRole::Shaft => Some(6.8),
         // A climb's three flight cells step up the way it climbs, so on the map the
         // composition is a stair with a direction, not three identical towers; its
         // landing sits low, as a ramp head did.
@@ -3261,8 +3244,7 @@ mod tests {
         assert!(hex_sketch(HexSketchRole::Void).height.is_none());
         assert!(h(HexSketchRole::Corridor) < h(HexSketchRole::Junction));
         assert!(h(HexSketchRole::Junction) < h(HexSketchRole::Room));
-        assert!(h(HexSketchRole::Room) < h(HexSketchRole::Shaft));
-        assert!(h(HexSketchRole::RampHead) < h(HexSketchRole::Ramp));
+        assert!(h(HexSketchRole::Room) < h(HexSketchRole::ClimbHigh));
     }
 
     /// A climb composition reads as a stair: its flight cells rise in order, the way it
@@ -3295,7 +3277,7 @@ mod tests {
     #[test]
     fn a_hallway_is_the_narrowest_thing_on_the_map() {
         let hall = hex_sketch(HexSketchRole::Corridor).inset;
-        let vertical = hex_sketch(HexSketchRole::Shaft).inset;
+        let vertical = hex_sketch(HexSketchRole::ClimbHigh).inset;
         let room = hex_sketch(HexSketchRole::Room).inset;
         assert!(hall < vertical && vertical < room);
     }
@@ -3307,7 +3289,10 @@ mod tests {
             assert!(!composition.label().is_empty());
         }
         assert_eq!(HexSketchRole::Room.composition(), HexComposition::Room);
-        assert_eq!(HexSketchRole::Shaft.composition(), HexComposition::Vertical);
+        assert_eq!(
+            HexSketchRole::ClimbHigh.composition(),
+            HexComposition::Vertical
+        );
         assert_eq!(HexSketchRole::Corridor.composition(), HexComposition::Hall);
     }
 

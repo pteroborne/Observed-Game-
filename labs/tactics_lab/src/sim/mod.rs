@@ -1143,9 +1143,7 @@ fn archetype_code(archetype: HexArchetype) -> u64 {
         HexArchetype::Straight => 2,
         HexArchetype::Corner => 3,
         HexArchetype::Junction => 4,
-        HexArchetype::RampUp => 5,
-        HexArchetype::RampHead => 6,
-        HexArchetype::Shaft => 7,
+        // 5 to 7 were the ramps and towers; codes stay put, so a digest does not move.
         HexArchetype::Expanse => 8,
         HexArchetype::Climb { part, heading } => {
             let part = ClimbPart::ALL.iter().position(|&p| p == part).unwrap_or(0) as u64;

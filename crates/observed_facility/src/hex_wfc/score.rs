@@ -23,10 +23,13 @@ pub(super) const WEIGHT_ROOM_WHOLENESS: f64 = 2.0;
 pub(super) const WEIGHT_VARIETY: f64 = 1.5;
 pub(super) const WEIGHT_RHYTHM: f64 = 1.0;
 
-/// The traversal-grammar kinds `archetype_variety` distributes probability
-/// mass over (every non-`Void` [`HexArchetype`] variant). Used to normalize
-/// the raw Shannon entropy into a stable `0.0..=1.0` range.
-// Room, Straight, Corner, Junction, RampUp, RampHead, Shaft, Expanse
+/// Normalizes the raw Shannon entropy of `archetype_variety` into a stable
+/// `0.0..=1.0` range.
+///
+/// It was the count of non-`Void` archetypes when there were eight. The ramps and
+/// stair towers have retired since, and a climb's cells count as kinds of their own,
+/// but the value stays: it scales variety against the other weighted components that
+/// choose between candidate layouts, so changing it would move every facility.
 const SCOREABLE_ARCHETYPE_KINDS: u32 = 8;
 
 /// Breakdown of a solved layout's "interestingness". Every field is a pure
@@ -213,12 +216,7 @@ fn junction_rhythm_score(world: &HexWfcWorld) -> f64 {
     let landmarks: Vec<HexCoord> = world
         .placements
         .values()
-        .filter(|placement| {
-            matches!(
-                placement.archetype,
-                HexArchetype::Junction | HexArchetype::Shaft
-            )
-        })
+        .filter(|placement| matches!(placement.archetype, HexArchetype::Junction))
         .map(|placement| placement.coord)
         .collect();
     if landmarks.len() < 2 {

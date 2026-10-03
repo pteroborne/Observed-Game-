@@ -2,9 +2,7 @@
 //! All nine designs are ordinary Facet Monument WFC candidates. Their shared
 //! stepped bands and tapered buttresses carry the building across cell seams.
 
-use super::entities::{
-    Meta, lateral_port, stair_node, tile_cell, tile_light, vertical_port, worldspawn,
-};
+use super::entities::{Meta, lateral_port, tile_cell, tile_light, worldspawn};
 use super::geometry::{
     FLOOR_TOP, LEVEL, P2, WALL, band, boxed, centroid, corners, edge, hex_slab, lerp,
     offset_inward, plane3, prism, sloped_prism, wall,
@@ -336,59 +334,6 @@ pub fn dais() -> String {
     )
 }
 
-pub fn ascent() -> String {
-    let height = |x: f64| FLOOR_TOP + (x + 112.0) * LEVEL / 224.0;
-    let mut brushes = hex_slab(0.0, FLOOR_TOP, 0.0, 0.0);
-    let strip = |x: f64, a: f64, b: f64, rise: f64| {
-        sloped_prism(
-            &[(-x, a), (x, a), (x, b), (-x, b)],
-            0.0,
-            [
-                (-112.0, a, height(-112.0) + rise),
-                (-112.0, b, height(-112.0) + rise),
-                (112.0, a, height(112.0) + rise),
-            ],
-            None,
-        )
-    };
-    brushes.push_str(&strip(112.0, -36.0, 36.0, 0.0));
-    for sign in [-1.0, 1.0] {
-        // Three continuous courses rise with each flank, matching the language
-        // of the processional walls without blocking the observer's eye line.
-        brushes.push_str(&strip(104.0, sign * 38.0, sign * 46.0, 14.0));
-        brushes.push_str(&strip(96.0, sign * 48.0, sign * 62.0, -2.0));
-        brushes.push_str(&strip(80.0, sign * 64.0, sign * 78.0, -18.0));
-    }
-    for face in [1, 2, 4, 5] {
-        brushes.push_str(&wall(face, 0.0, 28.0));
-    }
-    brushes.push_str(&threshold(3, 0.0));
-    brushes.push_str(&threshold(0, LEVEL));
-    let mut lights = String::new();
-    for x in [-60.0, 60.0] {
-        let z = height(x) + 18.0;
-        brushes.push_str(&boxed((x - 16.0, 50.0, z), (x + 16.0, 60.0, z + 4.0)));
-        lights.push_str(&tile_light(x, 49.0, z - 2.0));
-    }
-    let mut out =
-        format!("// Empty Audience: full-storey ascent with stepped flanks.\n{GENERATED_NOTE}");
-    out.push_str(&worldspawn(&brushes));
-    out.push_str(
-        &Meta::cell("authored/audience_ascent", "hall_ramp", BASE, 2, 3)
-            .with_register_scope("facet_monument")
-            .emit(),
-    );
-    out.push_str(&tile_cell(0, 0, 0, 2, "ramp"));
-    out.push_str(&lateral_port(3, "door", "audience_entry", 0, 0, 0));
-    out.push_str(&vertical_port("up", "ramp_open", "audience_ascent", 0));
-    for index in 0..5u16 {
-        let x = -112.0 + f64::from(index) * 56.0;
-        out.push_str(&stair_node(index, x, 0.0, height(x)));
-    }
-    out.push_str(&lights);
-    out
-}
-
 pub fn builders() -> Vec<Builder> {
     vec![
         ("audience_procession", procession),
@@ -397,7 +342,6 @@ pub fn builders() -> Vec<Builder> {
         ("audience_branch", branch),
         ("audience_landing", landing),
         ("audience_dais", dais),
-        ("audience_ascent", ascent),
         ("audience_elbow", elbow),
         ("audience_gallery", gallery),
     ]

@@ -13,15 +13,13 @@
 
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
-use observed_facility::hex_wfc::{HexArchetype, HexWfcWorld};
-use observed_hex::{HexFace, PortClass, hex_origin};
+use observed_facility::hex_wfc::{ClimbPart, HexArchetype, HexWfcWorld};
+use observed_hex::{HexFace, hex_origin};
 use observed_style::{MarkerRole, SchematicRole, hex_sketch, marker, schematic};
 use observed_traversal::ColliderShape;
 
 use crate::{LabState, LabVisual, Layer, cell_sketch, sketch_role};
-use observed_schematic::{
-    LineBatch, SurfaceBatch, floor_ring, hex_prism, ramp_glyph, stair_glyph, wall_bands,
-};
+use observed_schematic::{LineBatch, SurfaceBatch, floor_ring, hex_prism, ramp_glyph, wall_bands};
 
 /// Walls are drawn at a fraction of the cell's height. A floor plan is read
 /// from above; full-height cages stack into an unreadable thicket, while a low
@@ -183,10 +181,10 @@ pub fn schematic_view(
             // A vertical connection gets a symbol, so a floor change is legible
             // without selecting the cell.
             let glyph = match placement.archetype {
-                HexArchetype::Shaft if placement.up != PortClass::Sealed => {
-                    Some(stair_glyph(height))
-                }
-                HexArchetype::RampUp => Some(ramp_glyph(height)),
+                HexArchetype::Climb {
+                    part: ClimbPart::Foot | ClimbPart::Mid | ClimbPart::High,
+                    ..
+                } => Some(ramp_glyph(height)),
                 _ => None,
             };
             if let Some(glyph) = glyph {
@@ -367,9 +365,10 @@ mod tests {
         }
         for archetype in [
             HexArchetype::Room,
-            HexArchetype::RampUp,
-            HexArchetype::RampHead,
-            HexArchetype::Shaft,
+            HexArchetype::Climb {
+                part: ClimbPart::High,
+                heading: observed_hex::HexFace::East,
+            },
         ] {
             assert!(!is_volatile(archetype), "{archetype:?} is structural");
         }

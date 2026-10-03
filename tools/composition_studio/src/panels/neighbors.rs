@@ -173,9 +173,6 @@ fn short(archetype: HexArchetype) -> &'static str {
         HexArchetype::Straight => "strt",
         HexArchetype::Corner => "turn",
         HexArchetype::Junction => "junc",
-        HexArchetype::RampUp => "ramp",
-        HexArchetype::RampHead => "rmph",
-        HexArchetype::Shaft => "shft",
         HexArchetype::Expanse => "expn",
         HexArchetype::Climb { .. } => "clmb",
     }

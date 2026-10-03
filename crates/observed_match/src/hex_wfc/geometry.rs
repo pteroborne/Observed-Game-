@@ -27,8 +27,8 @@ const RESERVED_ID_BASE: u32 = 0xF000_0000;
 pub enum HexStructureRole {
     Hall,
     Room,
-    Ramp,
-    Shaft,
+    /// A cell of a climb composition: drawn by facing, so its flight wears the floor.
+    Climb,
     Boundary,
 }
 
@@ -234,8 +234,6 @@ pub struct HexWfcGeometrySnapshot {
     /// Compatibility mirror derived solely from [`Self::guides`].
     pub decks: BTreeMap<HexCoord, DeckPath>,
     pub arena: ArenaSpec,
-    /// Ramp heads intentionally emit nothing: their low-cell prefab spans both levels.
-    pub ramp_heads: usize,
     /// Each room blueprint is visited once, even when its footprint has many cells.
     pub blueprint_instances: usize,
     piece_indices: BTreeMap<StableColliderId, usize>,
@@ -270,7 +268,6 @@ pub struct HexGeometryDelta {
     /// Cells absent here lose the whole prior guide on apply.
     pub upserted_guides: BTreeMap<HexCoord, ProjectedTraversalGuide>,
     pub colliders: ColliderDelta,
-    pub ramp_heads: usize,
     pub blueprint_instances: usize,
 }
 
@@ -356,13 +353,8 @@ impl HexWfcGeometrySnapshot {
             )?;
         }
 
-        let mut ramp_heads = 0;
         for placement in world.placements.values() {
             if placement.space.unbuilt() || consumed_rooms.contains(&placement.coord) {
-                continue;
-            }
-            if placement.archetype == HexArchetype::RampHead {
-                ramp_heads += 1;
                 continue;
             }
             let role = role_for(placement);
@@ -410,7 +402,6 @@ impl HexWfcGeometrySnapshot {
             climbs,
             decks,
             arena,
-            ramp_heads,
             blueprint_instances: world.blueprints.len(),
             piece_indices,
             collider_indices,
@@ -558,18 +549,6 @@ impl HexWfcGeometrySnapshot {
             upserted_lights,
             upserted_guides,
             colliders,
-            ramp_heads: self.ramp_heads.saturating_sub(
-                logical
-                    .previous_placements
-                    .values()
-                    .filter(|placement| placement.archetype == HexArchetype::RampHead)
-                    .count(),
-            ) + logical
-                .region
-                .cells
-                .iter()
-                .filter(|coord| world.placements[coord].archetype == HexArchetype::RampHead)
-                .count(),
             blueprint_instances: world.blueprints.len(),
         })
     }
@@ -608,7 +587,6 @@ impl HexWfcGeometrySnapshot {
             &delta.upserted_guides,
         );
         self.generation = delta.generation;
-        self.ramp_heads = delta.ramp_heads;
         self.blueprint_instances = delta.blueprint_instances;
         Ok(())
     }
@@ -731,7 +709,7 @@ fn project_cell(
         .placements
         .get(&coord)
         .ok_or(HexGeometryError::BlueprintCellMissing(coord))?;
-    if placement.space.unbuilt() || placement.archetype == HexArchetype::RampHead {
+    if placement.space.unbuilt() {
         return Ok(());
     }
     if placement.space == HexSpace::Room {
@@ -1542,8 +1520,7 @@ fn role_for(placement: &HexPlacement) -> HexStructureRole {
         // A climb's flight is one sloped mass from the slab to the walking surface. Drawn
         // as a hall it is judged whole, as a wall by its height, and the district's wall
         // covers the floor; as a ramp each face takes the surface it faces.
-        HexArchetype::RampUp | HexArchetype::Climb { .. } => HexStructureRole::Ramp,
-        HexArchetype::Shaft => HexStructureRole::Shaft,
+        HexArchetype::Climb { .. } => HexStructureRole::Climb,
         _ => HexStructureRole::Hall,
     }
 }

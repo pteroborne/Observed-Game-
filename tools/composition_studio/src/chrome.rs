@@ -439,7 +439,7 @@ pub fn update_chrome_ui(
                 s.push_str("DISTRICT BIAS OVERRIDES:\n\n");
                 for register in ArchitectureRegister::ALL {
                     s.push_str(&format!(
-                        "{:<16}: room={:.2} straight={:.2} shaft={:.2} expanse={:.2}\n",
+                        "{:<16}: room={:.2} straight={:.2} climb={:.2} expanse={:.2}\n",
                         register.slug(),
                         state.profile.district_bias_for(
                             register,
@@ -451,7 +451,10 @@ pub fn update_chrome_ui(
                         ),
                         state.profile.district_bias_for(
                             register,
-                            observed_facility::hex_wfc::HexArchetype::Shaft
+                            observed_facility::hex_wfc::HexArchetype::Climb {
+                                part: observed_facility::hex_wfc::ClimbPart::Mid,
+                                heading: observed_hex::HexFace::East,
+                            }
                         ),
                         state.profile.district_bias_for(
                             register,

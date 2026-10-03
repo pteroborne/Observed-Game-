@@ -8,13 +8,6 @@
       "turn": 0
     },
     {
-      "tile": "stair_tower:234",
-      "q": 4,
-      "r": 4,
-      "level": 0,
-      "turn": 0
-    },
-    {
       "tile": "hall_junction_4way:840",
       "q": 5,
       "r": 4,
@@ -55,13 +48,6 @@
       "r": 3,
       "level": 0,
       "turn": 1
-    },
-    {
-      "tile": "stair_tower:240",
-      "q": 4,
-      "r": 4,
-      "level": 1,
-      "turn": 0
     },
     {
       "tile": "hall_junction_3way:840",

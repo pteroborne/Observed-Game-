@@ -1,7 +1,7 @@
 use observed_authoring::TilePrototype;
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{
-    HexArchetype, HexPlacement, HexSpace, HexWfcConfig, HexWfcWorld, lateral_bit,
+    ClimbPart, HexArchetype, HexPlacement, HexSpace, HexWfcConfig, HexWfcWorld, lateral_bit,
 };
 use observed_hex::PortClass;
 
@@ -12,7 +12,7 @@ fn tiles() -> Vec<TilePrototype> {
 }
 
 /// A hand-built two-cell world: `A` at `(5, 5, 0)` is a plain E/W hall, `B`
-/// immediately east of it is a ramp cell (different [`HexStructureRole`]).
+/// immediately east of it is a climb's foot (different [`HexStructureRole`]).
 /// No solver run, no other occupied cells — every other lateral neighbor of
 /// `A` and `B` is void by omission. This gives a fully known expected trim
 /// set:
@@ -55,9 +55,12 @@ fn two_cell_world() -> HexWfcWorld {
         HexPlacement {
             coord: b,
             space: HexSpace::Hall,
-            archetype: HexArchetype::RampUp,
-            doors: lateral_bit(HexFace::West),
-            up: PortClass::RampOpen,
+            archetype: HexArchetype::Climb {
+                part: ClimbPart::Foot,
+                heading: HexFace::East,
+            },
+            doors: lateral_bit(HexFace::West) | lateral_bit(HexFace::East),
+            up: PortClass::Sealed,
             down: PortClass::Sealed,
         },
     );

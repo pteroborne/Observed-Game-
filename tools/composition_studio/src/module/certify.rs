@@ -125,9 +125,9 @@ mod tests {
 
     #[test]
     fn a_climbing_module_certifies_under_the_canonical_profile() {
-        let state = certify_selected(&diagnosis("stair_tower_helix_01"));
+        let state = certify_selected(&diagnosis("climb_mid"));
         let CertificationState::Complete(report) = &state else {
-            panic!("a tower has a declared climb to certify: {state:?}");
+            panic!("a climb cell has a declared climb to certify: {state:?}");
         };
         assert!(report.passed(), "{:#?}", report.failures);
         assert!(state.passed());
@@ -150,9 +150,9 @@ mod tests {
     /// downstream can compare it against what `tilec` proved.
     #[test]
     fn the_fast_geometric_probe_never_certifies_success() {
-        let diagnosis = diagnosis("stair_tower_helix_01");
-        let walk = walk_module(&diagnosis).expect("a tower has an advisory route");
-        assert!(walk.is_clear(), "the advisory probe finds the tower clear");
+        let diagnosis = diagnosis("climb_mid");
+        let walk = walk_module(&diagnosis).expect("a climb cell has an advisory route");
+        assert!(walk.is_clear(), "the advisory probe finds the climb clear");
 
         let prototype = diagnosis.prototype.as_ref().expect("geometry parsed");
         assert!(

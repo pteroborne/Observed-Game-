@@ -29,20 +29,6 @@
       "level": 0
     },
     {
-      "tile": "hall_ramp:144",
-      "q": 4,
-      "r": 3,
-      "turn": 5,
-      "level": 0
-    },
-    {
-      "tile": "hall_ramp:144",
-      "q": 3,
-      "r": 5,
-      "turn": 1,
-      "level": 0
-    },
-    {
       "tile": "hall_turn_60:780",
       "q": 5,
       "r": 2,

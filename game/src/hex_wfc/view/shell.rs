@@ -438,7 +438,7 @@ fn spawn_cell_practicals(
         if has_authored_lights
             && matches!(
                 role,
-                HexStructureRole::Room | HexStructureRole::Hall | HexStructureRole::Ramp
+                HexStructureRole::Room | HexStructureRole::Hall | HexStructureRole::Climb
             )
         {
             // A diffuser is geometry, so it gets the same two treatments the

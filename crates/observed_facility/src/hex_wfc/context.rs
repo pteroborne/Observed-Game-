@@ -111,12 +111,9 @@ pub(super) fn context_multiplier(
     tendencies: CompositionTendencies,
 ) -> f64 {
     match archetype {
-        // Verticals (ramps, shafts) cluster toward the central axis and thin
-        // out toward the edges, so the facility grows a legible vertical core.
-        HexArchetype::RampUp
-        | HexArchetype::RampHead
-        | HexArchetype::Shaft
-        | HexArchetype::Climb { .. } => lerp(
+        // Climbs cluster toward the central axis and thin out toward the edges,
+        // so the facility grows a legible vertical core.
+        HexArchetype::Climb { .. } => lerp(
             tendencies.vertical_center_boost,
             tendencies.vertical_edge_falloff,
             radial_fraction(coord, config),
@@ -146,7 +143,7 @@ const INFLUENCE_MAX: f64 = 4.0;
 
 /// The number of biasable archetypes (every [`HexArchetype`] except `Void`,
 /// which is empty space and always neutral).
-const INFLUENCE_SLOTS: usize = 8;
+const INFLUENCE_SLOTS: usize = 6;
 
 /// A bounded, per-archetype weight bias an eliminated team applies to *drive*
 /// the facility's refactoring (Phase 4 feasibility): it perturbs which
@@ -173,12 +170,8 @@ fn slot(archetype: HexArchetype) -> Option<usize> {
         HexArchetype::Straight => 1,
         HexArchetype::Corner => 2,
         HexArchetype::Junction => 3,
-        // A climb composition shares the ramp's slot until the ramps retire
-        // (`docs/climb_compositions_plan.md`, phase 4).
-        HexArchetype::RampUp | HexArchetype::Climb { .. } => 4,
-        HexArchetype::RampHead => 5,
-        HexArchetype::Shaft => 6,
-        HexArchetype::Expanse => 7,
+        HexArchetype::Climb { .. } => 4,
+        HexArchetype::Expanse => 5,
         HexArchetype::Void => return None,
     })
 }
@@ -207,13 +200,16 @@ impl HexInfluenceField {
         self
     }
 
-    /// Push the facility taller: favour ramps and shafts.
+    /// Push the facility taller: favour climbs.
     #[must_use]
     pub fn encourage_verticality() -> Self {
-        Self::neutral()
-            .with_bias(HexArchetype::RampUp, 2.5)
-            .with_bias(HexArchetype::RampHead, 2.5)
-            .with_bias(HexArchetype::Shaft, 2.5)
+        Self::neutral().with_bias(
+            HexArchetype::Climb {
+                part: super::ClimbPart::Foot,
+                heading: observed_hex::HexFace::East,
+            },
+            2.5,
+        )
     }
 
     /// Make the facility less forgiving: starve recovery rooms.
@@ -281,8 +277,7 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Straight => 1.5,
             A::Corner => 0.9,
             A::Junction => 2.4,
-            A::RampUp | A::RampHead | A::Climb { .. } => 0.6,
-            A::Shaft => 0.3,
+            A::Climb { .. } => 0.6,
             A::Room => 1.2,
             // The district the archetype exists for.
             A::Expanse => 3.0,
@@ -293,8 +288,7 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Straight => 1.8,
             A::Corner => 2.4,
             A::Junction => 0.45,
-            A::RampUp | A::RampHead | A::Climb { .. } => 0.8,
-            A::Shaft => 0.4,
+            A::Climb { .. } => 0.8,
             A::Room => 1.0,
             // A winding district is the opposite of an open one, but a whole floor
             // cannot go without its expanses: suppressed (0.3) across Lumen's floor of
@@ -303,14 +297,13 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Expanse => 1.0,
             A::Void => 1.0,
         },
-        // The vertical districts. Wellshaft is shafts; Megastructure climbs on
-        // ramps, so it reads as a built ascent rather than a stack of towers.
+        // The vertical districts: both lean on climbs, Megastructure hardest, so it
+        // reads as a built ascent.
         R::Wellshaft => match archetype {
             A::Straight => 0.7,
             A::Corner => 0.8,
             A::Junction => 0.8,
-            A::RampUp | A::RampHead | A::Climb { .. } => 1.6,
-            A::Shaft => 1.0,
+            A::Climb { .. } => 1.6,
             A::Room => 0.9,
             A::Expanse => 0.5,
             A::Void => 1.0,
@@ -319,10 +312,9 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Straight => 0.8,
             A::Corner => 0.8,
             A::Junction => 1.1,
-            A::RampUp | A::RampHead | A::Climb { .. } => 2.6,
-            A::Shaft => 0.8,
+            A::Climb { .. } => 2.6,
             A::Room => 1.0,
-            // A megastructure earns its scale from open floor as well as ramps.
+            // A megastructure earns its scale from open floor as well as climbs.
             A::Expanse => 1.6,
             A::Void => 1.0,
         },
@@ -331,39 +323,33 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
         R::ShadowScreen => match archetype {
             A::Corner => 1.4,
             A::Junction => 0.8,
-            A::Shaft => 0.5,
             _ => 1.0,
         },
         R::Monolith => match archetype {
             A::Straight => 1.4,
             A::Junction => 0.8,
             A::Room => 1.2,
-            A::Shaft => 0.5,
             _ => 1.0,
         },
         R::Institutional => match archetype {
             A::Straight => 1.2,
             A::Junction => 1.3,
-            A::Shaft => 0.45,
             _ => 1.0,
         },
         R::FacetMonument => match archetype {
             A::Corner => 1.5,
             A::Room => 1.2,
-            A::Shaft => 0.5,
             _ => 1.0,
         },
         R::InfiniteGallery => match archetype {
             A::Straight => 2.0,
             A::Corner => 0.7,
             A::Junction => 0.7,
-            A::Shaft => 0.4,
             _ => 1.0,
         },
         R::Thinning => match archetype {
             A::Junction => 0.6,
             A::Room => 0.7,
-            A::Shaft => 0.6,
             _ => 1.0,
         },
     };
@@ -435,6 +421,12 @@ pub(super) fn influenced_weight(
 mod tests {
     use super::*;
 
+    /// Any climb cell: the weights are the composition's, whichever cell and heading.
+    const CLIMB: HexArchetype = HexArchetype::Climb {
+        part: crate::hex_wfc::ClimbPart::Mid,
+        heading: observed_hex::HexFace::East,
+    };
+
     fn config() -> HexWfcConfig {
         HexWfcConfig::arc_default()
     }
@@ -472,8 +464,8 @@ mod tests {
     #[test]
     fn multiplier_is_deterministic() {
         let c = coord(5, 5, 2);
-        let a = context_multiplier(c, HexArchetype::Shaft, config());
-        let b = context_multiplier(c, HexArchetype::Shaft, config());
+        let a = context_multiplier(c, CLIMB, config());
+        let b = context_multiplier(c, CLIMB, config());
         assert_eq!(a, b);
     }
 
@@ -481,12 +473,7 @@ mod tests {
     fn positive_weight_never_zeroed() {
         let cfg = config();
         for level in 0..cfg.levels {
-            for &archetype in &[
-                HexArchetype::Room,
-                HexArchetype::Shaft,
-                HexArchetype::Straight,
-                HexArchetype::RampUp,
-            ] {
+            for &archetype in &[HexArchetype::Room, CLIMB, HexArchetype::Straight] {
                 let edge = effective_weight(coord(0, 0, level), archetype, 4, cfg, None, None);
                 assert!(
                     edge >= 1,
@@ -517,12 +504,8 @@ mod tests {
     #[test]
     fn verticals_are_favored_near_the_central_axis() {
         let cfg = config();
-        let center = context_multiplier(
-            coord(cfg.cols / 2, cfg.rows / 2, 1),
-            HexArchetype::Shaft,
-            cfg,
-        );
-        let edge = context_multiplier(coord(0, 0, 1), HexArchetype::Shaft, cfg);
+        let center = context_multiplier(coord(cfg.cols / 2, cfg.rows / 2, 1), CLIMB, cfg);
+        let edge = context_multiplier(coord(0, 0, 1), CLIMB, cfg);
         assert!(
             center > edge,
             "shaft tendency should be higher at the axis ({center}) than the edge ({edge})"
@@ -549,15 +532,15 @@ mod tests {
     fn composition_weighting_reaches_the_solve() {
         let cfg = config();
         let center = coord(cfg.cols / 2, cfg.rows / 2, 1);
-        assert!(context_multiplier(center, HexArchetype::Shaft, cfg) > 1.0);
+        assert!(context_multiplier(center, CLIMB, cfg) > 1.0);
         assert!(
-            effective_weight(center, HexArchetype::Shaft, 10, cfg, None, None) > 10,
+            effective_weight(center, CLIMB, 10, cfg, None, None) > 10,
             "the geometry tendency must reach the weight"
         );
         // And a district bends it further, in the direction its identity says.
         let open = effective_weight(
             center,
-            HexArchetype::Shaft,
+            CLIMB,
             10,
             cfg,
             Some(ArchitectureRegister::LiminalGrid),
@@ -565,7 +548,7 @@ mod tests {
         );
         let vertical = effective_weight(
             center,
-            HexArchetype::Shaft,
+            CLIMB,
             10,
             cfg,
             Some(ArchitectureRegister::Wellshaft),
@@ -589,8 +572,7 @@ mod tests {
                 HexArchetype::Corner,
                 HexArchetype::Junction,
                 HexArchetype::Room,
-                HexArchetype::RampUp,
-                HexArchetype::Shaft,
+                CLIMB,
             ] {
                 assert!(
                     effective_weight(center, archetype, 1, cfg, Some(register), None) >= 1,
@@ -613,18 +595,12 @@ mod tests {
         let m = district_multiplier;
         // Liminal Grid: vast and open.
         assert!(m(R::LiminalGrid, A::Junction) > m(R::OverlitGrid, A::Junction));
-        assert!(m(R::LiminalGrid, A::Shaft) < 0.5);
+        assert!(m(R::LiminalGrid, CLIMB) < 1.0, "verticals pushed down");
         // Overlit Grid: winding, so turns over branches.
         assert!(m(R::OverlitGrid, A::Corner) > m(R::OverlitGrid, A::Junction) * 3.0);
-        // The vertical pair, expressed without adding shafts anywhere.
-        assert!(m(R::Wellshaft, A::Shaft) > m(R::LiminalGrid, A::Shaft));
-        assert!(m(R::Megastructure, A::RampUp) > m(R::LiminalGrid, A::RampUp));
-        for register in R::ALL {
-            assert!(
-                m(register, A::Shaft) <= 1.0,
-                "{register:?} boosts shafts above baseline; the facility is already                  half shafts and the generic switchback is the fragile tile"
-            );
-        }
+        // The vertical pair: both climb more than the open floor does.
+        assert!(m(R::Wellshaft, CLIMB) > m(R::LiminalGrid, CLIMB));
+        assert!(m(R::Megastructure, CLIMB) > m(R::LiminalGrid, CLIMB));
     }
 
     /// The claim Slice 0 rests on: routing the solve through a baseline
@@ -699,7 +675,7 @@ mod tests {
         profile.archetype_bias = profile
             .archetype_bias
             .with(HexArchetype::Junction, 2.5)
-            .with(HexArchetype::Shaft, 0.4);
+            .with(CLIMB, 0.4);
         assert_eq!(profile.validate(), Ok(()));
 
         let a = HexWfcWorld::generate_with_profile(seed, cfg, None, &profile)
@@ -731,8 +707,8 @@ mod tests {
         let c = coord(5, 5, 1);
         let vertical = HexInfluenceField::encourage_verticality();
         // Shaft weight rises under encourage_verticality; a hall is untouched.
-        let shaft_base = effective_weight(c, HexArchetype::Shaft, 10, cfg, None, None);
-        let shaft_driven = effective_weight(c, HexArchetype::Shaft, 10, cfg, None, Some(&vertical));
+        let shaft_base = effective_weight(c, CLIMB, 10, cfg, None, None);
+        let shaft_driven = effective_weight(c, CLIMB, 10, cfg, None, Some(&vertical));
         assert!(
             shaft_driven > shaft_base,
             "verticality should raise shaft weight ({shaft_driven} vs {shaft_base})"
@@ -757,9 +733,7 @@ mod tests {
                 HexArchetype::Straight,
                 HexArchetype::Corner,
                 HexArchetype::Junction,
-                HexArchetype::RampUp,
-                HexArchetype::RampHead,
-                HexArchetype::Shaft,
+                CLIMB,
                 HexArchetype::Expanse,
             ] {
                 let mut profile = HexCompositionProfile::baseline();
@@ -812,15 +786,15 @@ mod tests {
         let cfg = config();
         let c = coord(5, 5, 1);
         let baseline = HexCompositionProfile::baseline();
-        let base = super::effective_weight(c, HexArchetype::Shaft, 10, cfg, None, None, &baseline);
+        let base = super::effective_weight(c, CLIMB, 10, cfg, None, None, &baseline);
 
         let mut raised = HexCompositionProfile::baseline();
-        raised.archetype_bias = raised.archetype_bias.with(HexArchetype::Shaft, 2.0);
-        let up = super::effective_weight(c, HexArchetype::Shaft, 10, cfg, None, None, &raised);
+        raised.archetype_bias = raised.archetype_bias.with(CLIMB, 2.0);
+        let up = super::effective_weight(c, CLIMB, 10, cfg, None, None, &raised);
 
         let mut lowered = HexCompositionProfile::baseline();
-        lowered.archetype_bias = lowered.archetype_bias.with(HexArchetype::Shaft, 0.5);
-        let down = super::effective_weight(c, HexArchetype::Shaft, 10, cfg, None, None, &lowered);
+        lowered.archetype_bias = lowered.archetype_bias.with(CLIMB, 0.5);
+        let down = super::effective_weight(c, CLIMB, 10, cfg, None, None, &lowered);
 
         assert!(up > base, "raising the bias must raise the weight");
         assert!(down < base, "lowering the bias must lower the weight");
@@ -903,8 +877,8 @@ mod tests {
         let mut flat = HexCompositionProfile::baseline();
         flat.tendencies.enabled = false;
         assert_eq!(
-            super::effective_weight(center, HexArchetype::Shaft, 10, cfg, None, None, &flat),
-            super::effective_weight(edge, HexArchetype::Shaft, 10, cfg, None, None, &flat),
+            super::effective_weight(center, CLIMB, 10, cfg, None, None, &flat),
+            super::effective_weight(edge, CLIMB, 10, cfg, None, None, &flat),
             "with tendencies off, position must not matter"
         );
     }
@@ -929,9 +903,9 @@ mod tests {
         let c = coord(5, 5, 1);
         // Absurd requested biases clamp to the bounded range, so weight stays sane.
         let extreme = HexInfluenceField::neutral()
-            .with_bias(HexArchetype::Shaft, 1_000.0)
+            .with_bias(CLIMB, 1_000.0)
             .with_bias(HexArchetype::Room, 0.0);
-        let shaft = effective_weight(c, HexArchetype::Shaft, 10, cfg, None, Some(&extreme));
+        let shaft = effective_weight(c, CLIMB, 10, cfg, None, Some(&extreme));
         let room = effective_weight(c, HexArchetype::Room, 10, cfg, None, Some(&extreme));
         // Vertical clamps to <= MAX (4.0) of geometry*static; never explodes.
         let ceiling = (10.0 * INFLUENCE_MAX * VERTICAL_CENTER_BOOST).ceil() as u64;

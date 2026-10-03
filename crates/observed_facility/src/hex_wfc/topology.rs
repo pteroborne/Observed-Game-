@@ -7,8 +7,8 @@ use observed_hex::{HexCoord, HexFace, PortClass};
 
 use super::blueprint::StampedBlueprint;
 use super::{
-    HexArchetype, HexCorridorInstance, HexObservationFrame, HexPlacement, HexSpace,
-    HexThresholdAttachment, HexWfcConfig, HexWfcWorld,
+    HexCorridorInstance, HexObservationFrame, HexPlacement, HexSpace, HexThresholdAttachment,
+    HexWfcConfig, HexWfcWorld,
 };
 
 /// Per-port-class travel costs (Phase 94). Lateral `Door` steps are the
@@ -72,9 +72,8 @@ pub(super) fn is_connection_open(
         return false;
     }
     // A vertical link between two room cells is a port the facility cannot
-    // actually deliver. Nothing climbs it: the bot's stair handling is gated on
-    // `HexArchetype::Shaft`, and its waypoints are tuned to the switchback
-    // tower's own geometry, so there are no treads inside a room to follow.
+    // actually deliver. Nothing climbs it: bodies climb only by climb compositions,
+    // so there are no treads inside a room to follow.
     //
     // Routing through one promises a climb that cannot happen, which strands
     // whoever follows the route.
@@ -331,23 +330,12 @@ pub(super) fn pinned_cells(
         }
     }
 
-    // A ramp pair and a climb composition are each one traversal unit. Expand until
-    // stable so a cell reached as an attached threshold cannot leave the rest of its
-    // unit mutable.
+    // A climb composition is one traversal unit. Expand until stable so a cell reached
+    // as an attached threshold cannot leave the rest of its unit mutable.
     loop {
         let mut mates = Vec::new();
         for &coord in &pins {
             let placement = &placements[&coord];
-            let face = match placement.archetype {
-                HexArchetype::RampUp => Some(HexFace::Up),
-                HexArchetype::RampHead => Some(HexFace::Down),
-                _ => None,
-            };
-            if let Some(mate) = face.and_then(|face| config.grid().neighbor(coord, face))
-                && !pins.contains(&mate)
-            {
-                mates.push(mate);
-            }
             if let Some(unit) = super::composition_cells(config.grid(), coord, placement.archetype)
             {
                 mates.extend(unit.into_iter().filter(|cell| !pins.contains(cell)));

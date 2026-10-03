@@ -465,7 +465,7 @@ fn saving_writes_a_loadable_profile_and_sidecar() {
     std::fs::create_dir_all(&dir).expect("temp dir");
 
     let mut profile = HexCompositionProfile::baseline();
-    profile.archetype_bias = profile.archetype_bias.with(HexArchetype::Shaft, 1.8);
+    profile.archetype_bias = profile.archetype_bias.with(HexArchetype::Corner, 1.8);
     let build =
         observed_authoring::composition::CompositionBuild::new(profile.clone()).expect("hashes");
     observed_authoring::composition::write_profile_build(&build, &dir).expect("writes");
@@ -496,7 +496,7 @@ fn the_simulation_hash_moves_when_the_profile_does() {
     let before = crate::persist::simulation_hash(&state, &state.profile);
 
     let mut edited = state.profile.clone();
-    edited.archetype_bias = edited.archetype_bias.with(HexArchetype::Shaft, 2.0);
+    edited.archetype_bias = edited.archetype_bias.with(HexArchetype::Corner, 2.0);
     let after = crate::persist::simulation_hash(&state, &edited);
 
     assert_ne!(before, after, "an edit must be visible in the status bar");

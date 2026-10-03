@@ -5,12 +5,9 @@
 //! Low sealed parapets stop a body while allowing observation across the well;
 //! all door sills retain the production floor height and aperture.
 
-use super::entities::{
-    Meta, deck_node, lateral_port, stair_node, tile_cell, tile_light, vertical_port, worldspawn,
-};
+use super::entities::{Meta, deck_node, lateral_port, tile_cell, tile_light, worldspawn};
 use super::geometry::{
-    FLOOR_TOP, LEVEL, P2, WALL, boxed, corners, door_wall, edge, hex_slab, lerp, offset_inward,
-    prism, sloped_prism, wall,
+    FLOOR_TOP, LEVEL, P2, WALL, boxed, corners, edge, hex_slab, lerp, offset_inward, prism, wall,
 };
 use super::{Builder, GENERATED_NOTE};
 
@@ -360,75 +357,6 @@ pub fn terrace_pairs() -> String {
     )
 }
 
-/// A roofless ascent beside a void, with the same straight spine and port
-/// convention as the production ramp. Higher-floor content may expose edges;
-/// it must still carry the actor across both seams without a hidden step.
-pub fn ascent() -> String {
-    let height = |x: f64| FLOOR_TOP + (x + 112.0) * LEVEL / 224.0;
-    let mut brushes = hex_slab(0.0, FLOOR_TOP, 0.0, 2.0);
-    let walk = [
-        (-112.0, -36.0),
-        (112.0, -36.0),
-        (112.0, 36.0),
-        (-112.0, 36.0),
-    ];
-    brushes.push_str(&sloped_prism(
-        &walk,
-        0.0,
-        [
-            (-112.0, -36.0, height(-112.0)),
-            (-112.0, 36.0, height(-112.0)),
-            (112.0, -36.0, height(112.0)),
-        ],
-        None,
-    ));
-    // A parapet follows the climb. The sealed edge remains above the body,
-    // while the roofless ramp can be seen from the observation galleries.
-    for face in [1, 2, 4, 5] {
-        let (a, b) = edge(face);
-        let (ia, ib) = offset_inward(a, b, WALL);
-        brushes.push_str(&sloped_prism(
-            &[a, b, ib, ia],
-            0.0,
-            [
-                (-112.0, -64.0, height(-112.0) + 36.0),
-                (-112.0, 64.0, height(-112.0) + 36.0),
-                (112.0, -64.0, height(112.0) + 36.0),
-            ],
-            None,
-        ));
-    }
-    brushes.push_str(&door_wall(3, 0.0, LEVEL, FLOOR_TOP, 72.0, 8.0, 6.0));
-    brushes.push_str(&door_wall(
-        0,
-        0.0,
-        2.0 * LEVEL,
-        LEVEL + FLOOR_TOP,
-        LEVEL + 72.0,
-        8.0,
-        6.0,
-    ));
-    let (supports, lights) = piers(2.0 * LEVEL);
-    brushes.push_str(&supports);
-    let mut out =
-        format!("// Witness Exchange ascent: exposed central climb, two levels.\n{GENERATED_NOTE}");
-    out.push_str(&worldspawn(&brushes));
-    out.push_str(
-        &Meta::cell("authored/witness_ascent", "hall_ramp", BASE, 2, 3)
-            .with_register_scope("wellshaft")
-            .emit(),
-    );
-    out.push_str(&tile_cell(0, 0, 0, 2, "ramp"));
-    out.push_str(&lateral_port(3, "door", "witness_entry", 0, 0, 0));
-    out.push_str(&vertical_port("up", "ramp_open", "witness_ascent", 0));
-    for index in 0..5u16 {
-        let x = -112.0 + f64::from(index) * 56.0;
-        out.push_str(&stair_node(index, x, 0.0, height(x)));
-    }
-    out.push_str(&lights);
-    out
-}
-
 pub fn builders() -> Vec<Builder> {
     vec![
         ("witness_bridge", bridge),
@@ -440,7 +368,6 @@ pub fn builders() -> Vec<Builder> {
         ("witness_elbow", elbow),
         ("witness_gate", gate),
         ("witness_straight", straight),
-        ("witness_ascent", ascent),
         ("witness_terrace_corner", terrace_corner),
         ("witness_terrace_junction", terrace_junction),
         ("witness_terrace_crossroads", terrace_crossroads),
@@ -520,35 +447,6 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn ascent_gains_one_storey_without_jumping() {
-        let tile = crate::parse_authored_module(&ascent())
-            .expect("valid ramp")
-            .prototype;
-        let scene = RapierTraversalScene::from_arena_spec(&tile.arena_spec());
-        let config = FpsConfig::default();
-        let mut body = FpsBody::spawned(
-            Vec3::new(-6.8, 0.7 + config.half_height, 0.0),
-            std::f32::consts::FRAC_PI_2,
-        );
-        let mut highest = 0.0f32;
-        for _ in 0..300 {
-            let report = step_character(
-                &scene,
-                &mut body,
-                PlayerIntent {
-                    movement: Vec2::Y,
-                    ..PlayerIntent::default()
-                },
-                &config,
-                1.0 / 60.0,
-            );
-            assert!(!report.jumped);
-            highest = highest.max(body.position.y - config.half_height);
-        }
-        assert!(highest > 8.35, "climb stopped at {highest}");
     }
 
     #[test]

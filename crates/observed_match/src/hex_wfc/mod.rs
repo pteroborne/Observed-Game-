@@ -42,12 +42,11 @@ pub use model::{
 pub use trim::{HexTrimKind, HexTrimPiece, derive_thresholds, derive_trim, derive_trim_for};
 
 /// Test corpus that preserves the legacy hall fixtures while supplying the
-/// authored towers that atomically replaced their generated counterparts.
+/// authored climb compositions, which the generated library has no counterpart for.
 ///
 /// The production loader already combines both catalogs. Most match tests keep
-/// the compatibility halls to avoid reshuffling unrelated geometry assertions,
-/// but those cells no longer include any `stair_tower`, so the strict tower
-/// family must come from the committed catalog.
+/// the compatibility halls to avoid reshuffling unrelated geometry assertions, so
+/// the climbs must come from the committed catalog.
 #[cfg(test)]
 pub(crate) fn test_catalog() -> &'static observed_authoring::RuntimeHexCatalog {
     static CATALOG: std::sync::OnceLock<observed_authoring::RuntimeHexCatalog> =
@@ -77,12 +76,8 @@ pub(crate) fn compatibility_test_content() -> &'static std::sync::Arc<HexMatchCo
             test_catalog()
                 .cells
                 .iter()
-                .filter(|tile| {
-                    // The authored vertical families: the generated library has none.
-                    tile.key.archetype == "stair_tower"
-                        || tile.key.archetype == "hall_ramp"
-                        || tile.key.archetype.starts_with("climb_")
-                })
+                // The authored climbs: the generated library has none.
+                .filter(|tile| tile.key.archetype.starts_with("climb_"))
                 .cloned(),
         );
         std::sync::Arc::new(HexMatchContent::from_runtime_catalog(

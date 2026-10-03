@@ -591,7 +591,7 @@ fn facility_composition(archetype: &str) -> style::HexComposition {
     match archetype {
         "expanse" | "sanctuary" => style::HexComposition::Room,
         a if a.starts_with("room_") => style::HexComposition::Room,
-        "stair_tower" | "hall_ramp" => style::HexComposition::Vertical,
+        a if a.starts_with("climb_") => style::HexComposition::Vertical,
         _ => style::HexComposition::Hall,
     }
 }
@@ -1417,7 +1417,7 @@ fn handle_menu_navigation(
             MenuTab::Actions => match sel {
                 0 => state.jump_to_archetype("sanctuary"),
                 1 => state.jump_to_silo_wellshaft(),
-                2 => state.jump_to_archetype("ramp"),
+                2 => state.jump_to_archetype("climb_foot"),
                 3 => {
                     let _ = state.reload_authored_sources();
                 }
@@ -2786,7 +2786,7 @@ fn update_menu_ui(
             let items = [
                 "Jump to grounded sanctuary hub".to_string(),
                 "Jump to silo wellshaft (7-hex helix)".to_string(),
-                "Jump to hall_ramp".to_string(),
+                "Jump to a climb".to_string(),
                 "Hot reload authored maps (H)".to_string(),
                 "Respawn body (R)".to_string(),
             ];
@@ -2930,12 +2930,12 @@ mod tests {
             .title(&state.tiles, register.slug())
             .to_lowercase();
         assert!(title.contains("sanctuary"), "got {title}");
-        state.jump_to_archetype("ramp");
+        state.jump_to_archetype("climb_foot");
         let title = state
             .composition()
             .title(&state.tiles, register.slug())
             .to_lowercase();
-        assert!(title.contains("ramp"), "got {title}");
+        assert!(title.contains("climb_foot"), "got {title}");
     }
 
     #[test]
@@ -3008,7 +3008,7 @@ mod tests {
         count: usize,
     ) {
         use observed_authoring::rotation::rotate_signature;
-        use observed_hex::{PortClass, PortSignature, ports_compatible};
+        use observed_hex::{PortClass, ports_compatible};
         use std::collections::{BTreeMap, BTreeSet};
 
         let script: script_runner::ViewScript =
@@ -3048,23 +3048,6 @@ mod tests {
                     .insert(cell.coord, rotate_signature(tile.signature, cell.turn))
                     .is_none()
             );
-            if tile.key.archetype == "hall_ramp" {
-                // The solver represents the upper half separately as RampHead;
-                // the lab renders both halves using the lower prefab.
-                let mut ports = [PortClass::Sealed; 8];
-                ports[HexFace::East.index()] = PortClass::Door;
-                ports[HexFace::Down.index()] = PortClass::RampOpen;
-                let head = PortSignature::try_from_ports(ports).expect("ramp head");
-                let upper = HexCoord {
-                    level: cell.coord.level + 1,
-                    ..cell.coord
-                };
-                assert!(
-                    signatures
-                        .insert(upper, rotate_signature(head, cell.turn))
-                        .is_none()
-                );
-            }
         }
         let grid = HexGridSize {
             cols: 10,
@@ -3083,26 +3066,36 @@ mod tests {
                 }
             }
         }
-        let mut seen = BTreeSet::new();
-        let mut pending = vec![cells[0].coord];
-        while let Some(cell) = pending.pop() {
-            if !seen.insert(cell) {
-                continue;
-            }
-            for face in HexFace::ALL {
-                if signatures[&cell].port(face) != PortClass::Sealed
-                    && let Some(next) = grid.neighbor(cell, face)
-                    && signatures.contains_key(&next)
-                {
-                    pending.push(next);
+        // Each tier is one place, reachable through its own authored ports. The tiers
+        // were joined to each other by one-cell ramps, which retired for the climb
+        // compositions; a benchmark that climbs again will climb by a composition.
+        let levels: BTreeSet<u8> = signatures.keys().map(|cell| cell.level).collect();
+        for level in levels {
+            let tier: BTreeSet<HexCoord> = signatures
+                .keys()
+                .copied()
+                .filter(|cell| cell.level == level)
+                .collect();
+            let mut seen = BTreeSet::new();
+            let mut pending = vec![*tier.first().expect("a tier has cells")];
+            while let Some(cell) = pending.pop() {
+                if !seen.insert(cell) {
+                    continue;
+                }
+                for face in HexFace::LATERAL {
+                    if signatures[&cell].port(face) != PortClass::Sealed
+                        && let Some(next) = grid.neighbor(cell, face)
+                        && tier.contains(&next)
+                    {
+                        pending.push(next);
+                    }
                 }
             }
+            assert_eq!(
+                seen, tier,
+                "tier {level} must be reachable through its authored ports"
+            );
         }
-        assert_eq!(
-            seen.len(),
-            signatures.len(),
-            "all tiers must be reachable through authored ports"
-        );
         state.compositions.push(Composition::Layout { cells });
         let index = state.compositions.len() - 1;
         state.switch(index);
@@ -3121,7 +3114,7 @@ mod tests {
             include_str!("../../../docs/compositions/witness_exchange/hero.json"),
             6,
             "wellshaft",
-            24,
+            22,
         );
     }
 
@@ -3131,7 +3124,7 @@ mod tests {
             include_str!("../../../docs/compositions/last_courtyard/hero.json"),
             8,
             "thinning",
-            9,
+            8,
         );
     }
     #[test]
@@ -3140,7 +3133,7 @@ mod tests {
             include_str!("../../../docs/compositions/empty_audience/hero.json"),
             4,
             "facet_monument",
-            11,
+            9,
         );
     }
     #[test]
@@ -3149,43 +3142,10 @@ mod tests {
             include_str!("../../../docs/compositions/missing_rooms/hero.json"),
             7,
             "infinite_gallery",
-            14,
+            12,
         );
     }
 
-    #[test]
-    fn a_capped_tower_loses_its_lid_in_section_but_an_open_climb_keeps_its_landing() {
-        let state = LabState::load();
-        let cap =
-            resolve_tile(&state.tiles, "stair_tower", 240, "infinite_gallery").expect("shaft head");
-        let base =
-            resolve_tile(&state.tiles, "stair_tower", 234, "infinite_gallery").expect("shaft foot");
-        assert_eq!(tile_ceiling_height(cap), 8.0);
-        assert_eq!(tile_ceiling_height(base), 16.0);
-        let cap_roofs = cap
-            .hulls
-            .iter()
-            .filter(|h| {
-                section_hides(
-                    h,
-                    tile_ceiling_height(cap),
-                    &Transform::IDENTITY,
-                    Vec3::ZERO,
-                    SectionCut::Plan,
-                    0.0,
-                )
-            })
-            .count();
-        assert_eq!(cap_roofs, 1, "only the actual lid should disappear");
-        assert!(base.hulls.iter().all(|h| !section_hides(
-            h,
-            tile_ceiling_height(base),
-            &Transform::IDENTITY,
-            Vec3::ZERO,
-            SectionCut::Plan,
-            0.0
-        )));
-    }
     #[test]
     fn volume_section_removes_shelves_and_their_lights_with_the_cut_quadrant() {
         let shelf = vec![Vec3::new(3.0, 2.0, 3.0), Vec3::new(5.0, 2.2, 5.0)];
@@ -3380,7 +3340,7 @@ mod tests {
             include_str!("../../../docs/compositions/unfinished_crossing/hero.json"),
             5,
             "megastructure",
-            17,
+            15,
         );
     }
 
@@ -3390,7 +3350,7 @@ mod tests {
             include_str!("../../../docs/compositions/same_door_twice/hero.json"),
             2,
             "overlit_grid",
-            15,
+            14,
         );
     }
 }

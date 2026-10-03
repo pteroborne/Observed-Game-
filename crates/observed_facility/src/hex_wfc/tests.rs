@@ -211,42 +211,6 @@ fn a_hundred_seed_3d_corpus_solves_and_validates() {
 
 /// No `RampHead` sits without its matching `RampUp` below, and no `RampUp`
 /// without its `RampHead` above — over the whole 3D corpus.
-#[test]
-fn ramp_pairs_never_orphan_over_the_3d_corpus() {
-    let config = config_3d();
-    for seed in corpus_seeds_3d() {
-        let world = HexWfcWorld::generate(seed, config).expect("must solve");
-        let grid = config.grid();
-        for placement in world.placements.values() {
-            match placement.archetype {
-                HexArchetype::RampUp => {
-                    let above = grid
-                        .neighbor(placement.coord, HexFace::Up)
-                        .map(|c| world.placements[&c].archetype);
-                    assert_eq!(
-                        above,
-                        Some(HexArchetype::RampHead),
-                        "seed {seed:#x}: RampUp at {:?} not capped by RampHead",
-                        placement.coord
-                    );
-                }
-                HexArchetype::RampHead => {
-                    let below = grid
-                        .neighbor(placement.coord, HexFace::Down)
-                        .map(|c| world.placements[&c].archetype);
-                    assert_eq!(
-                        below,
-                        Some(HexArchetype::RampUp),
-                        "seed {seed:#x}: RampHead at {:?} not seated on RampUp",
-                        placement.coord
-                    );
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
 /// The four cells of the climb composition with its foot at `foot`, climbing toward
 /// `heading`, as the world has them: `None` where the lattice ends.
 fn composition_at(
@@ -670,65 +634,6 @@ fn stamped_rooms_land_in_the_districts_their_role_belongs_to() {
     // room-count target could never reach the pool's last slot anyway. Bug
     // backlog #16. It should be rare, not impossible.
     assert!(forks > 0, "DecoherenceFork still never reaches a facility");
-}
-
-/// Does a shaft column place a tower at every level, or every other one?
-///
-/// This decides what `levels: 2` means on a stair tower, and with it where its
-/// `up` port belongs. Counting the solver's own placements rather than checking
-/// an assumption: if consecutive levels in one column are both `Shaft`, then
-/// every cell gets its own tower and each tower climbs exactly one level, so
-/// `levels: 2` is a reservation for the flight to poke into the cell above.
-#[test]
-#[ignore = "diagnostic"]
-fn survey_how_shaft_columns_stack() {
-    use std::collections::BTreeMap;
-
-    let config = HexWfcConfig::arc_default();
-    let world = HexWfcWorld::generate(0x5EED_C0DE, config).expect("must solve");
-
-    // Group shaft cells by plan column.
-    let mut columns: BTreeMap<(u16, u16), Vec<u8>> = BTreeMap::new();
-    for (coord, placement) in &world.placements {
-        if placement.archetype == HexArchetype::Shaft {
-            columns
-                .entry((coord.q, coord.r))
-                .or_default()
-                .push(coord.level);
-        }
-    }
-
-    let mut adjacent = 0;
-    let mut gapped = 0;
-    let mut tallest = 0;
-    for levels in columns.values() {
-        let mut levels = levels.clone();
-        levels.sort_unstable();
-        tallest = tallest.max(levels.len());
-        for pair in levels.windows(2) {
-            if pair[1] - pair[0] == 1 {
-                adjacent += 1;
-            } else {
-                gapped += 1;
-            }
-        }
-    }
-    println!(
-        "shaft columns={} tallest={tallest} adjacent_pairs={adjacent} gapped_pairs={gapped}",
-        columns.len()
-    );
-
-    // And what the ports say: a Through shaft claims open above and below.
-    let mut through = 0;
-    for placement in world.placements.values() {
-        if placement.archetype == HexArchetype::Shaft
-            && placement.up == PortClass::ShaftOpen
-            && placement.down == PortClass::ShaftOpen
-        {
-            through += 1;
-        }
-    }
-    println!("through shafts (open above and below)={through}");
 }
 
 /// How often does a stamped room end up unreachable, and what does the room
@@ -2244,7 +2149,7 @@ fn survey_whether_bias_can_shape_the_halls() {
         ("ceiling", 4.0, 4.0, 0.25, 0.25),
     ];
 
-    println!("bias      deg2%  deg4+%  shaft%  void%  attempts  slowest  live  exit_ok");
+    println!("bias      deg2%  deg4+%  climb%  void%  attempts  slowest  live  exit_ok");
     for (label, straight, corner, junction, expanse) in cases {
         let mut profile = super::profile::HexCompositionProfile::baseline();
         profile.archetype_bias = profile
@@ -2260,7 +2165,7 @@ fn survey_whether_bias_can_shape_the_halls() {
         );
 
         let mut degrees = [0usize; 7];
-        let (mut halls, mut shafts, mut voids, mut cells) = (0usize, 0usize, 0usize, 0usize);
+        let (mut halls, mut climbs, mut voids, mut cells) = (0usize, 0usize, 0usize, 0usize);
         let mut worst_attempts = 0u32;
         let mut slowest = std::time::Duration::ZERO;
         let (mut live_total, mut exit_ok, mut solved) = (0usize, 0usize, 0usize);
@@ -2280,8 +2185,8 @@ fn survey_whether_bias_can_shape_the_halls() {
                 if placement.space.unbuilt() {
                     voids += 1;
                 }
-                if placement.archetype == HexArchetype::Shaft {
-                    shafts += 1;
+                if matches!(placement.archetype, HexArchetype::Climb { .. }) {
+                    climbs += 1;
                 }
                 if placement.space != HexSpace::Hall {
                     continue;
@@ -2321,7 +2226,7 @@ fn survey_whether_bias_can_shape_the_halls() {
                  {:>4.1}  {exit_ok:>3}/{solved}",
                 degrees[2] as f64 * 100.0 / halls as f64,
                 degrees[4..].iter().sum::<usize>() as f64 * 100.0 / halls as f64,
-                shafts as f64 * 100.0 / cells as f64,
+                climbs as f64 * 100.0 / cells as f64,
                 voids as f64 * 100.0 / cells as f64,
                 slowest.as_secs_f64(),
                 live_total as f64 / solved as f64,

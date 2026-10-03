@@ -1232,10 +1232,13 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles");
         let built = build_catalog(&root).expect("curated catalog builds");
         let ignored = ignored_paths(&root).expect("retirement list reads");
-        assert_eq!(ignored.len(), 103);
+        // 103 until the retired wedge ramps went with the ramps and towers they had
+        // been retired for.
+        assert_eq!(ignored.len(), 96);
         // 335 since the climb composition's four cells (`forge::climb`); 359 since every
-        // district has its own four (seven dressings, 28 cells).
-        assert_eq!(built.catalog.modules.len(), 359);
+        // district has its own four (seven dressings, 28 cells); 181 since the ramps
+        // and the 171 stair towers retired.
+        assert_eq!(built.catalog.modules.len(), 181);
         let registers = crate::tile_source::REGISTERS;
         for path in ignored {
             let text = std::fs::read_to_string(root.join(&path)).expect("retired source exists");

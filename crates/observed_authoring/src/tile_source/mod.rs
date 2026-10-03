@@ -19,7 +19,6 @@ mod catalog;
 mod geometry;
 mod halls;
 mod rooms;
-mod verticals;
 
 use observed_hex::HexFace;
 
@@ -30,7 +29,6 @@ pub use halls::{hall_cap_map, hall_corner_map, hall_junction_map, hall_straight_
 pub use rooms::{
     room_atrium_lower_map, room_atrium_upper_map, room_double_map, room_single_map, room_wing_map,
 };
-pub use verticals::ramp_map;
 
 /// One complete, generic collision kit for the canonical WFC alphabet.
 ///
@@ -69,11 +67,6 @@ pub fn compatibility_cells() -> Result<Vec<crate::TilePrototype>, crate::TileErr
             cells.push(convert(source, None)?);
         }
     }
-    // The ramp is authored now (`forge::silos::hall_ramp`), for every register. The
-    // generated wedge stood beside it under the very same keys - variant for variant -
-    // so a weighted draw could pick either, and the projector, finding a tile by its
-    // key, found the wedge first: in most registers the authored ramp never appeared.
-    cells.retain(|tile| tile.key.archetype != "hall_ramp");
     Ok(cells)
 }
 
@@ -103,8 +96,6 @@ fn compatibility_archetype(tile: &crate::TilePrototype) -> &'static str {
                 "hall_junction_4way"
             }
         }
-        "ramp" => "hall_ramp",
-        "stair_segment" | "stair_top" | "stair_bottom" | "stair_landing" => "stair_tower",
         // Room-cell geometry keeps the name it was generated under.
         //
         // It used to be flattened to `sanctuary` here, which was the second half
@@ -290,10 +281,6 @@ pub fn hall_straight_ew_map() -> String {
 
 pub fn hall_cap_e_map() -> String {
     hall_cap_map("institutional", HexFace::East)
-}
-
-pub fn ramp_e_map() -> String {
-    ramp_map("institutional", HexFace::East)
 }
 
 /// Regenerate the committed tile assets (only rewrites files that changed).

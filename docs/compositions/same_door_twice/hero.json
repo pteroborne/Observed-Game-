@@ -92,13 +92,6 @@
       "level": 0
     },
     {
-      "tile": "hall_ramp:132",
-      "q": 8,
-      "r": 4,
-      "turn": 0,
-      "level": 0
-    },
-    {
       "tile": "hall_straight:900",
       "q": 9,
       "r": 4,

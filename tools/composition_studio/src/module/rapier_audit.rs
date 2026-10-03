@@ -397,9 +397,9 @@ mod tests {
     }
 
     #[test]
-    fn perimeter_ramp_walks_its_declared_climb_in_both_directions() {
-        let tile = tile("hall_ramp_perimeter_120");
-        let guide = projected_guide(&tile).expect("perimeter ramp has a guide");
+    fn a_climb_cell_walks_its_declared_climb_in_both_directions() {
+        let tile = tile("climb_mid");
+        let guide = projected_guide(&tile).expect("a climb cell has a guide");
         let report = audit_projected_guide(&tile, &guide);
 
         assert_eq!(report.legs.len(), 2, "one climb in both directions");
@@ -415,39 +415,12 @@ mod tests {
     }
 
     #[test]
-    fn repeated_perimeter_ramp_audits_are_bit_identical() {
-        let tile = tile("hall_ramp_perimeter_120");
-        let guide = projected_guide(&tile).expect("perimeter ramp has a guide");
+    fn repeated_climb_audits_are_bit_identical() {
+        let tile = tile("climb_mid");
+        let guide = projected_guide(&tile).expect("a climb cell has a guide");
         let first = audit_projected_guide(&tile, &guide);
         let second = audit_projected_guide(&tile, &guide);
 
         assert_eq!(first, second);
-    }
-
-    #[test]
-    fn declared_climb_and_deck_legs_run_forward_and_reverse() {
-        // The shaft's foot, which stands alone the way this audit stands it. A
-        // through storey's flight begins at the head of the one below - in a column
-        // that flight's top is right behind the foot - so alone, a body turning
-        // toward the climb from a standing start steps back into the air where it
-        // would be. The stacked climbs are `a_tower_climbs_with_another_standing_on_it`.
-        let tile = tile("stair_tower_helix_0_bottom");
-        let guide = projected_guide(&tile).expect("tower has climb and deck guides");
-        let report = audit_projected_guide(&tile, &guide);
-
-        assert_eq!(
-            report
-                .legs
-                .iter()
-                .map(|leg| (leg.kind, leg.direction))
-                .collect::<Vec<_>>(),
-            vec![
-                (GuideLegKind::Climb, TraversalDirection::Forward),
-                (GuideLegKind::Climb, TraversalDirection::Reverse),
-                (GuideLegKind::Deck, TraversalDirection::Forward),
-                (GuideLegKind::Deck, TraversalDirection::Reverse),
-            ]
-        );
-        assert!(report.passed(), "{:#?}", report.legs);
     }
 }

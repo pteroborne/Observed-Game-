@@ -206,29 +206,10 @@ pub(super) fn layout_failure(
         }
     }
 
-    // Ramp pairing validation
+    // A climb's high cell and its landing are one bond; its spans are held in order by
+    // `spans_join` in the edge check below.
     let grid = config.grid();
     for placement in placements.values() {
-        if placement.archetype == HexArchetype::RampUp {
-            let Some(up_coord) = grid.neighbor(placement.coord, HexFace::Up) else {
-                return Some("RampUp has no neighbor above");
-            };
-            let up_neighbor = &placements[&up_coord];
-            if up_neighbor.archetype != HexArchetype::RampHead {
-                return Some("RampUp not matched by RampHead above");
-            }
-        }
-        if placement.archetype == HexArchetype::RampHead {
-            let Some(down_coord) = grid.neighbor(placement.coord, HexFace::Down) else {
-                return Some("RampHead has no neighbor below");
-            };
-            let down_neighbor = &placements[&down_coord];
-            if down_neighbor.archetype != HexArchetype::RampUp {
-                return Some("RampHead not matched by RampUp below");
-            }
-        }
-        // A climb's high cell and its landing are one bond, like a ramp pair. Its
-        // spans are held in order by `spans_join` in the edge check below.
         if let HexArchetype::Climb { part, .. } = placement.archetype {
             let (face, lower_first) = match part {
                 ClimbPart::High => (HexFace::Up, true),
@@ -332,11 +313,7 @@ fn all_edges_match(
         if placement.space == HexSpace::Hall
             && !matches!(
                 placement.archetype,
-                HexArchetype::RampUp
-                    | HexArchetype::RampHead
-                    | HexArchetype::Shaft
-                    | HexArchetype::Expanse
-                    | HexArchetype::Climb { .. }
+                HexArchetype::Expanse | HexArchetype::Climb { .. }
             )
             && !(2..=4).contains(&placement.doors.count_ones())
         {

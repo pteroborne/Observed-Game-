@@ -476,7 +476,7 @@ mod tests {
 
     #[test]
     fn a_pin_set_drawn_on_another_lattice_is_refused() {
-        let mut profile = profile_with(vec![pin(1, 1, PinIntent::Archetype(HexArchetype::Shaft))]);
+        let mut profile = profile_with(vec![pin(1, 1, PinIntent::Archetype(HexArchetype::Corner))]);
         profile.pin_sets[0].cols += 1;
         let (resolved, diagnostics) = resolved_pins(compact(), &profile);
         assert!(resolved.is_empty(), "a mismatched set must not be applied");
@@ -492,7 +492,7 @@ mod tests {
         let profile = profile_with(vec![pin(
             config.cols + 5,
             1,
-            PinIntent::Archetype(HexArchetype::Shaft),
+            PinIntent::Archetype(HexArchetype::Corner),
         )]);
         let (resolved, diagnostics) = resolved_pins(config, &profile);
         assert!(resolved.is_empty());
@@ -507,7 +507,7 @@ mod tests {
     #[test]
     fn a_doubly_pinned_cell_reports_the_shadow() {
         let profile = profile_with(vec![
-            pin(2, 2, PinIntent::Archetype(HexArchetype::Shaft)),
+            pin(2, 2, PinIntent::Archetype(HexArchetype::Corner)),
             pin(2, 2, PinIntent::Archetype(HexArchetype::Junction)),
         ]);
         let (resolved, diagnostics) = resolved_pins(compact(), &profile);
@@ -569,9 +569,6 @@ mod tests {
             HexArchetype::Straight,
             HexArchetype::Corner,
             HexArchetype::Junction,
-            HexArchetype::RampUp,
-            HexArchetype::RampHead,
-            HexArchetype::Shaft,
             HexArchetype::Expanse,
         ];
         // A climb is one archetype per part and heading.
@@ -741,7 +738,7 @@ mod tests {
         let profile = profile_with(vec![pin(
             4,
             4,
-            PinIntent::Forbid(vec![HexArchetype::Shaft, HexArchetype::RampUp]),
+            PinIntent::Forbid(vec![HexArchetype::Junction]),
         )]);
         for seed in [7_u64, 42] {
             let world =
@@ -753,7 +750,7 @@ mod tests {
                 level: 0,
             }];
             assert!(
-                !matches!(placed.archetype, HexArchetype::Shaft | HexArchetype::RampUp),
+                placed.archetype != HexArchetype::Junction,
                 "seed {seed:#x}: a forbidden archetype was placed"
             );
         }

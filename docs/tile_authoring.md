@@ -332,9 +332,8 @@ center, level-0 floor at z = 0, one level = 128 units (8 m).
 
 Every storey is climbed by a composition of four cells, played by one Stair card.
 Three cells of flight run on storey L along one heading, and a landing sits on L+1
-above the last. The single-cell switchback ramp (`forge::ramp`) and the spiral stair
-tower (`forge::tower`) are retired from the catalogue. Their sources remain, but no
-solver variant demands them. See [climb_compositions_plan.md](climb_compositions_plan.md)
+above the last. The single-cell switchback ramp and the spiral stair tower they
+replaced are retired, sources and all. See [climb_compositions_plan.md](climb_compositions_plan.md)
 for the design and the router that lays them.
 
 | Tile | Floor | Ports |
@@ -487,9 +486,9 @@ Four things that will otherwise cost an afternoon:
 - **`walk` needs `view_mode: "firstperson"`.** The walk system returns early in
   any other mode, and the capture then quietly shows a stationary camera.
 - **A tile with fewer than two lateral doors ends the run.** A cap is a dead
-  end; a ramp's second opening is a *vertical* port belonging to the cell above,
-  so continuing through one means changing level and this composition builds a
-  lateral walk only.
+  end, and a climb's high cell leaves through a *vertical* port belonging to the
+  cell above, so continuing through one means changing level and this composition
+  builds a lateral walk only. Lay a climb with `layout` instead.
 - **A run is not a solved facility.** It proves the tiles compose and that the
   seams mate well enough to walk; it does not prove the solver will ever place
   them adjacent.
@@ -501,9 +500,9 @@ floor drops it. A run that captures cleanly is a run that is walkable.
 ## Grounded first-person references
 
 `room_grounded_hub` uses six physical threshold walls, a floor-to-ceiling
-service pier, and ceiling-attached practical housings. `hall_ramp` is a solid
-two-level ramp mass with wall-attached sconces; it is the production elevation
-primitive instead of vertical lifts or unsupported connector decks.
+service pier, and ceiling-attached practical housings. The climb composition is the
+production elevation primitive (see "Climbs" above), instead of vertical lifts or
+unsupported connector decks.
 
 ## Composing by hand: `layout`
 

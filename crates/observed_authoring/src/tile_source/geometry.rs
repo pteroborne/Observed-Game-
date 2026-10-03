@@ -448,31 +448,6 @@ pub(crate) fn door_wall(
     out
 }
 
-/// The two-level ramp floor: a full-footprint wedge rising from the entrance
-/// edge (at `floor_top`) to the exit face midpoint (at `floor_top + h`).
-pub(crate) fn sloped_slab_brush(
-    entrance_face: HexFace,
-    exit_face: HexFace,
-    floor_top: f64,
-    h: f64,
-) -> String {
-    let mut out = String::from("{\n");
-    for face in HexFace::LATERAL {
-        let (a, b) = tb_edge(face);
-        out += &side_plane(a, b, 0.0, [0.0, 0.0]);
-    }
-    out += &flat_plane(0.0, false);
-    let (a2, b2) = tb_edge(entrance_face);
-    let (ea2, eb2) = tb_edge(exit_face);
-    let mid_exit = [(ea2[0] + eb2[0]) * 0.5, (ea2[1] + eb2[1]) * 0.5];
-    let p1 = [a2[0], a2[1], floor_top];
-    let p2 = [b2[0], b2[1], floor_top];
-    let p3 = [mid_exit[0], mid_exit[1], floor_top + h];
-    out += &plane_line(p1, p2, p3);
-    out += "}\n";
-    out
-}
-
 /// Point entity text (`tile_meta`, `tile_port`).
 pub(crate) fn point_entity(props: &[(&str, &str)]) -> String {
     let mut out = String::from("{\n");
@@ -495,20 +470,6 @@ pub(crate) fn tile_meta(archetype: &str, register: &str, variant: u16, levels: u
 
 pub(crate) fn tile_port(face: &str, class: &str) -> String {
     point_entity(&[("classname", "tile_port"), ("face", face), ("class", class)])
-}
-
-/// One node of the climbable line through a compatibility tile.
-///
-/// The strict authored path has had this since Arc O; the generated kit did
-/// not, which is why a generated ramp projected no traversal annotation at all
-/// and had to be walked by inferring a heading from its archetype. `index`
-/// orders the climb bottom to top and the importer rejects a repeat.
-pub(crate) fn tile_stair_node(index: u16, x: f64, y: f64, z: f64) -> String {
-    point_entity(&[
-        ("classname", "tile_stair_node"),
-        ("index", &index.to_string()),
-        ("origin", &format!("{} {} {}", fmt(x), fmt(y), fmt(z))),
-    ])
 }
 
 /// A presentation-owned practical light at a tile-local TrenchBroom point.

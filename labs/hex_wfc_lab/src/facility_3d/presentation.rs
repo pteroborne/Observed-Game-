@@ -280,10 +280,8 @@ fn weave(
 
 fn architecture_role(role: HexStructureRole) -> ArchitectureSurfaceRole {
     match role {
-        HexStructureRole::Room | HexStructureRole::Hall | HexStructureRole::Shaft => {
-            ArchitectureSurfaceRole::Wall
-        }
-        HexStructureRole::Ramp => ArchitectureSurfaceRole::Floor,
+        HexStructureRole::Room | HexStructureRole::Hall => ArchitectureSurfaceRole::Wall,
+        HexStructureRole::Climb => ArchitectureSurfaceRole::Floor,
         HexStructureRole::Boundary => ArchitectureSurfaceRole::Ceiling,
     }
 }
@@ -292,8 +290,7 @@ fn surface_role(role: HexStructureRole) -> SurfaceRole {
     match role {
         HexStructureRole::Room => SurfaceRole::Spine,
         HexStructureRole::Hall => SurfaceRole::GantryDeck,
-        HexStructureRole::Ramp => SurfaceRole::SafeBypass,
-        HexStructureRole::Shaft => SurfaceRole::WellshaftStone,
+        HexStructureRole::Climb => SurfaceRole::SafeBypass,
         HexStructureRole::Boundary => SurfaceRole::Plain,
     }
 }

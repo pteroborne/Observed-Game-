@@ -14,7 +14,7 @@
 //!   "zoom": 0.5,
 //!   "compare": true,
 //!   "hide_menu": true,
-//!   "archetype_bias": { "shaft": 2.5, "junction": 0.5 },
+//!   "archetype_bias": { "climb": 2.5, "junction": 0.5 },
 //!   "output_image": "docs/evidence/composition_studio/shaft_heavy.png"
 //! }
 //! ```
@@ -80,7 +80,7 @@ pub struct StudioScript {
     /// Trace the region frontiers, dim where they hold and red where they open.
     pub regions: Option<bool>,
     /// Pins to paint before solving, as `[q, r, level, brush]` — brush being a
-    /// [`crate::brush::Brush`] label such as `"shaft"` or `"junction"`.
+    /// [`crate::brush::Brush`] label such as `"corner"` or `"junction"`.
     #[serde(default)]
     pub paint: Vec<PaintedPin>,
     /// Archetype bias overrides, keyed by the profile's own field names
@@ -145,9 +145,11 @@ fn bias_field(name: &str) -> Option<HexArchetype> {
         "straight" => HexArchetype::Straight,
         "corner" => HexArchetype::Corner,
         "junction" => HexArchetype::Junction,
-        "ramp_up" => HexArchetype::RampUp,
-        "ramp_head" => HexArchetype::RampHead,
-        "shaft" => HexArchetype::Shaft,
+        // `ramp_up` is what the climb's bias was called before the ramps retired.
+        "climb" | "ramp_up" => HexArchetype::Climb {
+            part: observed_facility::hex_wfc::ClimbPart::Mid,
+            heading: observed_hex::HexFace::East,
+        },
         "expanse" => HexArchetype::Expanse,
         _ => return None,
     })

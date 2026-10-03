@@ -1,12 +1,9 @@
 //! The Unfinished Crossing: unrailed voids, recessed piers and suspended ascents.
 //! Ordinary Megastructure candidates; the three-storey landmark is a lab layout.
 
-use super::entities::{
-    Meta, deck_node, lateral_port, stair_node, tile_cell, tile_light, vertical_port, worldspawn,
-};
+use super::entities::{Meta, deck_node, lateral_port, tile_cell, tile_light, worldspawn};
 use super::geometry::{
-    FLOOR_TOP, LEVEL, P2, band, boxed, centroid, corners, custom_plane, door_wall, hex_slab, lerp,
-    prism, side_plane, wall,
+    FLOOR_TOP, LEVEL, band, boxed, corners, door_wall, hex_slab, lerp, prism, wall,
 };
 use super::{Builder, GENERATED_NOTE};
 
@@ -157,73 +154,6 @@ fn room(name: &str, archetype: &str, doors: &[usize], form: Form) -> String {
     out
 }
 
-fn suspended_slab(plan: &[P2], height: impl Fn(P2) -> f64) -> String {
-    let hint = centroid(plan);
-    let mut out = String::from("{\n");
-    for i in 0..plan.len() {
-        out.push_str(&side_plane(plan[i], plan[(i + 1) % plan.len()], 0.0, hint));
-    }
-    let p = [plan[0], plan[1], plan[2]].map(|p| (p.0, p.1, height(p)));
-    out.push_str(&custom_plane(p[0], p[1], p[2], true));
-    let p = p.map(|p| (p.0, p.1, p.2 - 8.0));
-    out.push_str(&custom_plane(p[0], p[1], p[2], false));
-    out.push_str("}\n");
-    out
-}
-
-pub fn ascent() -> String {
-    let height = |p: P2| FLOOR_TOP + (p.0 + 112.0) * LEVEL / 224.0;
-    let mut brushes = suspended_slab(
-        &[
-            (-112.0, -36.0),
-            (112.0, -36.0),
-            (112.0, 36.0),
-            (-112.0, 36.0),
-        ],
-        height,
-    );
-    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 0.0, 0.0));
-    for face in [1, 2, 4, 5] {
-        brushes.push_str(&wall(face, 0.0, 2.0 * LEVEL));
-        brushes.push_str(&band(face, 8.0, 24.0, 216.0, 232.0));
-    }
-    brushes.push_str(&door_wall(3, 0.0, LEVEL, 0.0, 72.0, 12.0, 6.0));
-    brushes.push_str(&wall(3, LEVEL, 2.0 * LEVEL));
-    brushes.push_str(&door_wall(
-        0,
-        0.0,
-        2.0 * LEVEL,
-        LEVEL + FLOOR_TOP,
-        LEVEL + 72.0,
-        12.0,
-        6.0,
-    ));
-    brushes.push_str(&piers(2.0 * LEVEL));
-    let mut lights = String::new();
-    for x in [-64.0, 64.0] {
-        let z = height((x, 0.0)) + 44.0;
-        brushes.push_str(&boxed((x - 5.0, 70.0, z - 12.0), (x + 5.0, 76.0, z + 12.0)));
-        lights.push_str(&tile_light(x, 68.0, z));
-    }
-    let mut out =
-        format!("// The Unfinished Crossing: suspended eight-metre ascent.\n{GENERATED_NOTE}");
-    out.push_str(&worldspawn(&brushes));
-    out.push_str(
-        &Meta::cell("authored/unwitnessed_ascent", "hall_ramp", BASE, 2, 3)
-            .with_register_scope("megastructure")
-            .emit(),
-    );
-    out.push_str(&tile_cell(0, 0, 0, 2, "ramp"));
-    out.push_str(&lateral_port(3, "door", "unwitnessed_entry", 0, 0, 0));
-    out.push_str(&vertical_port("up", "ramp_open", "unwitnessed_ascent", 0));
-    for index in 0..5u16 {
-        let x = -112.0 + f64::from(index) * 56.0;
-        out.push_str(&stair_node(index, x, 0.0, height((x, 0.0))));
-    }
-    out.push_str(&lights);
-    out
-}
-
 pub fn gallery() -> String {
     room(
         "unwitnessed_gallery",
@@ -271,7 +201,6 @@ pub fn builders() -> Vec<Builder> {
         ("unwitnessed_fork", fork),
         ("unwitnessed_arrival", arrival),
         ("unwitnessed_break", broken),
-        ("unwitnessed_ascent", ascent),
     ]
 }
 

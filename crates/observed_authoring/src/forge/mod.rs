@@ -17,14 +17,11 @@ pub mod index;
 pub mod intake;
 pub mod liminal;
 pub mod noon;
-pub mod perimeter;
 pub mod probe;
 pub mod program;
-pub mod ramp;
 pub mod recipe;
 pub mod rooms;
 pub mod silos;
-pub mod tower;
 pub mod unwitnessed;
 pub mod weight;
 pub mod witness;
@@ -57,7 +54,6 @@ pub const GENERATED_NOTE: &str =
 pub fn builders() -> Vec<Builder> {
     let mut all = halls::builders();
     all.extend(silos::builders());
-    all.extend(ramp::builders());
     all.extend(rooms::builders());
     all.extend(program::builders());
     all.extend(witness::builders());
@@ -82,8 +78,6 @@ pub fn generate_all() -> Vec<(String, String)> {
         .collect();
     out.extend(liminal::generated());
     out.extend(halls::open_builders());
-    out.extend(perimeter::builders());
-    out.extend(tower::builders());
     out.extend(climb::builders());
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
@@ -261,12 +255,11 @@ mod tests {
                 worst = (module.prototype.hulls.len(), name);
             }
         }
-        // The four-door through spiral tower: a full turn of flight, its guard
-        // wall, the gallery round the stairwell and four doors. It is the
-        // budget, exactly as the four-door helix was at 36.
+        // The spiral stair tower held the budget at 45 until it retired; the most
+        // expensive cell is a hall now, the borrowed fork.
         assert_eq!(
             worst,
-            (45, "stair_tower_helix_0123".to_string()),
+            (36, "borrowed_fork".to_string()),
             "the most expensive cell in the corpus moved"
         );
     }

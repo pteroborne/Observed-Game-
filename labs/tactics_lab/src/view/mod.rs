@@ -206,9 +206,6 @@ pub fn sketch_role(archetype: HexArchetype, space: HexSpace, in_room: bool) -> H
         HexArchetype::Void => HexSketchRole::Void,
         HexArchetype::Straight | HexArchetype::Corner => HexSketchRole::Corridor,
         HexArchetype::Junction => HexSketchRole::Junction,
-        HexArchetype::RampUp => HexSketchRole::Ramp,
-        HexArchetype::RampHead => HexSketchRole::RampHead,
-        HexArchetype::Shaft => HexSketchRole::Shaft,
         // A climb composition draws as the ramp it replaces until it has a glyph of
         // A climb composition steps up the way it climbs.
         HexArchetype::Climb { part, .. } => match part {

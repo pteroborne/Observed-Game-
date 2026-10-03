@@ -322,7 +322,7 @@ fn cell_entity_count_falls_with_merged_hull_meshes() {
             index.piece_indices.len() >= 10
                 && index.piece_indices.iter().all(|&i| {
                     pieces[i].part == observed_match::hex_wfc::HexPiecePart::Authored
-                        && pieces[i].role != observed_match::hex_wfc::HexStructureRole::Ramp
+                        && pieces[i].role != observed_match::hex_wfc::HexStructureRole::Climb
                 })
         })
         .expect("must have a walled cell with >= 10 raw pieces");

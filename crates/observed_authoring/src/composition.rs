@@ -222,12 +222,19 @@ pub fn fold_simulation_content_hash(catalog_hex: &str, profile_hex: &str) -> [u8
 #[cfg(test)]
 mod tests {
     use super::*;
-    use observed_facility::hex_wfc::HexArchetype;
+    use observed_facility::hex_wfc::{ClimbPart, HexArchetype};
+    use observed_hex::HexFace;
+
+    /// A climb cell, so the round trips carry its part and heading through serde too.
+    const CLIMB_HIGH: HexArchetype = HexArchetype::Climb {
+        part: ClimbPart::High,
+        heading: HexFace::NorthEast,
+    };
 
     fn authored() -> HexCompositionProfile {
         let mut profile = HexCompositionProfile::baseline();
         profile.label = String::from("test");
-        profile.archetype_bias = profile.archetype_bias.with(HexArchetype::Shaft, 0.5);
+        profile.archetype_bias = profile.archetype_bias.with(CLIMB_HIGH, 0.5);
         profile
     }
 
@@ -271,13 +278,13 @@ mod tests {
                     q: 2,
                     r: 1,
                     level: 0,
-                    intent: PinIntent::Archetype(HexArchetype::Shaft),
+                    intent: PinIntent::Archetype(CLIMB_HIGH),
                 },
                 HexPin {
                     q: 3,
                     r: 1,
                     level: 0,
-                    intent: PinIntent::Forbid(vec![HexArchetype::Shaft, HexArchetype::RampUp]),
+                    intent: PinIntent::Forbid(vec![HexArchetype::Junction, CLIMB_HIGH]),
                 },
                 HexPin {
                     q: 4,
@@ -298,7 +305,7 @@ mod tests {
     #[test]
     fn an_invalid_profile_is_rejected_with_its_defects() {
         let mut profile = HexCompositionProfile::baseline();
-        profile.archetype_bias = profile.archetype_bias.with(HexArchetype::Shaft, 0.0);
+        profile.archetype_bias = profile.archetype_bias.with(CLIMB_HIGH, 0.0);
         let text = to_pretty_ron(&profile).expect("serializes");
         match parse_profile(&text) {
             Err(CompositionError::Defects(defects)) => assert!(!defects.is_empty()),
@@ -795,37 +802,32 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "53e5955caef2efbb7b981919b06fcbc4fffd7e9789b224434c8a87665f0f0ab5";
+            "16cf28acfc8f7fa75db106550bb35c6108c4ec640552814f83a26b4b835b6ceb";
         // The open-air composition (void share 2,000), 2026-09-24, at profile
-        // version 5 since the climb compositions.
+        // version 6 since the ramps and towers retired and its bias names `climb`.
         const PROFILE_HASH: &str =
-            "ce7ba47ecea2197120fad09f60cda2f25462f622a9da38e258efc7893f631d4f";
+            "7b57da365f6c4de7876cd76adfd985db582d6f1610999c29d89d116739b639d1";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "97195ae30f210dbff67b8cb76e9e98182c379f96581792c2b8d0080548d800c1";
+            "2cd67a8ea5d1d60af351988fecaa9bc127e8ba704913b2c353b9c35394f6f1da";
 
         let root = committed_tiles();
         let compiled_text =
             std::fs::read_to_string(root.join("compiled_catalog.ron")).expect("catalog reads");
         let compiled =
             crate::CompiledTileCatalog::from_ron(&compiled_text).expect("catalog parses");
-        let tower_modules = compiled
-            .modules
-            .iter()
-            .filter(|module| module.archetype == "stair_tower")
-            .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 359, "committed strict source count");
-        // 1 doorless + every one-to-four-door pattern, in three vertical
-        // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
-        // stopped at two doors and there was no branching landing.
-        assert_eq!(tower_modules.len(), 171, "one source per tower signature");
+        // 359 with the switchback ramps and the 171 spiral towers; every storey is
+        // climbed by a composition since, and none of either is compiled.
+        assert_eq!(compiled.modules.len(), 181, "committed strict source count");
         assert!(
-            tower_modules
+            compiled
+                .modules
                 .iter()
-                .all(|module| { module.register_scope == ["all"] && module.rotations == [0] })
+                .all(|module| module.archetype != "stair_tower" && module.archetype != "hall_ramp"),
+            "the ramps and towers have retired"
         );
 
         let profile = load_profile(&root).expect("profile loads");

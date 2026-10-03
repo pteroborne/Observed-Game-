@@ -77,7 +77,7 @@ impl MeshGroupKey {
         }
         match piece.role {
             // Split by facing when the meshes are built; the key only gathers them.
-            HexStructureRole::Ramp | HexStructureRole::Shaft => Self::Climb(Facing::Side),
+            HexStructureRole::Climb => Self::Climb(Facing::Side),
             HexStructureRole::Boundary => Self::Boundary,
             HexStructureRole::Room | HexStructureRole::Hall => {
                 let points = match &piece.shape {

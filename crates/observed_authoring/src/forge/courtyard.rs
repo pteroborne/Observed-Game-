@@ -2,12 +2,10 @@
 //! Roofs, rafters and ramp decks are real convex shells. Every threshold keeps
 //! the catalogue's sill and lintel; the scene is assembled from ordinary WFC cards.
 
-use super::entities::{
-    Meta, lateral_port, stair_node, tile_cell, tile_light, vertical_port, worldspawn,
-};
+use super::entities::{Meta, lateral_port, tile_cell, tile_light, worldspawn};
 use super::geometry::{
-    FLOOR_TOP, LEVEL, P2, WALL, boxed, centroid, custom_plane, door_wall, edge, hex_slab, lerp,
-    offset_inward, prism, side_plane, wall,
+    FLOOR_TOP, LEVEL, P2, WALL, boxed, centroid, custom_plane, edge, hex_slab, lerp, offset_inward,
+    prism, side_plane, wall,
 };
 use super::{Builder, GENERATED_NOTE};
 
@@ -165,75 +163,6 @@ pub fn lookout() -> String {
     pavilion("courtyard_lookout", "hall_straight", BASE, &[0, 3], true)
 }
 
-pub fn ascent() -> String {
-    let height = |p: P2| FLOOR_TOP + (p.0 + 112.0) * LEVEL / 224.0;
-    let mut brushes = hex_slab(0.0, FLOOR_TOP, 0.0, 0.0);
-    brushes.push_str(&shell(
-        &[
-            (-112.0, -36.0),
-            (112.0, -36.0),
-            (112.0, 36.0),
-            (-112.0, 36.0),
-        ],
-        height,
-        8.0,
-    ));
-    for side in [-1.0, 1.0] {
-        let y = side * 44.0;
-        for x in [-90.0, -30.0, 30.0, 90.0] {
-            brushes.push_str(&boxed(
-                (x - 3.0, y - 3.0, FLOOR_TOP),
-                (x + 3.0, y + 3.0, height((x, y)) + 20.0),
-            ));
-        }
-        brushes.push_str(&shell(
-            &[
-                (-104.0, y - 3.0),
-                (104.0, y - 3.0),
-                (104.0, y + 3.0),
-                (-104.0, y + 3.0),
-            ],
-            |p| height(p) + 20.0,
-            5.0,
-        ));
-    }
-    for face in [1, 2, 4, 5] {
-        brushes.push_str(&wall(face, 0.0, 28.0));
-    }
-    brushes.push_str(&door_wall(3, 0.0, LEVEL, FLOOR_TOP, 72.0, 8.0, 6.0));
-    brushes.push_str(&door_wall(
-        0,
-        0.0,
-        2.0 * LEVEL,
-        LEVEL + FLOOR_TOP,
-        LEVEL + 72.0,
-        8.0,
-        6.0,
-    ));
-    let mut lights = String::new();
-    for x in [-70.0, 70.0] {
-        let z = height((x, 0.0)) + 28.0;
-        brushes.push_str(&boxed((x - 4.0, 57.0, 8.0), (x + 4.0, 65.0, z + 4.0)));
-        lights.push_str(&tile_light(x, 55.0, z));
-    }
-    let mut out = format!("// Last Courtyard: suspended full-storey ascent.\n{GENERATED_NOTE}");
-    out.push_str(&worldspawn(&brushes));
-    out.push_str(
-        &Meta::cell("authored/courtyard_ascent", "hall_ramp", BASE, 2, 3)
-            .with_register_scope("thinning")
-            .emit(),
-    );
-    out.push_str(&tile_cell(0, 0, 0, 2, "ramp"));
-    out.push_str(&lateral_port(3, "door", "courtyard_entry", 0, 0, 0));
-    out.push_str(&vertical_port("up", "ramp_open", "courtyard_ascent", 0));
-    for index in 0..5u16 {
-        let x = -112.0 + f64::from(index) * 56.0;
-        out.push_str(&stair_node(index, x, 0.0, height((x, 0.0))));
-    }
-    out.push_str(&lights);
-    out
-}
-
 pub fn builders() -> Vec<Builder> {
     vec![
         ("courtyard_corner", corner),
@@ -241,7 +170,6 @@ pub fn builders() -> Vec<Builder> {
         ("courtyard_fork", fork),
         ("courtyard_fork_deck", fork_deck),
         ("courtyard_lookout", lookout),
-        ("courtyard_ascent", ascent),
     ]
 }
 
