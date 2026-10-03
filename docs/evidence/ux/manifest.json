@@ -1,0 +1,327 @@
+{
+  "source_revision": "aede5646",
+  "date": "2026-10-03",
+  "timezone": "America/Denver",
+  "branch": "codex/end-to-end-ux",
+  "worktree": "/run/media/will/BigFastDrive/Observed-end-to-end-ux",
+  "worktree_management": "manual Git fallback after managed checkout ran out of space on /home; app attachment unsupported",
+  "production_changes": false,
+  "native_interactions": "unverified; native control unavailable",
+  "runs": {
+    "legacy_baseline": {
+      "cwd": "feature worktree",
+      "configuration": "empty override directory; tracked legacy saves migrated",
+      "capture_driver": "OBSERVED2_CAPTURE_FRONTEND",
+      "configured_rules": "race",
+      "configured_role": "observer",
+      "onboarding": "legacy first_run=false migrates completion",
+      "career_results": "synthetic fixtures injected by frontend driver"
+    },
+    "true_defaults": {
+      "cwd": "empty external directory",
+      "configuration": "empty isolated override; no legacy saves",
+      "capture_driver": "OBSERVED2_CAPTURE_FRONTEND",
+      "configured_rules": "race",
+      "configured_role": "observer",
+      "onboarding": "version 0 incomplete; first beat rendered"
+    },
+    "returning_observer": {
+      "configuration": {
+        "settings": {
+          "completed_onboarding_version": 1,
+          "first_run": false
+        },
+        "play_setup": {
+          "preset": "solo",
+          "rules": "ascent",
+          "seat": "observer"
+        }
+      },
+      "capture_driver": "OBSERVED2_CAPTURE_FRONTEND",
+      "configured_rules": "ascent",
+      "configured_role": "observer",
+      "control_source": "direct bot driver; normal HUD suppressed"
+    },
+    "returning_architect": {
+      "configuration": {
+        "settings": {
+          "completed_onboarding_version": 1,
+          "first_run": false
+        },
+        "play_setup": {
+          "preset": "solo",
+          "rules": "ascent",
+          "seat": "architect"
+        }
+      },
+      "capture_driver": "OBSERVED2_CAPTURE_FRONTEND",
+      "configured_rules": "ascent",
+      "configured_role": "architect",
+      "control_source": "desk render; Observer body bot-driven"
+    },
+    "concept": {
+      "artifact": "../../ux/menu_concepts.html",
+      "renderer": "Codex browser screenshot API",
+      "baseline_stage": [
+        1280,
+        800
+      ],
+      "production_feature": false
+    }
+  },
+  "images": [
+    {
+      "file": "ascent_1280x800/architect_desk.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "a38b327ff76fcf939f19be1b9adda726f33c9a20bcebbb1bcd96857fadef708b",
+      "run": "returning_architect",
+      "evidence_kind": "direct_architect_desk_render",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "ascent_1280x800/architect_play.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "0e1558bd8d1d7241b3814fb81d8029c9cb6ff554dc8692b5100c61cbd87ab563",
+      "run": "returning_architect",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "ascent_1280x800/observer_bot_view.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "ac637d3ef4828f22b75b96cbe7391fc78a4e5483614977b0130fb51ec3b6b4ce",
+      "run": "returning_observer",
+      "evidence_kind": "direct_bot_match",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "ascent_1280x800/observer_play.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "d2db4eeb95b11582f61fb4882901b7ddc4c1cf0cd5f0071a72e06ae364c033d5",
+      "run": "returning_observer",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "concept_main_menu.jpg",
+      "width": 1280,
+      "height": 800,
+      "sha256": "fc060ccc00676ebe775ed16d3bd8b4919e8b8de843ef1a204591524238b824e2",
+      "run": "concept",
+      "evidence_kind": "concept_preview",
+      "visually_inspected": true,
+      "interaction_verified": true,
+      "interaction_scope": "HTML review controls only; no game is launched"
+    },
+    {
+      "file": "concept_play_architect.jpg",
+      "width": 1280,
+      "height": 800,
+      "sha256": "d1fb0db070570d151dda9c71f93f720a25d78478602bad13e21f03f1e449e102",
+      "run": "concept",
+      "evidence_kind": "concept_preview",
+      "visually_inspected": true,
+      "interaction_verified": true,
+      "interaction_scope": "HTML review controls only; no game is launched"
+    },
+    {
+      "file": "concept_play_observer.jpg",
+      "width": 1280,
+      "height": 800,
+      "sha256": "755eeac34d5fa89bff48f64e2064f30e2566d4e8d33e47fff50731539500abfd",
+      "run": "concept",
+      "evidence_kind": "concept_preview",
+      "visually_inspected": true,
+      "interaction_verified": true,
+      "interaction_scope": "HTML review controls only; no game is launched"
+    },
+    {
+      "file": "defaults_1280x800/controls.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "4cfd9d234408f6631a17eb60e1a7292a8e714de647220bb5a4b64e1d93795ea5",
+      "run": "true_defaults",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "defaults_1280x800/onboarding.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "8dca62054f92ebe88cdbc999c806ad60c73dca4d28ff9ea80297514f3ff4c9bc",
+      "run": "true_defaults",
+      "evidence_kind": "first_beat_on_direct_match",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "defaults_1280x800/play.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "14f4a49d5f732c45c5aa9d85a33e3bb49f219665fc0b6e84286e7eda6b3e0883",
+      "run": "true_defaults",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/00_main_menu.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "49678204c0c572f34e92d1704b4a7f463b9d9a9792278bac2541093b65eba724",
+      "run": "legacy_baseline",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/01_play_hub.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "5b558a2d13737dcc08a8fa89e6dde892db0896d2d0009256c80ae212c7f7d5c2",
+      "run": "legacy_baseline",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/02_play_advanced.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "c0fe69a58f5f7333fa2fe415f484f46df7f4b1ce2e9e873bb4137d9304486c7e",
+      "run": "legacy_baseline",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/03_settings_preferences.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "14b5c496c537a5af7f9063b89581f77dd979c9bd9a3f99c08c0fcdb505355c24",
+      "run": "legacy_baseline",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/04_settings_controls.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "40bc2d45edfcff356dd88cc037e3a2d5e12f2e856cb3ae689a0ae8819ec1efa9",
+      "run": "legacy_baseline",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/05_loadout.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "302ce6c30587eb4e0d76899a93419a218ddf575bff63d8a92180ed592866be34",
+      "run": "legacy_baseline",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/06_lan_browser.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "dad1324d6aac45e8046da934ccfdb1eb5d7c1beb4057876e43540b40a214c4a6",
+      "run": "legacy_baseline",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/07_lobby.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "d894ad80106c40170e0267329fac41b334ed5335189872906e475742c973f027",
+      "run": "legacy_baseline",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/08_loading.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "feea4a6b14c28bc2bd746fb79f6525b70d622eedd2953ab6848c4d37c15daeee",
+      "run": "legacy_baseline",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/09_results.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "15cfc74b1f5e38151635276d14d3d7bd90a6c09398a938f59615fb682477b899",
+      "run": "legacy_baseline",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/10_replay.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "c16ed55ea24c785776ed5f6c5bb81df7abf2b467221692bf443202be35d7d98a",
+      "run": "legacy_baseline",
+      "evidence_kind": "staged_screen",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/11_match_first_frame.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "035ff98121f2007c4471c251f5812a3195fe3dcea8e83e50e4e882df5ae0fda9",
+      "run": "legacy_baseline",
+      "evidence_kind": "direct_bot_match",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/12_pause_root.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "b8385a45923f9bd78dd6046782dcb3b6073acf6099717945a0865412e43348f6",
+      "run": "legacy_baseline",
+      "evidence_kind": "injected_pause_overlay",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/13_pause_confirm_leave.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "b1b6c2f11324462c675b00ae160fcc5b3d78601da779c0ffec058eb37414866a",
+      "run": "legacy_baseline",
+      "evidence_kind": "injected_pause_overlay",
+      "visually_inspected": true,
+      "interaction_verified": false
+    },
+    {
+      "file": "frontend_1280x800/14_survivor_map.png",
+      "width": 1280,
+      "height": 800,
+      "sha256": "c89b0b8d14533c677a28e92b61dcbad0e7fcf5eb13fff23f102bc10ee3a1d950",
+      "run": "legacy_baseline",
+      "evidence_kind": "injected_map_overlay",
+      "visually_inspected": true,
+      "interaction_verified": false
+    }
+  ]
+}
