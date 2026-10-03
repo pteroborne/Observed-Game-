@@ -81,16 +81,20 @@ pub(in crate::hex_wfc) fn capture(
         }
         return;
     }
-    // The board frames itself before anything is pointed at.
     let (Some(mut runtime), Some(mut desk), Some(_)) = (runtime, desk, board) else {
         return;
     };
     let prefix = if rogue { "rogue" } else { "architect" };
     let mapping = if rogue { FALL_TICK + 90 } else { MAPPING_TICKS };
+    let tick = runtime.match_state.tick;
+    if request.stills == 0 && tick >= mapping {
+        if let Some(ascent) = runtime.ascent.as_mut() {
+            let _ = ascent.stage_card(desk.seat, CardKind::Cistern);
+        }
+    }
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
     };
-    let tick = runtime.match_state.tick;
     let path = std::path::PathBuf::from(&request.path);
     let shoot = |commands: &mut Commands, name: &str| {
         let name = format!("{prefix}-{name}-1280x800.png");
@@ -104,9 +108,6 @@ pub(in crate::hex_wfc) fn capture(
             request.stills = 1;
         }
         1 => {
-            // Pick up the first card with a play the rules would take on a known cell,
-            // on any floor, and look at that floor: a tile if one can be played, so the
-            // still shows its ghost.
             let Some(knowledge) = desk.knowledge(ascent.rules()) else {
                 return;
             };
@@ -114,15 +115,15 @@ pub(in crate::hex_wfc) fn capture(
                 return;
             };
             let mut cards: Vec<_> = hand.deck.hand.iter().enumerate().collect();
-            // A stair when one is in hand, so the still shows the climb; a tile else.
+            // A cistern when one is in hand, so the still shows the multi-tile room; a stair else; a tile else.
             cards.sort_by_key(|(_, card)| match card.kind {
-                CardKind::Stair => 0,
                 CardKind::Cistern => 0,
-                CardKind::Tile(_) => 1,
-                CardKind::Door => 2,
-                CardKind::Station => 2,
+                CardKind::Stair => 1,
+                CardKind::Tile(_) => 2,
+                CardKind::Door => 3,
+                CardKind::Station => 3,
                 // The Rogue's orders build nothing to show.
-                CardKind::Directive | CardKind::Sensor | CardKind::Surge => 3,
+                CardKind::Directive | CardKind::Sensor | CardKind::Surge => 4,
             });
             let found = cards.into_iter().find_map(|(index, card)| {
                 knowledge.cells.keys().find_map(|&target| {
