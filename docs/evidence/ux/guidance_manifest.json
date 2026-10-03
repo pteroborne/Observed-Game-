@@ -1,0 +1,672 @@
+{
+  "captured_on": "2026-10-03",
+  "branch": "codex/end-to-end-ux",
+  "source_base": "5202480b766129e7b034b1710b58184cba3b8545",
+  "source_revision": "implementation commit containing this manifest; source files below identify the rendered revision",
+  "capture_driver": "game/src/evidence/capture/guidance.rs via frontend::capture_frontend_progress",
+  "viewport_physical_pixels": [
+    1280,
+    800
+  ],
+  "environment": {
+    "preferences": "isolated initially empty directory",
+    "cwd": "isolated empty external directory",
+    "seed": "0xF011FAC11177",
+    "guidance_mode": "OBSERVED2_CAPTURE_FRONTEND_GUIDANCE=1"
+  },
+  "provenance": [
+    "PlaySetupDraft menu variants are staged. Each run enters via production PlayAction::Launch and asynchronous Loading.",
+    "Power and charge use existing Ascent evidence seams. Teammate/local jail and corruption use the canonical jail/drop_into_void methods. Guardian is off; this does not prove a Guardian catch or completed rescue.",
+    "Map and pause overlays use the canonical typed overlay resource. Camera/guide edges queue ordinary Bevy KeyboardInput messages; Review role help and Next trigger production semantic actions.",
+    "01 captures automatic Observer help. 11 is returning Observer entry at the prior 125% setting; 14 is spectator entry with automatic help skipped, despite its legacy label. 12c-12f and 22-25 capture all four pages of optional current-role help.",
+    "Gameplay text is 125% from 03 through 11 and 100% elsewhere. Menu/help/desk font sizes follow their existing theme.",
+    "The screenshot driver holds each screen until ScreenshotCaptured. Bounds are sampled at the capture request and may precede the rendered bot pose by a frame.",
+    "The staged jail can retain a preceding fading power-restored notice. Spectator pause/help have a dark frozen eyes-camera backdrop; they establish modal legibility, not unobstructed viewing from every bot pose.",
+    "Career, XP and replay are synthetic inherited capture fixtures. No completed human session, physical controller or connected LAN session is established."
+  ],
+  "inspection": {
+    "retained_set": "31 native PNGs visually inspected for readable copy, overlap, camera layering and map geometry",
+    "repeat_sweep": "second 31-shot native sweep exited 0; compact/expanded prison and spectator maps re-inspected with geometry present",
+    "widget_bounds": "within [4,4]..[1276,796]",
+    "visible_text_bounds": "within [-0.5,-0.5]..[1280.5,800.5]"
+  },
+  "images": [
+    {
+      "path": "guidance_1280x800/00_observer_launch.png",
+      "sha256": "e16f761adab936d9b049de0f955b9e613c8f389698b301275aa005d256f468ff",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/00_observer_launch.bounds.json",
+      "bounds_sha256": "88b7b11e1c0f5545352fdf5764559d1ac33ce2df45d525eca037abdc6ee4dc00",
+      "visible_widget_count": 12,
+      "text_bounds_path": "guidance_1280x800/00_observer_launch.text-bounds.json",
+      "text_bounds_sha256": "f46bee55998625d9077b62af6c9f6298430001061cfa21b32ca9b021e3c0d456",
+      "visible_text_count": 23,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/01_observer_help.png",
+      "sha256": "73b656786ccb1a6cbf7de040473ff945fc8ed44eda998597f56e77d07dfe5d2e",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/01_observer_help.bounds.json",
+      "bounds_sha256": "21c0c23f2f17eb94a9ac66b09178334c4dd87ec47bf4b53907e37a40f28eddac",
+      "visible_widget_count": 2,
+      "text_bounds_path": "guidance_1280x800/01_observer_help.text-bounds.json",
+      "text_bounds_sha256": "862d11fb8e0ce1b7afc21a78ef02ff3905dc21161331455cc34fed4cc6dbb4cc",
+      "visible_text_count": 9,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/02_observer_hud.png",
+      "sha256": "451536ef7059c292da06138a1abc39abf533dfaf5e1fe88acbd0033c5eb56436",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/02_observer_hud.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/02_observer_hud.text-bounds.json",
+      "text_bounds_sha256": "6785333aec231b45fb3a16927979848159eca604aaa74957f6458b51c9f98dd7",
+      "visible_text_count": 12,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/03_observer_hud_large.png",
+      "sha256": "cc025a02e4c5c81c0c648c45ad2579429f6d15230f790c9f91a369bf40532a82",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/03_observer_hud_large.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/03_observer_hud_large.text-bounds.json",
+      "text_bounds_sha256": "28c6b0c6058ad7c8feffbe3c5056608926d119593c900eea13a4f716c13fd596",
+      "visible_text_count": 12,
+      "gameplay_text_scale": 1.25,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/04_power_lost.png",
+      "sha256": "532dd0172181714b0986df8272ef3d350c0d0e65df52f6eb5e6b7ae7cec27a7f",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/04_power_lost.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/04_power_lost.text-bounds.json",
+      "text_bounds_sha256": "94a3e0bd7053f44fd8262bd4227f1dc3e653a9de411c36b9e5c7d4e4b26169d3",
+      "visible_text_count": 13,
+      "gameplay_text_scale": 1.25,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/05_tool_empty.png",
+      "sha256": "b13bcea13c88eb8299bf19b531db2c28c820a59505125785425edcd1c5dd07ca",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/05_tool_empty.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/05_tool_empty.text-bounds.json",
+      "text_bounds_sha256": "c372d0f29b4dedd387d588eb654b919eb88da43de375898273a6bfae436528c2",
+      "visible_text_count": 13,
+      "gameplay_text_scale": 1.25,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/06_teammate_rescue.png",
+      "sha256": "cbea836b85c39b47877203bfa5d0aa75d68cce6cfc06755ae42f395e0d6e48e7",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/06_teammate_rescue.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/06_teammate_rescue.text-bounds.json",
+      "text_bounds_sha256": "4f811c2e82695e9b4ba23f5a57906bc47ea8800708bd21185a3c00053638c5fa",
+      "visible_text_count": 13,
+      "gameplay_text_scale": 1.25,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/07_prison_hud.png",
+      "sha256": "1f01f8adc0f5a529de3b140ba79af094b833056ca536780dc495be76054d0629",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/07_prison_hud.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/07_prison_hud.text-bounds.json",
+      "text_bounds_sha256": "1c069520fedd2e0f6440c51e401ba3eae0ae807d60715c06018bf5c020deb303",
+      "visible_text_count": 9,
+      "gameplay_text_scale": 1.25,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/08_prison_map.png",
+      "sha256": "36a78c17714d0f6ff3079afe98d2767f14be3763ae8a20f4f4007f0f2150312d",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/08_prison_map.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/08_prison_map.text-bounds.json",
+      "text_bounds_sha256": "d1184adc4200717b1f67db67df18e0996ee32285700bb79451df738733d5ef8f",
+      "visible_text_count": 2,
+      "gameplay_text_scale": 1.25,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/09_prison_guide.png",
+      "sha256": "57ffaaa8e0ce01d0ec7edcf0e556eb4b5864148d0e62e32009e99881e229db44",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/09_prison_guide.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/09_prison_guide.text-bounds.json",
+      "text_bounds_sha256": "dfa70f9b26d91d5f46a812cefc60581e6b115b23050f4dace08b5e524d092f38",
+      "visible_text_count": 2,
+      "gameplay_text_scale": 1.25,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/10_rogue_launch.png",
+      "sha256": "3665c11421c082f126eecd7ef2cb475c81d4cf82c4158f16365edc1fd2042dda",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/10_rogue_launch.bounds.json",
+      "bounds_sha256": "88b7b11e1c0f5545352fdf5764559d1ac33ce2df45d525eca037abdc6ee4dc00",
+      "visible_widget_count": 12,
+      "text_bounds_path": "guidance_1280x800/10_rogue_launch.text-bounds.json",
+      "text_bounds_sha256": "f46bee55998625d9077b62af6c9f6298430001061cfa21b32ca9b021e3c0d456",
+      "visible_text_count": 23,
+      "gameplay_text_scale": 1.25,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/11_rogue_entry.png",
+      "sha256": "dbd9578d3b89396f5efa1773f9c425e099db0d56013c93d18830cc478dfdc531",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/11_rogue_entry.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/11_rogue_entry.text-bounds.json",
+      "text_bounds_sha256": "28c6b0c6058ad7c8feffbe3c5056608926d119593c900eea13a4f716c13fd596",
+      "visible_text_count": 12,
+      "gameplay_text_scale": 1.25,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/12_rogue_board.png",
+      "sha256": "ae19446888dfd72a7c1f98ff9d1988209e843890eaef8b678510d1213cd69db5",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/12_rogue_board.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/12_rogue_board.text-bounds.json",
+      "text_bounds_sha256": "749a6cd4a183934f3f106185122d8a712fe38a1e2e26855872cd3f931e456a1b",
+      "visible_text_count": 42,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/12b_rogue_pause.png",
+      "sha256": "2cf212bcd7998ebdaace40e01f4ad4ccc5c4e16686e7beefbe89d553e80eb65b",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/12b_rogue_pause.bounds.json",
+      "bounds_sha256": "44170c7e6f821219a43c91c52aafc094588dc17ecb073cae6e7c9c2f9833269b",
+      "visible_widget_count": 5,
+      "text_bounds_path": "guidance_1280x800/12b_rogue_pause.text-bounds.json",
+      "text_bounds_sha256": "db8befa964e25ac961057fdc3f96d2db7e0ef9b7875172e80f1340d82cc15609",
+      "visible_text_count": 50,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/12c_rogue_review.png",
+      "sha256": "4a099d5da6adb4c9c62b7b5cd2c379293fbc8197d1e5cb779ba989d0f49ee2e6",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/12c_rogue_review.bounds.json",
+      "bounds_sha256": "8458383c12c823b8ec24357564bc3da505145d7e45f15228ca811ccf4cefcf57",
+      "visible_widget_count": 2,
+      "text_bounds_path": "guidance_1280x800/12c_rogue_review.text-bounds.json",
+      "text_bounds_sha256": "bc72ccb1158152c3ff5f1ac79799461792b06736e1e631867676a0a034370116",
+      "visible_text_count": 50,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/12d_rogue_help_2.png",
+      "sha256": "72e8491a9a708c56c34da8f07dfe4b2c20f0efacf461ea4d5fddd2902f1f8255",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/12d_rogue_help_2.bounds.json",
+      "bounds_sha256": "c57b9ce7367711f5f39b98d11ff6fb9c2de60bc23fe45879abc86882629a02c5",
+      "visible_widget_count": 2,
+      "text_bounds_path": "guidance_1280x800/12d_rogue_help_2.text-bounds.json",
+      "text_bounds_sha256": "5257b19382b4dbf7842dd340c19ba0131a20a09d07c5433cd184ef8632bbef1a",
+      "visible_text_count": 50,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/12e_rogue_help_3.png",
+      "sha256": "4fd317022453ac12fcf7ea985e8189ec3e1ffebc0fa95a90fd7611822c456827",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/12e_rogue_help_3.bounds.json",
+      "bounds_sha256": "c57b9ce7367711f5f39b98d11ff6fb9c2de60bc23fe45879abc86882629a02c5",
+      "visible_widget_count": 2,
+      "text_bounds_path": "guidance_1280x800/12e_rogue_help_3.text-bounds.json",
+      "text_bounds_sha256": "fd9307133966b0171cdbb358c953d26e40ec066458c23961903f0cc68fc38103",
+      "visible_text_count": 50,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/12f_rogue_help_4.png",
+      "sha256": "a16b839c46ac04a4aa94ee3e368474dc02afa3983b47c3b96d6a44fed33b16d7",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/12f_rogue_help_4.bounds.json",
+      "bounds_sha256": "8458383c12c823b8ec24357564bc3da505145d7e45f15228ca811ccf4cefcf57",
+      "visible_widget_count": 2,
+      "text_bounds_path": "guidance_1280x800/12f_rogue_help_4.text-bounds.json",
+      "text_bounds_sha256": "bbb42ded85e44a506869ae1298c76232c4c76aba05d8225668a452dee207d80e",
+      "visible_text_count": 50,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/13_spectator_launch.png",
+      "sha256": "0f6b1ef9f379042f337b3ba03760728bdbdffcc1c2c51189d0aa1cdd33ace0c4",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/13_spectator_launch.bounds.json",
+      "bounds_sha256": "5583c78fcbee7105da91f157ace5ca9c61c9ba058d802753a44242e62f685c92",
+      "visible_widget_count": 12,
+      "text_bounds_path": "guidance_1280x800/13_spectator_launch.text-bounds.json",
+      "text_bounds_sha256": "e17e0fd22fc19ed5c621c4eaf60b9cf94742ace7b91bef43e6fc143d3c688dd9",
+      "visible_text_count": 23,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/14_spectator_help.png",
+      "sha256": "c02fbcade0f9bb87b6f3bfbe0bc22296f386f95e5b0d20e28a5c129f08b1a9ce",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/14_spectator_help.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/14_spectator_help.text-bounds.json",
+      "text_bounds_sha256": "05ad162e95df37ca6b9b22eb4620f08c85b370407a0ff71d7c31c32008dfbbf7",
+      "visible_text_count": 5,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/15_spectator_chase.png",
+      "sha256": "3da0d0ed00b8d90313febccc4efa1e1741d0a29831861b5673b655cb646c66c4",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/15_spectator_chase.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/15_spectator_chase.text-bounds.json",
+      "text_bounds_sha256": "05ad162e95df37ca6b9b22eb4620f08c85b370407a0ff71d7c31c32008dfbbf7",
+      "visible_text_count": 5,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/16_spectator_overview.png",
+      "sha256": "189719583b1d45b9dea637ecc34449e7f94cadc876f742bdc649e40de66632e8",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/16_spectator_overview.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/16_spectator_overview.text-bounds.json",
+      "text_bounds_sha256": "37dcf2d75c6e8dbca7663afd74461f0ebc1d6b90cd2cea6ccc017a411a260d0a",
+      "visible_text_count": 5,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/17_spectator_eyes.png",
+      "sha256": "023dc83d2e2134eec1324c22c969d8b096d01adc5fe02f89366ce6a14ab15c35",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/17_spectator_eyes.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/17_spectator_eyes.text-bounds.json",
+      "text_bounds_sha256": "f4edb95c136e763782c4fd54a31cb64de24e951d0db970abb7704e4a64e3b37e",
+      "visible_text_count": 5,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/18_spectator_next.png",
+      "sha256": "11e17e09a7cd410ce07a3285fb00f6ee2a21a4badb9941f2eec0a493614563ad",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/18_spectator_next.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/18_spectator_next.text-bounds.json",
+      "text_bounds_sha256": "f08246abda1d269f2569e109e3e500caf97073e38f95a2748cec2d6ede2fd8d0",
+      "visible_text_count": 5,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/19_spectator_map.png",
+      "sha256": "f18b182986e499f45c149d7e0df431897f1220938a2bbdbaa6bf2acc7a6d7991",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/19_spectator_map.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/19_spectator_map.text-bounds.json",
+      "text_bounds_sha256": "db378887bf39a1569c956844404c51303a5aa6ae47140d8da96a04ee2b219481",
+      "visible_text_count": 1,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/20_spectator_guide.png",
+      "sha256": "f561e34ebeaf137b3a82b04eac20cbceb8cb5879a006a39700ad742b83907e76",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/20_spectator_guide.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "text_bounds_path": "guidance_1280x800/20_spectator_guide.text-bounds.json",
+      "text_bounds_sha256": "72bfb8046784e6b812d1f47b88cd9d296901eca007a926a3538a0a67e0884179",
+      "visible_text_count": 1,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/21_spectator_pause.png",
+      "sha256": "4e648d21f01299957b34eaa0f896ba6d72b57c59fdd97a2ec85ae66e5a1fdcb4",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/21_spectator_pause.bounds.json",
+      "bounds_sha256": "44170c7e6f821219a43c91c52aafc094588dc17ecb073cae6e7c9c2f9833269b",
+      "visible_widget_count": 5,
+      "text_bounds_path": "guidance_1280x800/21_spectator_pause.text-bounds.json",
+      "text_bounds_sha256": "5e4abec47ce1ee1849aae33fcf043aeacc91d6bc8ab10cbf8ca7aea19753a41e",
+      "visible_text_count": 8,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/22_spectator_review.png",
+      "sha256": "3c6a5af56c9470dc5fc02fbf2d6effc5a54b400c9b2a96bbab05cb12a96c4507",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/22_spectator_review.bounds.json",
+      "bounds_sha256": "c57b9ce7367711f5f39b98d11ff6fb9c2de60bc23fe45879abc86882629a02c5",
+      "visible_widget_count": 2,
+      "text_bounds_path": "guidance_1280x800/22_spectator_review.text-bounds.json",
+      "text_bounds_sha256": "fe043660d4ee3a72c6fed37f14459a05b68396fba79fd41fc4c24a5f6181c3c5",
+      "visible_text_count": 8,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/23_spectator_help_2.png",
+      "sha256": "d03d5c44c26abc88db6decd38e93324032ff74cf60756e3c0c166be34406cfed",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/23_spectator_help_2.bounds.json",
+      "bounds_sha256": "c57b9ce7367711f5f39b98d11ff6fb9c2de60bc23fe45879abc86882629a02c5",
+      "visible_widget_count": 2,
+      "text_bounds_path": "guidance_1280x800/23_spectator_help_2.text-bounds.json",
+      "text_bounds_sha256": "fec7ca89a2812a05296598c6fe292fe1844736e4fd1b072eb4f262a28dc78835",
+      "visible_text_count": 8,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/24_spectator_help_3.png",
+      "sha256": "7c8b649dbdcdfc5a9bb86809ec44b26b6c20e3a80537957f01f47f40c8fcda4b",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/24_spectator_help_3.bounds.json",
+      "bounds_sha256": "21c0c23f2f17eb94a9ac66b09178334c4dd87ec47bf4b53907e37a40f28eddac",
+      "visible_widget_count": 2,
+      "text_bounds_path": "guidance_1280x800/24_spectator_help_3.text-bounds.json",
+      "text_bounds_sha256": "369470e6d06bb32f77e24a6a98cd87de3da732fe10ff15d4f1f78f1d3c385b5d",
+      "visible_text_count": 8,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    },
+    {
+      "path": "guidance_1280x800/25_spectator_help_4.png",
+      "sha256": "394c10c036d780890fdb807572ea0982fa49eebb455e8f0ef6ffa2945ae6cc6c",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "guidance_1280x800/25_spectator_help_4.bounds.json",
+      "bounds_sha256": "8458383c12c823b8ec24357564bc3da505145d7e45f15228ca811ccf4cefcf57",
+      "visible_widget_count": 2,
+      "text_bounds_path": "guidance_1280x800/25_spectator_help_4.text-bounds.json",
+      "text_bounds_sha256": "a65fcce034f7045dc383dee747ed144c9654d5650900e8a27c43e2c6a8db19f1",
+      "visible_text_count": 8,
+      "gameplay_text_scale": 1.0,
+      "inspected": true,
+      "viewport_bounds_check": "pass"
+    }
+  ],
+  "source_files": [
+    {
+      "path": "game/src/evidence/capture/frontend.rs",
+      "sha256": "683e3bf7373ca254499a9e03280e78b2d9a62696a471361da9f7268c8604f703"
+    },
+    {
+      "path": "game/src/evidence/capture/guidance.rs",
+      "sha256": "0b9856841987b5c6d916d62c5e4dfdb4002c8738d966b6a2f5f6a1af19e705a8"
+    },
+    {
+      "path": "game/src/hex_wfc/architect/desk.rs",
+      "sha256": "fe1fc8aa0069d3355200c92acbf8150f90e153d7655374479397a6ba8aa9d65d"
+    },
+    {
+      "path": "game/src/hex_wfc/architect/readout.rs",
+      "sha256": "e950122417b905cbc4f841ed64bd56ca0135d818aef258345a5c759671f37767"
+    },
+    {
+      "path": "game/src/hex_wfc/ascent.rs",
+      "sha256": "6f719b8705d7edf723361b5483a203fc51f35561bcce09125e999c25118ca342"
+    },
+    {
+      "path": "game/src/hex_wfc/ask.rs",
+      "sha256": "3c12f314d16b92b71aa726669e4839aa834b0ddbffd5cae6e3957a63715da0b5"
+    },
+    {
+      "path": "game/src/hex_wfc/guidance_capture.rs",
+      "sha256": "78aafc66ff45e4134da81ce73ac33900ba1ac31102f4a69c5cb20576808e3db5"
+    },
+    {
+      "path": "game/src/hex_wfc/hud.rs",
+      "sha256": "0a3adcb54d0cc69454a42252611e8a6f187b08d232b4c3a488331cf0f8da5ec5"
+    },
+    {
+      "path": "game/src/hex_wfc/hud/guidance.rs",
+      "sha256": "817d37e53abfbd3868d642b39f14e09b08c67e4ccac28d29f82f6a015509c68b"
+    },
+    {
+      "path": "game/src/hex_wfc/hud/play.rs",
+      "sha256": "4d01fbbec27445df4fb2c0c5344a2f0e15523cb0b742b683159d4fc81b308fe7"
+    },
+    {
+      "path": "game/src/hex_wfc/hud/spectator.rs",
+      "sha256": "b5cc5b7756ee3d69691de6cfe71b5299aa4fb0a370d6a1089a3f5df61ca54e74"
+    },
+    {
+      "path": "game/src/hex_wfc/hud/words.rs",
+      "sha256": "e946c0cefdf617ed6875a152752cd8ca7e5ee894b787cbdbea15cf73b32a20d4"
+    },
+    {
+      "path": "game/src/hex_wfc/input.rs",
+      "sha256": "298ccbee6f236ffacff9f25d1ad9e130235326ef10c668fac3c89190a30e9381"
+    },
+    {
+      "path": "game/src/hex_wfc/mod.rs",
+      "sha256": "c96e80f227363f4264cdc6407df20cc491164d76f1ac152516ac153791d605b6"
+    },
+    {
+      "path": "game/src/hex_wfc/sim.rs",
+      "sha256": "734c4c628ce6f990c072c9d337b07663740583b86fa72e85196aa2f978713352"
+    },
+    {
+      "path": "game/src/hex_wfc/view/map/build.rs",
+      "sha256": "e2080ac26190e536215b38f92d3b2a6d84b6c52f27d34b4189072542cfddd901"
+    },
+    {
+      "path": "game/src/hex_wfc/view/map/build_tests.rs",
+      "sha256": "c88675c14f19f25ce3097238c4d8b0065232d1309533bbda1956dacc8a6e362b"
+    },
+    {
+      "path": "game/src/hex_wfc/view/map/cell.rs",
+      "sha256": "30bf17d185ee2c1d499e7659b3a021f0fbb06ce679135804db0074634ad69674"
+    },
+    {
+      "path": "game/src/hex_wfc/view/map/legend.rs",
+      "sha256": "79cff98d5c3e0638f16ca9b2c0217280d47c6a3a0457036d8a80e883c0264a69"
+    },
+    {
+      "path": "game/src/hex_wfc/view/map/mod.rs",
+      "sha256": "13af651c30221efed9a68fa89fe104e0eedd7a956d692ef7d1ff01c847b31ec0"
+    },
+    {
+      "path": "game/src/hex_wfc/view/map/overlay.rs",
+      "sha256": "3160695995e7414d1a552eb8fe13d2a1c6bb9b2cd9d6a7dbc22129ea517eb6e5"
+    },
+    {
+      "path": "game/src/hex_wfc/view/spectate.rs",
+      "sha256": "f6522fce39b53a62f96ada8d7d0004b8f0b4f83ef0b8e542636f73421dd510ab"
+    },
+    {
+      "path": "game/src/screens/onboarding.rs",
+      "sha256": "fcb6dba9c10bdbf2a87d3c8e6ffec95fb5dddb1fea1775b6f9e2e4ed1ae83bfe"
+    },
+    {
+      "path": "game/src/screens/onboarding_tests.rs",
+      "sha256": "e6a6847bba1da2f4c9a25ad4c43a57a611862af65a008de7d5123ca8d51fba0d"
+    },
+    {
+      "path": "game/src/settings.rs",
+      "sha256": "0b384fb113ee099874d95b754062a87dac3161bd83278869e476ad401868faab"
+    },
+    {
+      "path": "game/src/tests.rs",
+      "sha256": "26ec20e396b408ae06bb9b8b0065033a161da1536019ce4dd466f56e1fc2eb59"
+    },
+    {
+      "path": "game/src/tests/ux_guidance.rs",
+      "sha256": "63cbb7abe9d32b8891bc7d003055c354f4b78e4b76c549d2d9f54dbee1c160a3"
+    }
+  ]
+}

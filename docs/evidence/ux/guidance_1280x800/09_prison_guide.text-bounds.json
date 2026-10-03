@@ -1,0 +1,24 @@
+[
+  {
+    "max": [
+      654.0,
+      411.0
+    ],
+    "min": [
+      640.0,
+      384.0
+    ],
+    "text": "+"
+  },
+  {
+    "max": [
+      632.0,
+      521.0
+    ],
+    "min": [
+      18.0,
+      14.0
+    ],
+    "text": "TEAM MAP / FLOOR 1\nFind the way out of the maze\nYou are in prison. This sketch shows the facility, not the prison maze.\nKnown floors: [1]\nPgUp PgDn / D-pad up down  floor\nH / X  less detail    Tab / RB or Esc / B  close\n\nOnly your team's discoveries are drawn.\n2 traversed | 3 glimpsed | 0 stale\nStale cells may have changed since you saw them.\nRooms: start\n3 lateral | 0 vertical links seen from both sides\n4 may change | 1 permanent | 0 held\nRooms may change. Climbs and fixed structure remain. Occupancy does not stop retraction.\ncolour = district | width = room/hallway\nheight = archetype | capped = known anchor\ncyan = you & facing | green = exit\npurple = device/held | amber = room\norientation: N (up-left) E (up-right) S (down-right) W (down-left)\nfacing: unavailable"
+  }
+]

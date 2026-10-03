@@ -397,10 +397,14 @@ pub(super) fn step_runtime(
         return;
     }
     let local_player = runtime.local_player;
-    let local_command = if policy.sends_neutral_input() {
+    // A spectator's map owns camera input, not the followed bot's controls.
+    // Offline pause has already returned above and still stops every actor.
+    let local_command = if spectator_bot.is_some() {
+        runtime.bot_command(local_player)
+    } else if policy.sends_neutral_input() {
         runtime.bot_driver.clear_player(local_player);
         HexPlayerCommand::default()
-    } else if spectator_bot.is_some() || control.desk.is_some() {
+    } else if control.desk.is_some() {
         // A spectator watches a bot, and an Architect has no body: the team's is a bot.
         runtime.bot_command(local_player)
     } else {

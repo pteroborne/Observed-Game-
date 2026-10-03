@@ -16,13 +16,9 @@
 //! (90-125%) wraps within the panel rather than stretching it.
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use observed_match::hex_wfc::HexBodyPlace;
 
 use super::super::{HexOnboardingGate, overlay::MatchOverlayState, sim::HexWfcRuntime};
-use super::words::{
-    MAX_PIPS, NOTICE_SECONDS, ObjectiveFacts, Tone, notice_alpha, notice_for, objective_view,
-    prompt_view,
-};
+use super::words::{MAX_PIPS, NOTICE_SECONDS, Tone, notice_alpha, notice_for, prompt_view};
 use crate::{
     GameState,
     settings::{Settings, key_name},
@@ -37,6 +33,9 @@ pub(in crate::hex_wfc) struct PlayHud;
 pub(in crate::hex_wfc) enum Field {
     ObjectiveHeading,
     ObjectiveGoal,
+    ObjectiveDetail,
+    SpectatorMode,
+    SpectatorControls,
     EquipmentCounts,
     EquipmentKeys,
     PromptKey,
@@ -51,6 +50,7 @@ pub(in crate::hex_wfc) enum Field {
 pub(in crate::hex_wfc) enum Panel {
     Objective,
     Equipment,
+    Spectator,
     Prompt,
     Notice,
 }
@@ -58,6 +58,9 @@ pub(in crate::hex_wfc) enum Panel {
 /// The objective panel's accent bar, in the team's colour.
 #[derive(Component)]
 pub(in crate::hex_wfc) struct TeamAccent;
+
+#[derive(Component)]
+pub(in crate::hex_wfc) struct ObjectivePanel;
 
 /// One keystone pip, by index.
 #[derive(Component)]
@@ -93,7 +96,7 @@ impl HudNotice {
     }
 }
 
-fn text(field: Field, size: f32, color: Color) -> impl Bundle {
+pub(super) fn text(field: Field, size: f32, color: Color) -> impl Bundle {
     (
         field,
         Text::new(""),
@@ -105,7 +108,7 @@ fn text(field: Field, size: f32, color: Color) -> impl Bundle {
     )
 }
 
-fn panel(kind: Panel) -> impl Bundle {
+pub(super) fn panel(kind: Panel) -> impl Bundle {
     (kind, BackgroundColor(PANEL), Visibility::Hidden)
 }
 
@@ -157,12 +160,14 @@ pub(in crate::hex_wfc) fn setup(mut commands: Commands) {
                     ..default()
                 },
                 panel(Panel::Objective),
+                ObjectivePanel,
                 TeamAccent,
                 BorderColor::all(ACCENT),
             ))
             .with_children(|panel| {
                 panel.spawn(text(Field::ObjectiveHeading, 13.0, DIM));
                 panel.spawn(text(Field::ObjectiveGoal, 18.0, TITLE));
+                panel.spawn(text(Field::ObjectiveDetail, 14.0, DIM));
                 panel
                     .spawn(Node {
                         column_gap: px(6),
@@ -206,6 +211,7 @@ pub(in crate::hex_wfc) fn setup(mut commands: Commands) {
                 panel.spawn(text(Field::EquipmentCounts, 15.0, TITLE));
                 panel.spawn(text(Field::EquipmentKeys, 13.0, DIM));
             });
+            root.spawn(super::spectator::panel());
             // Notice, top centre.
             root.spawn(Node {
                 position_type: PositionType::Absolute,
@@ -217,7 +223,7 @@ pub(in crate::hex_wfc) fn setup(mut commands: Commands) {
             .with_children(|row| {
                 row.spawn((
                     Node {
-                        max_width: percent(34),
+                        max_width: percent(28),
                         padding: UiRect::axes(px(16), px(8)),
                         border_radius: BorderRadius::all(px(3)),
                         ..default()
@@ -347,6 +353,7 @@ pub(in crate::hex_wfc) struct HudContext<'w, 's> {
     overlay: Res<'w, MatchOverlayState>,
     onboarding: Res<'w, HexOnboardingGate>,
     spectator: Option<Res<'w, crate::sim::state::SpectatorBot>>,
+    overview: Res<'w, crate::hex_wfc::view::spectate::SpectatorOverview>,
     architect: Option<Res<'w, crate::hex_wfc::architect::ArchitectDesk>>,
     notice: ResMut<'w, HudNotice>,
     fields: Fields<'w, 's>,
@@ -367,6 +374,7 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
         overlay,
         onboarding,
         spectator,
+        overview,
         architect,
         mut notice,
         mut fields,
@@ -380,10 +388,7 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
     let game = &runtime.match_state;
     let player = runtime.local();
     let team = &game.teams[&player.team];
-    let hidden = *overlay != MatchOverlayState::Playing
-        || onboarding.active
-        || spectator.is_some()
-        || architect.is_some();
+    let hidden = *overlay != MatchOverlayState::Playing || onboarding.active || architect.is_some();
     let now = time.elapsed_secs_f64();
     if notice.tick != game.tick {
         notice.tick = game.tick;
@@ -400,31 +405,15 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
         }
     }
 
-    let objective = objective_view(ObjectiveFacts {
-        floor: player.cell.level,
-        team: player.team.0,
-        escaped: player.escaped,
-        enabled: game.objectives.enabled,
-        keystones: team.objectives.keystones,
-        required: game.objectives.keystones_required,
-        station_done: team.objectives.dual_station_complete,
-        solo: team.members.len() == 1,
-        ascent: runtime.ascent.is_some(),
-        jailed: player.place == HexBodyPlace::Prison,
-        teammates_jailed: u8::try_from(
-            team.members
-                .iter()
-                .filter(|&&id| id != player.id && game.players[&id].place == HexBodyPlace::Prison)
-                .count(),
-        )
-        .unwrap_or(u8::MAX),
-    });
+    let objective = super::guidance::objective(&runtime);
+    let detail = super::guidance::next_step(&runtime);
     // In Ascent the rules own the kinetic tool's charge, and the floor's power.
     let charge = runtime.ascent.as_ref().and_then(|ascent| {
         let observer = ascent.observer_for(runtime.local_player)?;
         Some(ascent.rules().economy.charge(observer))
     });
-    let dark = crate::hex_wfc::power::local_floor_powered(&runtime) == Some(false);
+    let dark = player.place == observed_match::hex_wfc::HexBodyPlace::Facility
+        && crate::hex_wfc::power::local_floor_powered(&runtime) == Some(false);
     // A fixture the body stands at speaks first: it is what the body came for.
     let prompt = crate::hex_wfc::power::prompt(&runtime, &settings)
         .or_else(|| crate::hex_wfc::doors::prompt(&runtime, &settings))
@@ -447,12 +436,27 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
     let scale = settings.gameplay_text_scale;
     for (field, mut text, mut font, mut color) in &mut fields {
         let (line, size, tint) = match field {
-            Field::ObjectiveHeading => (objective.heading.clone(), 13.0, DIM),
+            Field::ObjectiveHeading => (
+                if spectator.is_some() {
+                    format!(
+                        "WATCHING OBSERVER {} / {}",
+                        runtime.local_player.0 + 1,
+                        objective.heading
+                    )
+                } else {
+                    objective.heading.clone()
+                },
+                13.0,
+                DIM,
+            ),
             Field::ObjectiveGoal => (objective.goal.clone(), 18.0, TITLE),
+            Field::ObjectiveDetail => (detail.to_owned(), 14.0, DIM),
+            Field::SpectatorMode => (super::spectator::mode(&overview), 15.0, TITLE),
+            Field::SpectatorControls => (super::spectator::controls(&settings), 13.0, DIM),
             Field::EquipmentCounts => (
                 match charge {
                     Some(charge) => format!(
-                        "{}CHARGE {charge}   LANTERNS {}   PLATES {}",
+                        "{}CHARGE {charge}\nLANTERNS {}   PLATES {}",
                         if dark { "NO POWER   " } else { "" },
                         game.lanterns.inventory(runtime.local_player),
                         game.pads.inventory(runtime.local_player)
@@ -469,11 +473,12 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
             Field::EquipmentKeys => (
                 if charge.is_some() {
                     format!(
-                        "[LMB] Push   [RMB] Pull   [{}] Arm   [{}] Plumb   [{}] Plate   [{}] Map",
+                        "[LMB / RT] Push   [RMB / RS click] Pull\n[{}] Arm   [{}] Plumb   [{}] Plate   [{} / RB] Map   [{} / Start] Pause",
                         key_name(settings.bindings.arm_plumb),
                         key_name(settings.bindings.plumb),
                         key_name(settings.bindings.pad),
                         key_name(settings.bindings.tac_map),
+                        key_name(settings.bindings.pause),
                     )
                 } else {
                     format!(
@@ -529,9 +534,11 @@ pub(in crate::hex_wfc) fn sync(context: HudContext) {
     for (panel, mut visibility, mut background) in &mut panels {
         let shown = !hidden
             && match panel {
-                Panel::Objective | Panel::Equipment => true,
-                Panel::Prompt => prompt.is_some(),
-                Panel::Notice => alpha > 0.0,
+                Panel::Objective => true,
+                Panel::Equipment => spectator.is_none(),
+                Panel::Spectator => spectator.is_some(),
+                Panel::Prompt => spectator.is_none() && prompt.is_some(),
+                Panel::Notice => spectator.is_none() && alpha > 0.0,
             };
         let wanted = if shown {
             Visibility::Inherited

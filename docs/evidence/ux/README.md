@@ -15,6 +15,10 @@ Their [separate manifest](implementation_manifest.json) records inspection,
 checksums and production-launch versus staged-state provenance;
 [implementation checks](implementation_checks.txt) records the code gates.
 
+The subsequent [in-match implementation record](../../ux/in_match_implementation.md)
+tracks Observer/spectator guidance, Rogue help and the team map. Its native
+captures, bounds and checks have their own [guidance manifest](guidance_manifest.json).
+
 ## Runs and retained images
 
 | Run | Setup | Retained evidence | What it establishes |

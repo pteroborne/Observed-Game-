@@ -44,6 +44,9 @@
 //! module therefore owns a *pose*, not a camera: `sync_camera` asks for it and
 //! moves the one camera that already exists.
 
+use crate::hex_wfc::overlay::MatchOverlayState;
+use crate::screens::widgets::UiInputCapture;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 // Declared here rather than in `view/mod.rs` because it is not a peer of
@@ -177,32 +180,52 @@ pub(in crate::hex_wfc) struct BoundaryShell;
 ///
 /// Both gated on `SpectatorBot`: in play these keys must keep whatever meaning
 /// play gives them.
-pub(in crate::hex_wfc) fn hotkeys(
-    keys: Res<ButtonInput<KeyCode>>,
-    spectating: Option<Res<crate::sim::state::SpectatorBot>>,
-    mut overview: ResMut<SpectatorOverview>,
-    mut runtime: ResMut<HexWfcRuntime>,
-) {
-    if spectating.is_none() {
+#[derive(SystemParam)]
+pub(in crate::hex_wfc) struct SpectatorInput<'w, 's> {
+    keys: Res<'w, ButtonInput<KeyCode>>,
+    gamepads: Query<'w, 's, &'static Gamepad>,
+    spectating: Option<Res<'w, crate::sim::state::SpectatorBot>>,
+    overlay: Res<'w, MatchOverlayState>,
+    capture: Res<'w, UiInputCapture>,
+    overview: ResMut<'w, SpectatorOverview>,
+    runtime: ResMut<'w, HexWfcRuntime>,
+}
+
+pub(in crate::hex_wfc) fn hotkeys(input: SpectatorInput) {
+    let SpectatorInput {
+        keys,
+        gamepads,
+        spectating,
+        overlay,
+        capture,
+        mut overview,
+        mut runtime,
+    } = input;
+    if spectating.is_none() || *overlay != MatchOverlayState::Playing || capture.is_active() {
         return;
     }
-    if keys.just_pressed(TOGGLE_KEY) {
+    let pressed =
+        |key, button| keys.just_pressed(key) || gamepads.iter().any(|pad| pad.just_pressed(button));
+    if pressed(TOGGLE_KEY, GamepadButton::North) {
         overview.active = !overview.active;
     }
-    if keys.just_pressed(EYES_KEY) {
-        overview.eyes = !overview.eyes;
+    if pressed(EYES_KEY, GamepadButton::West) {
+        overview.eyes = overview.active || !overview.eyes;
+        overview.active = false;
     }
-    if keys.just_pressed(CYCLE_KEY) {
+    if pressed(CYCLE_KEY, GamepadButton::DPadLeft) {
         cycle_focus(&mut runtime);
     }
-    if keys.just_pressed(ROTATE_KEY) {
-        overview.detent = (overview.detent + 1) % observed_style::iso::AZIMUTH_DETENTS;
-    }
-    if keys.just_pressed(WIDEN_KEY) {
-        overview.tile_radius = (overview.tile_radius + 1).min(MAX_TILE_RADIUS);
-    }
-    if keys.just_pressed(NARROW_KEY) {
-        overview.tile_radius = overview.tile_radius.saturating_sub(1).max(MIN_TILE_RADIUS);
+    if overview.active {
+        if pressed(ROTATE_KEY, GamepadButton::DPadRight) {
+            overview.detent = (overview.detent + 1) % observed_style::iso::AZIMUTH_DETENTS;
+        }
+        if pressed(WIDEN_KEY, GamepadButton::DPadUp) {
+            overview.tile_radius = (overview.tile_radius + 1).min(MAX_TILE_RADIUS);
+        }
+        if pressed(NARROW_KEY, GamepadButton::DPadDown) {
+            overview.tile_radius = overview.tile_radius.saturating_sub(1).max(MIN_TILE_RADIUS);
+        }
     }
 }
 

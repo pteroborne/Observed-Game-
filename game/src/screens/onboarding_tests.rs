@@ -39,6 +39,8 @@ fn ascent_help_is_specific_to_the_selected_role_and_actual_bindings() {
         OnboardingKind::Race,
         OnboardingKind::Observer,
         OnboardingKind::Architect,
+        OnboardingKind::Spectator,
+        OnboardingKind::Rogue,
     ] {
         assert_eq!(onboarding_beats(&settings, kind).len(), 4);
         assert!(
@@ -170,5 +172,34 @@ fn semantic_skip_completes_immediately() {
     assert!(
         app.world().resource::<UiInputCapture>().is_active(),
         "dismissal retains input capture until the triggering edge has passed"
+    );
+}
+
+#[test]
+fn review_help_follows_the_current_role_including_spectator_and_corruption() {
+    assert_eq!(
+        review_kind(OnboardingKind::Observer, false, true),
+        OnboardingKind::Rogue
+    );
+    assert_eq!(
+        review_kind(OnboardingKind::Observer, true, true),
+        OnboardingKind::Spectator
+    );
+    let settings = Settings::default();
+    assert!(!settings.needs_help(OnboardingKind::Rogue));
+    assert!(!settings.needs_help(OnboardingKind::Spectator));
+    let rogue = onboarding_beats(&settings, OnboardingKind::Rogue);
+    assert!(
+        rogue[0]
+            .body
+            .contains("jail every remaining loyal Observer")
+    );
+    let spectator = onboarding_beats(&settings, OnboardingKind::Spectator);
+    assert!(spectator[1].body.contains("D-pad right"));
+    assert!(
+        spectator
+            .iter()
+            .chain(&rogue)
+            .all(|beat| beat.body.is_ascii())
     );
 }

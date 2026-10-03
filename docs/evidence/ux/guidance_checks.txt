@@ -1,0 +1,55 @@
+In-match guidance and team-map checks - 2026-10-03
+Branch: codex/end-to-end-ux
+Revision: implementation commit containing this record and source hashes in guidance_manifest.json.
+Cargo cache: /srv/build-cache/cargo; Cargo runs serialized across worktrees.
+
+Required code gates:
+  cargo fmt --all: PASS
+  cargo dev-clippy: PASS (workspace, all targets, -D warnings)
+  cargo dev-test: PASS - 2692 passed, 0 failed, 45 existing ignored
+    observed_game: 561 passed, 0 failed, 6 existing ignored
+    Eight assembled-app ux_guidance regressions: PASS
+  git diff --check and git diff --cached --check: PASS
+  Changed documentation links: PASS
+
+Additional validation:
+  cargo build -p observed_game --features bevy/dynamic_linking: PASS
+  Two complete native guidance capture sweeps: exit 0
+  31 PNGs, 31 widget-bounds and 31 visible-text-bounds files retained.
+  All retained and repeat PNGs: 1280x800 physical pixels.
+  All visible widget rectangles within [4,4]..[1276,796].
+  All visible UI text rectangles within [-0.5,-0.5]..[1280.5,800.5].
+  All 31 retained images visually inspected for readable copy, overlap and camera layering.
+  Compact/expanded prison and spectator maps re-inspected in the repeat sweep;
+    map geometry remains visible beside each guide, including the prison guide at 125%.
+  Retained image/bounds/source SHA-256 values verified against guidance_manifest.json.
+
+Regression coverage:
+  Objective priority: escaped, corruption, confinement, teammate rescue, power, charge.
+  Spectator follow order and camera selection with keyboard and synthetic controller edges.
+  Modal/exclusive input ownership; no spectator Ask or human Rogue-desk claim.
+  Known-floor browsing, guide toggling without mesh rebuilds, text scaling, reopen/reset/cleanup.
+  Two deterministic app runs compared across 180 physical ticks: opening a spectator
+    map preserves all bodies' normal bot runs and produces nontrivial movement.
+  Current-role Rogue/spectator help and reopened online continuity from active runtime.
+  Existing map discovery/privacy/connectivity regressions pass in the full gate.
+
+Rendering and capture:
+  The map camera uses Msaa::Off to match the facility camera sharing the window.
+  Earlier mismatched samples yielded intermittent blank static-map captures.
+  Both final sweeps keep compact and expanded geometry.
+  The frontend driver waits for ScreenshotCaptured before advancing its screen.
+  Camera and guide fixtures queue ordinary Bevy keyboard messages; no one-off map renderer.
+
+The extended cargo dev-test-all suite was not run for this presentation change.
+Its known ignored asserting hex_full_match_soak exception remains unresolved;
+this record makes no claim that the extended suite is green.
+
+Fixtures stage power, charge, jail and corruption through existing rules/evidence seams.
+Guardian is off: the jail screenshot does not establish a real Guardian catch or rescue.
+A preceding fading power-restored notice can remain after the staged jail.
+Spectator pause/help have a dark frozen eyes-camera backdrop; these prove modal
+legibility, not an unobstructed camera from every bot pose.
+Career/profile/replay are synthetic inherited capture fixtures.
+Human movement/aiming, physical controller use, real connected LAN continuity,
+loading cancellation/retry acceptance, and a completed human Ascent session remain open.

@@ -1,0 +1,24 @@
+[
+  {
+    "max": [
+      900.0,
+      561.0
+    ],
+    "min": [
+      380.0,
+      515.0
+    ],
+    "widget": "WidgetId { namespace: \"hex_onboarding.skip\", key: 0 }"
+  },
+  {
+    "max": [
+      900.0,
+      495.0
+    ],
+    "min": [
+      380.0,
+      445.0
+    ],
+    "widget": "WidgetId { namespace: \"hex_onboarding.next\", key: 0 }"
+  }
+]

@@ -33,6 +33,22 @@ pub(crate) struct OnboardingBeat {
 /// labels describe the fixed mapping in `screens::input::read_gamepad_match`.
 pub(crate) fn onboarding_beats(settings: &Settings, kind: OnboardingKind) -> Vec<OnboardingBeat> {
     let keys = &settings.bindings;
+    if kind == OnboardingKind::Spectator {
+        return vec![
+            OnboardingBeat { title: "WATCH THE BOT RUN", body: "You are following bots. The HUD names the followed Observer, their team, their floor and their current objective. F or D-pad left follows the next Observer in a stable order.".into() },
+            OnboardingBeat { title: "CHOOSE YOUR VIEW", body: "O or controller north switches the overview. V or controller west looks through the Observer's eyes. R or D-pad right rotates the overview; [ and ] or D-pad down and up change its zoom.".into() },
+            OnboardingBeat { title: "READ THEIR MAP", body: format!("{} or RB opens the followed team's discovered map. PgUp/PgDn or D-pad up/down browses known floors. H or controller west shows the reading guide. The spectator overview can show ground truth; the team map still respects discovery.", key_name(keys.tac_map)) },
+            OnboardingBeat { title: "PAUSE AND RETURN", body: format!("{} or Start opens the match menu. Camera and follow controls wait while menus or help are open. Close help to return to the bot run.", key_name(keys.pause)) },
+        ];
+    }
+    if kind == OnboardingKind::Rogue {
+        return vec![
+            OnboardingBeat { title: "YOUR SIDE HAS CHANGED", body: "Falling into true void corrupts an Observer. You now play for the Rogue AI from a Rogue desk. Your goal is to jail every remaining loyal Observer.".into() },
+            OnboardingBeat { title: "PLAY FROM THE ROGUE HAND", body: "Pick a card with 1-5 or click it. Click the board to aim, then confirm with another click, Space, Enter, or PLAY. Q/E rotates. The board shows whether the rules will accept your play.".into() },
+            OnboardingBeat { title: "DISRUPT THE CLIMB", body: "Use your hand's routes, sensors and Guardian directives against the remaining loyal Observers. The Rogue desk shows its own hand and view. You no longer answer your former team's help requests.".into() },
+            OnboardingBeat { title: "KEEP PLAYING", body: format!("Use [ and ] or the floor buttons to switch floors. Keyboard, pointer and controller controls stay visible on the desk. {} or Start opens the match menu.", key_name(keys.pause)) },
+        ];
+    }
     if kind == OnboardingKind::Architect {
         return vec![
             OnboardingBeat { title: "YOUR TEAM NEEDS A ROUTE", body: "You have no body. Build and repair a route from the desk so every Observer on your team can reach the summit. Your local Observers are bots; on LAN your teammates drive their own bodies.".into() },
@@ -193,6 +209,8 @@ pub(crate) struct OnboardingSpawnContext<'w> {
     requested: Option<Res<'w, RoleHelpRequest>>,
     existing: Option<Res<'w, OnboardingState>>,
     request: Option<Res<'w, crate::hex_wfc::loading::HexLaunchRequest>>,
+    runtime: Option<Res<'w, crate::hex_wfc::sim::HexWfcRuntime>>,
+    live_spectator: Option<Res<'w, crate::sim::state::SpectatorBot>>,
 }
 
 pub(crate) fn spawn(mut commands: Commands, context: OnboardingSpawnContext) {
@@ -206,19 +224,43 @@ pub(crate) fn spawn(mut commands: Commands, context: OnboardingSpawnContext) {
         requested,
         existing,
         request,
+        runtime,
+        live_spectator,
     } = context;
     let replay = requested.is_some();
     commands.remove_resource::<RoleHelpRequest>();
     if existing.is_some() {
         return;
     }
-    let networked = request.as_ref().is_some_and(|request| request.networked);
-    let spectator = request
-        .as_ref()
-        .map_or(play_setup.preset == PlayPreset::Spectate, |request| {
-            request.spectator
-        });
-    let kind = help_kind(&play_setup, &lan, networked);
+    let networked = request.as_ref().map_or_else(
+        || runtime.as_ref().is_some_and(|runtime| runtime.networked),
+        |request| request.networked,
+    );
+    let spectator = request.as_ref().map_or_else(
+        || {
+            if runtime.is_some() {
+                live_spectator.is_some()
+            } else {
+                play_setup.preset == PlayPreset::Spectate
+            }
+        },
+        |request| request.spectator,
+    );
+    let corrupted = runtime.as_ref().is_some_and(|runtime| {
+        runtime.ascent.as_ref().is_some_and(|ascent| {
+            ascent
+                .observer_for(runtime.local_player)
+                .and_then(|id| ascent.rules().observers.get(&id))
+                .is_some_and(|observer| {
+                    observer.state == observed_match::ascent::sim::ObserverState::Corrupted
+                })
+        })
+    });
+    let kind = review_kind(
+        help_kind(&play_setup, &lan, networked),
+        spectator,
+        corrupted,
+    );
     if *current.get() != GameState::HexWfc
         || (!replay && !settings.needs_help(kind))
         || (!replay && spectator)
@@ -459,11 +501,23 @@ fn evidence_capture_active() -> bool {
     })
 }
 
+fn review_kind(kind: OnboardingKind, spectator: bool, corrupted: bool) -> OnboardingKind {
+    if spectator {
+        OnboardingKind::Spectator
+    } else if corrupted {
+        OnboardingKind::Rogue
+    } else {
+        kind
+    }
+}
+
 fn progress_label(step: usize, total: usize, kind: OnboardingKind) -> String {
     let role = match kind {
         OnboardingKind::Race => "FACILITY RACE HELP",
         OnboardingKind::Observer => "OBSERVER HELP",
         OnboardingKind::Architect => "ARCHITECT HELP",
+        OnboardingKind::Spectator => "SPECTATOR HELP",
+        OnboardingKind::Rogue => "ROGUE HELP",
     };
     format!("{role}  -  {} / {total}", step + 1)
 }
@@ -476,6 +530,8 @@ fn next_label(step: usize, total: usize, kind: OnboardingKind) -> &'static str {
             OnboardingKind::Race => "Start exploring",
             OnboardingKind::Observer => "Start climbing",
             OnboardingKind::Architect => "Take the desk",
+            OnboardingKind::Spectator => "Return to viewing",
+            OnboardingKind::Rogue => "Return to the Rogue desk",
         }
     }
 }

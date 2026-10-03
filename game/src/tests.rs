@@ -8,7 +8,7 @@ use observed_match::hybrid::LocalAction;
 #[path = "tests/hex_wfc_survey.rs"]
 mod hex_wfc_survey;
 
-fn test_app() -> App {
+pub(crate) fn test_app() -> App {
     let mut app = App::new();
     app.add_plugins((
         MinimalPlugins,
@@ -68,7 +68,7 @@ fn test_app() -> App {
     app
 }
 
-fn count<T: Component>(app: &mut App) -> usize {
+pub(crate) fn count<T: Component>(app: &mut App) -> usize {
     let world = app.world_mut();
     let mut query = world.query_filtered::<Entity, With<T>>();
     query.iter(world).count()
@@ -139,7 +139,7 @@ fn result_summary_texts(app: &mut App) -> Vec<String> {
     query.iter(world).map(|text| (**text).to_string()).collect()
 }
 
-fn all_texts(app: &mut App) -> Vec<String> {
+pub(crate) fn all_texts(app: &mut App) -> Vec<String> {
     let world = app.world_mut();
     let mut query = world.query::<&Text>();
     query.iter(world).map(|text| (**text).to_string()).collect()
@@ -209,7 +209,7 @@ fn menu_sun_illuminance(app: &mut App) -> f32 {
         .illuminance
 }
 
-fn go(app: &mut App, state: GameState) {
+pub(crate) fn go(app: &mut App, state: GameState) {
     app.world_mut()
         .resource_mut::<NextState<GameState>>()
         .set(state);
@@ -217,7 +217,7 @@ fn go(app: &mut App, state: GameState) {
     assert_eq!(*app.world().resource::<State<GameState>>().get(), state);
 }
 
-fn tap_update(app: &mut App, key: KeyCode) {
+pub(crate) fn tap_update(app: &mut App, key: KeyCode) {
     {
         let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
         keys.reset(key);

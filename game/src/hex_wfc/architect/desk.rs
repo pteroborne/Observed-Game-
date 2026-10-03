@@ -45,6 +45,7 @@ pub(super) struct DeskUi;
 pub(super) enum Line {
     /// The side panel's heading: the team, or at the Rogue board who it can see.
     Heading,
+    SeatName,
     Team,
     Phase,
     Floor,
@@ -142,6 +143,7 @@ pub(super) fn spawn(
                     position_type: PositionType::Absolute,
                     top: px(TOP_BAR + 14.0),
                     left: px(PANEL_WIDTH + 24.0),
+                    max_width: percent(53),
                     ..default()
                 },
             ));
@@ -209,7 +211,7 @@ fn top_bar(root: &mut ChildSpawnerCommands) {
             ..default()
         })
         .with_children(|name| {
-            name.spawn(label("ARCHITECT", 22.0, Role::Text));
+            name.spawn((Line::SeatName, label("", 22.0, Role::Text)));
             name.spawn((Line::Team, label("", 12.0, Role::Muted)));
         });
         // A fixed width, so the floor switcher does not move as the charge counts down.

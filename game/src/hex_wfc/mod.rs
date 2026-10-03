@@ -244,3 +244,10 @@ impl Plugin for HexWfcPlugin {
         capture::configure(app);
     }
 }
+
+mod guidance_capture;
+pub(crate) use guidance_capture::{Case as GuidanceCaptureCase, stage as stage_guidance_capture};
+
+#[cfg(test)]
+#[path = "../tests/ux_guidance.rs"]
+mod ux_guidance;

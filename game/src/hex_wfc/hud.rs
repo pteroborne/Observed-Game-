@@ -1,7 +1,9 @@
 //! First-person HUD for the hex facility race.
 
 pub(super) mod capture;
+pub(super) mod guidance;
 pub(super) mod play;
+mod spectator;
 pub(super) mod words;
 
 use bevy::prelude::*;

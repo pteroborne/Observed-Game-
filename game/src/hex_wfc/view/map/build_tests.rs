@@ -338,3 +338,34 @@ fn landmarks_spawn_only_for_known_exit_and_anchors() {
         "undiscovered exit must never spawn a landmark"
     );
 }
+
+#[test]
+fn a_prison_body_is_not_drawn_at_its_maze_coordinates_in_the_facility() {
+    let mut runtime = test_runtime();
+    let local = runtime.local_player;
+    runtime
+        .match_state
+        .players
+        .get_mut(&local)
+        .expect("body")
+        .place = observed_match::hex_wfc::HexBodyPlace::Prison;
+    let mut world = World::new();
+    let mut queue = CommandQueue::default();
+    let mut commands = Commands::new(&mut queue, &world);
+    let census = build(
+        &mut commands,
+        &runtime,
+        &mut Assets::default(),
+        &mut Assets::default(),
+    );
+    queue.apply(&mut world);
+    assert!(
+        census.traversed + census.glimpsed + census.stale > 0,
+        "team knowledge remains available"
+    );
+    assert_eq!(
+        world.query::<&HexMapPlayerBeacon>().iter(&world).count(),
+        0,
+        "maze coordinates cannot locate a body in the facility"
+    );
+}

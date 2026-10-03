@@ -13,6 +13,7 @@
 //! answer is heard as well as seen.
 
 use bevy::audio::{PlaybackMode, Volume};
+use bevy::ecs::system::SystemParam;
 use bevy::input::gamepad::GamepadButton;
 use bevy::prelude::*;
 use observed_match::ascent::session::{REQUEST_LIFETIME_TICKS, Refusal, RequestKind};
@@ -56,6 +57,18 @@ struct AskPanel;
 #[derive(Component)]
 struct AskLine;
 
+#[derive(Component)]
+struct AskCaption;
+
+#[derive(SystemParam)]
+struct AskLayout<'w, 's> {
+    spectating: Option<Res<'w, crate::sim::state::SpectatorBot>>,
+    onboarding: Res<'w, super::HexOnboardingGate>,
+    architect: Option<Res<'w, super::architect::ArchitectDesk>>,
+    objective: Query<'w, 's, &'static ComputedNode, With<super::hud::play::ObjectivePanel>>,
+    captions: Query<'w, 's, &'static mut TextFont, (With<AskCaption>, Without<AskLine>)>,
+}
+
 fn spawn(mut commands: Commands, existing: Query<(), With<AskPanel>>) {
     if !existing.is_empty() {
         return;
@@ -84,6 +97,7 @@ fn spawn(mut commands: Commands, existing: Query<(), With<AskPanel>>) {
         ))
         .with_children(|panel| {
             panel.spawn((
+                AskCaption,
                 Text::new("YOUR ARCHITECT"),
                 TextFont {
                     font_size: FontSize::Px(12.0),
@@ -110,8 +124,9 @@ fn input(
     overlay: Res<MatchOverlayState>,
     capture: Res<UiInputCapture>,
     mut ask: ResMut<AskTheArchitect>,
+    spectator: Option<Res<crate::sim::state::SpectatorBot>>,
 ) {
-    if *overlay != MatchOverlayState::Playing || capture.is_active() {
+    if spectator.is_some() || *overlay != MatchOverlayState::Playing || capture.is_active() {
         return;
     }
     if keyboard.just_pressed(settings.bindings.ask)
@@ -149,7 +164,10 @@ pub(super) fn status(
                 .saturating_sub(tick.saturating_sub(created_at))
                 .div_ceil(60);
             if answered {
-                (format!("{}\nON IT  /  {left} s", kind.label()), ACCENT)
+                (
+                    format!("{}\nAcknowledged  /  {left} s", kind.label()),
+                    ACCENT,
+                )
             } else {
                 (format!("{}\nasked  /  {left} s", kind.label()), TITLE)
             }
@@ -166,10 +184,10 @@ fn sync(
     settings: Res<Settings>,
     overlay: Res<MatchOverlayState>,
     assets: Res<AssetServer>,
-    mut panel: Query<&mut Visibility, With<AskPanel>>,
-    mut line: Query<(&mut Text, &mut TextColor), With<AskLine>>,
+    mut panel: Query<(&mut Visibility, &mut Node), With<AskPanel>>,
+    mut line: Query<(&mut Text, &mut TextColor, &mut TextFont), With<AskLine>>,
     mut heard: Local<Option<u64>>,
-    spectating: Option<Res<crate::sim::state::SpectatorBot>>,
+    mut layout: AskLayout,
 ) {
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
@@ -183,7 +201,8 @@ fn sync(
         )
     });
     // An answer is heard once.
-    if let Some((_, created_at, true)) = asked
+    if layout.spectating.is_none()
+        && let Some((_, created_at, true)) = asked
         && *heard != Some(created_at)
     {
         *heard = Some(created_at);
@@ -202,9 +221,16 @@ fn sync(
             ));
         }
     }
-    for mut visibility in &mut panel {
+    for (mut visibility, mut node) in &mut panel {
+        if let Ok(objective) = layout.objective.single() {
+            node.top = px(28.0 + objective.size().y * objective.inverse_scale_factor());
+        }
         // A spectator has no hand on the body and no Architect to ask.
-        *visibility = if *overlay == MatchOverlayState::Playing && spectating.is_none() {
+        *visibility = if *overlay == MatchOverlayState::Playing
+            && layout.spectating.is_none()
+            && !layout.onboarding.active
+            && layout.architect.is_none()
+        {
             Visibility::Inherited
         } else {
             Visibility::Hidden
@@ -216,7 +242,11 @@ fn sync(
         .filter(|(_, at)| tick.saturating_sub(*at) < REFUSAL_SHOWN_TICKS)
         .map(|(refusal, _)| refusal);
     let (said, tint) = status(asked, refused, tick, &key_name(settings.bindings.ask));
-    for (mut text, mut color) in &mut line {
+    for mut font in &mut layout.captions {
+        font.font_size = FontSize::Px(12.0 * settings.gameplay_text_scale);
+    }
+    for (mut text, mut color, mut font) in &mut line {
+        font.font_size = FontSize::Px(14.0 * settings.gameplay_text_scale);
         if **text != said {
             **text = said.clone();
         }
@@ -236,7 +266,7 @@ mod tests {
         assert_eq!(asked, "Build a route\nasked  /  15 s");
         assert_eq!(tint, TITLE);
         let (answered, tint) = status(Some((RequestKind::Rescue, 100, true)), None, 700, "T");
-        assert_eq!(answered, "Need rescue\nON IT  /  5 s");
+        assert_eq!(answered, "Need rescue\nAcknowledged  /  5 s");
         assert_eq!(tint, ACCENT);
         let (refused, tint) = status(None, Some(Refusal::UnknownTarget), 0, "G");
         assert!(refused.contains("has not found it"), "{refused}");

@@ -83,6 +83,10 @@ pub(super) fn sync(
         let (said, role) = match line {
             // By a Guardian or a sensor.
             Line::Heading if desk.rogue => ("DETECTED".to_owned(), Role::Muted),
+            Line::SeatName => (
+                (if desk.rogue { "ROGUE" } else { "ARCHITECT" }).to_owned(),
+                Role::Text,
+            ),
             Line::Heading => ("THE TEAM".to_owned(), Role::Muted),
             Line::Team if desk.rogue => ("ROGUE AI".to_owned(), Role::Guardian),
             Line::Team => (format!("TEAM {}", desk.team.0 + 1), Role::Muted),
@@ -135,7 +139,7 @@ pub(super) fn sync(
                                 format!("floor {}", observer.cell.level + 1)
                             }
                             ObserverState::Jailed => "in the prison".to_owned(),
-                            ObserverState::Corrupted => "lost to the void".to_owned(),
+                            ObserverState::Corrupted => "Rogue operator".to_owned(),
                         };
                         format!("EYE {:02}   {doing}", observer.id.0 + 1)
                     })
@@ -159,10 +163,9 @@ pub(super) fn sync(
                     )
                 }
             }
-            Line::Message => (
-                desk.last_refusal.map_or_else(
+            Line::Message => {
+                let detail = desk.last_refusal.map_or_else(
                     || {
-                        // The Rogue's standing orders, which only its board is told of.
                         if desk.rogue {
                             words::rogue_orders(rules)
                         } else {
@@ -175,9 +178,18 @@ pub(super) fn sync(
                             words::refusal_words(refusal)
                         )
                     },
-                ),
-                Role::Guardian,
-            ),
+                );
+                (
+                    if desk.rogue {
+                        format!(
+                            "You now play for the Rogue AI. Jail every remaining loyal Observer to win.\n{detail}"
+                        )
+                    } else {
+                        detail
+                    },
+                    Role::Guardian,
+                )
+            }
             Line::CardName => (
                 lifted.map_or_else(String::new, |(_, card)| {
                     words::card_name(card.kind).to_owned()

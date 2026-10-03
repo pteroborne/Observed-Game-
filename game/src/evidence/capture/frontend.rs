@@ -13,6 +13,9 @@
 
 use std::path::PathBuf;
 
+#[path = "guidance.rs"]
+mod guidance;
+
 use crate::screens::widgets::WidgetId;
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
@@ -45,6 +48,7 @@ struct Shot {
     setup: Option<PlaySetupDraft>,
     help_action: Option<OnboardingAction>,
     production_launch: bool,
+    guidance: Option<crate::hex_wfc::GuidanceCaptureCase>,
 }
 
 const fn shot(label: &'static str, state: GameState) -> Shot {
@@ -57,6 +61,7 @@ const fn shot(label: &'static str, state: GameState) -> Shot {
         setup: None,
         help_action: None,
         production_launch: false,
+        guidance: None,
     }
 }
 
@@ -246,6 +251,8 @@ enum Phase {
     Act,
     Settle,
     Shoot,
+    /// Hold the screen until the asynchronous GPU capture reports completion.
+    Capturing,
     Done,
 }
 
@@ -257,13 +264,16 @@ pub(super) struct FrontendCaptureRequest {
     phase: Phase,
     next_at: f32,
     resized: bool,
+    captured: bool,
 }
 
 impl FrontendCaptureRequest {
     pub(super) fn new(dir: String) -> Self {
         Self {
             dir: PathBuf::from(dir),
-            shots: if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_MENUS").is_some() {
+            shots: if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_GUIDANCE").is_some() {
+                guidance::sweep()
+            } else if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_MENUS").is_some() {
                 menu_sweep()
             } else {
                 sweep()
@@ -272,6 +282,7 @@ impl FrontendCaptureRequest {
             phase: Phase::Stage,
             next_at: 0.0,
             resized: false,
+            captured: false,
         }
     }
 }
@@ -310,6 +321,17 @@ type WidgetBounds<'w, 's> = Query<
     ),
 >;
 
+type TextBounds<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static Text,
+        &'static ComputedNode,
+        &'static UiGlobalTransform,
+        &'static InheritedVisibility,
+    ),
+>;
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn capture_frontend_progress(
     time: Res<Time>,
@@ -322,6 +344,7 @@ pub(super) fn capture_frontend_progress(
     help_actions: Query<(Entity, &OnboardingAction)>,
     play_actions: Query<(Entity, &crate::screens::play::PlayAction)>,
     widget_bounds: WidgetBounds,
+    text_bounds: TextBounds,
     mut next: ResMut<NextState<GameState>>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
@@ -402,6 +425,11 @@ pub(super) fn capture_frontend_progress(
                 }
                 commands.insert_resource(overlay);
             }
+            if let Some(case) = shot.guidance {
+                commands.queue(move |world: &mut World| {
+                    crate::hex_wfc::stage_guidance_capture(world, case)
+                });
+            }
             request.next_at = elapsed + SETTLE + shot.extra_settle;
             request.phase = Phase::Settle;
         }
@@ -418,10 +446,16 @@ pub(super) fn capture_frontend_progress(
                 window.resolution.physical_width(),
                 window.resolution.physical_height()
             );
-            crate::evidence::driver::screenshot_to(
-                &mut commands,
-                path.to_string_lossy().into_owned(),
-            );
+            use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk};
+            request.captured = false;
+            commands
+                .spawn(Screenshot::primary_window())
+                .observe(save_to_disk(path.clone()))
+                .observe(
+                    |_: On<ScreenshotCaptured>, mut request: ResMut<FrontendCaptureRequest>| {
+                        request.captured = true;
+                    },
+                );
             let bounds: Vec<_> = widget_bounds.iter().filter(|(_, node, _)| node.size().min_element() > 0.0).map(|(id, node, transform)| {
                 let rect = Rect::from_center_size(transform.affine().translation, node.size());
                 serde_json::json!({ "widget": format!("{id:?}"), "min": [rect.min.x, rect.min.y], "max": [rect.max.x, rect.max.y] })
@@ -431,6 +465,20 @@ pub(super) fn capture_frontend_progress(
                 serde_json::to_vec_pretty(&bounds).expect("widget bounds serialize"),
             )
             .expect("capture bounds are writable");
+            let text_rects: Vec<_> = text_bounds.iter()
+                .filter(|(_, node, _, visibility)| visibility.get() && node.size().min_element() > 0.0)
+                .map(|(text, node, transform, _)| {
+                    let rect = Rect::from_center_size(transform.affine().translation, node.size());
+                    serde_json::json!({ "text": text.0, "min": [rect.min.x, rect.min.y], "max": [rect.max.x, rect.max.y] })
+                }).collect();
+            std::fs::write(
+                path.with_extension("text-bounds.json"),
+                serde_json::to_vec_pretty(&text_rects).expect("text bounds serialize"),
+            )
+            .expect("capture text bounds are writable");
+            request.phase = Phase::Capturing;
+        }
+        Phase::Capturing if request.captured => {
             request.index += 1;
             if request.index >= request.shots.len() {
                 request.next_at = elapsed + 1.0;

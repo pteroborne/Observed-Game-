@@ -1,0 +1,13 @@
+[
+  {
+    "max": [
+      632.0,
+      391.0
+    ],
+    "min": [
+      18.0,
+      14.0
+    ],
+    "text": "TEAM MAP / FLOOR 1\nClimb to the summit\nYou: floor 1 / cyan arrow. Green: discovered exit.\nKnown floors: [1]\nPgUp PgDn / D-pad up down  floor\nH / X  less detail    Tab / RB or Esc / B  close\n\nOnly your team's discoveries are drawn.\n4 traversed | 10 glimpsed | 0 stale\nStale cells may have changed since you saw them.\nRooms: start\n14 lateral | 0 vertical links seen from both sides\n11 may change | 3 permanent | 0 held\nRooms may change. Climbs and fixed structure remain. Occupancy does not stop retraction.\ncolour = district | width = room/hallway\nheight = archetype | capped = known anchor\ncyan = you & facing | green = exit\npurple = device/held | amber = room\norientation: N (up-left) E (up-right) S (down-right) W (down-left)\nfacing: EAST (100 deg)"
+  }
+]

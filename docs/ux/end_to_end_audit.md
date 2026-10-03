@@ -231,3 +231,13 @@ All rows below are open; staged screenshots or unit tests do not close them.
 The old [Arc Q human gate](../arc_q/phase_123_human_ux_gate.md) remains open. Its
 historical statement that Play fits is superseded by this revision's captures;
 its completed checks are evidence from the earlier revision, not current acceptance.
+
+
+## Subsequent implementation records
+
+This audit and its original captures remain historical evidence. The
+[menu and role-entry implementation](menu_implementation.md) records Slices 1 and
+2's menu/help work. The [in-match guidance and map implementation](in_match_implementation.md)
+records the Observer/spectator and map portion of Slice 3. Connected LAN acceptance,
+roster compatibility and Slice 4 remain outstanding; see those records for the
+exact automated and human validation boundaries.

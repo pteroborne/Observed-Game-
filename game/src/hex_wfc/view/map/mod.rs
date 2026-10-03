@@ -24,12 +24,14 @@ mod build;
 #[cfg(test)]
 mod build_tests;
 pub(in crate::hex_wfc::view) mod cell;
+mod legend;
 mod overlay;
 
 use bevy::camera::visibility::RenderLayers;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 use observed_match::hex_wfc::HexMapDiscovery;
-use observed_style::MarkerRole;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -79,6 +81,27 @@ pub(crate) struct HexMapLegend;
 pub(crate) struct HexMapProjection {
     signature: u64,
     built: bool,
+    expanded: bool,
+    census: Option<MapCensus>,
+}
+
+#[derive(SystemParam)]
+pub(in crate::hex_wfc) struct MapUi<'w, 's> {
+    keys: Res<'w, ButtonInput<KeyCode>>,
+    gamepads: Query<'w, 's, &'static Gamepad>,
+    capture: Res<'w, crate::screens::widgets::UiInputCapture>,
+    settings: Res<'w, crate::settings::Settings>,
+    legend: Query<
+        'w,
+        's,
+        (
+            &'static mut Visibility,
+            &'static mut Text,
+            &'static mut TextFont,
+        ),
+        With<HexMapLegend>,
+    >,
+    window: Query<'w, 's, &'static Window, With<PrimaryWindow>>,
 }
 
 pub(in crate::hex_wfc) fn setup(mut commands: Commands) {
@@ -88,6 +111,7 @@ pub(in crate::hex_wfc) fn setup(mut commands: Commands) {
             HexMapCamera,
             DespawnOnExit(GameState::HexWfc),
             Camera3d::default(),
+            Msaa::Off,
             Camera {
                 order: MAP_CAMERA_ORDER,
                 is_active: false,
@@ -130,11 +154,15 @@ pub(in crate::hex_wfc) fn setup(mut commands: Commands) {
             font_size: FontSize::Px(14.0),
             ..default()
         },
-        TextColor(observed_style::marker(MarkerRole::You).base_color),
+        TextColor(crate::view::theme::TITLE),
+        BackgroundColor(crate::view::theme::PANEL),
         Node {
             position_type: PositionType::Absolute,
             top: px(14),
             left: px(18),
+            width: percent(48),
+            padding: UiRect::all(px(12)),
+            border_radius: BorderRadius::all(px(3)),
             ..default()
         },
         GlobalZIndex(60),
@@ -151,7 +179,7 @@ pub(in crate::hex_wfc) fn sync(
     runtime: Res<HexWfcRuntime>,
     mut projection: ResMut<HexMapProjection>,
     mut camera: Query<(&mut Camera, &mut Projection, &mut Transform), With<HexMapCamera>>,
-    mut legend: Query<(&mut Visibility, &mut Text), With<HexMapLegend>>,
+    mut ui: MapUi,
     existing: Query<Entity, With<HexMapVisual>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -160,61 +188,72 @@ pub(in crate::hex_wfc) fn sync(
     if let Ok((mut camera, _, _)) = camera.single_mut() {
         camera.is_active = open;
     }
-    if let Ok((mut visibility, _)) = legend.single_mut() {
+    for (mut visibility, _, mut font) in &mut ui.legend {
         *visibility = if open {
             Visibility::Visible
         } else {
             Visibility::Hidden
         };
+        font.font_size = FontSize::Px(14.0 * ui.settings.gameplay_text_scale);
     }
-
     if !open {
-        // Keep the built geometry: reopening the map is a frequent, cheap action
-        // and a survivor should not pay a full rebuild for a glance.
+        projection.expanded = false;
         return;
     }
-    let signature = signature(&runtime);
-    if projection.built && projection.signature == signature {
-        return;
-    }
-    projection.signature = signature;
-    projection.built = true;
-
-    for entity in &existing {
-        commands.entity(entity).despawn();
-    }
-
-    let census = build::build(&mut commands, &runtime, &mut meshes, &mut materials);
-
-    if let (Some((min, max)), Ok((_, mut projection, mut transform))) =
-        (census.bounds, camera.single_mut())
+    if !ui.capture.is_active()
+        && (ui.keys.just_pressed(KeyCode::KeyH)
+            || ui
+                .gamepads
+                .iter()
+                .any(|pad| pad.just_pressed(GamepadButton::West)))
     {
-        let (framed, scale, far) = frame_map(min, max);
-        *transform = framed;
-        *projection = Projection::Orthographic(OrthographicProjection {
-            scale,
-            near: 0.1,
-            // The 3D default far plane is 1000 m, which a production facility's
-            // diagonal exceeds on its own — leave it and the map is clipped.
-            far,
-            ..OrthographicProjection::default_3d()
-        });
+        projection.expanded = !projection.expanded;
     }
-
-    if let Ok((_, mut text)) = legend.single_mut() {
-        let heading = if runtime.local().escaped {
-            None
-        } else {
-            Some(heading_label(runtime.local().yaw))
-        };
-        **text = legend_text(&census, runtime.map_level, heading);
+    let viewport = ui
+        .window
+        .single()
+        .map_or(Vec2::new(WINDOW_WIDTH, WINDOW_HEIGHT), |window| {
+            Vec2::new(window.width(), window.height()).max(Vec2::ONE)
+        });
+    let signature = signature(&runtime, viewport);
+    if !projection.built || projection.signature != signature {
+        projection.signature = signature;
+        projection.built = true;
+        for entity in &existing {
+            commands.entity(entity).despawn();
+        }
+        let census = build::build(&mut commands, &runtime, &mut meshes, &mut materials);
+        if let (Some((min, max)), Ok((_, mut camera_projection, mut transform))) =
+            (census.bounds, camera.single_mut())
+        {
+            let (framed, scale, far) = frame_map(min, max, viewport);
+            *transform = framed;
+            *camera_projection = Projection::Orthographic(OrthographicProjection {
+                scale,
+                near: 0.1,
+                far,
+                ..OrthographicProjection::default_3d()
+            });
+        }
+        projection.census = Some(census);
+    }
+    if let Some(census) = &projection.census {
+        let heading = (runtime.local().place == observed_match::hex_wfc::HexBodyPlace::Facility
+            && !runtime.local().escaped)
+            .then(|| heading_label(runtime.local().yaw));
+        let said = legend::summary(census, &runtime, &ui.settings, heading, projection.expanded);
+        for (_, mut text, _) in &mut ui.legend {
+            if text.0 != said {
+                text.0.clone_from(&said);
+            }
+        }
     }
 }
 
 /// Frame the discovered facility in an orthographic isometric view, returning
 /// (transform, world-units-per-pixel, far plane).
 #[must_use]
-pub(super) fn frame_map(min: Vec3, max: Vec3) -> (Transform, f32, f32) {
+pub(super) fn frame_map(min: Vec3, max: Vec3, viewport: Vec2) -> (Transform, f32, f32) {
     let rotation = Quat::from_euler(EulerRot::YXZ, std::f32::consts::FRAC_PI_4, ISO_PITCH, 0.0);
     let centre = (min + max) * 0.5;
     let inverse = rotation.inverse();
@@ -227,13 +266,16 @@ pub(super) fn frame_map(min: Vec3, max: Vec3) -> (Transform, f32, f32) {
         );
         extent = extent.max((inverse * (corner - centre)).truncate().abs());
     }
-    let scale = (extent.x * 2.0 / WINDOW_WIDTH)
-        .max(extent.y * 2.0 / WINDOW_HEIGHT)
+    // Reserve the left half for the summary/reading guide at either text size.
+    let reserved = viewport.x * 0.5;
+    let scale = (extent.x * 2.0 / (viewport.x - reserved))
+        .max(extent.y * 2.0 / viewport.y)
         .max(f32::MIN_POSITIVE)
         * 1.12;
     let diagonal = (max - min).length().max(1.0);
-    let transform =
-        Transform::from_translation(centre + rotation * Vec3::Z * diagonal).with_rotation(rotation);
+    let camera_centre = centre - rotation * Vec3::X * reserved * scale * 0.5;
+    let transform = Transform::from_translation(camera_centre + rotation * Vec3::Z * diagonal)
+        .with_rotation(rotation);
     (transform, scale, diagonal * 2.0)
 }
 
@@ -262,69 +304,25 @@ pub(crate) fn heading_label(yaw: f32) -> (&'static str, f32) {
     (label, deg)
 }
 
-/// Every channel on screen gets a named line. Atmosphere never carries meaning
-/// alone, so the counts are here in words as well as in the geometry.
-fn legend_text(census: &MapCensus, focus: u8, heading: Option<(&'static str, f32)>) -> String {
-    let known = census.traversed + census.glimpsed + census.stale;
-    let floors = census
-        .floors
-        .iter()
-        .map(|level| {
-            if *level == focus {
-                format!("[{level}]")
-            } else {
-                format!("{level}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
-    let rooms = if census.rooms.is_empty() {
-        "none yet".to_string()
-    } else {
-        census.rooms.iter().cloned().collect::<Vec<_>>().join(", ")
-    };
-    let heading_line = match heading {
-        Some((label, deg)) => format!("facing: {label} ({deg:.0} deg)"),
-        None => "facing: unknown".to_string(),
-    };
-    format!(
-        "SURVIVOR MAP   floor {focus}   {known} cells known   floors {floors}\n\
-         what you know    {} traversed | {} glimpsed | {} stale\n\
-         what it composes  {} room | {} hallway | {} vertical      rooms: {rooms}\n\
-         how it connects   {} lateral | {} vertical links seen from both sides\n\
-         what can change   {} hallway cells rewire | {} permanent | {} held right now\n\
-         rooms and vertical links are permanent; a hallway rewires unless held\n\
-         colour = district   width = room/hallway   height = archetype   capped = held by you\n\
-         signals: cyan = you & facing | green = exit | purple = device/held | amber = room\n\
-         orientation: N (up-left) E (up-right) S (down-right) W (down-left)   {heading_line}\n\
-         PageUp/PageDown change floor    Tab close",
-        census.traversed,
-        census.glimpsed,
-        census.stale,
-        census.room_cells,
-        census.hall_cells,
-        census.vertical_cells,
-        census.lateral_links,
-        census.vertical_links,
-        census.mutable,
-        census.permanent,
-        census.held,
-    )
-}
-
 /// Rebuild only when something a survivor would see has actually changed.
-fn signature(runtime: &HexWfcRuntime) -> u64 {
+fn signature(runtime: &HexWfcRuntime, viewport: Vec2) -> u64 {
     let mut hasher = DefaultHasher::new();
     runtime.map_level.hash(&mut hasher);
+    viewport.x.to_bits().hash(&mut hasher);
+    viewport.y.to_bits().hash(&mut hasher);
     let local = runtime.local();
     (local.cell.q, local.cell.r, local.cell.level).hash(&mut hasher);
     #[allow(clippy::cast_possible_truncation)]
     ((local.yaw * 16.0) as i32).hash(&mut hasher);
     local.escaped.hash(&mut hasher);
+    (local.place == observed_match::hex_wfc::HexBodyPlace::Facility).hash(&mut hasher);
+    runtime.ascent.is_some().hash(&mut hasher);
     // Teammate positions drive the "held" cap, so they belong in the signature.
     let team = local.team;
     for player in runtime.match_state.players.values() {
         if player.team == team {
+            player.escaped.hash(&mut hasher);
+            (player.place == observed_match::hex_wfc::HexBodyPlace::Facility).hash(&mut hasher);
             (player.cell.q, player.cell.r, player.cell.level).hash(&mut hasher);
         }
     }
@@ -351,18 +349,23 @@ mod tests {
     fn the_framing_fits_the_discovered_bounds_inside_the_viewport() {
         let min = Vec3::new(-140.0, 0.0, -120.0);
         let max = Vec3::new(260.0, 80.0, 240.0);
-        let (transform, scale, far) = frame_map(min, max);
+        let viewport = Vec2::new(1280.0, 800.0);
+        let (transform, scale, far) = frame_map(min, max, viewport);
         let inverse = transform.rotation.inverse();
-        let centre = (min + max) * 0.5;
         for i in 0..8u8 {
             let corner = Vec3::new(
                 if i & 1 == 0 { min.x } else { max.x },
                 if i & 2 == 0 { min.y } else { max.y },
                 if i & 4 == 0 { min.z } else { max.z },
             );
-            let projected = (inverse * (corner - centre)).truncate();
-            assert!(projected.x.abs() <= scale * WINDOW_WIDTH * 0.5 + 1e-3);
-            assert!(projected.y.abs() <= scale * WINDOW_HEIGHT * 0.5 + 1e-3);
+            let projected = (inverse * (corner - transform.translation)).truncate();
+            let screen_x = projected.x / scale + viewport.x * 0.5;
+            assert!(
+                screen_x >= viewport.x * 0.5 - 1e-3,
+                "map must clear the legend"
+            );
+            assert!(screen_x <= viewport.x + 1e-3);
+            assert!(projected.y.abs() <= scale * viewport.y * 0.5 + 1e-3);
         }
         assert!(
             far > (max - min).length(),
@@ -386,14 +389,14 @@ mod tests {
             rooms: ["decision".to_string()].into_iter().collect(),
             ..MapCensus::default()
         };
-        let text = legend_text(&census, 1, Some(("NORTH", 0.0)));
+        let text = legend::details(&census, Some(("NORTH", 0.0)), false);
         // Atmosphere never carries meaning alone: every geometric channel has a
         // named counterpart in the legend.
         for channel in [
             "colour = district",
             "width = room/hallway",
             "height = archetype",
-            "capped = held by you",
+            "capped = anchor / teammate",
             "cyan = you & facing",
             "green = exit",
             "purple = device/held",
@@ -404,7 +407,6 @@ mod tests {
             assert!(text.contains(channel), "legend must document {channel}");
         }
         assert!(text.contains("decision"), "known rooms are named");
-        assert!(text.contains("[1]"), "the focus floor is marked");
         assert!(text.contains("11 lateral"), "connections are counted");
     }
 

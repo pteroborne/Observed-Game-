@@ -47,16 +47,19 @@ pub(super) fn map_input(context: HexInputContext) {
         spectator_bot,
         armed,
     } = context;
-    if spectator_bot.is_some() {
-        neutralize(&mut intent);
-        return;
-    }
     let bindings = &settings.bindings;
     if onboarding.is_some() || capture.is_active() || overlay.captures_local_input() {
         neutralize(&mut intent);
-        if *overlay == MatchOverlayState::SurvivorMap {
+        if *overlay == MatchOverlayState::SurvivorMap
+            && onboarding.is_none()
+            && !capture.is_active()
+        {
             intent.browse_map_level = map_level_browse(&keyboard, &gamepads);
         }
+        return;
+    }
+    if spectator_bot.is_some() {
+        neutralize(&mut intent);
         return;
     }
     let axis = |negative: KeyCode, positive: KeyCode| {

@@ -246,11 +246,12 @@ pub(super) fn join_rogue_board(
     mut commands: Commands,
     runtime: Res<HexWfcRuntime>,
     desk: Option<Res<ArchitectDesk>>,
+    spectator: Option<Res<crate::sim::state::SpectatorBot>>,
 ) {
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
     };
-    if desk.is_some() || !corrupted(ascent, runtime.local_player) {
+    if spectator.is_some() || desk.is_some() || !corrupted(ascent, runtime.local_player) {
         return;
     }
     let body = runtime.local();

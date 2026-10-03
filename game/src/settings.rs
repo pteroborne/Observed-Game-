@@ -322,6 +322,8 @@ pub(crate) enum OnboardingKind {
     Race,
     Observer,
     Architect,
+    Spectator,
+    Rogue,
 }
 
 impl UserPreferences {
@@ -384,6 +386,8 @@ impl UserPreferences {
 
     pub(crate) fn needs_help(&self, kind: OnboardingKind) -> bool {
         match kind {
+            // These roles have persistent HUD guidance and optional review help.
+            OnboardingKind::Spectator | OnboardingKind::Rogue => false,
             OnboardingKind::Race => self.needs_onboarding(),
             OnboardingKind::Observer => {
                 self.completed_observer_help_version < CURRENT_ONBOARDING_VERSION
@@ -396,6 +400,7 @@ impl UserPreferences {
 
     pub(crate) fn complete_help(&mut self, kind: OnboardingKind) {
         match kind {
+            OnboardingKind::Spectator | OnboardingKind::Rogue => {}
             OnboardingKind::Race => {
                 self.completed_onboarding_version = CURRENT_ONBOARDING_VERSION;
                 self.first_run = false;

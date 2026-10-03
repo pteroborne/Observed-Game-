@@ -95,3 +95,8 @@ results and replay/rematch, cosmetics previews and loading wording. Automated
 launches and captured views do not establish physical input usability or an actual
 completed human Ascent session. The historical human acceptance matrix remains
 open for those scenarios.
+
+
+The subsequent [in-match guidance and map milestone](in_match_implementation.md)
+records the implemented portion of those Observer/spectator and map items, with
+separate evidence and validation. The human acceptance matrix remains open.

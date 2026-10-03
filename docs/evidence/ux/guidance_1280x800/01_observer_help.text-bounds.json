@@ -1,0 +1,101 @@
+[
+  {
+    "max": [
+      929.0,
+      604.0
+    ],
+    "min": [
+      351.0,
+      588.0
+    ],
+    "text": "Enter / A continues | Esc / B skips | Review role help from the match menu"
+  },
+  {
+    "max": [
+      943.0,
+      438.0
+    ],
+    "min": [
+      338.0,
+      404.0
+    ],
+    "text": "Unwatched, unprotected connections can change. Frame lights show anchor protection; observation is a separate rule."
+  },
+  {
+    "max": [
+      654.0,
+      411.0
+    ],
+    "min": [
+      640.0,
+      384.0
+    ],
+    "text": "+"
+  },
+  {
+    "max": [
+      410.0,
+      494.0
+    ],
+    "min": [
+      396.0,
+      467.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      689.0,
+      559.0
+    ],
+    "min": [
+      591.0,
+      537.0
+    ],
+    "text": "Skip help"
+  },
+  {
+    "max": [
+      662.0,
+      491.0
+    ],
+    "min": [
+      618.0,
+      469.0
+    ],
+    "text": "Next"
+  },
+  {
+    "max": [
+      783.0,
+      268.0
+    ],
+    "min": [
+      497.0,
+      227.0
+    ],
+    "text": "CLIMB TOGETHER"
+  },
+  {
+    "max": [
+      950.0,
+      390.0
+    ],
+    "min": [
+      330.0,
+      282.0
+    ],
+    "text": "Bring every Observer to the summit; your Architect builds the route. W/A/S/D move; mouse or Up/Left/Down/Right looks. Space jumps, LShift sprints. Controller: sticks move/look, south jumps, left trigger or stick click sprints."
+  },
+  {
+    "max": [
+      737.0,
+      213.0
+    ],
+    "min": [
+      543.0,
+      196.0
+    ],
+    "text": "OBSERVER HELP  -  1 / 4"
+  }
+]

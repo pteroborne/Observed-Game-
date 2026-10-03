@@ -57,6 +57,8 @@ pub(in crate::hex_wfc) struct ObjectiveFacts {
     pub ascent: bool,
     /// The local body is in its team's prison maze.
     pub jailed: bool,
+    /// A former Observer now plays for the Rogue AI.
+    pub corrupted: bool,
     /// Teammates in the prison maze, while the local body is free.
     pub teammates_jailed: u8,
 }
@@ -75,9 +77,12 @@ pub(in crate::hex_wfc) fn objective_view(facts: ObjectiveFacts) -> ObjectiveView
         solo,
         ascent,
         jailed,
+        corrupted,
         teammates_jailed,
     } = facts;
-    let heading = if jailed {
+    let heading = if corrupted {
+        "ROGUE OPERATOR".to_owned()
+    } else if jailed {
         format!("PRISON / TEAM {}", u16::from(team) + 1)
     } else {
         format!(
@@ -86,7 +91,11 @@ pub(in crate::hex_wfc) fn objective_view(facts: ObjectiveFacts) -> ObjectiveView
             u16::from(team) + 1
         )
     };
-    let (goal, pips) = if jailed {
+    let (goal, pips) = if escaped {
+        ("Escaped. Waiting for the team".to_owned(), None)
+    } else if corrupted {
+        ("Jail every remaining loyal Observer".to_owned(), None)
+    } else if jailed {
         ("Find the way out of the maze".to_owned(), None)
     } else if teammates_jailed > 0 {
         let who = if teammates_jailed == 1 {
@@ -97,8 +106,6 @@ pub(in crate::hex_wfc) fn objective_view(facts: ObjectiveFacts) -> ObjectiveView
         (format!("Hold the prison lobby to free {who}"), None)
     } else if ascent {
         ("Climb to the summit".to_owned(), None)
-    } else if escaped {
-        ("Escaped. Waiting for the team".to_owned(), None)
     } else if enabled && keystones < required {
         let goal = if required > MAX_PIPS {
             format!("Find keystones  {keystones} / {required}")
@@ -227,6 +234,7 @@ mod tests {
             solo: false,
             ascent: false,
             jailed: false,
+            corrupted: false,
             teammates_jailed: 0,
         }
     }

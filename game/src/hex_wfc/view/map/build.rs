@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::HexWfcWorld;
 use observed_hex::{HexCoord, HexFace, PortClass, TILE_LEVEL_HEIGHT, hex_origin, prism_hull};
-use observed_match::hex_wfc::{HexMapDiscovery, HexPlayerMapKnowledge};
+use observed_match::hex_wfc::{HexBodyPlace, HexMapDiscovery, HexPlayerMapKnowledge};
 use observed_style::{HexComposition, MarkerRole, hex_link};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -175,7 +175,9 @@ pub(super) fn build(
         .match_state
         .players
         .values()
-        .filter(|player| player.team == local_team && !player.escaped)
+        .filter(|player| {
+            player.team == local_team && !player.escaped && player.place == HexBodyPlace::Facility
+        })
         .map(|player| player.cell)
         .collect::<BTreeSet<_>>();
 
@@ -189,6 +191,7 @@ pub(super) fn build(
     };
 
     for (&cell, known) in &knowledge.cells {
+        census.floors.insert(cell.level);
         let Some(placement) = world.placements.get(&cell) else {
             continue;
         };
@@ -198,10 +201,24 @@ pub(super) fn build(
             continue;
         };
         let composition = composition(placement.archetype, placement.space, in_blueprint);
-        let stability = Stability::of(
-            placement.archetype,
-            known.anchored,
-            team_cells.contains(&cell),
+        let stability = runtime.ascent.as_ref().map_or_else(
+            || {
+                Stability::of(
+                    placement.archetype,
+                    known.anchored,
+                    team_cells.contains(&cell),
+                )
+            },
+            |ascent| {
+                Stability::in_ascent(
+                    matches!(
+                        placement.archetype,
+                        observed_facility::hex_wfc::HexArchetype::Climb { .. }
+                    ) || ascent.rules().prison_core.contains(&cell)
+                        || ascent.rules().fixed_structure(cell),
+                    known.anchored,
+                )
+            },
         );
         let state = CellState::of(known, world, cell);
         let focused = cell.level == focus;
@@ -211,7 +228,6 @@ pub(super) fn build(
             .copied()
             .unwrap_or(ArchitectureRegister::Institutional);
 
-        census.floors.insert(cell.level);
         match state {
             CellState::Traversed => census.traversed += 1,
             CellState::Glimpsed => census.glimpsed += 1,
@@ -234,7 +250,10 @@ pub(super) fn build(
         // rather than floating a token above it is deliberate: a token is
         // occluded by whatever sits on the level above, a recoloured cell never
         // is. This is the 3D equivalent of the corner sketch's `@` and `X`.
-        let signal = if cell == you_cell {
+        let signal = if cell == you_cell
+            && runtime.local().place == HexBodyPlace::Facility
+            && !runtime.local().escaped
+        {
             Some(MarkerRole::You)
         } else if cell == exit_cell {
             Some(MarkerRole::Exit)

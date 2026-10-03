@@ -89,6 +89,19 @@ pub(super) enum Stability {
 }
 
 impl Stability {
+    /// Occupancy does not prevent Ascent retraction. Only fixed structure earns
+    /// "permanent"; a known anchor can hold other geometry for now. We do not
+    /// consult global observations, which would disclose rival positions.
+    pub(super) const fn in_ascent(fixed: bool, anchored: bool) -> Self {
+        if fixed {
+            Self::Permanent
+        } else if anchored {
+            Self::Held
+        } else {
+            Self::Mutable
+        }
+    }
+
     /// Mirrors `collapse::placement_is_mutable_topology`, which is private to
     /// `observed_facility`. Only `Void`, `Straight`, `Corner` and `Junction` are
     /// topology-mutable; everything else is structural and survives a relayout.
@@ -217,6 +230,22 @@ pub(super) fn marker_key(role: MarkerRole) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ascent_does_not_promise_permanent_rooms_or_occupancy_protection() {
+        assert_eq!(
+            super::Stability::in_ascent(false, false),
+            super::Stability::Mutable
+        );
+        assert_eq!(
+            super::Stability::in_ascent(false, true),
+            super::Stability::Held
+        );
+        assert_eq!(
+            super::Stability::in_ascent(true, true),
+            super::Stability::Permanent
+        );
+    }
+
     use super::*;
 
     /// A climb's tallest cell: the composition reads as vertical circulation.

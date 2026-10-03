@@ -114,7 +114,7 @@ pub(super) fn spawn_player_marker(
     census: &mut MapCensus,
 ) {
     let local = runtime.local();
-    if local.escaped {
+    if local.escaped || local.place != observed_match::hex_wfc::HexBodyPlace::Facility {
         return;
     }
     let origin = Vec3::from_array(hex_origin(local.cell));

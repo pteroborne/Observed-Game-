@@ -1,0 +1,57 @@
+[
+  {
+    "max": [
+      439.0,
+      72.0
+    ],
+    "min": [
+      37.0,
+      50.0
+    ],
+    "text": "Climb to the summit"
+  },
+  {
+    "max": [
+      439.0,
+      46.0
+    ],
+    "min": [
+      37.0,
+      30.0
+    ],
+    "text": "WATCHING OBSERVER 1 / FLOOR 1 / TEAM 1"
+  },
+  {
+    "max": [
+      1246.0,
+      132.0
+    ],
+    "min": [
+      934.0,
+      54.0
+    ],
+    "text": "F / D-pad left  next Observer\nO / Y  overview    V / X  eyes\nR / D-pad right  rotate overview\n[ ] / D-pad down up  zoom overview\nTab / RB  team map    Esc / Start  pause"
+  },
+  {
+    "max": [
+      1246.0,
+      48.0
+    ],
+    "min": [
+      934.0,
+      30.0
+    ],
+    "text": "SPECTATING / OVERVIEW"
+  },
+  {
+    "max": [
+      439.0,
+      110.0
+    ],
+    "min": [
+      37.0,
+      76.0
+    ],
+    "text": "Find a route upward. Ask your Architect when you need a way forward."
+  }
+]
