@@ -225,6 +225,7 @@ impl RogueGame {
                     CardKind::Door => ("door", 0, "Block a threshold; Observers can reopen it"),
                     CardKind::Station => ("station", 0, "Recharge on a powered floor"),
                     CardKind::Stair => ("stair", 0, "Build a way up"),
+                    CardKind::Cistern => ("cistern", 0, "3-hex liminal water basin"),
                     CardKind::Directive => ("directive", 0, "Send major Guardians"),
                     CardKind::Sensor => ("sensor", 0, "Watch a floor"),
                     CardKind::Surge => ("surge", 0, "Raise floor pressure"),

@@ -776,6 +776,65 @@ impl ArchitectLab {
                     .is_some_and(|next| next.space.built() && next.is_open(entrance.opposite()));
                 (!fits).then_some(CommandRefusal::NoLocalAttachment)
             }
+            CardKind::Cistern => {
+                if card.district.is_some() && card.district != Some(self.district(target.level)) {
+                    return Some(CommandRefusal::WrongDistrict);
+                }
+                let Some(placements) = observed_facility::hex_wfc::authored_cistern_room(
+                    self.world.config,
+                    target,
+                    rotation,
+                ) else {
+                    return Some(CommandRefusal::Unbuildable);
+                };
+                let cells = placements.map(|p| p.coord);
+                if cells.iter().any(|&cell| self.fixed_structure(cell)) {
+                    return Some(CommandRefusal::FixedStructure);
+                }
+                if cells.iter().any(|cell| {
+                    !self.world.placements.contains_key(cell)
+                        || self.collapsed_floors.contains(&cell.level)
+                }) {
+                    return Some(CommandRefusal::CollapsedFloor);
+                }
+                if cells.iter().any(|cell| {
+                    self.world
+                        .placements
+                        .get(cell)
+                        .is_some_and(|p| p.space == HexSpace::Air)
+                }) {
+                    return Some(CommandRefusal::Unbuildable);
+                }
+                let rest = &cells[1..];
+                if rest.iter().any(|cell| self.observed.contains(cell)) {
+                    return Some(CommandRefusal::Observed);
+                }
+                let occupied = self.occupied();
+                if rest.iter().any(|cell| occupied.contains(cell)) {
+                    return Some(CommandRefusal::Occupied);
+                }
+                if rest
+                    .iter()
+                    .any(|cell| self.anchored.contains(cell) || self.prison_core.contains(cell))
+                {
+                    return Some(CommandRefusal::Anchored);
+                }
+                let fits = placements.iter().any(|placement| {
+                    HexFace::LATERAL.into_iter().any(|face| {
+                        placement.is_open(face)
+                            && self
+                                .world
+                                .config
+                                .grid()
+                                .neighbor(placement.coord, face)
+                                .and_then(|next| self.world.placements.get(&next))
+                                .is_some_and(|next| {
+                                    next.space.built() && next.is_open(face.opposite())
+                                })
+                    })
+                });
+                (!fits).then_some(CommandRefusal::NoLocalAttachment)
+            }
             CardKind::Directive | CardKind::Sensor => {
                 unreachable!("the Rogue's orders are judged above")
             }
@@ -895,6 +954,13 @@ impl ArchitectLab {
         .expect("legality proved the climb fits the facility")
     }
 
+    /// The three cells a Cistern play builds from `target`, turned by `rotation`.
+    #[must_use]
+    pub fn played_cistern(&self, target: HexCoord, rotation: u8) -> [HexPlacement; 3] {
+        observed_facility::hex_wfc::authored_cistern_room(self.world.config, target, rotation)
+            .expect("legality proved the cistern fits the facility")
+    }
+
     pub fn submit(&mut self, command: ArchitectCommand) -> Result<(), CommandRefusal> {
         self.submit_for_faction(command, None)
     }
@@ -975,6 +1041,15 @@ impl ArchitectLab {
                     }
                     CardKind::Stair => {
                         for placement in self.played_stair(target, rotation) {
+                            let cell = placement.coord;
+                            self.rewrite(placement);
+                            self.retracted.remove(&cell);
+                            self.doors
+                                .retain(|key, _| !threshold_touches(*key, cell, &self.world));
+                        }
+                    }
+                    CardKind::Cistern => {
+                        for placement in self.played_cistern(target, rotation) {
                             let cell = placement.coord;
                             self.rewrite(placement);
                             self.retracted.remove(&cell);

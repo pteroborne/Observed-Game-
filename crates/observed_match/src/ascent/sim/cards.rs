@@ -140,6 +140,9 @@ pub enum CardKind {
     /// a landing above the last, turned to the direction of the climb. The only card that
     /// builds the way up.
     Stair,
+    /// A multi-tile liminal room: a vast 3-hex water basin and column hall placed
+    /// atomically by the Architect. Sibling faces are opened with `Expanse` geometry.
+    Cistern,
     /// The Rogue's: send the major Guardians to the cell played on (`sim::directive`).
     Directive,
     /// The Rogue's: install a sensor on the cell played on (`sim::sensor`).
@@ -175,6 +178,8 @@ impl Card {
             (CardKind::Station, _) => "recharge station".to_string(),
             (CardKind::Stair, Some(district)) => format!("stair - {}", district.label()),
             (CardKind::Stair, None) => "stair".to_string(),
+            (CardKind::Cistern, Some(district)) => format!("cistern - {}", district.label()),
+            (CardKind::Cistern, None) => "cistern".to_string(),
             (CardKind::Tile(shape), None) => shape.label().to_string(),
             (CardKind::Directive, _) => "Guardian directive".to_string(),
             (CardKind::Sensor, _) => "sensor".to_string(),
@@ -213,26 +218,61 @@ impl Deck {
         Self::with_stairs(seed, levels, shapes, 0)
     }
 
-    /// A deck of `shapes` and `stairs` stair cards in each district, plus doors
-    /// and, for the first-person game, deployable recharge stations.
+    /// Two of each of `shapes`, `stairs` stair cards and `cisterns` multi-tile cistern cards
+    /// in each district, plus doors and, for the first-person game, deployable recharge stations.
     #[must_use]
-    pub fn with_stairs(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
+    pub fn with_stairs_and_cisterns(
+        seed: u64,
+        levels: u8,
+        shapes: &[TileShape],
+        stairs: u8,
+        cisterns: u8,
+    ) -> Self {
         Self::composed(
             seed,
             levels,
             shapes,
             stairs,
+            cisterns,
             &Self::loyal_extras(stairs),
             usize::MAX,
         )
     }
 
-    /// A team's deck: [`Self::with_stairs`], dealing only the ground floor's district until
-    /// the team's bodies reach another ([`Self::open_through`]). Seven districts' tiles
-    /// dealt from the start would leave most of a hand for floors nobody can reach.
+    /// A deck of `shapes` and `stairs` stair cards in each district, plus doors
+    /// and, for the first-person game, deployable recharge stations.
+    #[must_use]
+    pub fn with_stairs(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
+        Self::with_stairs_and_cisterns(seed, levels, shapes, stairs, 0)
+    }
+
+    /// A team's deck: [`Self::with_stairs_and_cisterns`], dealing only the ground floor's district until
+    /// the team's bodies reach another ([`Self::open_through`]). Includes one multi-tile
+    /// Cistern room per district. Seven districts' tiles dealt from the start would leave most
+    /// of a hand for floors nobody can reach.
     #[must_use]
     pub fn for_team(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
-        Self::composed(seed, levels, shapes, stairs, &Self::loyal_extras(stairs), 1)
+        Self::for_team_with_cisterns(seed, levels, shapes, stairs, 1)
+    }
+
+    /// A team's deck with an explicit number of cistern wonder cards per district.
+    #[must_use]
+    pub fn for_team_with_cisterns(
+        seed: u64,
+        levels: u8,
+        shapes: &[TileShape],
+        stairs: u8,
+        cisterns: u8,
+    ) -> Self {
+        Self::composed(
+            seed,
+            levels,
+            shapes,
+            stairs,
+            cisterns,
+            &Self::loyal_extras(stairs),
+            1,
+        )
     }
 
     fn loyal_extras(stairs: u8) -> Vec<(CardKind, u8)> {
@@ -243,8 +283,9 @@ impl Deck {
         }
     }
 
-    /// The Rogue's deck (design section 7): two of each of `shapes` in each district, the
-    /// doors, and the machinery - Guardian directives, sensors and surges - but no way up.
+    /// The Rogue's deck (design section 7): two of each of `shapes` in each district,
+    /// one multi-tile cistern room per district, the doors, and the machinery -
+    /// Guardian directives, sensors and surges - but no way up.
     #[must_use]
     pub fn rogue(seed: u64, levels: u8, shapes: &[TileShape]) -> Self {
         Self::composed(
@@ -252,6 +293,7 @@ impl Deck {
             levels,
             shapes,
             0,
+            1,
             &[
                 (CardKind::Door, 3),
                 (CardKind::Directive, ROGUE_DIRECTIVES),
@@ -262,13 +304,14 @@ impl Deck {
         )
     }
 
-    /// Two of each of `shapes` and `stairs` stairs in each district, and `extra` cards of
-    /// no district, shuffled and dealt from the first `reach` districts.
+    /// Two of each of `shapes`, `stairs` stairs and `cisterns` cisterns in each district,
+    /// and `extra` cards of no district, shuffled and dealt from the first `reach` districts.
     fn composed(
         seed: u64,
         levels: u8,
         shapes: &[TileShape],
         stairs: u8,
+        cisterns: u8,
         extra: &[(CardKind, u8)],
         reach: usize,
     ) -> Self {
@@ -290,6 +333,14 @@ impl Deck {
                 cards.push(Card {
                     id: CardId(next_id),
                     kind: CardKind::Stair,
+                    district: Some(district),
+                });
+                next_id += 1;
+            }
+            for _ in 0..cisterns {
+                cards.push(Card {
+                    id: CardId(next_id),
+                    kind: CardKind::Cistern,
                     district: Some(district),
                 });
                 next_id += 1;

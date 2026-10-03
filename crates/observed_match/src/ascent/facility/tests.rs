@@ -955,3 +955,61 @@ fn two_peers_stepping_the_same_frames_stay_in_step() {
         "a catch, so mazes carved on other threads were covered"
     );
 }
+
+/// Playing a multi-tile Cistern wonder card updates the physical facility, geometry, and
+/// colliders atomically across all 3 cells of the room.
+#[test]
+fn cistern_card_play_updates_physical_geometry_and_colliders() {
+    use crate::ascent::sim::CardKind;
+    use observed_facility::hex_wfc::{HexArchetype, HexSpace};
+
+    let mut game = game(7);
+    assert!(
+        game.ascent
+            .session
+            .hands
+            .get_mut(&TEAM)
+            .unwrap()
+            .deck
+            .stage_kind(CardKind::Cistern)
+    );
+
+    let mut play = None;
+    for _ in 0..3_000 {
+        play = find_play(&game, |g, _target, _rotation, index| {
+            g.session().hands[&TEAM].deck.hand[index].kind == CardKind::Cistern
+        });
+        if play.is_some() {
+            break;
+        }
+        step(&mut game, Body::Explore, SeatCommand::None);
+    }
+    let play = play.expect("found a legal cistern site after exploration");
+    let ArchitectCommand::Play {
+        target, rotation, ..
+    } = play
+    else {
+        unreachable!()
+    };
+    let placements = game.rules().played_cistern(target, rotation);
+    let cells: Vec<HexCoord> = placements.iter().map(|p| p.coord).collect();
+
+    let refusals = step(&mut game, Body::Turn(0.0), SeatCommand::Architect(play));
+    assert!(refusals.is_empty(), "command accepted");
+
+    for cell in &cells {
+        let physical_p = game.physical().facility.placements[cell];
+        assert_eq!(physical_p.space, HexSpace::Hall);
+        assert_eq!(physical_p.archetype, HexArchetype::Expanse);
+        let has_colliders = game
+            .physical()
+            .geometry
+            .pieces
+            .iter()
+            .any(|piece| piece.source_cell == *cell && piece.part.collides());
+        assert!(
+            has_colliders,
+            "physical match generated colliders for cistern cell {cell:?}"
+        );
+    }
+}

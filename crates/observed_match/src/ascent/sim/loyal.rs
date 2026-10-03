@@ -229,7 +229,10 @@ impl ArchitectLab {
             .collect();
         let mut out = Vec::new();
         for card in &self.deck.hand {
-            if !matches!(card.kind, CardKind::Tile(_) | CardKind::Stair) {
+            if !matches!(
+                card.kind,
+                CardKind::Tile(_) | CardKind::Stair | CardKind::Cistern
+            ) {
                 continue;
             }
             let max_rotations = match card.kind {
@@ -250,6 +253,7 @@ impl ArchitectLab {
                         CardKind::Tile(shape) => {
                             vec![self.played_placement(shape, target, rotation)]
                         }
+                        CardKind::Cistern => self.played_cistern(target, rotation).to_vec(),
                         _ => self.played_stair(target, rotation).to_vec(),
                     };
                     out.push((command, changes));

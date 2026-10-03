@@ -331,6 +331,12 @@ pub(super) fn built_by(
             )?
             .to_vec()
         }
+        CardKind::Cistern => observed_facility::hex_wfc::authored_cistern_room(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
         CardKind::Door
         | CardKind::Station
         | CardKind::Directive

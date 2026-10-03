@@ -541,6 +541,7 @@ fn card_title(card: Card) -> String {
         CardKind::Door => "DOOR",
         CardKind::Station => "STATION",
         CardKind::Stair => "STAIR",
+        CardKind::Cistern => "CISTERN",
         CardKind::Directive => "DIRECTIVE",
         CardKind::Sensor => "SENSOR",
         CardKind::Surge => "SURGE",

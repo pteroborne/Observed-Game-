@@ -155,6 +155,58 @@ pub fn authored_climb_shaped(
     ])
 }
 
+/// The three cells of a multi-tile Cistern room composition anchored at `anchor`,
+/// turned by `rotation` (0..6).
+///
+/// A Cistern is a wide, 3-hex contiguous chamber of open water and tall brutalist
+/// columns. The three cells form an equilateral triad in the hex lattice.
+/// Sibling faces between the three cells are open with `HexArchetype::Expanse`,
+/// creating a single continuous 30-meter hall. Three perimeter doors are provided
+/// at 120-degree intervals.
+#[must_use]
+pub fn authored_cistern_room(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    let heading = HexFace::LATERAL[(rotation % 6) as usize];
+    let right = HexFace::LATERAL[((rotation + 1) % 6) as usize];
+    let grid = config.grid();
+    let cell_b = grid.neighbor(anchor, heading)?;
+    let cell_c = grid.neighbor(anchor, right)?;
+
+    let bit = |face: HexFace| 1u8 << face.index();
+    let sealed = PortClass::Sealed;
+
+    let bc_face = HexFace::LATERAL[((rotation + 2) % 6) as usize];
+    if grid.neighbor(cell_b, bc_face) != Some(cell_c) {
+        return None;
+    }
+
+    let anchor_ext = heading.opposite();
+    let b_ext = heading;
+    let c_ext = right;
+
+    let anchor_doors = bit(heading) | bit(right) | bit(anchor_ext);
+    let b_doors = bit(heading.opposite()) | bit(bc_face) | bit(b_ext);
+    let c_doors = bit(right.opposite()) | bit(bc_face.opposite()) | bit(c_ext);
+
+    let cell = |coord, doors| HexPlacement {
+        coord,
+        space: HexSpace::Hall,
+        archetype: HexArchetype::Expanse,
+        doors,
+        up: sealed,
+        down: sealed,
+    };
+
+    Some([
+        cell(anchor, anchor_doors),
+        cell(cell_b, b_doors),
+        cell(cell_c, c_doors),
+    ])
+}
+
 impl HexWfcWorld {
     /// Commit `placements` exactly as given, as one generation.
     ///
@@ -529,6 +581,58 @@ mod tests {
             assert_eq!(h, heading);
             assert_eq!(turn, ClimbTurn::Ahead);
             assert_eq!(exit, ClimbTurn::Ahead);
+        }
+    }
+
+    #[test]
+    fn authored_cistern_room_forms_open_triad_with_perimeter_doors() {
+        let config = HexWfcConfig {
+            cols: 8,
+            rows: 8,
+            levels: 2,
+            ..HexWfcConfig::default()
+        };
+        let anchor = HexCoord {
+            q: 3,
+            r: 3,
+            level: 0,
+        };
+        for rotation in 0..6 {
+            let placements = authored_cistern_room(config, anchor, rotation)
+                .expect("within central grid bounds");
+            assert_eq!(placements.len(), 3);
+            let [p0, p1, p2] = placements;
+
+            // All cells are Hall with Expanse archetype
+            for p in &placements {
+                assert_eq!(p.space, HexSpace::Hall);
+                assert_eq!(p.archetype, HexArchetype::Expanse);
+                assert_eq!(p.doors.count_ones(), 3); // 2 internal + 1 external
+            }
+
+            // Internal faces are open symmetrically
+            let grid = config.grid();
+            let face_01 = HexFace::LATERAL
+                .into_iter()
+                .find(|&f| grid.neighbor(p0.coord, f) == Some(p1.coord))
+                .unwrap();
+            let face_02 = HexFace::LATERAL
+                .into_iter()
+                .find(|&f| grid.neighbor(p0.coord, f) == Some(p2.coord))
+                .unwrap();
+            let face_12 = HexFace::LATERAL
+                .into_iter()
+                .find(|&f| grid.neighbor(p1.coord, f) == Some(p2.coord))
+                .unwrap();
+
+            assert!(p0.is_open(face_01));
+            assert!(p1.is_open(face_01.opposite()));
+
+            assert!(p0.is_open(face_02));
+            assert!(p2.is_open(face_02.opposite()));
+
+            assert!(p1.is_open(face_12));
+            assert!(p2.is_open(face_12.opposite()));
         }
     }
 }

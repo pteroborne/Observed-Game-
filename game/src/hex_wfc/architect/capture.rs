@@ -117,6 +117,7 @@ pub(in crate::hex_wfc) fn capture(
             // A stair when one is in hand, so the still shows the climb; a tile else.
             cards.sort_by_key(|(_, card)| match card.kind {
                 CardKind::Stair => 0,
+                CardKind::Cistern => 0,
                 CardKind::Tile(_) => 1,
                 CardKind::Door => 2,
                 CardKind::Station => 2,

@@ -44,7 +44,8 @@ pub use blueprint::{
 };
 pub use context::{HexInfluenceField, PROFILE_MAX, PROFILE_MIN};
 pub use directed::{
-    authored_climb, authored_climb_shaped, authored_hall, stair_rotation, stair_shape,
+    authored_cistern_room, authored_climb, authored_climb_shaped, authored_hall, stair_rotation,
+    stair_shape,
 };
 pub use neighborhood::{
     FaceDomain, NeighborCandidate, Neighborhood, NeighborhoodError, neighborhood,
