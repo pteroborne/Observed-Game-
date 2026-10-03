@@ -1,4 +1,5 @@
-//! Curated Phase 92 evidence: hall, ramp, wellshaft, and retained 2D mode.
+//! Curated Phase 92 evidence: hall, a climb from its foot and from its landing, and
+//! retained 2D mode.
 
 use bevy::app::AppExit;
 use bevy::prelude::*;
@@ -7,15 +8,15 @@ use observed_facility::hex_wfc::{HexArchetype, HexWfcConfig, HexWfcWorld};
 use observed_hex::hex_origin;
 
 use super::{
-    CameraMode, FacilityCamera, FacilityState, FacilityStatus, LabViewMode, face_plan_dir,
-    ramp_exit, shaft_view,
+    CameraMode, FacilityCamera, FacilityState, FacilityStatus, LabViewMode, climb_view,
+    face_plan_dir,
 };
 use crate::LabState;
 
 const SHOTS: [&str; 5] = [
     "hall_chain.png",
-    "ramp_mid_slope.png",
-    "wellshaft_down.png",
+    "climb_up.png",
+    "climb_down.png",
     "collider_debug.png",
     "plan_2d.png",
 ];
@@ -109,13 +110,13 @@ fn stage(
         1 => {
             *mode = LabViewMode::Facility3d;
             set_collider_view(facility, false);
-            let (position, target) = ramp_vantage(showcase);
+            let (position, target) = climb_up_vantage(showcase);
             set_walk_vantage(facility, position, target);
         }
         2 => {
             *mode = LabViewMode::Facility3d;
             set_collider_view(facility, false);
-            let (position, target) = shaft_vantage(showcase);
+            let (position, target) = climb_down_vantage(showcase);
             set_vantage(facility, position, target);
         }
         3 => {
@@ -175,20 +176,12 @@ fn capture_world() -> HexWfcWorld {
             HexWfcWorld::generate(crate::PRESET_SEEDS[0].wrapping_add(offset), config).ok()
         })
         .find(|world| {
-            // Every vantage the showcase shoots, not just the shaft. The search
-            // used to ask for the shaft alone and let the other two `expect`
-            // downstream, which held only for as long as a world with a shaft
-            // happened to have the rest. Giving Keystone, Monitor and Recovery a
-            // second door each ended that: routes now hop room to room where
-            // they used to thread a corridor, and the first shaft-bearing seed
-            // no longer carries two consecutive flat hall cells on its
-            // spawn-to-exit route. Asking for all three restores the property
-            // the panics below were always assuming.
-            shaft_view(world).is_some()
-                && try_hall_vantage(world).is_some()
-                && try_ramp_vantage(world).is_some()
+            // Every vantage the showcase shoots. The search once asked for one and
+            // let the others `expect` downstream, which held only while a world with
+            // the first happened to have the rest.
+            try_hall_vantage(world).is_some() && climb_view(world).is_some()
         })
-        .expect("Phase 92 evidence search must find a shaft, a flat hall and a ramp")
+        .expect("Phase 92 evidence search must find a flat hall and a climb")
 }
 
 fn hall_vantage(world: &HexWfcWorld) -> (Vec3, Vec3) {
@@ -222,33 +215,26 @@ fn try_hall_vantage(world: &HexWfcWorld) -> Option<(Vec3, Vec3)> {
     None
 }
 
-fn ramp_vantage(world: &HexWfcWorld) -> (Vec3, Vec3) {
-    try_ramp_vantage(world).expect("showcase ramp")
-}
-
-/// A ramp to stand beside, or `None` when this world has none to show.
-fn try_ramp_vantage(world: &HexWfcWorld) -> Option<(Vec3, Vec3)> {
-    let (coord, exit) = world
-        .placements
-        .keys()
-        .find_map(|&coord| ramp_exit(world, coord).map(|exit| (coord, exit)))?;
-    let origin = Vec3::from_array(hex_origin(coord));
-    let direction = face_plan_dir(exit);
+/// At a climb's foot, looking up the flight to where it reaches the next storey.
+fn climb_up_vantage(world: &HexWfcWorld) -> (Vec3, Vec3) {
+    let climb = climb_view(world).expect("showcase climb");
+    let origin = Vec3::from_array(hex_origin(climb.foot));
+    let direction = face_plan_dir(climb.heading);
     let along = Vec3::new(direction.x, 0.0, direction.y);
-    let side = Vec3::new(-along.z, 0.0, along.x);
-    Some((
-        origin - along * 3.0 + side * 2.5 + Vec3::Y * 4.4,
-        origin + along * 5.5 + Vec3::Y * 7.8,
-    ))
+    (
+        origin - along * 5.0 + Vec3::Y * 2.2,
+        origin + along * 28.0 + Vec3::Y * 8.0,
+    )
 }
 
-fn shaft_vantage(world: &HexWfcWorld) -> (Vec3, Vec3) {
-    let column = shaft_view(world).expect("showcase five-cell shaft landing");
-    let origin = Vec3::from_array(hex_origin(column.top));
-    let direction = face_plan_dir(column.door);
+/// On a climb's landing, looking back down the whole flight to its foot.
+fn climb_down_vantage(world: &HexWfcWorld) -> (Vec3, Vec3) {
+    let climb = climb_view(world).expect("showcase climb");
+    let direction = face_plan_dir(climb.heading);
+    let along = Vec3::new(direction.x, 0.0, direction.y);
     (
-        origin + Vec3::new(direction.x * 4.2, 1.65, direction.y * 4.2),
-        Vec3::from_array(hex_origin(column.bottom)) + Vec3::Y * 0.25,
+        Vec3::from_array(hex_origin(climb.landing)) + along * 5.5 + Vec3::Y * 2.2,
+        Vec3::from_array(hex_origin(climb.foot)) + Vec3::Y * 1.0,
     )
 }
 
@@ -274,7 +260,7 @@ fn apply_camera_visibility(
 }
 
 fn write_manifest(dir: &str, showcase: &HexWfcWorld, plan: &LabState, facility: &FacilityState) {
-    let shaft = shaft_view(showcase).expect("showcase shaft");
+    let climb = climb_view(showcase).expect("showcase climb");
     let manifest = serde_json::json!({
         "lab": "hex_wfc_lab",
         "phase": 92,
@@ -283,16 +269,13 @@ fn write_manifest(dir: &str, showcase: &HexWfcWorld, plan: &LabState, facility: 
         "grid_2d": [plan.world.config.cols, plan.world.config.rows, plan.world.config.levels],
         "colliders": facility.snapshot.pieces.len(),
         "room_blueprints": facility.snapshot.blueprint_instances,
-        "ramp_heads_baked_by_low_prefab": facility.snapshot.ramp_heads,
-        "wellshaft_levels": shaft.cells,
-        "wellshaft_structural_depth_m": shaft.structural_depth_m(),
-        "wellshaft_rim_drop_m": shaft.rim_drop_m(),
+        "climb_foot": [climb.foot.q, climb.foot.r, climb.foot.level],
+        "climb_landing": [climb.landing.q, climb.landing.r, climb.landing.level],
         "shots": SHOTS,
         "legend": {
             "gold": "room / decision place",
             "blue": "hall / traversal",
-            "bright_cyan": "ramp ascent",
-            "orange": "wellshaft",
+            "bright_cyan": "climb composition",
             "dark": "rhombus boundary shell"
         }
     });
@@ -308,16 +291,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn evidence_vantages_are_finite_and_show_deep_vertical_scale() {
+    fn evidence_vantages_are_finite_and_look_down_a_whole_climb() {
         let world = capture_world();
-        for vantage in [hall_vantage(&world), ramp_vantage(&world)] {
+        for vantage in [
+            hall_vantage(&world),
+            climb_up_vantage(&world),
+            climb_down_vantage(&world),
+        ] {
             assert!(vantage.0.is_finite() && vantage.1.is_finite());
         }
-        let column = shaft_view(&world).expect("shaft");
-        let (rim, target) = shaft_vantage(&world);
-        assert!(column.cells >= 5);
-        assert!(column.rim_drop_m() >= 32.0);
-        assert!(rim.y - target.y >= 32.0, "camera targets the bottom floor");
+        let (landing, foot) = climb_down_vantage(&world);
+        assert!(landing.y - foot.y >= 8.0, "the camera looks down a storey");
+        assert!(
+            landing.with_y(0.0).distance(foot.with_y(0.0)) >= 28.0,
+            "the camera looks down the whole flight"
+        );
     }
 
     #[test]

@@ -47,14 +47,16 @@ const PLAYED_ROOM_ROLES: [RoomRole; 10] = [
     RoomRole::Recovery,
 ];
 
-const PLAYED_HALL_ARCHETYPES: [&str; 8] = [
+const PLAYED_HALL_ARCHETYPES: [&str; 10] = [
     "hall_straight",
     "hall_turn_60",
     "hall_turn_120",
     "hall_junction_3way",
     "hall_junction_4way",
-    "hall_ramp",
-    "stair_tower",
+    "climb_foot",
+    "climb_mid",
+    "climb_high",
+    "climb_landing",
     "expanse",
 ];
 

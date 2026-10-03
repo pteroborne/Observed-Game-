@@ -1,12 +1,13 @@
 //! `OBSERVED2_CAPTURE_HEX_WFC_VERTICALS`: the facility's ways up, as a body meets them.
 //!
-//! Evidence for the vertical tiles. Each pose stands the runner in the cell beside a
-//! ramp or a stair tower and looks in through the doorway between them, the way a body
-//! arriving at it does: the foot of a ramp, the top of one looking down, the door of a
-//! tower on the ground, and one high up. Chosen deterministically from the solved
-//! facility, so a before and an after are the same places.
+//! Evidence for the climb compositions, one district at a time: each floor is one
+//! district, and each district dresses its own climb. For every district a climb starts
+//! in, two poses: just inside the foot's door looking up the flight, and on the landing
+//! by its door looking back down the whole of it. Chosen deterministically from the
+//! solved facility, so a before and an after are the same places.
 use bevy::prelude::*;
-use observed_facility::hex_wfc::{HexArchetype, HexCoord, HexFace, HexWfcWorld};
+use observed_content::ArchitectureRegister;
+use observed_facility::hex_wfc::{ClimbPart, HexArchetype, HexCoord, HexFace, HexWfcWorld};
 
 use observed_hex::{FLOOR_SLAB_TOP, hex_origin};
 
@@ -34,72 +35,51 @@ fn looking_in(
     }
 }
 
-/// The first open lateral face of `cell` whose neighbour opens back onto it.
-fn way_in(world: &HexWfcWorld, cell: HexCoord) -> Option<HexFace> {
-    let placement = world.placements.get(&cell)?;
-    HexFace::LATERAL.into_iter().find(|&face| {
-        placement.is_open(face)
-            && world
-                .config
-                .grid()
-                .neighbor(cell, face)
-                .is_some_and(|next| {
-                    world
-                        .placements
-                        .get(&next)
-                        .is_some_and(|other| other.space.built() && other.is_open(face.opposite()))
-                })
-    })
+/// The pose names for a district: up from the foot, and down from the landing.
+const fn names(register: ArchitectureRegister) -> (&'static str, &'static str) {
+    match register {
+        ArchitectureRegister::LiminalGrid => ("backrooms_up", "backrooms_down"),
+        ArchitectureRegister::Monolith => ("monolith_up", "monolith_down"),
+        ArchitectureRegister::Institutional => ("institutional_up", "institutional_down"),
+        ArchitectureRegister::Wellshaft => ("wellshaft_up", "wellshaft_down"),
+        ArchitectureRegister::InfiniteGallery => ("library_up", "library_down"),
+        ArchitectureRegister::OverlitGrid => ("lumen_up", "lumen_down"),
+        ArchitectureRegister::ShadowScreen => ("zen_up", "zen_down"),
+        ArchitectureRegister::FacetMonument => ("monument_up", "monument_down"),
+        ArchitectureRegister::Megastructure => ("reactor_up", "reactor_down"),
+        ArchitectureRegister::Thinning => ("sky_up", "sky_down"),
+    }
 }
 
 pub(in crate::hex_wfc) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
-    let of = |archetype: HexArchetype| {
-        world
-            .placements
-            .values()
-            .filter(move |placement| placement.archetype == archetype && placement.space.built())
-            .map(|placement| placement.coord)
-    };
+    let mut seen = std::collections::BTreeSet::new();
     let mut poses = Vec::new();
-    // The foot of a ramp, then the foot of one higher up.
-    let ramps: Vec<HexCoord> = of(HexArchetype::RampUp).collect();
-    for (name, ramp) in [
-        ("ramp_foot_low", ramps.iter().min_by_key(|c| (c.level, **c))),
-        (
-            "ramp_foot_high",
-            ramps
-                .iter()
-                .max_by_key(|c| (c.level, std::cmp::Reverse(**c))),
-        ),
-    ] {
-        if let Some(&ramp) = ramp
-            && let Some(face) = way_in(world, ramp)
-        {
-            poses.push(looking_in(name, ramp, face, 5.6, 0.3));
+    // Feet in coordinate order, so the first climb of each district is always the same.
+    for placement in world.placements.values() {
+        let HexArchetype::Climb {
+            part: ClimbPart::Foot,
+            heading,
+        } = placement.archetype
+        else {
+            continue;
+        };
+        let foot = placement.coord;
+        let Some(&register) = world.architecture.get(&foot) else {
+            continue;
+        };
+        let Some(cells) = observed_facility::hex_wfc::composition_cells(
+            world.config.grid(),
+            foot,
+            placement.archetype,
+        ) else {
+            continue;
+        };
+        if !seen.insert(register as u8) {
+            continue;
         }
-    }
-    // The top of a ramp, looking back down it from its head.
-    if let Some(head) = of(HexArchetype::RampHead).min_by_key(|c| (c.level, *c))
-        && let Some(face) = way_in(world, head)
-    {
-        poses.push(looking_in("ramp_head", head, face, 5.6, -0.35));
-    }
-    // A stair tower's door on the ground floor, and one high up.
-    let towers: Vec<HexCoord> = of(HexArchetype::Shaft).collect();
-    for (name, tower) in [
-        ("tower_low", towers.iter().min_by_key(|c| (c.level, **c))),
-        (
-            "tower_high",
-            towers
-                .iter()
-                .max_by_key(|c| (c.level, std::cmp::Reverse(**c))),
-        ),
-    ] {
-        if let Some(&tower) = tower
-            && let Some(face) = way_in(world, tower)
-        {
-            poses.push(looking_in(name, tower, face, 5.6, 0.25));
-        }
+        let (up, down) = names(register);
+        poses.push(looking_in(up, foot, heading.opposite(), 5.6, 0.15));
+        poses.push(looking_in(down, cells[3], heading, 5.6, -0.3));
     }
     poses
 }

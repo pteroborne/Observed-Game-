@@ -209,7 +209,8 @@ mod tests {
                 .iter()
                 .filter(|label| label.starts_with("HALL / "))
                 .count(),
-            8
+            // The five flat halls, the expanse, and a climb's four cells.
+            10
         );
     }
 }

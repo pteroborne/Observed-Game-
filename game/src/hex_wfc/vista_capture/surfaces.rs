@@ -30,7 +30,10 @@ pub(in crate::hex_wfc) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
                         // A hall or a room of the floor's own, not a climb through it.
                         && !matches!(
                             placement.archetype,
-                            HexArchetype::Shaft | HexArchetype::RampUp | HexArchetype::RampHead
+                            HexArchetype::Shaft
+                                | HexArchetype::RampUp
+                                | HexArchetype::RampHead
+                                | HexArchetype::Climb { .. }
                         )
                         && open_edges(world, placement.coord).is_none()
                         && built(grid.neighbor(placement.coord, HexFace::Up))

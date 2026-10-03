@@ -333,10 +333,11 @@ mod tests {
             let module = crate::parse_authored_module(&build())
                 .unwrap_or_else(|error| panic!("{name}: {error:?}"));
             assert!(
-                demands
-                    .iter()
-                    .any(|d| d.archetype == module.prototype.key.archetype
-                        && d.signature == module.prototype.signature),
+                super::super::retired(name)
+                    || demands
+                        .iter()
+                        .any(|d| d.archetype == module.prototype.key.archetype
+                            && d.signature == module.prototype.signature),
                 "{name} cannot be selected by WFC"
             );
         }

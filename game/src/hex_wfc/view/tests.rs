@@ -313,16 +313,17 @@ fn cell_entity_count_falls_with_merged_hull_meshes() {
 
     // Pick a non-trivial cell with multiple raw pieces, all of them its tile's own:
     // a cell with open edges carries lips and railings too, which this does not measure.
+    // Not a climb either: its pieces merge by facing, three groups whatever the tile.
     let pieces = &runtime.match_state.geometry.pieces;
     let (coord, cell_index) = catalog
         .cells
         .iter()
         .find(|(_, index)| {
             index.piece_indices.len() >= 10
-                && index
-                    .piece_indices
-                    .iter()
-                    .all(|&i| pieces[i].part == observed_match::hex_wfc::HexPiecePart::Authored)
+                && index.piece_indices.iter().all(|&i| {
+                    pieces[i].part == observed_match::hex_wfc::HexPiecePart::Authored
+                        && pieces[i].role != observed_match::hex_wfc::HexStructureRole::Ramp
+                })
         })
         .expect("must have a walled cell with >= 10 raw pieces");
 
@@ -372,10 +373,12 @@ fn cell_entity_count_falls_with_merged_hull_meshes() {
     //
     // One district per floor moved the first walled cell to a smaller tile, 19 pieces
     // where it was 28 (still 9 meshes); per-floor openness moved it again, to a
-    // 15-piece cell whose hulls merge into 8.
-    assert_eq!(raw_piece_count, 15);
+    // 15-piece cell whose hulls merge into 8. Every district's own climb moved it once
+    // more, past a climb cell that now stands where it was: 17 pieces into 8 meshes, and
+    // 12 children - the meshes and four practicals (it was 15 by coincidence).
+    assert_eq!(raw_piece_count, 17);
     assert_eq!(structural_hull_mesh_count, 8);
-    assert_eq!(child_pieces, 15);
+    assert_eq!(child_pieces, 12);
     assert!(
         structural_hull_mesh_count < raw_piece_count,
         "structural hull meshes ({structural_hull_mesh_count}) must be strictly less than raw pieces ({raw_piece_count})"

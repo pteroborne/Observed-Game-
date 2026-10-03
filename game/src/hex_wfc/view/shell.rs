@@ -435,7 +435,12 @@ fn spawn_cell_practicals(
     let practical = observed_style::hex_practical_light(architecture, composition, positions.len());
     let mut child_pieces = 0;
     for position in positions {
-        if has_authored_lights && matches!(role, HexStructureRole::Room | HexStructureRole::Hall) {
+        if has_authored_lights
+            && matches!(
+                role,
+                HexStructureRole::Room | HexStructureRole::Hall | HexStructureRole::Ramp
+            )
+        {
             // A diffuser is geometry, so it gets the same two treatments the
             // rest of the geometry gets: the storey filter and the cutaway.
             //

@@ -320,12 +320,14 @@ pub(super) fn collapse_pocket_attempt(
                 .iter()
                 .enumerate()
                 .filter(|(_, variant)| {
-                    // A routed corridor keeps its exact shape through a
-                    // relayout. Without this the pocket is free to pick any
-                    // variant its boundary allows, which for a corridor cell
-                    // means a wider one.
+                    // A routed corridor keeps its shape through a relayout, to the
+                    // same one branch the full solve allows it (`routed_mask_admits`).
+                    // Without this the pocket is free to pick any variant its
+                    // boundary allows, which for a corridor cell means a wider one;
+                    // and held to the bare route, a branch the cell already has,
+                    // met by a door outside the pocket, could never be matched.
                     if let Some(&mask) = skeleton.get(&coord)
-                        && variant.doors != mask
+                        && !routed_mask_admits(mask, variant.doors)
                     {
                         return false;
                     }

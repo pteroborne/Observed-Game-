@@ -795,7 +795,7 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "2592d7d769f167ed7c9afcb4c4b5e4a3f6091afc5a2b13b62432404e3ebf8e08";
+            "53e5955caef2efbb7b981919b06fcbc4fffd7e9789b224434c8a87665f0f0ab5";
         // The open-air composition (void share 2,000), 2026-09-24, at profile
         // version 5 since the climb compositions.
         const PROFILE_HASH: &str =
@@ -804,7 +804,7 @@ mod tests {
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "15abdddf787ba3930dfa5a185869777d807c685ebc293b46d84ddddd571e32ba";
+            "97195ae30f210dbff67b8cb76e9e98182c379f96581792c2b8d0080548d800c1";
 
         let root = committed_tiles();
         let compiled_text =
@@ -817,7 +817,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 335, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 359, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.

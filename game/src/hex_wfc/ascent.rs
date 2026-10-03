@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use observed_core::{PlayerId, TeamId};
-use observed_facility::hex_wfc::{HexArchetype, HexCoord};
 use observed_match::ascent::facility::AscentRules;
 use observed_match::ascent::session::{ASCENT_INPUT_VERSION, InputFrame, SeatCommand};
 use observed_match::ascent::sim::{ArchitectCommand, MatchOutcome, TeamId as AscentTeam};
@@ -142,22 +141,26 @@ pub(super) fn apply(
     {
         desk.last_refusal = refusals.get(&desk.seat).copied();
         // What the rules took is what the Architect knows stands, seen or not: a tile's
-        // cell, or a stair's foot and the head above it.
+        // cell, or every cell of a stair's climb composition, its landing a floor up.
         if desk.last_refusal.is_none()
             && let Some(ArchitectCommand::Play { target, .. }) = played
         {
-            let head = HexCoord {
-                level: target.level + 1,
-                ..target
-            };
-            for cell in [target, head] {
+            let world = &rules.rules().world;
+            let cells = world
+                .placements
+                .get(&target)
+                .map_or_else(Vec::new, |placement| {
+                    observed_facility::hex_wfc::composition_cells(
+                        world.config.grid(),
+                        target,
+                        placement.archetype,
+                    )
+                    .map_or_else(|| vec![target], Vec::from)
+                });
+            for cell in cells {
                 let Some(&placement) = rules.rules().world.placements.get(&cell) else {
                     continue;
                 };
-                // Only a stair builds the head; a door changes neither cell's placement.
-                if cell == head && placement.archetype != HexArchetype::RampHead {
-                    continue;
-                }
                 let known = desk
                     .knowledge(rules.rules())
                     .and_then(|knowledge| knowledge.cells.get(&cell))

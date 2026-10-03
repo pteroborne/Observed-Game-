@@ -56,7 +56,9 @@ The corridor skeleton reuses climbs already laid, keeps doorsteps clear, and nev
 crosses its own recent path. Routed hall cells may carry one branch door beyond the
 route's own (`collapse::routed_mask_admits`). Exact masks stranded hall pockets and took
 11 attempts and 9.4 s on the production solve. With the one-branch relaxation it takes
-3 attempts and 3.0 s.
+3 attempts and 3.0 s. A pocket relayout must use the same rule. Holding its routed
+cells to the bare route made a standing branch unmatchable from inside the pocket, and
+5 in 60 tactics-lab shifts fell back to a district repaint until it did.
 
 The validator measures decision-beat spacing with a 0-1 search: moving within one
 composition is free, so a 42 m climb does not count as a long corridor without choices.
@@ -80,8 +82,34 @@ Each phase leaves the tree green and the game playable.
    legality covers all of them, and no climb cell is ever retracted. Still left as
    dead code: the `RampUp`, `RampHead` and `Shaft` enum variants, the tower and ramp
    forge sources, and the column-assembly machinery.
-5. **Districts.** Not started. Dressings for each district, captures (overview and
-   first person), a map glyph, and the Phase 101 arc gate.
+5. **Districts.** In progress. Every register has its own climb: seven dressings
+   (`forge::climb`), 28 cells in all. The flight, its spans and its spine are the
+   same in every district. The hexagon's flat east and west faces leave a straight
+   aisle 7 m wide through every cell, with a triangular alcove either side, and a
+   district dresses only the alcoves, the aisle's edges and what hangs overhead:
+
+   | District | Registers | Dressing |
+   |---|---|---|
+   | Backrooms | liminal grid, monolith, institutional, wellshaft | plain walls and ceiling |
+   | Library | infinite gallery | stacks across the alcoves, floor to ceiling |
+   | Lumen | overlit grid | a lit, tiled plinth in each alcove |
+   | Zen | shadow screen | paper screens along the aisle, lanterns behind them |
+   | Monument | facet monument | masonry filling the alcoves, a pier at every seam |
+   | Reactor | megastructure | columns in the alcoves, balustrades, a girder overhead |
+   | Sky | thinning | parapets for walls, no ceiling |
+
+   Where the landing is open over the high cell, the Library's stacks, the
+   Monument's masonry and the Reactor's columns carry on up through it, so the high
+   cell reads as one tall stairwell. Climbs are drawn by facing, as ramps were, so
+   a flight wears its district's floor. They had been drawn as halls, which judged
+   the sloped mass a wall. Still to do: a map glyph.
+
+   `OBSERVED2_CAPTURE_HEX_WFC_VERTICALS` shoots each district's first climb in game:
+   up from the foot, and down from the landing. The landing is on the floor above, so
+   each "down" view stands in the next district.
+
+   ![Backrooms, Lumen and Zen: up from the foot, down from the landing](evidence/climbs/districts_backrooms_lumen_zen.jpg)
+   ![Monument, Library and Reactor; the Reactor's landing is the Sky's](evidence/climbs/districts_monument_library_reactor.jpg)
 
 ## What moved
 
@@ -102,7 +130,7 @@ Each phase leaves the tree green and the game playable.
   |---|---|---|
   | Mutations solved | 10 of 10 | 10 of 10, about 10 ms fixed time each, no fallback |
   | Worst mutation frame | 15.5 ms | 18.1 ms (budget 33.3) |
-  | Frame p95 | 14.9 ms | **17.9 ms** (budget 16.7) |
+  | Frame p95 | 14.9 ms | **17.9 ms**, 18.3 ms with district dressings (budget 16.7) |
   | Peak resident cells | 60 | 90 |
 
   The CPU side is unchanged: main schedule 3-4 ms, fixed p95 under 0.4 ms. The frames

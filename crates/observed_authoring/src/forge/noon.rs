@@ -205,7 +205,8 @@ mod tests {
                 .expect("valid tile")
                 .prototype;
             assert!(
-                demands
+                super::super::retired(name)
+                    || demands
                     .iter()
                     .any(|d| d.archetype == tile.key.archetype && d.signature == tile.signature),
                 "{name} cannot be selected"

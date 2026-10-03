@@ -58,7 +58,6 @@ pub fn builders() -> Vec<Builder> {
     let mut all = halls::builders();
     all.extend(silos::builders());
     all.extend(ramp::builders());
-    all.extend(climb::builders());
     all.extend(rooms::builders());
     all.extend(program::builders());
     all.extend(witness::builders());
@@ -85,6 +84,7 @@ pub fn generate_all() -> Vec<(String, String)> {
     out.extend(halls::open_builders());
     out.extend(perimeter::builders());
     out.extend(tower::builders());
+    out.extend(climb::builders());
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
 }
@@ -113,6 +113,18 @@ pub fn corpus_stems() -> Vec<String> {
         .collect();
     stems.sort();
     stems
+}
+
+/// Whether the curated catalog retires the source `stem` (`assets/tiles/.tileignore`):
+/// kept editable for reference and never shipped, so it serves no solver demand.
+#[cfg(test)]
+pub(crate) fn retired(stem: &str) -> bool {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles/.tileignore");
+    std::fs::read_to_string(path).is_ok_and(|text| {
+        text.lines()
+            .any(|line| line.trim() == format!("authored/{stem}.map"))
+    })
 }
 
 /// Assert that every builder reproduces its committed file, byte for byte.

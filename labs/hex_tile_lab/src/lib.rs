@@ -1909,6 +1909,71 @@ fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
     )
 }
 
+/// A hull with a walkable slope, split into its floor, wall and ceiling faces by which
+/// way each faces, as the game splits a climb (`view::mesh_group::Facing`). `None` for
+/// any other hull, which is judged whole.
+fn faced_meshes(hull: &[Vec3]) -> Option<Vec<(SurfaceKind, Mesh)>> {
+    const LEVEL: f32 = 0.64;
+    let data = ConvexRenderMesh::from_convex_hull(hull)?;
+    let triangles: Vec<([u32; 3], Vec3)> = data
+        .indices
+        .chunks_exact(3)
+        .map(|corner| {
+            let point = |index: u32| Vec3::from_array(data.positions[index as usize]);
+            let (a, b, c) = (point(corner[0]), point(corner[1]), point(corner[2]));
+            (
+                [corner[0], corner[1], corner[2]],
+                (b - a).cross(c - a).normalize_or_zero(),
+            )
+        })
+        .collect();
+    if !triangles
+        .iter()
+        .any(|(_, normal)| (LEVEL..0.995).contains(&normal.y))
+    {
+        return None;
+    }
+    let facing = |normal: Vec3| {
+        if normal.y >= LEVEL {
+            SurfaceKind::Floor
+        } else if normal.y <= -LEVEL {
+            SurfaceKind::Ceiling
+        } else {
+            SurfaceKind::Wall
+        }
+    };
+    let meshes = [SurfaceKind::Floor, SurfaceKind::Wall, SurfaceKind::Ceiling]
+        .into_iter()
+        .filter_map(|kind| {
+            let (mut positions, mut normals, mut uvs) = (Vec::new(), Vec::new(), Vec::new());
+            for (corner, normal) in &triangles {
+                if facing(*normal) != kind {
+                    continue;
+                }
+                for &index in corner {
+                    positions.push(data.positions[index as usize]);
+                    normals.push(data.normals[index as usize]);
+                    uvs.push(data.uvs[index as usize]);
+                }
+            }
+            if positions.is_empty() {
+                return None;
+            }
+            let count = u32::try_from(positions.len()).ok()?;
+            let mesh = Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+            )
+            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+            .with_inserted_indices(Indices::U32((0..count).collect()));
+            Some((kind, mesh))
+        })
+        .collect();
+    Some(meshes)
+}
+
 struct PreviewPractical {
     position: Vec3,
     module_origin: Vec3,
@@ -2211,6 +2276,20 @@ fn rebuild_visuals(
                                  transform: Transform,
                                  top_y: f32,
                                  name: String| {
+        // A flight is one sloped mass: judged whole it reads as a wall by its height.
+        // Split by facing instead, as the game draws a climb, so it is walked on floor.
+        if let Some(faced) = faced_meshes(hull) {
+            for (kind, mesh) in faced {
+                commands.spawn((
+                    TileVisual,
+                    Mesh3d(meshes.add(mesh)),
+                    MeshMaterial3d(get_surface_material(kind)),
+                    transform,
+                    Name::new(name.clone()),
+                ));
+            }
+            return;
+        }
         let kind = if register == ArchitectureRegister::OverlitGrid
             && observed_traversal::render_mesh::is_overhead_slab(hull)
         {

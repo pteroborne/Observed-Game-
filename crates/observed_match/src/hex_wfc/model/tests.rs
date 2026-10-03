@@ -751,10 +751,12 @@ fn headless_gate_bot_walks_climbs_deterministically() {
     // (0x0fde_68b8_5aa8_5dda -> 0x9c35_1a54_6fd7_787e), and per-floor openness's again
     // (-> 0x6868_4c8f_72ff_5fb3), and the switchback ramp's (-> 0x6776_8f80_b021_bd38,
     // then dressed by district -> 0xd8a4_56f3_de5d_1e26), and the spiral tower's
-    // (-> 0x18fc_ac97_862c_01a2), and the climb compositions' (-> 0x541d_246f_6472_cf2a).
+    // (-> 0x18fc_ac97_862c_01a2), and the climb compositions' (-> 0x541d_246f_6472_cf2a),
+    // and every district's own climb, with pockets that keep a routed hall's branch
+    // (-> 0x273d_ea45_f7f9_3234), the tick unmoved.
     assert_eq!(
         first.snapshot().digest,
-        0x541d_246f_6472_cf2a,
+        0x273d_ea45_f7f9_3234,
         "TR-10 pins the declared-climb final snapshot digest"
     );
 }

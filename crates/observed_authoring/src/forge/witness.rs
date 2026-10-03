@@ -563,10 +563,11 @@ mod tests {
             let module = crate::parse_authored_module(&build())
                 .unwrap_or_else(|error| panic!("{name}: {error:?}"));
             assert!(
-                demands
-                    .iter()
-                    .any(|demand| demand.archetype == module.prototype.key.archetype
-                        && demand.signature == module.prototype.signature),
+                super::super::retired(name)
+                    || demands
+                        .iter()
+                        .any(|demand| demand.archetype == module.prototype.key.archetype
+                            && demand.signature == module.prototype.signature),
                 "{name} is unreachable by WFC"
             );
         }

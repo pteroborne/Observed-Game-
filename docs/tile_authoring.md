@@ -349,6 +349,12 @@ for the design and the router that lays them.
 - **`floor="flight"`** (`FloorPolicy::Flight`) is how these cells declare a sloped
   floor. Validation holds every flight to `FLIGHT_MAX_SLOPE` (0.3, about 17°). The
   floors run wall to wall: the flight is the whole cell's width.
+- **One dressing per register.** Each district's four cells are stems with a suffix
+  (`climb_foot_library`, and so on), authored variants 21-26 as the ramps' were. A
+  dressing may stand anything in the alcoves, on the aisle's edges or overhead, but
+  never in the aisle (`the_aisle_is_clear_in_every_district`), and never changes the
+  flight. To preview one in hex_tile_lab, name the runtime variant (authored times 6)
+  in a `layout` entry, for example `"climb_mid:126"` for the Library.
 - **Never turned by the solver's choice:** projection pins each climb cell's turn to
   its heading (`geometry::required_turn`). The Mid's ports are symmetric under a half
   turn, so a signature alone would let it face backwards.

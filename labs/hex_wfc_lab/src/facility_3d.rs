@@ -12,8 +12,8 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 use observed_content::ArchitectureRegister;
-use observed_facility::hex_wfc::{HexArchetype, HexWfcWorld};
-use observed_hex::{HexCoord, HexFace, PortClass, TILE_LEVEL_HEIGHT, face_edge, hex_origin};
+use observed_facility::hex_wfc::{ClimbPart, HexArchetype, HexWfcWorld};
+use observed_hex::{HexCoord, HexFace, TILE_LEVEL_HEIGHT, face_edge, hex_origin};
 use observed_match::hex_wfc::{HexMatchContent, HexWfcGeometrySnapshot};
 use observed_traversal::rapier_controller::RapierTraversalScene;
 use observed_traversal::{ArenaSpec, FpsBody, FpsConfig};
@@ -447,66 +447,38 @@ fn face_plan_dir(face: HexFace) -> Vec2 {
     Vec2::new((a.0 + b.0) as f32 * 0.5, (a.1 + b.1) as f32 * 0.5).normalize()
 }
 
-fn ramp_exit(world: &HexWfcWorld, coord: HexCoord) -> Option<HexFace> {
-    let placement = world.placements.get(&coord)?;
-    (placement.archetype == HexArchetype::RampUp)
-        .then(|| {
-            HexFace::LATERAL
-                .into_iter()
-                .find(|&face| placement.is_open(face))
-                .map(HexFace::opposite)
-        })
-        .flatten()
+/// The heading a climb composition climbs, from its foot: `None` anywhere else.
+fn climb_heading(world: &HexWfcWorld, coord: HexCoord) -> Option<HexFace> {
+    match world.placements.get(&coord)?.archetype {
+        HexArchetype::Climb {
+            part: ClimbPart::Foot,
+            heading,
+        } => Some(heading),
+        _ => None,
+    }
 }
 
+/// A climb composition seen whole: its foot and its landing, and the way it climbs.
 #[derive(Clone, Copy, Debug)]
-struct ShaftColumn {
-    top: HexCoord,
-    bottom: HexCoord,
-    door: HexFace,
-    cells: u8,
+struct ClimbView {
+    foot: HexCoord,
+    landing: HexCoord,
+    heading: HexFace,
 }
 
-impl ShaftColumn {
-    fn structural_depth_m(self) -> f32 {
-        f32::from(self.cells) * TILE_LEVEL_HEIGHT
-    }
-
-    fn rim_drop_m(self) -> f32 {
-        f32::from(self.cells.saturating_sub(1)) * TILE_LEVEL_HEIGHT
-    }
-}
-
-fn shaft_view(world: &HexWfcWorld) -> Option<ShaftColumn> {
-    world
-        .placements
-        .values()
-        .filter(|placement| placement.archetype == HexArchetype::Shaft)
-        .filter_map(|placement| {
-            let door = HexFace::LATERAL
-                .into_iter()
-                .find(|&face| placement.is_open(face))?;
-            let mut bottom = placement.coord;
-            let mut cells = 1u8;
-            while world.placements[&bottom].down == PortClass::ShaftOpen {
-                let next = world.config.grid().neighbor(bottom, HexFace::Down)?;
-                let next_placement = world.placements.get(&next)?;
-                if next_placement.archetype != HexArchetype::Shaft
-                    || next_placement.up != PortClass::ShaftOpen
-                {
-                    break;
-                }
-                bottom = next;
-                cells += 1;
-            }
-            (cells >= 5).then_some(ShaftColumn {
-                top: placement.coord,
-                bottom,
-                door,
-                cells,
-            })
+/// The first climb composition in `world`, if it has one.
+fn climb_view(world: &HexWfcWorld) -> Option<ClimbView> {
+    world.placements.keys().find_map(|&foot| {
+        let heading = climb_heading(world, foot)?;
+        let archetype = world.placements[&foot].archetype;
+        let cells =
+            observed_facility::hex_wfc::composition_cells(world.config.grid(), foot, archetype)?;
+        Some(ClimbView {
+            foot,
+            landing: cells[3],
+            heading,
         })
-        .max_by_key(|column| (column.cells, column.top.level))
+    })
 }
 
 #[cfg(test)]
@@ -528,39 +500,10 @@ mod tests {
     }
 
     #[test]
-    fn shared_four_level_fixture_has_a_ramp_and_full_height_shaft() {
+    fn shared_four_level_fixture_has_a_climb() {
         let lab = LabState::new(super::super::PRESET_SEEDS[0]);
-        assert!(
-            lab.world
-                .placements
-                .keys()
-                .copied()
-                .any(|coord| ramp_exit(&lab.world, coord).is_some())
-        );
-        let longest_shaft = lab
-            .world
-            .placements
-            .values()
-            .filter(|placement| {
-                placement.archetype == HexArchetype::Shaft && placement.up != PortClass::ShaftOpen
-            })
-            .map(|placement| {
-                let mut coord = placement.coord;
-                let mut cells = 1u8;
-                while lab.world.placements[&coord].down == PortClass::ShaftOpen {
-                    coord = lab
-                        .world
-                        .config
-                        .grid()
-                        .neighbor(coord, HexFace::Down)
-                        .expect("shaft stays in grid");
-                    cells += 1;
-                }
-                cells
-            })
-            .max()
-            .unwrap_or(0);
-        assert_eq!(longest_shaft, lab.world.config.levels);
+        let climb = climb_view(&lab.world).expect("a climb composition");
+        assert_eq!(climb.landing.level, climb.foot.level + 1);
     }
 
     #[test]

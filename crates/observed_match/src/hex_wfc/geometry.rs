@@ -1539,7 +1539,10 @@ fn room_for<'a>(
 
 fn role_for(placement: &HexPlacement) -> HexStructureRole {
     match placement.archetype {
-        HexArchetype::RampUp => HexStructureRole::Ramp,
+        // A climb's flight is one sloped mass from the slab to the walking surface. Drawn
+        // as a hall it is judged whole, as a wall by its height, and the district's wall
+        // covers the floor; as a ramp each face takes the surface it faces.
+        HexArchetype::RampUp | HexArchetype::Climb { .. } => HexStructureRole::Ramp,
         HexArchetype::Shaft => HexStructureRole::Shaft,
         _ => HexStructureRole::Hall,
     }

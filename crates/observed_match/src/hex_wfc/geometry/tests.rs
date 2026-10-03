@@ -351,21 +351,22 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     // Re-pinned when the climb compositions replaced the ramps and stair towers (208 ->
     // 189 and 184 -> 147 cells, routed around the longer climbs); the gate that
     // followed the tower family follows the climb cells now: 32 and 24 of them, eight
-    // and six compositions.
+    // and six compositions. Every district's own climb then moved both digests and
+    // neither count: the same cells, drawn from each register's dressing.
     let cases = [
         (
             1u64,
             189usize,
-            0x8abd_5923_7682_2728u64,
+            0x1e4d_d1d1_e477_8740u64,
             32usize,
-            0x32a6_0ae5_37aa_3e9eu64,
+            0x47a5_309e_8f94_b256u64,
         ),
         (
             10_000_031u64,
             147usize,
-            0xb01d_306c_7227_df49u64,
+            0xe3e7_60b5_1e73_77c1u64,
             24usize,
-            0xcb57_2ae3_ce7c_d02cu64,
+            0xb052_44d8_78ee_bc54u64,
         ),
     ];
     let mut actual = Vec::new();
