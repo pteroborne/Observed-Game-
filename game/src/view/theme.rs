@@ -110,3 +110,19 @@ pub(crate) fn text(s: impl Into<String>, size: f32, color: Color) -> impl Bundle
         TextColor(color),
     )
 }
+
+/// Compact menu column: fixed content width keeps the baseline layout predictable.
+pub(crate) fn menu_panel(width: f32) -> impl Bundle {
+    (
+        Node {
+            width: px(width),
+            padding: UiRect::all(px(26)),
+            border: UiRect::all(px(1)),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(8),
+            ..default()
+        },
+        BackgroundColor(PANEL),
+        BorderColor::all(BORDER),
+    )
+}

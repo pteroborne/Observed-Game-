@@ -139,16 +139,30 @@ pub struct FocusMarker;
 #[derive(Resource, Debug, Default, Eq, PartialEq)]
 pub struct UiInputCapture {
     owner: Option<&'static str>,
+    widget_scope: Option<FocusScopeId>,
 }
 
 impl UiInputCapture {
     pub fn capture(&mut self, owner: &'static str) {
         self.owner = Some(owner);
+        self.widget_scope = None;
+    }
+
+    /// Capture gameplay input while permitting the named modal widget scope.
+    /// Rebinding uses `capture` instead because it consumes raw keys exclusively.
+    pub fn capture_for_scope(&mut self, owner: &'static str, scope: FocusScopeId) {
+        self.owner = Some(owner);
+        self.widget_scope = Some(scope);
+    }
+
+    pub fn allows_widgets(&self, scope: FocusScopeId) -> bool {
+        self.owner.is_none() || self.widget_scope == Some(scope)
     }
 
     pub fn release(&mut self, owner: &'static str) {
         if self.owner == Some(owner) {
             self.owner = None;
+            self.widget_scope = None;
         }
     }
 

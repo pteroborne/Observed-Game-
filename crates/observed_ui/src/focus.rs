@@ -141,16 +141,16 @@ pub struct FocusNavigationContext<'w, 's> {
 }
 
 pub fn handle_focus_input(mut context: FocusNavigationContext) {
-    if context.capture.is_active() {
-        context.latch.vertical_axis = 0;
-        context.latch.horizontal_axis = 0;
-        return;
-    }
     let Some(scope_id) = context.active.active() else {
         context.latch.vertical_axis = 0;
         context.latch.horizontal_axis = 0;
         return;
     };
+    if !context.capture.allows_widgets(scope_id) {
+        context.latch.vertical_axis = 0;
+        context.latch.horizontal_axis = 0;
+        return;
+    }
     let Some(scope) = context.scopes.iter().find(|scope| scope.id == scope_id) else {
         return;
     };
@@ -388,6 +388,25 @@ fn ordered_targets(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn modal_capture_allows_its_widgets_and_blocks_other_scopes_until_owner_release() {
+        let help = FocusScopeId("help");
+        let menu = FocusScopeId("menu");
+        let mut capture = UiInputCapture::default();
+        capture.capture_for_scope("help_owner", help);
+        assert!(capture.is_active());
+        assert!(capture.allows_widgets(help));
+        assert!(!capture.allows_widgets(menu));
+        capture.release("other_owner");
+        assert!(capture.is_active());
+        capture.release("help_owner");
+        assert!(!capture.is_active());
+        assert!(capture.allows_widgets(menu));
+        capture.capture("rebind");
+        assert!(!capture.allows_widgets(help));
+        assert!(!capture.allows_widgets(menu));
+    }
 
     #[test]
     fn active_scope_is_the_highest_priority_scope() {

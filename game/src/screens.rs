@@ -93,8 +93,10 @@ impl Plugin for ScreensPlugin {
                     lan::refresh_browser_text.run_if(in_state(GameState::LanBrowser)),
                     lan::refresh_lobby_text.run_if(in_state(GameState::Lobby)),
                     menu::splash_advance.run_if(in_state(GameState::Splash)),
+                    onboarding::spawn
+                        .run_if(in_state(GameState::HexWfc))
+                        .run_if(resource_exists::<onboarding::RoleHelpRequest>),
                     onboarding::release_capture_after_dismissal,
-                    main_menu::update_banner.run_if(in_state(GameState::MainMenu)),
                     play::refresh_hub.run_if(in_state(GameState::Play)),
                     play::refresh_advanced.run_if(in_state(GameState::PlayAdvanced)),
                     loadout::refresh.run_if(in_state(GameState::Loadout)),

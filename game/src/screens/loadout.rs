@@ -36,7 +36,7 @@ pub(crate) fn setup(mut commands: Commands, career: Res<Career>) {
     commands
         .spawn(screen_root(GameState::Loadout))
         .with_children(|root| {
-            root.spawn(text("LOADOUT", 40.0, TITLE));
+            root.spawn(text("COSMETICS", 40.0, TITLE));
             root.spawn((LoadoutHeader, text(profile_summary(&career), 17.0, ACCENT)));
             root.spawn((
                 loadout_panel(),

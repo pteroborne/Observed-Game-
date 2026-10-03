@@ -22,6 +22,7 @@ mod kinetic;
 mod lantern;
 pub(crate) mod launch;
 pub(crate) mod loading;
+mod modal_ui;
 mod net;
 mod objective_models;
 mod observer;
@@ -78,6 +79,7 @@ impl Plugin for HexWfcPlugin {
                 (
                     sim::setup_runtime,
                     overlay::reset,
+                    modal_ui::setup,
                     view::setup_view,
                     hud::setup,
                     hud::play::setup,
@@ -93,6 +95,12 @@ impl Plugin for HexWfcPlugin {
                     input::grab_cursor,
                 )
                     .chain(),
+            )
+            .add_systems(
+                PostUpdate,
+                modal_ui::target_roots
+                    .before(bevy::ui::UiSystems::Prepare)
+                    .run_if(in_state(GameState::HexWfc)),
             )
             .add_systems(
                 FixedUpdate,

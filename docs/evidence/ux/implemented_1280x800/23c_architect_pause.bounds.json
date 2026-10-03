@@ -1,0 +1,57 @@
+[
+  {
+    "max": [
+      850.0,
+      574.0
+    ],
+    "min": [
+      430.0,
+      522.0
+    ],
+    "widget": "WidgetId { namespace: \"hex.pause.request_leave\", key: 0 }"
+  },
+  {
+    "max": [
+      850.0,
+      508.0
+    ],
+    "min": [
+      430.0,
+      456.0
+    ],
+    "widget": "WidgetId { namespace: \"hex.pause.role_help\", key: 0 }"
+  },
+  {
+    "max": [
+      850.0,
+      442.0
+    ],
+    "min": [
+      430.0,
+      390.0
+    ],
+    "widget": "WidgetId { namespace: \"hex.pause.open_controls\", key: 0 }"
+  },
+  {
+    "max": [
+      850.0,
+      376.0
+    ],
+    "min": [
+      430.0,
+      324.0
+    ],
+    "widget": "WidgetId { namespace: \"hex.pause.open_settings\", key: 0 }"
+  },
+  {
+    "max": [
+      850.0,
+      310.0
+    ],
+    "min": [
+      430.0,
+      258.0
+    ],
+    "widget": "WidgetId { namespace: \"hex.pause.resume\", key: 0 }"
+  }
+]

@@ -32,6 +32,7 @@ const CONFIRM_SCOPE: FocusScopeId = FocusScopeId("hex.pause.confirm_leave");
 const RESUME: WidgetId = WidgetId::named("hex.pause.resume");
 const OPEN_SETTINGS: WidgetId = WidgetId::named("hex.pause.open_settings");
 const OPEN_CONTROLS: WidgetId = WidgetId::named("hex.pause.open_controls");
+const ROLE_HELP: WidgetId = WidgetId::named("hex.pause.role_help");
 const REQUEST_LEAVE: WidgetId = WidgetId::named("hex.pause.request_leave");
 const SETTINGS_BACK: WidgetId = WidgetId::named("hex.pause.settings_back");
 const CONTROLS_BACK: WidgetId = WidgetId::named("hex.pause.controls_back");
@@ -160,6 +161,7 @@ pub(super) enum OverlayAction {
     Resume,
     OpenSettings,
     OpenControls,
+    RoleHelp,
     RequestLeave,
     ConfirmLeave,
     Back,
@@ -200,6 +202,7 @@ fn reduce_action(state: &mut MatchOverlayState, action: OverlayAction) -> Overla
         OverlayAction::AdjustSetting(_)
         | OverlayAction::OpenSettings
         | OverlayAction::OpenControls
+        | OverlayAction::RoleHelp
         | OverlayAction::RequestLeave
         | OverlayAction::ConfirmLeave => {}
     }
@@ -298,7 +301,12 @@ fn spawn_root_page(root: &mut ChildSpawnerCommands, networked: bool) {
         );
         widgets::spawn_button(
             panel,
-            WidgetSpec::enabled(REQUEST_LEAVE, ROOT_SCOPE, 3, "Leave match..."),
+            WidgetSpec::enabled(ROLE_HELP, ROOT_SCOPE, 3, "Review role help"),
+            OverlayAction::RoleHelp,
+        );
+        widgets::spawn_button(
+            panel,
+            WidgetSpec::enabled(REQUEST_LEAVE, ROOT_SCOPE, 4, "Leave match..."),
             OverlayAction::RequestLeave,
         );
         panel.spawn(text(
@@ -443,6 +451,8 @@ pub(super) struct OverlayActivationContext<'w> {
     runtime: Option<Res<'w, HexWfcRuntime>>,
     lan: ResMut<'w, crate::lan::LanRuntime>,
     next: ResMut<'w, NextState<GameState>>,
+    gate: ResMut<'w, super::HexOnboardingGate>,
+    capture: ResMut<'w, crate::screens::widgets::UiInputCapture>,
 }
 
 pub(super) fn activate(
@@ -450,6 +460,7 @@ pub(super) fn activate(
     actions: Query<&OverlayAction>,
     disabled: Query<(), With<InteractionDisabled>>,
     mut context: OverlayActivationContext,
+    mut commands: Commands,
 ) {
     if !activation_enabled(&activation, &disabled) {
         return;
@@ -457,6 +468,17 @@ pub(super) fn activate(
     let Ok(action) = actions.get(activation.entity) else {
         return;
     };
+    if *action == OverlayAction::RoleHelp {
+        if *context.overlay == MatchOverlayState::Pause(PausePage::Root) {
+            crate::screens::onboarding::request_help(
+                &mut commands,
+                &mut context.gate,
+                &mut context.capture,
+            );
+            *context.overlay = MatchOverlayState::Playing;
+        }
+        return;
+    }
     if let OverlayAction::AdjustSetting(row) = *action {
         if *context.overlay == MatchOverlayState::Pause(PausePage::Settings)
             && settings::adjust_row(row, 1.0, &mut context.settings)

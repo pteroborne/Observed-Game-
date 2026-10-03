@@ -4,6 +4,10 @@
 **Feature branch:** `codex/end-to-end-ux`, based on refreshed `origin/main`.
 **Audience:** a new Observer or Architect, a returning local player, and a LAN host/joiner.
 
+This is the pre-implementation audit. See [the menu implementation record](menu_implementation.md)
+for the subsequent menu and role-entry changes; the findings below retain their
+original revision and evidence.
+
 The frontend has a useful interaction foundation, but it still introduces an older
 race rather than the game being built. The most immediate rendered defect is Play
 clipping at 1280×800, especially after selecting Ascent. The most consequential

@@ -7,18 +7,22 @@
 //! frontend states in hierarchy order, and photographs each one.
 //!
 //! It stages the career, launched-session description, and replay tape the late screens
-//! read, so Results and Replay describe a real run rather than an empty default. Live
-//! overlays (onboarding, pause) and the first playable frame sit inside a prepared match
-//! and remain part of the hands-on traversal.
+//! read, so Results and Replay show synthetic populated fixtures. Menu mode enters
+//! each role through the production launch/Loading handoff; the historical sweep uses
+//! direct state entry. Neither mode establishes a completed human session.
 
 use std::path::PathBuf;
 
+use crate::screens::widgets::WidgetId;
 use bevy::prelude::*;
+use bevy::ui::UiGlobalTransform;
 use bevy::ui_widgets::Activate;
 use bevy::window::PrimaryWindow;
 
 use crate::GameState;
 use crate::hex_wfc::overlay::{MatchOverlayState, PausePage};
+use crate::play_setup::{PlayPreset, PlayRules, PlaySeat, PlaySetupDraft};
+use crate::screens::onboarding::OnboardingAction;
 use crate::screens::settings::SettingsPageAction;
 
 /// The Phase 123 baseline viewport.
@@ -38,6 +42,9 @@ struct Shot {
     overlay: Option<MatchOverlayState>,
     /// Extra settle time. A hex match has to prepare and then admit its first cells.
     extra_settle: f32,
+    setup: Option<PlaySetupDraft>,
+    help_action: Option<OnboardingAction>,
+    production_launch: bool,
 }
 
 const fn shot(label: &'static str, state: GameState) -> Shot {
@@ -47,6 +54,9 @@ const fn shot(label: &'static str, state: GameState) -> Shot {
         page_action: None,
         overlay: None,
         extra_settle: 0.0,
+        setup: None,
+        help_action: None,
+        production_launch: false,
     }
 }
 
@@ -90,6 +100,140 @@ fn sweep() -> Vec<Shot> {
     ]
 }
 
+/// Explicit rules/role/preset variants plus every help beat, using the production
+/// semantic actions. This is a layout proof, not a human movement playtest.
+fn menu_sweep() -> Vec<Shot> {
+    let mut shots = vec![
+        shot("00_main_menu", GameState::MainMenu),
+        shot("00b_cosmetics", GameState::Loadout),
+    ];
+    for (rules, seat, names) in [
+        (
+            PlayRules::Ascent,
+            PlaySeat::Observer,
+            [
+                "01_observer_solo",
+                "02_observer_co_op",
+                "03_observer_teams",
+                "04_observer_spectate",
+            ],
+        ),
+        (
+            PlayRules::Ascent,
+            PlaySeat::Architect,
+            [
+                "05_architect_solo",
+                "06_architect_co_op",
+                "07_architect_teams",
+                "08_architect_spectate",
+            ],
+        ),
+        (
+            PlayRules::Race,
+            PlaySeat::Observer,
+            [
+                "09_race_solo",
+                "10_race_co_op",
+                "11_race_teams",
+                "12_race_spectate",
+            ],
+        ),
+    ] {
+        for (preset, name) in [
+            PlayPreset::Solo,
+            PlayPreset::CoOp,
+            PlayPreset::TeamRace,
+            PlayPreset::Spectate,
+        ]
+        .into_iter()
+        .zip(names)
+        {
+            shots.push(Shot {
+                setup: Some(PlaySetupDraft {
+                    rules,
+                    seat,
+                    ..PlaySetupDraft::for_preset(preset)
+                }),
+                ..shot(name, GameState::Play)
+            });
+        }
+    }
+    shots.push(Shot {
+        setup: Some(PlaySetupDraft {
+            preset: PlayPreset::Custom,
+            teams: 4,
+            members_per_team: 4,
+            fill_empty_seats: true,
+            seat: PlaySeat::Architect,
+            ..PlaySetupDraft::default()
+        }),
+        ..shot("13_advanced", GameState::PlayAdvanced)
+    });
+    for (rules, seat, entry, names) in [
+        (
+            PlayRules::Ascent,
+            PlaySeat::Observer,
+            "14_observer_entry",
+            [
+                "15_observer_help_1",
+                "16_observer_help_2",
+                "17_observer_help_3",
+                "18_observer_help_4",
+            ],
+        ),
+        (
+            PlayRules::Ascent,
+            PlaySeat::Architect,
+            "19_architect_entry",
+            [
+                "20_architect_help_1",
+                "21_architect_help_2",
+                "22_architect_help_3",
+                "23_architect_help_4",
+            ],
+        ),
+        (
+            PlayRules::Race,
+            PlaySeat::Observer,
+            "24_race_entry",
+            [
+                "25_race_help_1",
+                "26_race_help_2",
+                "27_race_help_3",
+                "28_race_help_4",
+            ],
+        ),
+    ] {
+        shots.push(Shot {
+            setup: Some(PlaySetupDraft {
+                rules,
+                seat,
+                ..PlaySetupDraft::for_preset(PlayPreset::Solo)
+            }),
+            ..shot(entry, GameState::Play)
+        });
+        for (index, name) in names.into_iter().enumerate() {
+            shots.push(Shot {
+                help_action: (index > 0).then_some(OnboardingAction::Next),
+                production_launch: index == 0,
+                extra_settle: if index == 0 { 6.0 } else { 0.0 },
+                ..shot(name, GameState::HexWfc)
+            });
+        }
+        if seat == PlaySeat::Architect {
+            shots.push(Shot {
+                help_action: Some(OnboardingAction::Next),
+                ..shot("23b_architect_desk", GameState::HexWfc)
+            });
+            shots.push(Shot {
+                overlay: Some(MatchOverlayState::Pause(PausePage::Root)),
+                ..shot("23c_architect_pause", GameState::HexWfc)
+            });
+        }
+    }
+    shots
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Phase {
     /// Stage the run facts the late screens read; done once, before the first shot.
@@ -119,7 +263,11 @@ impl FrontendCaptureRequest {
     pub(super) fn new(dir: String) -> Self {
         Self {
             dir: PathBuf::from(dir),
-            shots: sweep(),
+            shots: if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_MENUS").is_some() {
+                menu_sweep()
+            } else {
+                sweep()
+            },
             index: 0,
             phase: Phase::Stage,
             next_at: 0.0,
@@ -152,6 +300,16 @@ fn hold_baseline(request: &mut FrontendCaptureRequest, window: &mut Window) {
         .set_physical_resolution(physical_width, physical_height);
 }
 
+type WidgetBounds<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static WidgetId,
+        &'static ComputedNode,
+        &'static UiGlobalTransform,
+    ),
+>;
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn capture_frontend_progress(
     time: Res<Time>,
@@ -160,6 +318,10 @@ pub(super) fn capture_frontend_progress(
     mut window: Single<&mut Window, With<PrimaryWindow>>,
     page_actions: Query<(Entity, &SettingsPageAction)>,
     mut career: ResMut<crate::flow::Career>,
+    mut setup: ResMut<PlaySetupDraft>,
+    help_actions: Query<(Entity, &OnboardingAction)>,
+    play_actions: Query<(Entity, &crate::screens::play::PlayAction)>,
+    widget_bounds: WidgetBounds,
     mut next: ResMut<NextState<GameState>>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
@@ -187,9 +349,22 @@ pub(super) fn capture_frontend_progress(
             request.phase = Phase::Enter;
         }
         Phase::Enter => {
+            if let Some(draft) = &request.shots[request.index].setup {
+                *setup = draft.clone();
+            }
             let target = request.shots[request.index].state;
             if *state.get() == target {
                 request.phase = Phase::Act;
+            } else if request.shots[request.index].production_launch {
+                // The entry proof uses the same semantic Start and prepared handoff
+                // as the player. Leave Loading in charge until it admits the match.
+                if *state.get() == GameState::Play {
+                    let (entity, _) = play_actions
+                        .iter()
+                        .find(|(_, action)| **action == crate::screens::play::PlayAction::Launch)
+                        .expect("Play exposes the real launch action");
+                    commands.trigger(Activate { entity });
+                }
             } else {
                 // Entering the canonical match without going through Loading is the
                 // private harness path, and it requires a direct driver. It also gives
@@ -211,7 +386,20 @@ pub(super) fn capture_frontend_progress(
             {
                 commands.trigger(Activate { entity });
             }
+            if let Some(wanted) = shot.help_action {
+                let (entity, _) = help_actions
+                    .iter()
+                    .find(|(_, action)| **action == wanted)
+                    .expect("role help must be visible for its capture action");
+                commands.trigger(Activate { entity });
+            }
             if let Some(overlay) = shot.overlay {
+                if let Some((entity, _)) = help_actions
+                    .iter()
+                    .find(|(_, action)| **action == OnboardingAction::Skip)
+                {
+                    commands.trigger(Activate { entity });
+                }
                 commands.insert_resource(overlay);
             }
             request.next_at = elapsed + SETTLE + shot.extra_settle;
@@ -234,6 +422,15 @@ pub(super) fn capture_frontend_progress(
                 &mut commands,
                 path.to_string_lossy().into_owned(),
             );
+            let bounds: Vec<_> = widget_bounds.iter().filter(|(_, node, _)| node.size().min_element() > 0.0).map(|(id, node, transform)| {
+                let rect = Rect::from_center_size(transform.affine().translation, node.size());
+                serde_json::json!({ "widget": format!("{id:?}"), "min": [rect.min.x, rect.min.y], "max": [rect.max.x, rect.max.y] })
+            }).collect();
+            std::fs::write(
+                path.with_extension("bounds.json"),
+                serde_json::to_vec_pretty(&bounds).expect("widget bounds serialize"),
+            )
+            .expect("capture bounds are writable");
             request.index += 1;
             if request.index >= request.shots.len() {
                 request.next_at = elapsed + 1.0;

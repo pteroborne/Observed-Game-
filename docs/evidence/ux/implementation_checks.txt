@@ -1,0 +1,37 @@
+Menu and role-entry implementation checks — 2026-10-03
+Branch: codex/end-to-end-ux
+Revision: implementation commit containing this record and source hashes in implementation_manifest.json.
+Cargo cache: /srv/build-cache/cargo; Cargo runs serialized across worktrees.
+
+Required code gates:
+  cargo fmt --all: PASS
+  cargo dev-clippy: PASS (workspace, all targets, -D warnings)
+  cargo dev-test: PASS — 2678 passed, 0 failed, 45 existing ignored
+    observed_game: 547 passed, 0 failed, 6 existing ignored
+    observed_ui: 5 passed, 0 failed
+  git diff --check and git diff --cached --check: PASS
+  Changed documentation links: PASS
+
+Additional validation:
+  cargo build -p observed_game --features bevy/dynamic_linking: PASS
+  Production frontend menu capture driver: exit 0
+  32 PNGs and 32 widget-bounds files retained separately from historical audit evidence.
+  All PNGs: 1280x800 physical pixels; all visible widget rectangles within [4,4]..[1276,796].
+  All screens visually inspected for readable text, overlap, focus treatment and camera layering.
+  Final refresh: 29 images byte-identical to inspected set; 3 changed images re-inspected.
+  Image/bounds/source SHA-256 values verified against implementation_manifest.json.
+  Each role reached help via production PlayAction::Launch and asynchronous Loading.
+  Keyboard integration regressions for disabled role navigation, remembered focus,
+  four-page help completion, offline tick pause, reopening and state/camera cleanup: PASS.
+
+One earlier final repeat ended with SIGTERM without a test failure; the subsequent
+complete workspace run above passed. It is the recorded gate result.
+
+The extended cargo dev-test-all suite was not run for this presentation change.
+Its known ignored asserting hex_full_match_soak exception remains unresolved;
+this record makes no claim that the extended suite is green.
+
+Captures stage menu variants and Architect pause; help Next uses semantic actions.
+Career/profile/replay data in the capture driver are synthetic fixtures.
+Physical controller use, real connected LAN continuity, loading cancellation/retry
+hands-on acceptance, and a completed human Ascent session remain open.

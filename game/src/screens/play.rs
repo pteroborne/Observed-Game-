@@ -1,6 +1,9 @@
 //! Preset-first Play Hub and its deliberately separate advanced setup page.
 
-use bevy::{prelude::*, ui::InteractionDisabled, ui_widgets::Activate};
+use bevy::{
+    input_focus::tab_navigation::TabIndex, prelude::*, ui::InteractionDisabled,
+    ui_widgets::Activate,
+};
 
 use super::widgets::{
     self, FocusScope, FocusScopeId, WidgetId, WidgetLabel, WidgetSpec, activation_enabled,
@@ -13,14 +16,17 @@ use crate::hex_wfc::{
 use crate::play_setup::{
     LaunchContext, PlayPreset, PlayRules, PlaySeat, PlaySetupDraft, save_play_setup,
 };
-use crate::view::theme::{ACCENT, DIM, TITLE, panel, screen_root, summary_panel, text};
+use crate::view::theme::{ACCENT, DIM, TITLE, menu_panel, panel, screen_root, text};
 
 const HUB_SCOPE: FocusScopeId = FocusScopeId("play_hub");
 const SOLO: WidgetId = WidgetId::named("play.preset.solo");
 const CO_OP: WidgetId = WidgetId::named("play.preset.co_op");
 const TEAM_RACE: WidgetId = WidgetId::named("play.preset.team_race");
 const SPECTATE: WidgetId = WidgetId::named("play.preset.spectate");
-const RULES: WidgetId = WidgetId::named("play.rules");
+const ASCENT: WidgetId = WidgetId::named("play.rules.ascent");
+const RACE: WidgetId = WidgetId::named("play.rules.race");
+const OBSERVER: WidgetId = WidgetId::named("play.role.observer");
+const ARCHITECT: WidgetId = WidgetId::named("play.role.architect");
 const ADVANCED: WidgetId = WidgetId::named("play.advanced");
 const START: WidgetId = WidgetId::named("play.start");
 const LAN: WidgetId = WidgetId::named("play.lan");
@@ -37,7 +43,8 @@ const ADVANCED_BACK: WidgetId = WidgetId::named("play.advanced.back");
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PlayAction {
     SelectPreset(PlayPreset),
-    CycleRules,
+    SelectRules(PlayRules),
+    SelectSeat(PlaySeat),
     Advanced,
     Launch,
     Lan,
@@ -58,62 +65,75 @@ pub(crate) enum AdvancedAction {
 pub(crate) struct PlaySummary;
 
 pub(crate) fn setup_hub(mut commands: Commands, setup: Res<PlaySetupDraft>) {
-    commands
-        .spawn(screen_root(GameState::Play))
-        .with_children(|root| {
-            root.spawn(text("PLAY", 44.0, TITLE));
-            root.spawn(text(
-                "Choose the kind of run first. Match rules stay visible before launch.",
-                16.0,
-                DIM,
-            ));
-            root.spawn(summary_panel()).with_children(|summary| {
-                summary.spawn((PlaySummary, text(play_summary(&setup), 17.0, ACCENT)));
+    commands.spawn((
+        screen_root(GameState::Play),
+        widgets::focus_scope(FocusScope::grid(HUB_SCOPE, START, BACK, 2)),
+    )).with_children(|root| {
+        root.spawn(text("ENTER THE FACILITY", 38.0, TITLE));
+        root.spawn(text("Choose your role, then the company you keep.", 16.0, DIM));
+        root.spawn(Node { column_gap: px(24), align_items: AlignItems::Stretch, ..default() })
+            .with_children(|columns| {
+                columns.spawn(menu_panel(480.0)).with_children(|choices| {
+                    choices.spawn(text("RULES", 14.0, ACCENT));
+                    choices.spawn(Node { column_gap: px(8), ..default() }).with_children(|row| {
+                        for (order, id, rules) in [(0, ASCENT, PlayRules::Ascent), (1, RACE, PlayRules::Race)] {
+                            widgets::spawn_button(row, WidgetSpec::enabled(id, HUB_SCOPE, order, selection_label(setup.rules == rules, rules_choice_label(rules))).with_size(208.0, 46.0), PlayAction::SelectRules(rules));
+                        }
+                    });
+                    choices.spawn(text("YOUR ROLE IN ASCENT", 14.0, ACCENT));
+                    choices.spawn(Node { column_gap: px(8), ..default() }).with_children(|row| {
+                        for (order, id, seat) in [(2, OBSERVER, PlaySeat::Observer), (3, ARCHITECT, PlaySeat::Architect)] {
+                            let mut spec = WidgetSpec::enabled(id, HUB_SCOPE, order, seat_label(seat, &setup)).with_size(208.0, 76.0);
+                            if !roles_available(&setup) { spec.disabled = true; }
+                            widgets::spawn_button(row, spec, PlayAction::SelectSeat(seat));
+                        }
+                    });
+                    choices.spawn((RoleHint, text(role_hint(&setup), 14.0, DIM)));
+                    choices.spawn(text("PLAY WITH", 14.0, ACCENT));
+                    for presets in [
+                        [(4, SOLO, PlayPreset::Solo), (5, CO_OP, PlayPreset::CoOp)],
+                        [(6, TEAM_RACE, PlayPreset::TeamRace), (7, SPECTATE, PlayPreset::Spectate)],
+                    ] {
+                        choices.spawn(Node { column_gap: px(8), ..default() }).with_children(|row| {
+                            for (order, id, preset) in presets {
+                                widgets::spawn_button(row, WidgetSpec::enabled(id, HUB_SCOPE, order, preset_label(preset, &setup)).with_size(208.0, 66.0), PlayAction::SelectPreset(preset));
+                            }
+                        });
+                    }
+                    choices.spawn(Node { column_gap: px(8), ..default() }).with_children(|row| {
+                        widgets::spawn_button(row, WidgetSpec::enabled(ADVANCED, HUB_SCOPE, 8, "Advanced setup").with_size(208.0, 54.0), PlayAction::Advanced);
+                        widgets::spawn_button(row, WidgetSpec::enabled(LAN, HUB_SCOPE, 9, "LAN play").with_size(208.0, 54.0), PlayAction::Lan);
+                    });
+                });
+                columns.spawn(menu_panel(440.0)).with_children(|run| {
+                    run.spawn(text("YOUR RUN", 14.0, ACCENT));
+                    run.spawn((PlaySummary, text(play_summary(&setup), 17.0, TITLE), Node { max_width: px(384), min_height: px(265), ..default() }));
+                    run.spawn(text("LAN: joining uses the host's rules. Claim your team and Architect desk in the lobby.", 14.0, DIM));
+                });
             });
-            root.spawn((
-                panel(),
-                widgets::focus_scope(FocusScope::screen(HUB_SCOPE, SOLO, BACK)),
-            ))
-            .with_children(|panel| {
-                for (order, id, preset) in [
-                    (0, SOLO, PlayPreset::Solo),
-                    (1, CO_OP, PlayPreset::CoOp),
-                    (2, TEAM_RACE, PlayPreset::TeamRace),
-                    (3, SPECTATE, PlayPreset::Spectate),
-                ] {
-                    widgets::spawn_button(
-                        panel,
-                        WidgetSpec::enabled(id, HUB_SCOPE, order, preset_label(preset, &setup)),
-                        PlayAction::SelectPreset(preset),
-                    );
-                }
-                widgets::spawn_button(
-                    panel,
-                    WidgetSpec::enabled(RULES, HUB_SCOPE, 4, rules_label(&setup)),
-                    PlayAction::CycleRules,
-                );
-                widgets::spawn_button(
-                    panel,
-                    WidgetSpec::enabled(ADVANCED, HUB_SCOPE, 5, "Advanced setup"),
-                    PlayAction::Advanced,
-                );
-                widgets::spawn_button(
-                    panel,
-                    WidgetSpec::enabled(START, HUB_SCOPE, 6, launch_label(&setup)),
-                    PlayAction::Launch,
-                );
-                widgets::spawn_button(
-                    panel,
-                    WidgetSpec::enabled(LAN, HUB_SCOPE, 7, "LAN play"),
-                    PlayAction::Lan,
-                );
-                widgets::spawn_button(
-                    panel,
-                    WidgetSpec::enabled(BACK, HUB_SCOPE, 8, "Back"),
-                    PlayAction::Back,
-                );
-            });
+        root.spawn(Node { column_gap: px(24), ..default() }).with_children(|row| {
+            widgets::spawn_button(row, WidgetSpec::enabled(BACK, HUB_SCOPE, 10, "Back").with_size(480.0, 54.0), PlayAction::Back);
+            widgets::spawn_button(row, WidgetSpec::enabled(START, HUB_SCOPE, 11, launch_label(&setup)).with_size(440.0, 54.0), PlayAction::Launch);
         });
+        root.spawn(text("Arrow keys / D-pad / stick / pointer | Enter / A select | Esc / B back", 14.0, DIM));
+    });
+}
+
+#[derive(Component)]
+pub(crate) struct RoleHint;
+
+fn roles_available(setup: &PlaySetupDraft) -> bool {
+    setup.rules == PlayRules::Ascent && setup.preset != PlayPreset::Spectate
+}
+
+fn role_hint(setup: &PlaySetupDraft) -> &'static str {
+    if setup.preset == PlayPreset::Spectate {
+        "Bot view. Your playable role is remembered."
+    } else if setup.rules == PlayRules::Race {
+        "Facility race uses an Observer body."
+    } else {
+        "Observer: traverse. Architect: build from the map."
+    }
 }
 
 pub(crate) fn setup_advanced(mut commands: Commands, setup: Res<PlaySetupDraft>) {
@@ -122,7 +142,7 @@ pub(crate) fn setup_advanced(mut commands: Commands, setup: Res<PlaySetupDraft>)
         .with_children(|root| {
             root.spawn(text("ADVANCED SETUP", 42.0, TITLE));
             root.spawn(text(
-                "One deterministic roster feeds local play and LAN hosting. Maximum 16 seats.",
+                "Choose the roster for local play or LAN hosting. Maximum 16 Observer bodies.",
                 15.0,
                 DIM,
             ));
@@ -155,9 +175,9 @@ pub(crate) fn setup_advanced(mut commands: Commands, setup: Res<PlaySetupDraft>)
                     );
                 }
             });
-            root.spawn((PlaySummary, text(play_summary(&setup), 16.0, ACCENT)));
+            root.spawn((PlaySummary, text(advanced_summary(&setup), 16.0, ACCENT), Node { width: px(920), ..default() }));
             root.spawn(text(
-                "Activate a row to cycle it. Empty local seats become bots only when bot fill is on.",
+                "Activate a row to cycle it. Local no-fill uses one Observer body; an Architect's body seats are bot-driven.",
                 14.0,
                 DIM,
             ));
@@ -184,9 +204,15 @@ pub(crate) fn activate_hub(
             setup.select_preset(preset);
             save_play_setup(&setup);
         }
-        PlayAction::CycleRules => {
-            (setup.rules, setup.seat) = crate::play_setup::next_rules(setup.rules, setup.seat);
+        PlayAction::SelectRules(rules) => {
+            setup.rules = rules;
             save_play_setup(&setup);
+        }
+        PlayAction::SelectSeat(seat) => {
+            if roles_available(&setup) {
+                setup.seat = seat;
+                save_play_setup(&setup);
+            }
         }
         PlayAction::Advanced => next.set(GameState::PlayAdvanced),
         PlayAction::Launch => launch_local(&mut commands, &mut sequence, &setup, &mut next),
@@ -251,16 +277,35 @@ pub(crate) fn activate_advanced(
 
 pub(crate) fn refresh_hub(
     setup: Res<PlaySetupDraft>,
-    mut preset_buttons: Query<(&PlayAction, &mut WidgetLabel)>,
-    mut summaries: Query<&mut Text, With<PlaySummary>>,
+    mut commands: Commands,
+    mut preset_buttons: Query<(Entity, &PlayAction, &mut WidgetLabel)>,
+    mut summaries: Query<&mut Text, (With<PlaySummary>, Without<RoleHint>)>,
+    mut hints: Query<&mut Text, (With<RoleHint>, Without<PlaySummary>)>,
 ) {
     if !setup.is_changed() {
         return;
     }
-    for (action, mut label) in &mut preset_buttons {
+    for (entity, action, mut label) in &mut preset_buttons {
+        if let PlayAction::SelectSeat(seat) = action {
+            let order = if *seat == PlaySeat::Observer { 2 } else { 3 };
+            if roles_available(&setup) {
+                commands
+                    .entity(entity)
+                    .remove::<InteractionDisabled>()
+                    .insert(TabIndex(order));
+            } else {
+                commands
+                    .entity(entity)
+                    .insert(InteractionDisabled)
+                    .remove::<TabIndex>();
+            }
+        }
         label.0 = match action {
             PlayAction::SelectPreset(preset) => preset_label(*preset, &setup),
-            PlayAction::CycleRules => rules_label(&setup),
+            PlayAction::SelectRules(rules) => {
+                selection_label(setup.rules == *rules, rules_choice_label(*rules))
+            }
+            PlayAction::SelectSeat(seat) => seat_label(*seat, &setup),
             PlayAction::Launch => launch_label(&setup),
             PlayAction::Advanced => "Advanced setup".to_string(),
             PlayAction::Lan => "LAN play".to_string(),
@@ -269,6 +314,9 @@ pub(crate) fn refresh_hub(
     }
     for mut summary in &mut summaries {
         **summary = play_summary(&setup);
+    }
+    for mut hint in &mut hints {
+        **hint = role_hint(&setup).to_string();
     }
 }
 
@@ -284,7 +332,7 @@ pub(crate) fn refresh_advanced(
         label.0 = advanced_label(*action, &setup);
     }
     for mut summary in &mut summaries {
-        **summary = play_summary(&setup);
+        **summary = advanced_summary(&setup);
     }
 }
 
@@ -318,30 +366,69 @@ fn launch_local(
 /// reading — and it is spelled in ASCII because the shipped default font is a subset
 /// with no geometric shapes: `◆`/`◇` rendered as blank tofu, which made the selected
 /// preset invisible at the 1280×800 gate.
-fn preset_label(preset: PlayPreset, setup: &PlaySetupDraft) -> String {
-    format!(
-        "{} {}",
-        if setup.preset == preset { "[*]" } else { "[ ]" },
-        preset.label()
-    )
-}
-
-fn launch_label(setup: &PlaySetupDraft) -> String {
-    match setup.rules {
-        PlayRules::Race => format!("Start {}", setup.preset.label()),
-        PlayRules::Ascent => format!("Start {}: {}", setup.preset.label(), setup.rules.label()),
+fn rules_choice_label(rules: PlayRules) -> &'static str {
+    match rules {
+        PlayRules::Ascent => "Ascent",
+        PlayRules::Race => "Facility race",
     }
 }
 
-fn rules_label(setup: &PlaySetupDraft) -> String {
-    match (setup.rules, setup.seat) {
-        (PlayRules::Race, _) => format!("Rules: {}", setup.rules.label()),
-        (PlayRules::Ascent, PlaySeat::Observer) => {
-            format!("Rules: {}, as an Observer", setup.rules.label())
+fn advanced_summary(setup: &PlaySetupDraft) -> String {
+    let Ok(validated) = setup.validate() else {
+        return setup.summary();
+    };
+    let config = validated.local_match_config(observed_facility::hex_wfc::HexWfcConfig::default());
+    format!(
+        "{} | {}\nLocal: {} team(s) x {} Observer bodies\nLAN host: {} team(s) x {} bodies | empty seats {}",
+        setup.rules.label(),
+        launch_label(setup),
+        config.teams,
+        config.members_per_team,
+        setup.teams,
+        setup.members_per_team,
+        if setup.fill_empty_seats {
+            "bot-filled"
+        } else {
+            "require humans"
         }
-        (PlayRules::Ascent, PlaySeat::Architect) => {
-            format!("Rules: {}, as the Architect", setup.rules.label())
+    )
+}
+
+fn selection_label(selected: bool, label: &str) -> String {
+    format!("{} {label}", if selected { "[*]" } else { "[ ]" })
+}
+
+fn preset_name(preset: PlayPreset, rules: PlayRules) -> &'static str {
+    if preset == PlayPreset::TeamRace && rules == PlayRules::Ascent {
+        "Team competition"
+    } else {
+        preset.label()
+    }
+}
+
+fn preset_label(preset: PlayPreset, setup: &PlaySetupDraft) -> String {
+    selection_label(setup.preset == preset, preset_name(preset, setup.rules))
+}
+
+fn seat_label(seat: PlaySeat, setup: &PlaySetupDraft) -> String {
+    let label = match seat {
+        PlaySeat::Observer => "Observer\nTraverse",
+        PlaySeat::Architect => "Architect\nBuild from map",
+    };
+    selection_label(roles_available(setup) && setup.seat == seat, label)
+}
+
+fn launch_label(setup: &PlaySetupDraft) -> String {
+    if setup.preset == PlayPreset::Spectate {
+        "Watch bot match".into()
+    } else if setup.rules == PlayRules::Race {
+        "Start facility race".into()
+    } else {
+        match setup.seat {
+            PlaySeat::Observer => "Start as Observer",
+            PlaySeat::Architect => "Start as Architect",
         }
+        .into()
     }
 }
 
@@ -349,7 +436,7 @@ fn advanced_label(action: AdvancedAction, setup: &PlaySetupDraft) -> String {
     match action {
         AdvancedAction::CycleTeams => format!("Teams: {}", setup.teams),
         AdvancedAction::CycleTeamSize => {
-            format!("Seats per team: {}", setup.members_per_team)
+            format!("Observer bodies per team: {}", setup.members_per_team)
         }
         AdvancedAction::ToggleBotFill => format!(
             "Fill empty seats with bots: {}",
@@ -365,50 +452,72 @@ fn advanced_label(action: AdvancedAction, setup: &PlaySetupDraft) -> String {
 }
 
 fn play_summary(setup: &PlaySetupDraft) -> String {
-    let mut summary = format!(
-        "{}\n{}\n{}",
-        setup.preset.label(),
-        setup.preset.description(),
-        setup.summary()
+    let Ok(validated) = setup.validate() else {
+        return setup.summary();
+    };
+    let config = validated.local_match_config(observed_facility::hex_wfc::HexWfcConfig::default());
+    let roster = format!(
+        "{} team{} x {} Observer bod{}",
+        config.teams,
+        if config.teams == 1 { "" } else { "s" },
+        config.members_per_team,
+        if config.members_per_team == 1 {
+            "y"
+        } else {
+            "ies"
+        }
     );
-    if !setup.fill_empty_seats && setup.teams.saturating_mul(setup.members_per_team) > 1 {
-        summary.push_str("\nLocal: one controllable seat | LAN: remaining seats require humans");
-    }
-    match (setup.rules, setup.seat) {
-        (PlayRules::Ascent, PlaySeat::Observer) => summary.push_str(
-            "\nEach team's Architect is a bot that builds and repairs with cards. A catch is \
-             prison; LAN still plays the race.",
-        ),
-        (PlayRules::Ascent, PlaySeat::Architect) => summary.push_str(
-            "\nYou are your team's Architect: no body, a map, and a hand of cards. Your \
-             Observers are bots. LAN still plays the race.",
-        ),
-        (PlayRules::Race, _) => {}
-    }
-    summary
+    let role = if validated.spectator {
+        "You: bot view"
+    } else if setup.rules == PlayRules::Ascent && setup.seat == PlaySeat::Architect {
+        "You: Architect desk"
+    } else {
+        "You: Observer body"
+    };
+    let goal = match setup.rules {
+        PlayRules::Race => "Collect keystones, sync the station, regroup at the exit.",
+        PlayRules::Ascent => {
+            "Bring all your Observers to the summit.\nCaught: prison. Falls: corruption."
+        }
+    };
+    let architect = if setup.rules == PlayRules::Ascent {
+        if setup.seat == PlaySeat::Architect && !validated.spectator {
+            if config.teams == 1 {
+                "Architect desk: you".to_string()
+            } else {
+                format!(
+                    "Architects: you + {} bot desk{}",
+                    config.teams - 1,
+                    if config.teams == 2 { "" } else { "s" }
+                )
+            }
+        } else {
+            format!(
+                "Architects: {} separate bot desk{}",
+                config.teams,
+                if config.teams == 1 { "" } else { "s" }
+            )
+        }
+    } else {
+        "Unwatched connections can change.".to_string()
+    };
+    let bots = config.teams * config.members_per_team
+        - u8::from(
+            !validated.spectator
+                && !(setup.rules == PlayRules::Ascent && setup.seat == PlaySeat::Architect),
+        );
+    let bot_roster = format!(
+        "{bots} bot Observer {}",
+        if bots == 1 { "body" } else { "bodies" }
+    );
+    format!(
+        "{} | {}\n\n{roster}\n{role}\n{bot_roster}\n{architect}\n\n{goal}\nGuardian {}",
+        setup.rules.label(),
+        preset_name(setup.preset, setup.rules),
+        if setup.guardian { "on" } else { "off" }
+    )
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn advanced_cycles_never_exceed_sixteen_seats() {
-        for teams in 1..=16 {
-            for size in 1..=16 {
-                if u16::from(teams) * u16::from(size) <= 16 {
-                    let draft = PlaySetupDraft {
-                        preset: PlayPreset::Custom,
-                        teams,
-                        members_per_team: size,
-                        fill_empty_seats: true,
-                        guardian: true,
-                        rules: crate::play_setup::PlayRules::Race,
-                        seat: crate::play_setup::PlaySeat::Observer,
-                    };
-                    assert!(draft.validate().is_ok());
-                }
-            }
-        }
-    }
-}
+#[path = "play_tests.rs"]
+mod tests;

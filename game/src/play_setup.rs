@@ -61,8 +61,7 @@ pub enum PlayRules {
     #[default]
     Race,
     /// Architect Ascent: each team's Architect rewrites the facility with cards, a catch
-    /// is prison, and the first team to bring everyone to the summit wins. Local play only
-    /// for now; LAN still plays the race.
+    /// is prison, and the first team to bring everyone to the summit wins.
     Ascent,
 }
 
@@ -86,16 +85,6 @@ pub enum PlaySeat {
     Architect,
 }
 
-/// The Rules row cycles these: the race, then Ascent from each seat.
-#[must_use]
-pub const fn next_rules(rules: PlayRules, seat: PlaySeat) -> (PlayRules, PlaySeat) {
-    match (rules, seat) {
-        (PlayRules::Race, _) => (PlayRules::Ascent, PlaySeat::Observer),
-        (PlayRules::Ascent, PlaySeat::Observer) => (PlayRules::Ascent, PlaySeat::Architect),
-        (PlayRules::Ascent, PlaySeat::Architect) => (PlayRules::Race, PlaySeat::Observer),
-    }
-}
-
 /// Editable setup retained when the player moves between frontend screens.
 #[derive(Resource, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -105,13 +94,17 @@ pub struct PlaySetupDraft {
     pub members_per_team: u8,
     pub fill_empty_seats: bool,
     pub guardian: bool,
+    #[serde(default)]
     pub rules: PlayRules,
     pub seat: PlaySeat,
 }
 
 impl Default for PlaySetupDraft {
     fn default() -> Self {
-        Self::for_preset(PlayPreset::Solo)
+        Self {
+            rules: PlayRules::Ascent,
+            ..Self::for_preset(PlayPreset::Solo)
+        }
     }
 }
 
@@ -469,6 +462,18 @@ const fn plural_suffix(count: u8) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fresh_default_is_ascent_but_saved_race_and_roles_survive() {
+        assert_eq!(PlaySetupDraft::default().rules, PlayRules::Ascent);
+        let mut saved = PlaySetupDraft::for_preset(PlayPreset::Solo);
+        saved.seat = PlaySeat::Architect;
+        let json = serde_json::to_string(&saved).unwrap();
+        let restored: PlaySetupDraft = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.normalized_after_load(), saved);
+        let old: PlaySetupDraft = serde_json::from_str(r#"{"preset":"solo"}"#).unwrap();
+        assert_eq!(old.rules, PlayRules::Race);
+    }
 
     #[test]
     fn presets_are_valid_and_have_stable_rosters() {

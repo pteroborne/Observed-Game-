@@ -5,7 +5,7 @@
 //! and completion is persisted in [`crate::settings::UserPreferences`]. It never
 //! reads physical input and it refuses to spawn outside [`GameState::HexWfc`].
 
-use bevy::{prelude::*, ui::InteractionDisabled, ui_widgets::Activate};
+use bevy::{ecs::system::SystemParam, prelude::*, ui::InteractionDisabled, ui_widgets::Activate};
 
 use super::widgets::{
     self, FocusScope, FocusScopeId, UiInputCapture, WidgetId, WidgetLabel, WidgetSpec,
@@ -13,8 +13,8 @@ use super::widgets::{
 };
 use crate::GameState;
 use crate::hex_wfc::HexOnboardingGate;
-use crate::play_setup::{PlayPreset, PlaySetupDraft};
-use crate::settings::{Settings, key_name, save_settings};
+use crate::play_setup::{PlayPreset, PlayRules, PlaySeat, PlaySetupDraft};
+use crate::settings::{OnboardingKind, Settings, key_name, save_settings};
 use crate::view::theme::{ACCENT, BORDER, DIM, PANEL, TITLE, WARNING, text};
 
 const SCOPE: FocusScopeId = FocusScopeId("hex_onboarding");
@@ -31,8 +31,60 @@ pub(crate) struct OnboardingBeat {
 
 /// Build the exact first-run copy from the active keyboard bindings. Controller
 /// labels describe the fixed mapping in `screens::input::read_gamepad_match`.
-pub(crate) fn onboarding_beats(settings: &Settings) -> Vec<OnboardingBeat> {
+pub(crate) fn onboarding_beats(settings: &Settings, kind: OnboardingKind) -> Vec<OnboardingBeat> {
     let keys = &settings.bindings;
+    if kind == OnboardingKind::Architect {
+        return vec![
+            OnboardingBeat { title: "YOUR TEAM NEEDS A ROUTE", body: "You have no body. Build and repair a route from the desk so every Observer on your team can reach the summit. Your local Observers are bots; on LAN your teammates drive their own bodies.".into() },
+            OnboardingBeat { title: "PLAY A CARD", body: "Pick a card with 1-5 or click it. Click the board to aim; click again, Space, Enter, or PLAY confirms. Q/E rotates. Use [ and ] or the floor buttons to change floors. The desk shows why a play is refused.".into() },
+            OnboardingBeat { title: "ANSWER YOUR OBSERVERS", body: "Watch your Observers and their requests. F, controller north, or ANSWER acknowledges the oldest unanswered request. Existing observation and protection can block your edits. A catch means prison; a fall adds corruption. Repair the route and help your team recover.".into() },
+            OnboardingBeat { title: "THE SUMMIT", body: format!("Bring the whole team to the summit. R requests another card when your team's resources allow it. {} or Start opens the match menu. Keyboard, pointer, and controller desk controls remain visible on screen.", key_name(keys.pause)) },
+        ];
+    }
+    if kind == OnboardingKind::Observer {
+        return vec![
+            OnboardingBeat {
+                title: "CLIMB TOGETHER",
+                body: format!(
+                    "Bring every Observer to the summit; your Architect builds the route. {}/{}/{}/{} move; mouse or {}/{}/{}/{} looks. {} jumps, {} sprints. Controller: sticks move/look, south jumps, left trigger or stick click sprints.",
+                    key_name(keys.move_forward),
+                    key_name(keys.move_left),
+                    key_name(keys.move_back),
+                    key_name(keys.move_right),
+                    key_name(keys.look_up),
+                    key_name(keys.look_left),
+                    key_name(keys.look_down),
+                    key_name(keys.look_right),
+                    key_name(keys.jump),
+                    key_name(keys.sprint)
+                ),
+            },
+            OnboardingBeat {
+                title: "ASK FOR A ROUTE",
+                body: format!(
+                    "{} or D-pad left asks your Architect for help. The request describes your current need, such as a route or rescue. Your Architect is a bot in local Observer play; LAN teammates can claim the desk.",
+                    key_name(keys.ask)
+                ),
+            },
+            OnboardingBeat {
+                title: "PROTECT YOUR CROSSING",
+                body: format!(
+                    "{} uses mechanisms. {} deploys an anchor lantern at the threshold you are looking at; {} recovers it. Controller: west uses, left bumper anchors, east recovers. Observation and protection constrain the Architect's edits.",
+                    key_name(keys.interact),
+                    key_name(keys.torch),
+                    key_name(keys.recover_lantern)
+                ),
+            },
+            OnboardingBeat {
+                title: "RECOVER AND REGROUP",
+                body: format!(
+                    "A Guardian catch puts you in prison. Falls add corruption; recover and help your teammates continue. {} opens the survivor map; right trigger or Select does too. {} or Start opens the match menu. The goal is the summit, together.",
+                    key_name(keys.tac_map),
+                    key_name(keys.pause)
+                ),
+            },
+        ];
+    }
     vec![
         OnboardingBeat {
             title: "READ THE FACILITY",
@@ -99,6 +151,21 @@ pub(crate) enum OnboardingAction {
 #[derive(Resource, Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct OnboardingState {
     pub(crate) step: usize,
+    pub(crate) kind: OnboardingKind,
+}
+
+/// A semantic pause-menu request to review the current rules and role again.
+#[derive(Resource)]
+pub(crate) struct RoleHelpRequest;
+
+pub(crate) fn request_help(
+    commands: &mut Commands,
+    gate: &mut HexOnboardingGate,
+    capture: &mut UiInputCapture,
+) {
+    gate.active = true;
+    capture.capture_for_scope(CAPTURE_OWNER, SCOPE);
+    commands.insert_resource(RoleHelpRequest);
 }
 
 type OnboardingBodyQuery<'w, 's> = Query<
@@ -115,29 +182,56 @@ type OnboardingBodyQuery<'w, 's> = Query<
 /// Spawn only for a fresh/revised onboarding in the canonical production match.
 /// Keeping the state check here as well as in plugin scheduling prevents an accidental
 /// future registration from reviving onboarding in the deprecated Match fixture.
-pub(crate) fn spawn(
-    mut commands: Commands,
-    current: Res<State<GameState>>,
-    settings: Res<Settings>,
-    play_setup: Res<PlaySetupDraft>,
-    lan: Res<crate::lan::LanRuntime>,
-    mut gate: ResMut<HexOnboardingGate>,
-    mut capture: ResMut<UiInputCapture>,
-) {
+#[derive(SystemParam)]
+pub(crate) struct OnboardingSpawnContext<'w> {
+    current: Res<'w, State<GameState>>,
+    settings: Res<'w, Settings>,
+    play_setup: Res<'w, PlaySetupDraft>,
+    lan: Res<'w, crate::lan::LanRuntime>,
+    gate: ResMut<'w, HexOnboardingGate>,
+    capture: ResMut<'w, UiInputCapture>,
+    requested: Option<Res<'w, RoleHelpRequest>>,
+    existing: Option<Res<'w, OnboardingState>>,
+    request: Option<Res<'w, crate::hex_wfc::loading::HexLaunchRequest>>,
+}
+
+pub(crate) fn spawn(mut commands: Commands, context: OnboardingSpawnContext) {
+    let OnboardingSpawnContext {
+        current,
+        settings,
+        play_setup,
+        lan,
+        mut gate,
+        mut capture,
+        requested,
+        existing,
+        request,
+    } = context;
+    let replay = requested.is_some();
+    commands.remove_resource::<RoleHelpRequest>();
+    if existing.is_some() {
+        return;
+    }
+    let networked = request.as_ref().is_some_and(|request| request.networked);
+    let spectator = request
+        .as_ref()
+        .map_or(play_setup.preset == PlayPreset::Spectate, |request| {
+            request.spectator
+        });
+    let kind = help_kind(&play_setup, &lan, networked);
     if *current.get() != GameState::HexWfc
-        || !settings.needs_onboarding()
-        || play_setup.preset == PlayPreset::Spectate
+        || (!replay && !settings.needs_help(kind))
+        || (!replay && spectator)
         || evidence_capture_active()
     {
         return;
     }
 
-    let beats = onboarding_beats(&settings);
+    let beats = onboarding_beats(&settings, kind);
     let first = &beats[0];
-    let networked = lan.client.is_some();
     gate.active = true;
-    capture.capture(CAPTURE_OWNER);
-    commands.insert_resource(OnboardingState::default());
+    capture.capture_for_scope(CAPTURE_OWNER, SCOPE);
+    commands.insert_resource(OnboardingState { step: 0, kind });
     commands
         .spawn((
             OnboardingPanel,
@@ -179,7 +273,7 @@ pub(crate) fn spawn(
             .with_children(|panel| {
                 panel.spawn((
                     OnboardingProgress,
-                    text(progress_label(0, beats.len()), 14.0, ACCENT),
+                    text(progress_label(0, beats.len(), kind), 14.0, ACCENT),
                 ));
                 panel.spawn((OnboardingTitle, text(first.title, 34.0, TITLE)));
                 panel.spawn((
@@ -192,7 +286,7 @@ pub(crate) fn spawn(
                     },
                 ));
                 panel.spawn(text(
-                    "Connections can refactor only when unobserved and unprotected. The frame light reports an anchor lock-not whether someone is looking.",
+                    "Unwatched, unprotected connections can change. Frame lights show anchor protection; observation is a separate rule.",
                     14.0,
                     DIM,
                 ));
@@ -205,18 +299,18 @@ pub(crate) fn spawn(
                 }
                 widgets::spawn_button(
                     panel,
-                    WidgetSpec::enabled(NEXT, SCOPE, 0, next_label(0, beats.len()))
+                    WidgetSpec::enabled(NEXT, SCOPE, 0, next_label(0, beats.len(), kind))
                         .with_size(520.0, 50.0),
                     OnboardingAction::Next,
                 );
                 widgets::spawn_button(
                     panel,
-                    WidgetSpec::enabled(SKIP, SCOPE, 1, "Skip onboarding")
+                    WidgetSpec::enabled(SKIP, SCOPE, 1, if replay { "Close help" } else { "Skip help" })
                         .with_size(520.0, 46.0),
                     OnboardingAction::Skip,
                 );
                 panel.spawn(text(
-                    "Enter / A continues | Esc / B skips | Controls remain available from the match menu",
+                    "Enter / A continues | Esc / B skips | Review role help from the match menu",
                     13.0,
                     ACCENT,
                 ));
@@ -250,17 +344,17 @@ pub(crate) fn activate(
     let Some(state) = state.as_deref_mut() else {
         return;
     };
-    let beats = onboarding_beats(&settings);
+    let beats = onboarding_beats(&settings, state.kind);
 
     if *action == OnboardingAction::Skip || state.step + 1 >= beats.len() {
-        finish(&mut commands, &mut gate, &mut settings, &panels);
+        finish(&mut commands, &mut gate, &mut settings, &panels, state.kind);
         return;
     }
 
     state.step += 1;
     let beat = &beats[state.step];
     if let Ok(mut label) = progress.single_mut() {
-        **label = progress_label(state.step, beats.len());
+        **label = progress_label(state.step, beats.len(), state.kind);
     }
     if let Ok(mut label) = titles.single_mut() {
         **label = beat.title.to_string();
@@ -270,7 +364,7 @@ pub(crate) fn activate(
     }
     for (action, mut label) in &mut next_labels {
         if *action == OnboardingAction::Next {
-            label.0 = next_label(state.step, beats.len()).to_string();
+            label.0 = next_label(state.step, beats.len(), state.kind).to_string();
         }
     }
 }
@@ -283,6 +377,7 @@ pub(crate) fn cleanup(
     mut capture: ResMut<UiInputCapture>,
 ) {
     commands.remove_resource::<OnboardingState>();
+    commands.remove_resource::<RoleHelpRequest>();
     gate.active = false;
     capture.release(CAPTURE_OWNER);
 }
@@ -315,13 +410,45 @@ fn finish(
     gate: &mut HexOnboardingGate,
     settings: &mut Settings,
     panels: &Query<Entity, With<OnboardingPanel>>,
+    kind: OnboardingKind,
 ) {
-    settings.complete_onboarding();
+    settings.complete_help(kind);
     save_settings(settings);
     gate.active = false;
     commands.remove_resource::<OnboardingState>();
     for panel in panels {
         commands.entity(panel).despawn();
+    }
+}
+
+fn help_kind(
+    setup: &PlaySetupDraft,
+    lan: &crate::lan::LanRuntime,
+    networked: bool,
+) -> OnboardingKind {
+    let (ascent, architect) = if let Some(launch) = networked
+        .then(|| lan.client.as_ref().and_then(|client| client.launch))
+        .flatten()
+    {
+        (
+            launch.ascent,
+            lan.client
+                .as_ref()
+                .and_then(|client| client.player)
+                .is_some_and(|player| launch.is_architect(player)),
+        )
+    } else {
+        (
+            setup.rules == PlayRules::Ascent,
+            setup.seat == PlaySeat::Architect,
+        )
+    };
+    if !ascent {
+        OnboardingKind::Race
+    } else if architect {
+        OnboardingKind::Architect
+    } else {
+        OnboardingKind::Observer
     }
 }
 
@@ -332,148 +459,27 @@ fn evidence_capture_active() -> bool {
     })
 }
 
-fn progress_label(step: usize, total: usize) -> String {
-    format!("FIRST RUN  -  {} / {total}", step + 1)
+fn progress_label(step: usize, total: usize, kind: OnboardingKind) -> String {
+    let role = match kind {
+        OnboardingKind::Race => "FACILITY RACE HELP",
+        OnboardingKind::Observer => "OBSERVER HELP",
+        OnboardingKind::Architect => "ARCHITECT HELP",
+    };
+    format!("{role}  -  {} / {total}", step + 1)
 }
 
-fn next_label(step: usize, total: usize) -> &'static str {
-    if step + 1 >= total {
-        "Start exploring"
-    } else {
+fn next_label(step: usize, total: usize, kind: OnboardingKind) -> &'static str {
+    if step + 1 < total {
         "Next"
+    } else {
+        match kind {
+            OnboardingKind::Race => "Start exploring",
+            OnboardingKind::Observer => "Start climbing",
+            OnboardingKind::Architect => "Take the desk",
+        }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn spawn_app(game_state: GameState, settings: Settings) -> App {
-        let mut app = App::new();
-        app.insert_resource(State::new(game_state))
-            .insert_resource(settings)
-            .insert_resource(PlaySetupDraft::default())
-            .insert_resource(crate::lan::LanRuntime::new())
-            .insert_resource(HexOnboardingGate::default())
-            .init_resource::<UiInputCapture>()
-            .add_observer(activate)
-            .add_systems(Startup, spawn);
-        app.update();
-        app
-    }
-
-    fn action_entity(app: &mut App, wanted: OnboardingAction) -> Entity {
-        let world = app.world_mut();
-        let mut query = world.query::<(Entity, &OnboardingAction)>();
-        query
-            .iter(world)
-            .find_map(|(entity, action)| (*action == wanted).then_some(entity))
-            .expect("onboarding action exists")
-    }
-
-    #[test]
-    fn beats_are_short_and_reflect_rebindings() {
-        let mut settings = Settings::default();
-        crate::settings::BindingSlot::MoveForward.set(&mut settings.bindings, KeyCode::KeyJ);
-        crate::settings::BindingSlot::Jump.set(&mut settings.bindings, KeyCode::KeyK);
-        crate::settings::BindingSlot::Interact.set(&mut settings.bindings, KeyCode::KeyI);
-        crate::settings::BindingSlot::Torch.set(&mut settings.bindings, KeyCode::KeyG);
-        crate::settings::BindingSlot::TacMap.set(&mut settings.bindings, KeyCode::KeyM);
-        crate::settings::BindingSlot::Pause.set(&mut settings.bindings, KeyCode::F10);
-
-        let beats = onboarding_beats(&settings);
-        assert_eq!(beats.len(), 4);
-        assert!(beats[0].body.starts_with("J/"));
-        assert!(beats[1].body.contains("K jumps"));
-        assert!(beats[2].body.contains("I uses"));
-        assert!(beats[2].body.contains("G or left bumper"));
-        assert!(beats[3].body.contains("M opens"));
-        assert!(beats[3].body.contains("F10 or Start"));
-        assert!(beats.iter().all(|beat| beat.body.len() < 360));
-    }
-
-    #[test]
-    fn spawn_is_hard_gated_to_canonical_hex_state() {
-        let mut deprecated = spawn_app(GameState::Match, Settings::default());
-        let mut canonical = spawn_app(GameState::HexWfc, Settings::default());
-        let mut completed = Settings::default();
-        completed.complete_onboarding();
-        let mut completed = spawn_app(GameState::HexWfc, completed);
-
-        let deprecated_count = {
-            let world = deprecated.world_mut();
-            let mut query = world.query::<&OnboardingPanel>();
-            query.iter(world).count()
-        };
-        let canonical_count = {
-            let world = canonical.world_mut();
-            let mut query = world.query::<&OnboardingPanel>();
-            query.iter(world).count()
-        };
-        let completed_count = {
-            let world = completed.world_mut();
-            let mut query = world.query::<&OnboardingPanel>();
-            query.iter(world).count()
-        };
-        assert_eq!(deprecated_count, 0);
-        assert_eq!(canonical_count, 1);
-        assert_eq!(completed_count, 0);
-    }
-
-    #[test]
-    fn spectator_runs_do_not_receive_participant_onboarding() {
-        let mut app = App::new();
-        app.insert_resource(State::new(GameState::HexWfc))
-            .insert_resource(Settings::default())
-            .insert_resource(PlaySetupDraft::for_preset(PlayPreset::Spectate))
-            .insert_resource(crate::lan::LanRuntime::new())
-            .insert_resource(HexOnboardingGate::default())
-            .init_resource::<UiInputCapture>()
-            .add_systems(Startup, spawn);
-        app.update();
-
-        assert!(!app.world().contains_resource::<OnboardingState>());
-        assert!(!app.world().resource::<HexOnboardingGate>().active);
-    }
-
-    #[test]
-    fn semantic_next_completes_and_persists_the_current_version() {
-        let mut app = spawn_app(GameState::HexWfc, Settings::default());
-        let next = action_entity(&mut app, OnboardingAction::Next);
-
-        for expected_step in 1..4 {
-            app.world_mut().trigger(Activate { entity: next });
-            app.update();
-            assert_eq!(
-                app.world().resource::<OnboardingState>().step,
-                expected_step
-            );
-        }
-        app.world_mut().trigger(Activate { entity: next });
-        app.update();
-
-        let settings = app.world().resource::<Settings>();
-        assert_eq!(
-            settings.completed_onboarding_version,
-            crate::settings::CURRENT_ONBOARDING_VERSION
-        );
-        assert!(!settings.needs_onboarding());
-        assert!(!app.world().contains_resource::<OnboardingState>());
-    }
-
-    #[test]
-    fn semantic_skip_completes_immediately() {
-        let mut app = spawn_app(GameState::HexWfc, Settings::default());
-        let skip = action_entity(&mut app, OnboardingAction::Skip);
-
-        app.world_mut().trigger(Activate { entity: skip });
-        app.update();
-
-        assert!(!app.world().resource::<Settings>().needs_onboarding());
-        assert!(!app.world().contains_resource::<OnboardingState>());
-        assert!(
-            app.world().resource::<UiInputCapture>().is_active(),
-            "dismissal retains input capture until the triggering edge has passed"
-        );
-    }
-}
+#[path = "onboarding_tests.rs"]
+mod tests;

@@ -5547,3 +5547,189 @@ mod hex_wfc_gates {
         assert!(opened, "opening the map activates its camera");
     }
 }
+
+#[test]
+fn ascent_role_help_reopens_and_match_exit_cleans_up_the_modal() {
+    use crate::hex_wfc::overlay::{MatchOverlayState, PausePage};
+    use crate::play_setup::{PlaySeat, PlaySetupDraft};
+    use crate::screens::onboarding::{OnboardingPanel, OnboardingState, RoleHelpRequest};
+    use crate::screens::widgets::{UiInputCapture, WidgetId};
+    use crate::settings::{OnboardingKind, Settings};
+
+    let mut app = test_app();
+    app.insert_resource(Settings::default());
+    app.insert_resource(PlaySetupDraft {
+        seat: PlaySeat::Architect,
+        ..PlaySetupDraft::default()
+    });
+    go(&mut app, GameState::HexWfc);
+    assert_eq!(
+        app.world().resource::<OnboardingState>().kind,
+        OnboardingKind::Architect
+    );
+    assert_eq!(count::<OnboardingPanel>(&mut app), 1);
+    let ui_camera = {
+        let world = app.world_mut();
+        let mut roots = world.query_filtered::<&bevy::ui::UiTargetCamera, With<OnboardingPanel>>();
+        roots
+            .single(world)
+            .expect("help targets an explicit final UI pass")
+            .0
+    };
+    let modal_order = app.world().get::<Camera>(ui_camera).unwrap().order;
+    let world = app.world_mut();
+    let mut cameras = world.query::<(Entity, &Camera)>();
+    assert!(
+        cameras
+            .iter(world)
+            .filter(|(entity, _)| *entity != ui_camera)
+            .all(|(_, camera)| camera.order < modal_order),
+        "the Architect's later board camera cannot erase help"
+    );
+    let paused_tick = app
+        .world()
+        .resource::<crate::hex_wfc::sim::HexWfcRuntime>()
+        .match_state
+        .tick;
+    for expected_step in 1..4 {
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .reset_all();
+        tap_update(&mut app, KeyCode::Enter);
+        assert_eq!(
+            app.world().resource::<OnboardingState>().step,
+            expected_step
+        );
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<crate::hex_wfc::sim::HexWfcRuntime>()
+                .match_state
+                .tick,
+            paused_tick
+        );
+    }
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .reset_all();
+    tap_update(&mut app, KeyCode::Enter);
+    assert!(!app.world().contains_resource::<OnboardingState>());
+    app.update();
+    assert!(
+        !app.world()
+            .resource::<Settings>()
+            .needs_help(OnboardingKind::Architect)
+    );
+    assert!(
+        app.world()
+            .resource::<Settings>()
+            .needs_help(OnboardingKind::Observer)
+    );
+    app.insert_resource(MatchOverlayState::Pause(PausePage::Root));
+    app.update();
+    let review = {
+        let world = app.world_mut();
+        let mut query = world.query::<(Entity, &WidgetId)>();
+        query
+            .iter(world)
+            .find_map(|(entity, id)| {
+                (*id == WidgetId::named("hex.pause.role_help")).then_some(entity)
+            })
+            .unwrap()
+    };
+    app.world_mut()
+        .trigger(bevy::ui_widgets::Activate { entity: review });
+    app.update();
+    assert_eq!(count::<OnboardingPanel>(&mut app), 1);
+    assert!(app.world().resource::<UiInputCapture>().is_active());
+    assert!(
+        app.world()
+            .resource::<crate::hex_wfc::HexOnboardingGate>()
+            .active
+    );
+    go(&mut app, GameState::MainMenu);
+    assert_eq!(count::<OnboardingPanel>(&mut app), 0);
+    assert!(!app.world().contains_resource::<OnboardingState>());
+    assert!(!app.world().contains_resource::<RoleHelpRequest>());
+    assert!(!app.world().resource::<UiInputCapture>().is_active());
+    assert_eq!(
+        count::<Camera>(&mut app),
+        1,
+        "only the app camera remains after match exit"
+    );
+    app.world_mut().resource_mut::<PlaySetupDraft>().seat = PlaySeat::Observer;
+    go(&mut app, GameState::HexWfc);
+    assert_eq!(
+        app.world().resource::<OnboardingState>().kind,
+        OnboardingKind::Observer
+    );
+    go(&mut app, GameState::MainMenu);
+    for _ in 0..3 {
+        go(&mut app, GameState::Play);
+        assert_eq!(count::<screens::play::PlayAction>(&mut app), 12);
+        assert_eq!(count::<ScreenRoot>(&mut app), 1);
+        go(&mut app, GameState::MainMenu);
+        assert_eq!(count::<screens::play::PlayAction>(&mut app), 0);
+        assert_eq!(count::<ScreenRoot>(&mut app), 1);
+    }
+}
+
+#[test]
+fn play_grid_keyboard_selection_skips_disabled_roles_and_restores_focus_after_back() {
+    use crate::play_setup::{PlayPreset, PlaySeat};
+    use crate::screens::widgets::WidgetId;
+    use bevy::input_focus::{FocusCause, InputFocus};
+    let mut app = test_app();
+    go(&mut app, GameState::Play);
+    let widget = |app: &mut App, name: &'static str| {
+        let world = app.world_mut();
+        let mut query = world.query::<(Entity, &WidgetId)>();
+        query
+            .iter(world)
+            .find_map(|(entity, id)| (*id == WidgetId::named(name)).then_some(entity))
+            .unwrap()
+    };
+    let press = |app: &mut App, key: KeyCode| {
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .reset_all();
+        tap_update(app, key);
+    };
+    let observer = widget(&mut app, "play.role.observer");
+    let architect = widget(&mut app, "play.role.architect");
+    app.world_mut()
+        .resource_mut::<InputFocus>()
+        .set(observer, FocusCause::Navigated);
+    press(&mut app, KeyCode::ArrowRight);
+    assert_eq!(app.world().resource::<InputFocus>().get(), Some(architect));
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.world()
+            .resource::<crate::play_setup::PlaySetupDraft>()
+            .seat,
+        PlaySeat::Architect
+    );
+    let spectate = widget(&mut app, "play.preset.spectate");
+    app.world_mut()
+        .trigger(bevy::ui_widgets::Activate { entity: spectate });
+    app.update();
+    let ascent = widget(&mut app, "play.rules.ascent");
+    let solo = widget(&mut app, "play.preset.solo");
+    app.world_mut()
+        .resource_mut::<InputFocus>()
+        .set(ascent, FocusCause::Navigated);
+    press(&mut app, KeyCode::ArrowDown);
+    assert_eq!(app.world().resource::<InputFocus>().get(), Some(solo));
+    press(&mut app, KeyCode::Escape);
+    app.update();
+    assert_eq!(
+        *app.world().resource::<State<GameState>>().get(),
+        GameState::MainMenu
+    );
+    go(&mut app, GameState::Play);
+    let restored = widget(&mut app, "play.preset.solo");
+    assert_eq!(app.world().resource::<InputFocus>().get(), Some(restored));
+    let setup = app.world().resource::<crate::play_setup::PlaySetupDraft>();
+    assert_eq!(setup.seat, PlaySeat::Architect);
+    assert_eq!(setup.preset, PlayPreset::Spectate);
+}

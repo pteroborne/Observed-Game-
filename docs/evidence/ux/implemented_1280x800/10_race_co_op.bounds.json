@@ -1,0 +1,134 @@
+[
+  {
+    "max": [
+      1112.0,
+      735.0
+    ],
+    "min": [
+      672.0,
+      681.0
+    ],
+    "widget": "WidgetId { namespace: \"play.start\", key: 0 }"
+  },
+  {
+    "max": [
+      648.0,
+      735.0
+    ],
+    "min": [
+      168.0,
+      681.0
+    ],
+    "widget": "WidgetId { namespace: \"play.back\", key: 0 }"
+  },
+  {
+    "max": [
+      619.0,
+      638.0
+    ],
+    "min": [
+      411.0,
+      584.0
+    ],
+    "widget": "WidgetId { namespace: \"play.lan\", key: 0 }"
+  },
+  {
+    "max": [
+      403.0,
+      638.0
+    ],
+    "min": [
+      195.0,
+      584.0
+    ],
+    "widget": "WidgetId { namespace: \"play.advanced\", key: 0 }"
+  },
+  {
+    "max": [
+      619.0,
+      570.0
+    ],
+    "min": [
+      411.0,
+      504.0
+    ],
+    "widget": "WidgetId { namespace: \"play.preset.spectate\", key: 0 }"
+  },
+  {
+    "max": [
+      403.0,
+      570.0
+    ],
+    "min": [
+      195.0,
+      504.0
+    ],
+    "widget": "WidgetId { namespace: \"play.preset.team_race\", key: 0 }"
+  },
+  {
+    "max": [
+      619.0,
+      490.0
+    ],
+    "min": [
+      411.0,
+      424.0
+    ],
+    "widget": "WidgetId { namespace: \"play.preset.co_op\", key: 0 }"
+  },
+  {
+    "max": [
+      403.0,
+      490.0
+    ],
+    "min": [
+      195.0,
+      424.0
+    ],
+    "widget": "WidgetId { namespace: \"play.preset.solo\", key: 0 }"
+  },
+  {
+    "max": [
+      403.0,
+      245.0
+    ],
+    "min": [
+      195.0,
+      177.0
+    ],
+    "widget": "WidgetId { namespace: \"play.rules.ascent\", key: 0 }"
+  },
+  {
+    "max": [
+      619.0,
+      245.0
+    ],
+    "min": [
+      411.0,
+      177.0
+    ],
+    "widget": "WidgetId { namespace: \"play.rules.race\", key: 0 }"
+  },
+  {
+    "max": [
+      619.0,
+      360.0
+    ],
+    "min": [
+      411.0,
+      284.0
+    ],
+    "widget": "WidgetId { namespace: \"play.role.architect\", key: 0 }"
+  },
+  {
+    "max": [
+      403.0,
+      360.0
+    ],
+    "min": [
+      195.0,
+      284.0
+    ],
+    "widget": "WidgetId { namespace: \"play.role.observer\", key: 0 }"
+  }
+]

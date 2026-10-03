@@ -47,7 +47,7 @@ pub struct KeyBindings {
     pub tac_map: KeyCode,
     pub pause: KeyCode,
     /// In Architect Ascent, asks the team's Architect for help with what the body needs
-    /// (`hex_wfc::ask`). Absent from older saves, which take the default.
+    /// (`hex_wfc::ask`). Older saves choose an unused key during preference migration.
     pub ask: KeyCode,
     /// In Architect Ascent, arms the kinetic tool's plumb along the look; held, the mouse
     /// dials it round (`hex_wfc::kinetic`). Absent from older saves.
@@ -278,6 +278,9 @@ pub struct UserPreferences {
     /// saves by design; serde supplies zero and [`Self::normalized`] migrates the
     /// legacy `first_run` value without surprising established players.
     pub completed_onboarding_version: u32,
+    /// Ascent roles have independent help; old race completion does not hide it.
+    pub completed_observer_help_version: u32,
+    pub completed_architect_help_version: u32,
     /// Legacy Phase 48 migration signal. New code uses
     /// [`Self::needs_onboarding`] and [`Self::complete_onboarding`]; retaining this
     /// field lets an older `first_run: false` save migrate as already complete.
@@ -305,9 +308,20 @@ impl Default for UserPreferences {
             gameplay_text_scale: 1.0,
             reduced_hand_motion: false,
             completed_onboarding_version: 0,
+            completed_observer_help_version: 0,
+            completed_architect_help_version: 0,
             first_run: true,
         }
     }
+}
+
+/// The rules and seat whose introductory help is being shown.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum OnboardingKind {
+    #[default]
+    Race,
+    Observer,
+    Architect,
 }
 
 impl UserPreferences {
@@ -344,7 +358,7 @@ impl UserPreferences {
         self
     }
 
-    /// Whether the current canonical-match onboarding revision should be offered.
+    /// Whether the facility-race introduction should be offered.
     /// Version zero deliberately consults the old flag so pre-versioned saves that
     /// already opted out do not see the tutorial again.
     pub fn needs_onboarding(&self) -> bool {
@@ -359,10 +373,40 @@ impl UserPreferences {
         }
     }
 
-    /// Record completion (including an explicit skip) of the current revision.
+    /// Mark all introductions complete, used by returning-player fixtures.
+    /// Interactive dismissal records only its displayed rules/role with `complete_help`.
     pub fn complete_onboarding(&mut self) {
         self.completed_onboarding_version = CURRENT_ONBOARDING_VERSION;
         self.first_run = false;
+        self.completed_observer_help_version = CURRENT_ONBOARDING_VERSION;
+        self.completed_architect_help_version = CURRENT_ONBOARDING_VERSION;
+    }
+
+    pub(crate) fn needs_help(&self, kind: OnboardingKind) -> bool {
+        match kind {
+            OnboardingKind::Race => self.needs_onboarding(),
+            OnboardingKind::Observer => {
+                self.completed_observer_help_version < CURRENT_ONBOARDING_VERSION
+            }
+            OnboardingKind::Architect => {
+                self.completed_architect_help_version < CURRENT_ONBOARDING_VERSION
+            }
+        }
+    }
+
+    pub(crate) fn complete_help(&mut self, kind: OnboardingKind) {
+        match kind {
+            OnboardingKind::Race => {
+                self.completed_onboarding_version = CURRENT_ONBOARDING_VERSION;
+                self.first_run = false;
+            }
+            OnboardingKind::Observer => {
+                self.completed_observer_help_version = CURRENT_ONBOARDING_VERSION
+            }
+            OnboardingKind::Architect => {
+                self.completed_architect_help_version = CURRENT_ONBOARDING_VERSION
+            }
+        }
     }
 }
 
@@ -463,7 +507,7 @@ fn load_settings_from(primary: &std::path::Path, legacy: &std::path::Path) -> Us
     let parse = |path: &std::path::Path| {
         std::fs::read_to_string(path)
             .ok()
-            .and_then(|text| serde_json::from_str::<UserPreferences>(&text).ok())
+            .and_then(|text| parse_preferences(&text))
             .map(UserPreferences::normalized)
     };
     if let Some(settings) = parse(primary) {
@@ -474,6 +518,62 @@ fn load_settings_from(primary: &std::path::Path, legacy: &std::path::Path) -> Us
         return settings;
     }
     UserPreferences::default()
+}
+
+fn parse_preferences(text: &str) -> Option<UserPreferences> {
+    let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    let mut preferences: UserPreferences = serde_json::from_value(value.clone()).ok()?;
+    if value
+        .get("bindings")
+        .is_some_and(|bindings| bindings.get("ask").is_none())
+    {
+        // Only assign the newly introduced action. Explicit user choices are preserved.
+        if let Some(key) = [
+            KeyCode::KeyT,
+            KeyCode::KeyY,
+            KeyCode::KeyH,
+            KeyCode::KeyU,
+            KeyCode::KeyV,
+            KeyCode::KeyA,
+            KeyCode::KeyB,
+            KeyCode::KeyC,
+            KeyCode::KeyD,
+            KeyCode::KeyE,
+            KeyCode::KeyF,
+            KeyCode::KeyG,
+            KeyCode::KeyI,
+            KeyCode::KeyJ,
+            KeyCode::KeyK,
+            KeyCode::KeyL,
+            KeyCode::KeyM,
+            KeyCode::KeyN,
+            KeyCode::KeyO,
+            KeyCode::KeyP,
+            KeyCode::KeyQ,
+            KeyCode::KeyR,
+            KeyCode::KeyS,
+            KeyCode::KeyW,
+            KeyCode::KeyX,
+            KeyCode::KeyZ,
+        ]
+        .into_iter()
+        .find(|key| {
+            BindingSlot::ALL
+                .into_iter()
+                .filter(|slot| *slot != BindingSlot::Ask)
+                .all(|slot| slot.get(&preferences.bindings) != *key)
+                && [
+                    preferences.bindings.sprint_alt,
+                    preferences.bindings.pad,
+                    preferences.bindings.activate_pad,
+                ]
+                .into_iter()
+                .all(|bound| bound != *key)
+        }) {
+            preferences.bindings.ask = key;
+        }
+    }
+    Some(preferences)
 }
 
 /// Persist settings to disk (best-effort: a write failure is silently ignored, the
@@ -536,6 +636,86 @@ pub fn key_name(key: KeyCode) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_ask_avoids_custom_bindings_even_when_preferred_keys_and_legacy_tools_are_taken() {
+        let mut settings = Settings::default();
+        let keys = [
+            KeyCode::KeyT,
+            KeyCode::KeyY,
+            KeyCode::KeyH,
+            KeyCode::KeyU,
+            KeyCode::KeyV,
+            KeyCode::KeyA,
+            KeyCode::KeyB,
+            KeyCode::KeyC,
+            KeyCode::KeyD,
+            KeyCode::KeyE,
+            KeyCode::KeyF,
+            KeyCode::KeyG,
+            KeyCode::KeyI,
+            KeyCode::KeyJ,
+            KeyCode::KeyK,
+            KeyCode::KeyL,
+            KeyCode::KeyM,
+        ];
+        for (slot, key) in BindingSlot::ALL
+            .into_iter()
+            .filter(|slot| *slot != BindingSlot::Ask)
+            .zip(keys)
+        {
+            slot.set(&mut settings.bindings, key);
+        }
+        settings.bindings.pad = KeyCode::KeyN;
+        settings.bindings.activate_pad = KeyCode::KeyO;
+        settings.bindings.sprint_alt = KeyCode::KeyP;
+        let mut json = serde_json::to_value(settings).unwrap();
+        json["bindings"].as_object_mut().unwrap().remove("ask");
+        let migrated = parse_preferences(&json.to_string()).unwrap();
+        assert_eq!(migrated.bindings.ask, KeyCode::KeyQ);
+        assert!(
+            BindingSlot::ALL
+                .into_iter()
+                .filter(|slot| *slot != BindingSlot::Ask)
+                .all(|slot| slot.get(&migrated.bindings) != migrated.bindings.ask)
+        );
+        assert!(
+            ![
+                migrated.bindings.pad,
+                migrated.bindings.activate_pad,
+                migrated.bindings.sprint_alt
+            ]
+            .contains(&migrated.bindings.ask)
+        );
+    }
+
+    #[test]
+    fn legacy_anchor_keeps_its_key_and_new_ask_gets_a_free_key() {
+        let migrated = parse_preferences(r#"{"bindings":{"torch":"KeyT"}}"#).unwrap();
+        assert_eq!(migrated.bindings.torch, KeyCode::KeyT);
+        assert_eq!(migrated.bindings.ask, KeyCode::KeyY);
+        assert!(binding_conflict_summary(&migrated.bindings).is_none());
+        let explicit = parse_preferences(r#"{"bindings":{"torch":"KeyT","ask":"KeyT"}}"#).unwrap();
+        assert_eq!(explicit.bindings.ask, KeyCode::KeyT);
+        assert!(binding_conflict_summary(&explicit.bindings).is_some());
+    }
+
+    #[test]
+    fn completing_one_role_does_not_hide_other_role_help() {
+        let mut settings = Settings::default();
+        settings.complete_help(OnboardingKind::Observer);
+        assert!(!settings.needs_help(OnboardingKind::Observer));
+        assert!(settings.needs_help(OnboardingKind::Architect));
+        assert!(settings.needs_help(OnboardingKind::Race));
+        let saved = serde_json::to_string(&settings).unwrap();
+        let restored = parse_preferences(&saved).unwrap().normalized();
+        assert!(!restored.needs_help(OnboardingKind::Observer));
+        assert!(restored.needs_help(OnboardingKind::Architect));
+        let old: Settings = serde_json::from_str(r#"{"first_run":false}"#).unwrap();
+        assert!(!old.normalized().needs_help(OnboardingKind::Race));
+        let old: Settings = serde_json::from_str(r#"{"first_run":false}"#).unwrap();
+        assert!(old.normalized().needs_help(OnboardingKind::Observer));
+    }
 
     #[test]
     fn default_settings_reproduce_the_shipped_bindings_and_sensitivity() {

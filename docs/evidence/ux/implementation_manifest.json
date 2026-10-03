@@ -1,0 +1,516 @@
+{
+  "captured_on": "2026-10-03",
+  "branch": "codex/end-to-end-ux",
+  "source_base": "1495b097",
+  "source_revision": "implementation commit containing this manifest; source files below identify the rendered revision",
+  "capture_driver": "game/src/evidence/capture/frontend.rs menu_sweep",
+  "viewport_physical_pixels": [
+    1280,
+    800
+  ],
+  "environment": {
+    "preferences": "isolated initially empty directory",
+    "cwd": "isolated empty external directory",
+    "seed": "0xF011FAC11177",
+    "menu_mode": "OBSERVED2_CAPTURE_FRONTEND_MENUS=1"
+  },
+  "provenance": [
+    "Menu variants stage PlaySetupDraft directly and use existing state transitions.",
+    "Each first help page follows the production PlayAction::Launch and asynchronous Loading handoff.",
+    "Later help pages trigger the production OnboardingAction::Next. Architect pause state is staged.",
+    "Career, XP and replay are synthetic fixtures. No human movement, physical controller, live LAN or completed session is established."
+  ],
+  "images": [
+    {
+      "path": "implemented_1280x800/00_main_menu.png",
+      "sha256": "5005201cfff55b387c140a65ac2cbc2e1e23def3f4950f3c1b2e9388ba39df9b",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/00_main_menu.bounds.json",
+      "bounds_sha256": "6263a257a2dfa49ffd3ae014d4777d2c8a0569a9736bc03d710464a9d16a386c",
+      "visible_widget_count": 4,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/00b_cosmetics.png",
+      "sha256": "b43b5efb2126a1c01bfec53d97bcc04192d37c8ff46bf791b791699d228ef32a",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/00b_cosmetics.bounds.json",
+      "bounds_sha256": "655bfd1a0360f5298967c12115b017e7e8e478e16394b9d34ef5da285a300657",
+      "visible_widget_count": 11,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/01_observer_solo.png",
+      "sha256": "aae00bf82976b42fb2fa417c0b6f9b3fefa5c9e6c1bff89913cafdc75984c66e",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/01_observer_solo.bounds.json",
+      "bounds_sha256": "88b7b11e1c0f5545352fdf5764559d1ac33ce2df45d525eca037abdc6ee4dc00",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/02_observer_co_op.png",
+      "sha256": "9640862f7f40a7fecfe18bf12faea8e1a9416b2631fd27e76b1d1a558c4f8edc",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/02_observer_co_op.bounds.json",
+      "bounds_sha256": "88b7b11e1c0f5545352fdf5764559d1ac33ce2df45d525eca037abdc6ee4dc00",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/03_observer_teams.png",
+      "sha256": "7539cad87088b848cea3f4259f1e23536aaa4a7b4f80e2b60d93e7a570e32e6f",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/03_observer_teams.bounds.json",
+      "bounds_sha256": "88b7b11e1c0f5545352fdf5764559d1ac33ce2df45d525eca037abdc6ee4dc00",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/04_observer_spectate.png",
+      "sha256": "5aaaecb438aed6740b9f4b3703a54a1112660e7aadaf52f4a88337ac602010a0",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/04_observer_spectate.bounds.json",
+      "bounds_sha256": "d57a5b5de268dfc5ec527a4c80db3cc4d31b2b3ef57d0b24c369b29db0a42ffa",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/05_architect_solo.png",
+      "sha256": "48d1783f415ad4776d32e120c1afc5a6590284fe98cc4d0149847b43d74dcf2b",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/05_architect_solo.bounds.json",
+      "bounds_sha256": "d57a5b5de268dfc5ec527a4c80db3cc4d31b2b3ef57d0b24c369b29db0a42ffa",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/06_architect_co_op.png",
+      "sha256": "12de0acbd6b74f69c80263b2dc84d22a3c3151133e17eeeb139bea13da97080d",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/06_architect_co_op.bounds.json",
+      "bounds_sha256": "d57a5b5de268dfc5ec527a4c80db3cc4d31b2b3ef57d0b24c369b29db0a42ffa",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/07_architect_teams.png",
+      "sha256": "94b4f9e59212eda35fa798990eda1d874d39d1b7a9f570033c16a17d26466bde",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/07_architect_teams.bounds.json",
+      "bounds_sha256": "d57a5b5de268dfc5ec527a4c80db3cc4d31b2b3ef57d0b24c369b29db0a42ffa",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/08_architect_spectate.png",
+      "sha256": "5aaaecb438aed6740b9f4b3703a54a1112660e7aadaf52f4a88337ac602010a0",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/08_architect_spectate.bounds.json",
+      "bounds_sha256": "d57a5b5de268dfc5ec527a4c80db3cc4d31b2b3ef57d0b24c369b29db0a42ffa",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/09_race_solo.png",
+      "sha256": "d16c46cfea30b0da023de618961bf126a61f6de7aac0173893da69692bb058af",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/09_race_solo.bounds.json",
+      "bounds_sha256": "fd9205fe5ac164ffb39238f58c93b1cefd0d7414acfdc6a7760c7a3c841c0b92",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/10_race_co_op.png",
+      "sha256": "30e089cbdbd83c643a037a8871d0fe583bacba1592895e893e20d69a531e8c2e",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/10_race_co_op.bounds.json",
+      "bounds_sha256": "fd9205fe5ac164ffb39238f58c93b1cefd0d7414acfdc6a7760c7a3c841c0b92",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/11_race_teams.png",
+      "sha256": "76da000a319a369f53c18e44207fd6f4d5b335a689b959d8cf75b7b9b394975f",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/11_race_teams.bounds.json",
+      "bounds_sha256": "fd9205fe5ac164ffb39238f58c93b1cefd0d7414acfdc6a7760c7a3c841c0b92",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/12_race_spectate.png",
+      "sha256": "b99c2b8ea64de4500cca4f6249b0a7c49204673921a2a5e66455e8377613ebaf",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/12_race_spectate.bounds.json",
+      "bounds_sha256": "fd9205fe5ac164ffb39238f58c93b1cefd0d7414acfdc6a7760c7a3c841c0b92",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/13_advanced.png",
+      "sha256": "9577757c2a2f61c15b8f2e2b4ae13a2681c0c102cba00287df748ed284879020",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/13_advanced.bounds.json",
+      "bounds_sha256": "09850a665d8b5248355bf061c97137bfd37c64212cde35f61f04c16ef97852bc",
+      "visible_widget_count": 6,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/14_observer_entry.png",
+      "sha256": "aae00bf82976b42fb2fa417c0b6f9b3fefa5c9e6c1bff89913cafdc75984c66e",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/14_observer_entry.bounds.json",
+      "bounds_sha256": "88b7b11e1c0f5545352fdf5764559d1ac33ce2df45d525eca037abdc6ee4dc00",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/15_observer_help_1.png",
+      "sha256": "73b656786ccb1a6cbf7de040473ff945fc8ed44eda998597f56e77d07dfe5d2e",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/15_observer_help_1.bounds.json",
+      "bounds_sha256": "21c0c23f2f17eb94a9ac66b09178334c4dd87ec47bf4b53907e37a40f28eddac",
+      "visible_widget_count": 2,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/16_observer_help_2.png",
+      "sha256": "124e37007551d42a6c97d350d00f6891c127608050e8b22bbfa3c5a49958335c",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/16_observer_help_2.bounds.json",
+      "bounds_sha256": "c57b9ce7367711f5f39b98d11ff6fb9c2de60bc23fe45879abc86882629a02c5",
+      "visible_widget_count": 2,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/17_observer_help_3.png",
+      "sha256": "b7a5cf5bf5c0b48b650e805204c78388c5a12b7d4ce1909c97ab56229d2dacfe",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/17_observer_help_3.bounds.json",
+      "bounds_sha256": "21c0c23f2f17eb94a9ac66b09178334c4dd87ec47bf4b53907e37a40f28eddac",
+      "visible_widget_count": 2,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/18_observer_help_4.png",
+      "sha256": "6c0d632024bc6dd0397787bef8faa507f10db26e6f0330f6839393bb0b045f3c",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/18_observer_help_4.bounds.json",
+      "bounds_sha256": "21c0c23f2f17eb94a9ac66b09178334c4dd87ec47bf4b53907e37a40f28eddac",
+      "visible_widget_count": 2,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/19_architect_entry.png",
+      "sha256": "89dfce97c593320ae1400419301b0d3d8d8c104b1c47e5ef5f7d10f91e1b8150",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/19_architect_entry.bounds.json",
+      "bounds_sha256": "88b7b11e1c0f5545352fdf5764559d1ac33ce2df45d525eca037abdc6ee4dc00",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/20_architect_help_1.png",
+      "sha256": "a82140fcf70b67acf0cf6ec0b1639b3e76c8824d9b4cf06f26282959b4aafc42",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/20_architect_help_1.bounds.json",
+      "bounds_sha256": "c57b9ce7367711f5f39b98d11ff6fb9c2de60bc23fe45879abc86882629a02c5",
+      "visible_widget_count": 2,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/21_architect_help_2.png",
+      "sha256": "3162eec6ebf19ba7dd70589a83a1f7e7a530b40a7c33370082f62a90915af292",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/21_architect_help_2.bounds.json",
+      "bounds_sha256": "c57b9ce7367711f5f39b98d11ff6fb9c2de60bc23fe45879abc86882629a02c5",
+      "visible_widget_count": 2,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/22_architect_help_3.png",
+      "sha256": "8bc14e98896843ac77ab99958b3fe59e4b55a897f139313c0f8d52e9d25c1920",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/22_architect_help_3.bounds.json",
+      "bounds_sha256": "21c0c23f2f17eb94a9ac66b09178334c4dd87ec47bf4b53907e37a40f28eddac",
+      "visible_widget_count": 2,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/23_architect_help_4.png",
+      "sha256": "d750c4c569a30ec0e8e003e5411e47cc012d7173ae2a67e9b0404eacabbdc6f1",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/23_architect_help_4.bounds.json",
+      "bounds_sha256": "c57b9ce7367711f5f39b98d11ff6fb9c2de60bc23fe45879abc86882629a02c5",
+      "visible_widget_count": 2,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/23b_architect_desk.png",
+      "sha256": "3fe385b0fcc941f454960b1271636d87343a5a8875bc59b6f853aa9de0270693",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/23b_architect_desk.bounds.json",
+      "bounds_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "visible_widget_count": 0,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/23c_architect_pause.png",
+      "sha256": "875c6eb5f16968edcefade2ed826e6df0b18c2f2c60c4823b64c9dfe9289b49f",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/23c_architect_pause.bounds.json",
+      "bounds_sha256": "44170c7e6f821219a43c91c52aafc094588dc17ecb073cae6e7c9c2f9833269b",
+      "visible_widget_count": 5,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/24_race_entry.png",
+      "sha256": "72721d46fa25c2830de96fbc5aaccb2afc4f1ce3ae4aecad97d3282313c1571f",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/24_race_entry.bounds.json",
+      "bounds_sha256": "f5f8f46565df7f746a295107c2db9bc158ccd2a7b4c0a33ed660c9ea74121eae",
+      "visible_widget_count": 12,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/25_race_help_1.png",
+      "sha256": "11a11b7910f1b761dc6848852dc3e952a5216a95299990a413570d24cb459608",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/25_race_help_1.bounds.json",
+      "bounds_sha256": "c57b9ce7367711f5f39b98d11ff6fb9c2de60bc23fe45879abc86882629a02c5",
+      "visible_widget_count": 2,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/26_race_help_2.png",
+      "sha256": "b92e05729eb6d9c376255d68641168855a390ae4c4c2299697c3508ca9556a96",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/26_race_help_2.bounds.json",
+      "bounds_sha256": "8458383c12c823b8ec24357564bc3da505145d7e45f15228ca811ccf4cefcf57",
+      "visible_widget_count": 2,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/27_race_help_3.png",
+      "sha256": "4df0a700c0a5fab72d480f4129f15c12a874fab148de0cb82ff24fd65fbfb13f",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/27_race_help_3.bounds.json",
+      "bounds_sha256": "c57b9ce7367711f5f39b98d11ff6fb9c2de60bc23fe45879abc86882629a02c5",
+      "visible_widget_count": 2,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    },
+    {
+      "path": "implemented_1280x800/28_race_help_4.png",
+      "sha256": "1e64f4f62bcd95299a5313da4aec40dc9bcb981cbad4288afc0f89773697e8d7",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "bounds_path": "implemented_1280x800/28_race_help_4.bounds.json",
+      "bounds_sha256": "c57b9ce7367711f5f39b98d11ff6fb9c2de60bc23fe45879abc86882629a02c5",
+      "visible_widget_count": 2,
+      "inspected": true,
+      "focus_margin_check": "pass: widget bounds inside [4,4]..[1276,796]"
+    }
+  ],
+  "binary_sha256": "18fbd7bda815d6edca6ca4f5904898467c2fcd23b61ed19edaa28460f01a21f3",
+  "modified_source_files": [
+    {
+      "path": "crates/observed_ui/src/focus.rs",
+      "sha256": "b01c5282150830b15a63a5ed4d55f0c03d0103a8aba1e8a2be9e75f6448966a4"
+    },
+    {
+      "path": "crates/observed_ui/src/lib.rs",
+      "sha256": "a1d0434003bd977fe211b67ee85e2bd76e6c16b3c6456951f266ec0ede53a132"
+    },
+    {
+      "path": "game/src/evidence/capture/frontend.rs",
+      "sha256": "a251493bb6c46ac7c3ef22876d7e43ec5f5e46ce6a949b83b06097b5aaa1149b"
+    },
+    {
+      "path": "game/src/hex_wfc/architect/desk.rs",
+      "sha256": "2e88fea9e92b834bdae33e55906c9b2281d2ddc69705db99e490798e6569f064"
+    },
+    {
+      "path": "game/src/hex_wfc/mod.rs",
+      "sha256": "85696c2046d3c4d3d0c09d7e9915c580595de3366ee1f11a5b1f87ec04e747d1"
+    },
+    {
+      "path": "game/src/hex_wfc/modal_ui.rs",
+      "sha256": "d99eb3f00efa810f9d81f5c0baa14514d67fb110794b9362b4c6031a5fce1048"
+    },
+    {
+      "path": "game/src/hex_wfc/overlay.rs",
+      "sha256": "9d2d098361256dcf266fe00c846ad268c97dc6d985a96394931d520fa5c4bfc8"
+    },
+    {
+      "path": "game/src/play_setup.rs",
+      "sha256": "94f90ab6fa21ce33242019d3ce3077419f4ac685f87f8ba5f9acdf90a580b225"
+    },
+    {
+      "path": "game/src/screens.rs",
+      "sha256": "b13912d6959c61768e36eded9492cb726290154c36183f81adebc15493a662da"
+    },
+    {
+      "path": "game/src/screens/loadout.rs",
+      "sha256": "b0d3916311a0329783a61d39b6567e937fe17db6deb644eeace5320b575c740f"
+    },
+    {
+      "path": "game/src/screens/main_menu.rs",
+      "sha256": "01b54b25fe67fb38b14b021d1e6139d5f32ea3abffc8727e2bb528e2af7c2b43"
+    },
+    {
+      "path": "game/src/screens/onboarding.rs",
+      "sha256": "0252ba6d6fcab2ed12d1a4c81f2c7940eecb93fe0331688ffedb72dbe2498c60"
+    },
+    {
+      "path": "game/src/screens/onboarding_tests.rs",
+      "sha256": "f17a85b3201f06a0e13bebd35aec4714d86417b7616c8990cd3d0cece6b204bf"
+    },
+    {
+      "path": "game/src/screens/play.rs",
+      "sha256": "ceb8837732a8bb698265f804d3a36b3ab73d409d7a89d5088d869c5fad77856e"
+    },
+    {
+      "path": "game/src/screens/play_tests.rs",
+      "sha256": "c0be2c3615e59e0ae2964f0de863dbf14f83bf159b9110f593e9d36ab0d9c9b8"
+    },
+    {
+      "path": "game/src/settings.rs",
+      "sha256": "e95218b90c58b30a61faf5ab9d73c0808decfcd96f50ef940dbd6075d40875f4"
+    },
+    {
+      "path": "game/src/tests.rs",
+      "sha256": "aade578db53200e8eec97bd84103ae713c221b6f65fdbcf96b1c4f6331893504"
+    },
+    {
+      "path": "game/src/view/theme.rs",
+      "sha256": "d17080df12a6ac28006f6ad2ce2ad9485c694b585b9f4808d9a789106a167e63"
+    }
+  ]
+}

@@ -6,6 +6,15 @@ Captured on 3 October 2026 from `aede5646`; findings and interpretation live in
 not as implemented game screens. [manifest.json](manifest.json) records each
 image's dimensions, checksum, provenance, configured role and inspection status.
 
+The subsequent [menu implementation record](../../ux/menu_implementation.md)
+tracks the changed screens and a separate set of implementation captures. These
+original audit images remain a record of `aede5646`.
+
+The implemented screens are in `implemented_1280x800/` (32 PNGs plus widget bounds).
+Their [separate manifest](implementation_manifest.json) records inspection,
+checksums and production-launch versus staged-state provenance;
+[implementation checks](implementation_checks.txt) records the code gates.
+
 ## Runs and retained images
 
 | Run | Setup | Retained evidence | What it establishes |

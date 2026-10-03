@@ -1,0 +1,46 @@
+[
+  {
+    "max": [
+      599.0,
+      620.0
+    ],
+    "min": [
+      215.0,
+      566.0
+    ],
+    "widget": "WidgetId { namespace: \"main.quit\", key: 0 }"
+  },
+  {
+    "max": [
+      599.0,
+      552.0
+    ],
+    "min": [
+      215.0,
+      498.0
+    ],
+    "widget": "WidgetId { namespace: \"main.settings\", key: 0 }"
+  },
+  {
+    "max": [
+      599.0,
+      484.0
+    ],
+    "min": [
+      215.0,
+      430.0
+    ],
+    "widget": "WidgetId { namespace: \"main.loadout\", key: 0 }"
+  },
+  {
+    "max": [
+      599.0,
+      416.0
+    ],
+    "min": [
+      215.0,
+      362.0
+    ],
+    "widget": "WidgetId { namespace: \"main.play\", key: 0 }"
+  }
+]

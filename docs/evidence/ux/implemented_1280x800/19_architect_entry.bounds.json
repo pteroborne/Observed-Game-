@@ -1,0 +1,134 @@
+[
+  {
+    "max": [
+      1112.0,
+      736.0
+    ],
+    "min": [
+      672.0,
+      682.0
+    ],
+    "widget": "WidgetId { namespace: \"play.start\", key: 0 }"
+  },
+  {
+    "max": [
+      648.0,
+      736.0
+    ],
+    "min": [
+      168.0,
+      682.0
+    ],
+    "widget": "WidgetId { namespace: \"play.back\", key: 0 }"
+  },
+  {
+    "max": [
+      619.0,
+      639.0
+    ],
+    "min": [
+      411.0,
+      585.0
+    ],
+    "widget": "WidgetId { namespace: \"play.lan\", key: 0 }"
+  },
+  {
+    "max": [
+      403.0,
+      639.0
+    ],
+    "min": [
+      195.0,
+      585.0
+    ],
+    "widget": "WidgetId { namespace: \"play.advanced\", key: 0 }"
+  },
+  {
+    "max": [
+      619.0,
+      571.0
+    ],
+    "min": [
+      411.0,
+      503.0
+    ],
+    "widget": "WidgetId { namespace: \"play.preset.spectate\", key: 0 }"
+  },
+  {
+    "max": [
+      403.0,
+      571.0
+    ],
+    "min": [
+      195.0,
+      503.0
+    ],
+    "widget": "WidgetId { namespace: \"play.preset.team_race\", key: 0 }"
+  },
+  {
+    "max": [
+      619.0,
+      489.0
+    ],
+    "min": [
+      411.0,
+      423.0
+    ],
+    "widget": "WidgetId { namespace: \"play.preset.co_op\", key: 0 }"
+  },
+  {
+    "max": [
+      403.0,
+      489.0
+    ],
+    "min": [
+      195.0,
+      423.0
+    ],
+    "widget": "WidgetId { namespace: \"play.preset.solo\", key: 0 }"
+  },
+  {
+    "max": [
+      619.0,
+      359.0
+    ],
+    "min": [
+      411.0,
+      283.0
+    ],
+    "widget": "WidgetId { namespace: \"play.role.architect\", key: 0 }"
+  },
+  {
+    "max": [
+      403.0,
+      359.0
+    ],
+    "min": [
+      195.0,
+      283.0
+    ],
+    "widget": "WidgetId { namespace: \"play.role.observer\", key: 0 }"
+  },
+  {
+    "max": [
+      619.0,
+      244.0
+    ],
+    "min": [
+      411.0,
+      176.0
+    ],
+    "widget": "WidgetId { namespace: \"play.rules.race\", key: 0 }"
+  },
+  {
+    "max": [
+      403.0,
+      244.0
+    ],
+    "min": [
+      195.0,
+      176.0
+    ],
+    "widget": "WidgetId { namespace: \"play.rules.ascent\", key: 0 }"
+  }
+]

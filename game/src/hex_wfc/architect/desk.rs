@@ -28,7 +28,8 @@ pub(super) const TOP_BAR: f32 = 56.0;
 pub(super) const PANEL_WIDTH: f32 = 250.0;
 pub(super) const CARD_PANEL_WIDTH: f32 = 270.0;
 pub(super) const GAP: f32 = 16.0;
-const CARD: Vec2 = Vec2::new(176.0, 176.0);
+// Reserve three detail lines so Station copy stays above the control strip.
+const CARD: Vec2 = Vec2::new(176.0, 212.0);
 /// Under the cards: the line of controls.
 const STRIP: f32 = 28.0;
 pub(super) const HAND_HEIGHT: f32 = CARD.y + STRIP + 14.0;
