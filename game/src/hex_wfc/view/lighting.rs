@@ -5,6 +5,7 @@
 //!   1. a shadow-casting **district key** spotlight over the runner's current cell,
 //!      giving each register its dramatic directional read (overlit-grid alone runs it
 //!      flat, `key_shadows_enabled = false`);
+//!      the Cistern instead keeps shadowed downlights fixed to all nine fixtures;
 //!   2. per-cell **practical pools** (see [`super::shell`]) tinted by the cell's
 //!      `light_color`, staged as pools-in-dark on `pools_rhythm` registers (places lit,
 //!      connective halls dark) or as an even fill elsewhere;
@@ -25,6 +26,11 @@ use super::{HexPractical, HexWfcKeyLight};
 use crate::GameState;
 use crate::hex_wfc::sim::HexWfcRuntime;
 use crate::view::components::GameCam;
+
+mod practicals;
+pub(super) use practicals::spawn_practical;
+#[cfg(test)]
+mod cistern_tests;
 
 /// Per-tile fill fixtures allowed to cast shadows at once (the district key casts on top
 /// of this). Bounded because point-light shadows are six-face cubemaps; kept small to
@@ -141,12 +147,15 @@ pub(in crate::hex_wfc) fn sync_practical_shadow_budget(
     runtime: Res<HexWfcRuntime>,
     mut last_cell: Local<Option<observed_facility::hex_wfc::HexCoord>>,
     mut shadowed: Local<Vec<Entity>>,
-    mut practicals: Query<(
-        Entity,
-        &HexPractical,
-        &mut PointLight,
-        Option<&GlobalTransform>,
-    )>,
+    mut practicals: Query<
+        (
+            Entity,
+            &HexPractical,
+            &mut PointLight,
+            Option<&GlobalTransform>,
+        ),
+        Without<practicals::FixedReservoirLight>,
+    >,
     streamed: Query<(), Added<HexPractical>>,
 ) {
     let current = runtime.viewed().cell;
@@ -283,6 +292,15 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
     }
 
     if let Ok((mut light, mut transform)) = key.single_mut() {
+        let reservoir = matches!(
+            runtime
+                .match_state
+                .facility
+                .placements
+                .get(&current)
+                .map(|p| p.archetype),
+            Some(observed_facility::hex_wfc::HexArchetype::Cistern { .. })
+        );
         let (target_translation, target_rotation) = key_pose(current);
         if transform.translation == Vec3::ZERO {
             transform.translation = target_translation;
@@ -293,16 +311,22 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
         }
         let target_color = lerp_color(light.color, palette.key_color, t);
         light.color = target_color;
-        light.intensity = lerp_f(
-            light.intensity,
-            palette.key_intensity * HEX_KEY_INTENSITY_SCALE,
-            t,
-        );
+        // The bath's nine authored downlights are fixed to its arcades. A key
+        // that migrates between its hexes makes whole bays brighten on arrival.
+        light.intensity = if reservoir {
+            0.0
+        } else {
+            lerp_f(
+                light.intensity,
+                palette.key_intensity * HEX_KEY_INTENSITY_SCALE,
+                t,
+            )
+        };
         light.range = lerp_f(light.range, palette.key_range, t);
         light.radius = lerp_f(light.radius, palette.key_radius, t);
         light.inner_angle = lerp_f(light.inner_angle, palette.key_inner_angle, t);
         light.outer_angle = lerp_f(light.outer_angle, palette.key_outer_angle, t);
-        light.shadow_maps_enabled = palette.key_shadows_enabled;
+        light.shadow_maps_enabled = palette.key_shadows_enabled && !reservoir;
     }
 }
 

@@ -262,6 +262,7 @@ fn spawn_cell(
             role: cell_role,
             composition,
             authored_lights: &lights,
+            reservoir,
         },
     );
     let origin = Vec3::from_array(hex_origin(coord));
@@ -410,6 +411,7 @@ struct PracticalProjection<'a> {
     role: HexStructureRole,
     composition: observed_style::HexComposition,
     authored_lights: &'a [&'a HexLightSource],
+    reservoir: bool,
 }
 
 fn spawn_cell_practicals(
@@ -426,6 +428,7 @@ fn spawn_cell_practicals(
         role,
         composition,
         authored_lights,
+        reservoir,
     } = projection;
     if role == HexStructureRole::Boundary {
         return 0;
@@ -487,25 +490,9 @@ fn spawn_cell_practicals(
             ));
             child_pieces += 1;
         }
-        commands.spawn((
-            HexPractical(coord),
-            PointLight {
-                color: practical.color,
-                intensity: practical.intensity,
-                range: practical.range,
-                radius: practical.radius,
-                shadow_maps_enabled: false,
-                ..default()
-            },
-            Transform::from_translation(position),
-            ChildOf(parent),
-            Name::new(if authored_lights.is_empty() {
-                "Legacy tile fill"
-            } else {
-                "Authored tile practical"
-            }),
-        ));
-        child_pieces += 1;
+        child_pieces += super::lighting::spawn_practical(
+            commands, parent, coord, position, practical, reservoir,
+        );
     }
     child_pieces
 }

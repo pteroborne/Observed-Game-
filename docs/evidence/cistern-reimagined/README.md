@@ -1,5 +1,9 @@
 # The Cistern — location evidence
 
+These images record the initial implementation. The subsequent
+[fixed-lighting evidence](../cistern-lighting/README.md) shows the current room
+after replacing its moving district key with stationary fixture lighting.
+
 The Backrooms wonder is a three-hex bath with cream ceramic arcades, a shallow
 continuous water surface, raised causeways, a dry perimeter gallery, submerged
 treads, elevated aqueduct channels, and low outlet mouths. Three outward

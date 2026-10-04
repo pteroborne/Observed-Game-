@@ -71,6 +71,7 @@ pub(in crate::hex_wfc) fn capture(
         return;
     };
     let rogue = request.mode == HexWfcCaptureMode::Rogue;
+    let portraits = !rogue && std::env::var_os("OBSERVED2_CISTERN_PORTRAITS").is_some();
     if request.mode != HexWfcCaptureMode::Architect && !rogue {
         return;
     }
@@ -101,7 +102,7 @@ pub(in crate::hex_wfc) fn capture(
     let prefix = if rogue { "rogue" } else { "architect" };
     let mapping = if rogue { FALL_TICK + 90 } else { MAPPING_TICKS };
     let tick = runtime.match_state.tick;
-    if request.stills == 0
+    if (request.stills == 0 || (portraits && request.stills == 1))
         && tick >= mapping
         && let Some(ascent) = runtime.ascent.as_mut()
     {
@@ -130,6 +131,10 @@ pub(in crate::hex_wfc) fn capture(
                 return;
             };
             let mut cards: Vec<_> = hand.deck.hand.iter().enumerate().collect();
+            // A reservoir inspection must not silently capture a different card.
+            if portraits {
+                cards.retain(|(_, card)| card.kind == CardKind::Cistern);
+            }
             // A cistern when one is in hand, so the still shows the multi-tile room; a stair else; a tile else.
             cards.sort_by_key(|(_, card)| match card.kind {
                 CardKind::Cistern => 0,
@@ -207,10 +212,7 @@ pub(in crate::hex_wfc) fn capture(
             // once the still has had frames enough to be written.
             request.last_shot_tick = tick;
             request.stills = if rogue { 11 } else { 5 };
-            if !rogue
-                && std::env::var_os("OBSERVED2_CISTERN_PORTRAITS").is_some()
-                && reservoir.is_some()
-            {
+            if portraits && reservoir.is_some() {
                 desk.eyes = super::eyes::eyes_for(&runtime, &desk).first().copied();
                 commands.insert_resource(crate::hex_wfc::HexOnboardingGate { active: true });
                 commands.remove_resource::<crate::sim::state::SpectatorBot>();
@@ -230,7 +232,7 @@ pub(in crate::hex_wfc) fn capture(
             };
             let elapsed = request.frame.saturating_sub(start);
             let slot = elapsed / 180;
-            if slot >= 3 {
+            if slot >= 4 {
                 let cells = ascent
                     .rules()
                     .played_cistern(anchor, rotation)
@@ -260,11 +262,16 @@ pub(in crate::hex_wfc) fn capture(
             let origin = Vec3::from_array(observed_hex::hex_origin(anchor));
             let (offset, focus, name) = match slot {
                 0 => (
+                    Vec3::new(-4.2, 0.5, -7.2),
+                    Vec3::new(6.0, 1.0, 6.0),
+                    "cistern-approach",
+                ),
+                1 => (
                     Vec3::new(-3.0, 0.75, -4.4),
                     Vec3::new(10.0, 1.0, 5.0),
                     "cistern-entry",
                 ),
-                1 => (
+                2 => (
                     Vec3::new(5.2, 0.5, 2.9),
                     Vec3::new(11.8, 0.7, 5.3),
                     "cistern-water",
@@ -286,9 +293,10 @@ pub(in crate::hex_wfc) fn capture(
                 .grid()
                 .neighbor(
                     anchor,
-                    observed_hex::HexFace::LATERAL[usize::from(rotation % 6)],
+                    observed_hex::HexFace::LATERAL
+                        [usize::from((rotation + if slot == 0 { 4 } else { 0 }) % 6)],
                 )
-                .filter(|_| slot == 2)
+                .filter(|_| slot == 0 || slot == 3)
                 .unwrap_or(anchor);
             if let Some(player) = runtime.match_state.players.get_mut(&eye) {
                 player.cell = cell;

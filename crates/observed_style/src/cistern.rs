@@ -11,6 +11,23 @@ pub const CERAMIC_ROUGHNESS: f32 = 0.48;
 pub const WATER_REFLECTANCE: f32 = 0.18;
 pub const WATER_RIPPLE: f32 = 0.0015;
 
+/// Fixed fluorescent downlights carry the bath's illumination. These replace
+/// the district's moving key, so every bay is lit before an Observer enters it.
+pub const FIXTURE_INTENSITY: f32 = 6_000_000.0;
+pub const FIXTURE_RANGE: f32 = 16.0;
+pub const FIXTURE_RADIUS: f32 = 0.25;
+pub const FIXTURE_INNER_ANGLE: f32 = 0.95;
+pub const FIXTURE_OUTER_ANGLE: f32 = 1.2;
+/// A small, fixed bounce fill under each fixture approximates diffuse return
+/// onto the ceiling. It stays shadowless and outside the moving shadow budget.
+pub const FIXTURE_BOUNCE_INTENSITY: f32 = 120_000.0;
+pub const FIXTURE_BOUNCE_RANGE: f32 = 10.0;
+
+#[must_use]
+pub fn fixture_color() -> Color {
+    Color::srgb(0.95, 0.94, 0.83)
+}
+
 #[must_use]
 pub fn water_tint() -> Color {
     Color::srgb(0.18, 0.45, 0.43)

@@ -77,6 +77,35 @@ pub(super) struct PowerAssets {
     recharged: Handle<AudioSource>,
 }
 
+#[cfg(test)]
+impl PowerAssets {
+    /// Lighting tests exercise power transitions without rendering or audio.
+    pub(super) fn for_lighting_test() -> Self {
+        Self {
+            plinth: default(),
+            cap: default(),
+            rotor: default(),
+            core: default(),
+            post: default(),
+            ring: default(),
+            cell: default(),
+            column: default(),
+            body: default(),
+            bronze: default(),
+            powered: default(),
+            cut: default(),
+            charge: default(),
+            dead: default(),
+            haze: default(),
+            unlit_diffuser: default(),
+            power_on: default(),
+            power_off: default(),
+            charge_tick: default(),
+            recharged: default(),
+        }
+    }
+}
+
 impl FromWorld for PowerAssets {
     fn from_world(world: &mut World) -> Self {
         let server = world.resource::<AssetServer>();
@@ -377,6 +406,7 @@ type Practicals<'w, 's> = Query<
         &'static HexPractical,
         &'static GlobalTransform,
         Option<&'static mut PointLight>,
+        Option<&'static mut SpotLight>,
         Option<&'static mut MeshMaterial3d<StandardMaterial>>,
         Option<&'static PracticalAtFullPower>,
     ),
@@ -393,7 +423,7 @@ pub(super) fn sync_practicals(
         return;
     };
     let economy = &ascent.rules().economy;
-    for (entity, practical, placed, light, material, full) in &mut practicals {
+    for (entity, practical, placed, light, spot, material, full) in &mut practicals {
         // A prison maze's cells are practicals too, numbered in the maze's own frame and
         // drawn far below: the facility's floors do not power them.
         if placed.translation().y < -super::ascent::PRISON_DEPTH / 2.0 {
@@ -402,19 +432,29 @@ pub(super) fn sync_practicals(
         let Some(full) = full else {
             // First seen: remember it as built, at full power.
             commands.entity(entity).insert(PracticalAtFullPower {
-                intensity: light.as_ref().map(|light| light.intensity),
+                intensity: light
+                    .as_ref()
+                    .map(|light| light.intensity)
+                    .or_else(|| spot.as_ref().map(|light| light.intensity)),
                 diffuser: material.as_ref().map(|material| material.0.clone()),
             });
             continue;
         };
         let powered = economy.is_powered(practical.0.level);
-        if let (Some(mut light), Some(intensity)) = (light, full.intensity) {
+        if let Some(intensity) = full.intensity {
             let wanted = if powered {
                 intensity
             } else {
                 intensity * DARK_PRACTICAL
             };
-            if light.intensity != wanted {
+            if let Some(mut light) = light
+                && light.intensity != wanted
+            {
+                light.intensity = wanted;
+            }
+            if let Some(mut light) = spot
+                && light.intensity != wanted
+            {
                 light.intensity = wanted;
             }
         }
