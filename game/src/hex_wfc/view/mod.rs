@@ -9,6 +9,7 @@ use std::time::Instant;
 
 mod assets;
 pub(in crate::hex_wfc) mod camera;
+pub(in crate::hex_wfc) mod cistern;
 pub(in crate::hex_wfc) mod exterior;
 pub(in crate::hex_wfc) use camera::{sync_camera, sync_projection};
 mod lighting;
@@ -151,6 +152,7 @@ pub(super) fn setup_view(
         camera::prime_camera(&mut transform, runtime.local());
         commands.entity(camera).insert((
             Hdr,
+            bevy::camera::visibility::RenderLayers::from_layers(&[0, 29]),
             Bloom {
                 intensity: 0.08,
                 ..Bloom::NATURAL

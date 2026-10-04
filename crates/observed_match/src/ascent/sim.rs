@@ -777,6 +777,9 @@ impl ArchitectLab {
                 (!fits).then_some(CommandRefusal::NoLocalAttachment)
             }
             CardKind::Cistern => {
+                if self.district(target.level) != District::GROUND {
+                    return Some(CommandRefusal::WrongDistrict);
+                }
                 if card.district.is_some() && card.district != Some(self.district(target.level)) {
                     return Some(CommandRefusal::WrongDistrict);
                 }
@@ -821,7 +824,7 @@ impl ArchitectLab {
                 }
                 let fits = placements.iter().any(|placement| {
                     HexFace::LATERAL.into_iter().any(|face| {
-                        placement.is_open(face)
+                        placement.ports().port(face) == observed_hex::PortClass::Door
                             && self
                                 .world
                                 .config

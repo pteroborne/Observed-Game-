@@ -45,7 +45,7 @@ pub(in crate::hex_wfc::view) fn sketch_role(
             ClimbPart::High => HexSketchRole::ClimbHigh,
             ClimbPart::Landing { .. } => HexSketchRole::ClimbLanding,
         },
-        HexArchetype::Expanse => HexSketchRole::Expanse,
+        HexArchetype::Expanse | HexArchetype::Cistern { .. } => HexSketchRole::Expanse,
         HexArchetype::Room => HexSketchRole::Room,
     }
 }

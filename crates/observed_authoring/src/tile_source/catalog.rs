@@ -164,7 +164,7 @@ pub(crate) fn library_for(registers: &[&'static str]) -> Vec<GeneratedTile> {
         // already exactly "wall-free where it opens". What makes an expanse an
         // expanse is how many faces open, not a different interior.
         for mask in 1u8..64 {
-            if mask.count_ones() < 3 {
+            if mask.count_ones() < 4 {
                 continue;
             }
             let faces = HexFace::LATERAL

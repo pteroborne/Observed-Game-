@@ -38,7 +38,7 @@ pub(super) const fn card_detail(kind: CardKind) -> &'static str {
         CardKind::Door => "on a doorway",
         CardKind::Station => "recharges your team on a powered floor",
         CardKind::Stair => "climbs a floor",
-        CardKind::Cistern => "3-hex water basin, reflection & shockwave",
+        CardKind::Cistern => "3-hex reservoir, open spans & raised causeways",
         CardKind::Directive => "majors walk here",
         CardKind::Sensor => "sees 4 cells each way",
         CardKind::Surge => "raises floor pressure",

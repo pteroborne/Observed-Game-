@@ -40,6 +40,9 @@ fn press(game: &mut AscentMatch, actions: HexActionButtons) {
 
 /// Walk until a door card can be played, and play it.
 fn deploy_a_door(game: &mut AscentMatch) -> (HexCoord, observed_hex::HexFace) {
+    game.ascent
+        .stage_card(ARCHITECT, CardKind::Door)
+        .expect("stage a real door card");
     let play = explore_until_playable(game, |game, _, _, index| {
         game.session().hands[&TEAM].deck.hand[index].kind == CardKind::Door
     });
@@ -146,6 +149,9 @@ fn a_floor_without_power_freezes_its_doors() {
 #[test]
 fn a_door_between_two_cells_of_one_room_is_refused() {
     let mut game = game(7);
+    game.ascent
+        .stage_card(ARCHITECT, CardKind::Door)
+        .expect("stage a real door card");
     // The team has found every room but the prison's lobby, whose cells are refused as the
     // prison core before a door is even considered.
     let lobby = game.rules().prison_core.clone();

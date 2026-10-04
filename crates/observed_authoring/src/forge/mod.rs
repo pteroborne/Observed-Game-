@@ -8,6 +8,7 @@
 pub mod audience;
 pub mod back;
 pub mod borrowed;
+pub mod cistern;
 pub mod climb;
 pub mod courtyard;
 pub mod entities;
@@ -54,6 +55,7 @@ pub const GENERATED_NOTE: &str =
 pub fn builders() -> Vec<Builder> {
     let mut all = halls::builders();
     all.extend(silos::builders());
+    all.extend(cistern::builders());
     all.extend(rooms::builders());
     all.extend(program::builders());
     all.extend(witness::builders());
@@ -255,11 +257,12 @@ mod tests {
                 worst = (module.prototype.hulls.len(), name);
             }
         }
-        // The spiral stair tower held the budget at 45 until it retired; the most
-        // expensive cell is a hall now, the borrowed fork.
+        // The spiral stair tower held the budget at 45 until it retired. The
+        // Cistern now spends 39 on its arcade, dry gallery, treads and aqueduct;
+        // its complete three-cell room is 117 hulls, below the 128 room budget.
         assert_eq!(
             worst,
-            (36, "borrowed_fork".to_string()),
+            (39, "cistern_sector".to_string()),
             "the most expensive cell in the corpus moved"
         );
     }

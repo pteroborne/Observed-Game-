@@ -272,6 +272,7 @@ pub fn placement_tile_archetype(placement: &HexPlacement) -> Option<&'static str
         HexArchetype::Junction if placement.doors.count_ones() == 3 => Some("hall_junction_3way"),
         HexArchetype::Junction => Some("hall_junction_4way"),
         HexArchetype::Expanse => Some("expanse"),
+        HexArchetype::Cistern { .. } => Some("cistern"),
         HexArchetype::Climb { part, .. } => Some(climb_tile_archetype(part)),
     }
 }

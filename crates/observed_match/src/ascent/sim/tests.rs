@@ -849,7 +849,7 @@ fn cistern_card_places_cohesive_multi_tile_room() {
     for p in placements {
         let world_p = sim.world.placements[&p.coord];
         assert_eq!(world_p.space, HexSpace::Hall);
-        assert_eq!(world_p.archetype, HexArchetype::Expanse);
+        assert!(matches!(world_p.archetype, HexArchetype::Cistern { .. }));
         assert_eq!(world_p.doors, p.doors);
     }
     assert_eq!(sim.cooldown, ARCHITECT_COOLDOWN_TICKS);

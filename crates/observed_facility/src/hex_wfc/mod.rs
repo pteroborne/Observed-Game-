@@ -151,6 +151,12 @@ pub enum HexArchetype {
     /// volume rather than as a row of tiles — the vocabulary the solver was
     /// missing for a vast space.
     Expanse,
+    /// A sector of the three-cell reservoir, with two full-height internal spans.
+    /// Heading selects an exact grid-fitted orientation of the authored sector.
+    Cistern {
+        #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
+        heading: HexFace,
+    },
     /// One cell of a climb composition: a flight that rises a storey across several
     /// cells rather than inside one (`docs/climb_compositions_plan.md`). `heading` is
     /// the lateral direction the flight climbs toward. The cells find each other
@@ -310,6 +316,9 @@ impl HexArchetype {
     #[must_use]
     pub const fn span_mask(self) -> u8 {
         match self {
+            Self::Cistern { heading } => {
+                lateral_bit(heading) | lateral_bit(HexFace::LATERAL[(heading.index() + 1) % 6])
+            }
             Self::Climb { part, heading } => match part {
                 ClimbPart::Foot => lateral_bit(heading),
                 ClimbPart::Mid { turn } => {

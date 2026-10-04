@@ -155,56 +155,36 @@ pub fn authored_climb_shaped(
     ])
 }
 
-/// The three cells of a multi-tile Cistern room composition anchored at `anchor`,
-/// turned by `rotation` (0..6).
-///
-/// A Cistern is a wide, 3-hex contiguous chamber of open water and tall brutalist
-/// columns. The three cells form an equilateral triad in the hex lattice.
-/// Sibling faces between the three cells are open with `HexArchetype::Expanse`,
-/// creating a single continuous 30-meter hall. Three perimeter doors are provided
-/// at 120-degree intervals.
+/// Three sectors of one reservoir. Internal seams are full-height spans, while
+/// the three external thresholds face out at 120-degree intervals. The geometry
+/// selects the exact authored orientation for each sector's span signature.
 #[must_use]
 pub fn authored_cistern_room(
     config: super::HexWfcConfig,
     anchor: HexCoord,
     rotation: u8,
 ) -> Option<[HexPlacement; 3]> {
-    let heading = HexFace::LATERAL[(rotation % 6) as usize];
-    let right = HexFace::LATERAL[((rotation + 1) % 6) as usize];
+    let turn = usize::from(rotation % 6);
+    let face = |offset| HexFace::LATERAL[(turn + offset) % 6];
     let grid = config.grid();
-    let cell_b = grid.neighbor(anchor, heading)?;
-    let cell_c = grid.neighbor(anchor, right)?;
-
-    let bit = |face: HexFace| 1u8 << face.index();
-    let sealed = PortClass::Sealed;
-
-    let bc_face = HexFace::LATERAL[((rotation + 2) % 6) as usize];
-    if grid.neighbor(cell_b, bc_face) != Some(cell_c) {
+    if !grid.contains(anchor) {
         return None;
     }
-
-    let anchor_ext = heading.opposite();
-    let b_ext = heading;
-    let c_ext = right;
-
-    let anchor_doors = bit(heading) | bit(right) | bit(anchor_ext);
-    let b_doors = bit(heading.opposite()) | bit(bc_face) | bit(b_ext);
-    let c_doors = bit(right.opposite()) | bit(bc_face.opposite()) | bit(c_ext);
-
-    let cell = |coord, doors| HexPlacement {
-        coord,
-        space: HexSpace::Hall,
-        archetype: HexArchetype::Expanse,
-        doors,
-        up: sealed,
-        down: sealed,
+    let cell_b = grid.neighbor(anchor, face(0))?;
+    let cell_c = grid.neighbor(anchor, face(1))?;
+    let cell = |coord, offset| {
+        let heading = face(offset);
+        let archetype = HexArchetype::Cistern { heading };
+        HexPlacement {
+            coord,
+            space: HexSpace::Hall,
+            archetype,
+            doors: archetype.span_mask() | (1 << face(offset + 4).index()),
+            up: PortClass::Sealed,
+            down: PortClass::Sealed,
+        }
     };
-
-    Some([
-        cell(anchor, anchor_doors),
-        cell(cell_b, b_doors),
-        cell(cell_c, c_doors),
-    ])
+    Some([cell(anchor, 0), cell(cell_b, 2), cell(cell_c, 4)])
 }
 
 impl HexWfcWorld {
@@ -603,10 +583,11 @@ mod tests {
             assert_eq!(placements.len(), 3);
             let [p0, p1, p2] = placements;
 
-            // All cells are Hall with Expanse archetype
+            // Bespoke sectors retain the ordinary hall topology.
             for p in &placements {
                 assert_eq!(p.space, HexSpace::Hall);
-                assert_eq!(p.archetype, HexArchetype::Expanse);
+                assert!(matches!(p.archetype, HexArchetype::Cistern { .. }));
+                assert_eq!(p.archetype.span_mask().count_ones(), 2);
                 assert_eq!(p.doors.count_ones(), 3); // 2 internal + 1 external
             }
 
@@ -625,6 +606,20 @@ mod tests {
                 .find(|&f| grid.neighbor(p1.coord, f) == Some(p2.coord))
                 .unwrap();
 
+            assert_eq!(p0.ports().port(face_01), PortClass::Span);
+            assert_eq!(p0.ports().port(face_02), PortClass::Span);
+            assert_eq!(p1.ports().port(face_12), PortClass::Span);
+            let external: Vec<_> = placements
+                .iter()
+                .flat_map(|p| {
+                    HexFace::LATERAL
+                        .into_iter()
+                        .filter(|&f| p.ports().port(f) == PortClass::Door)
+                })
+                .map(HexFace::index)
+                .collect();
+            assert_eq!(external.len(), 3);
+            assert!(external.iter().all(|i| i % 2 == external[0] % 2));
             assert!(p0.is_open(face_01));
             assert!(p1.is_open(face_01.opposite()));
 

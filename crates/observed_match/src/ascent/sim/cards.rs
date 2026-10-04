@@ -218,8 +218,8 @@ impl Deck {
         Self::with_stairs(seed, levels, shapes, 0)
     }
 
-    /// Two of each of `shapes`, `stairs` stair cards and `cisterns` multi-tile cistern cards
-    /// in each district, plus doors and, for the first-person game, deployable recharge stations.
+    /// Two of each of `shapes` and `stairs` stair cards in each district, Backrooms
+    /// Cistern cards, plus doors and deployable recharge stations.
     #[must_use]
     pub fn with_stairs_and_cisterns(
         seed: u64,
@@ -248,14 +248,14 @@ impl Deck {
 
     /// A team's deck: [`Self::with_stairs_and_cisterns`], dealing only the ground floor's district until
     /// the team's bodies reach another ([`Self::open_through`]). Includes one multi-tile
-    /// Cistern room per district. Seven districts' tiles dealt from the start would leave most
+    /// Backrooms Cistern room. Seven districts' tiles dealt from the start would leave most
     /// of a hand for floors nobody can reach.
     #[must_use]
     pub fn for_team(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
         Self::for_team_with_cisterns(seed, levels, shapes, stairs, 1)
     }
 
-    /// A team's deck with an explicit number of cistern wonder cards per district.
+    /// A team's deck with an explicit number of Backrooms Cistern wonder cards.
     #[must_use]
     pub fn for_team_with_cisterns(
         seed: u64,
@@ -284,7 +284,7 @@ impl Deck {
     }
 
     /// The Rogue's deck (design section 7): two of each of `shapes` in each district,
-    /// one multi-tile cistern room per district, the doors, and the machinery -
+    /// one Backrooms Cistern room, the doors, and the machinery -
     /// Guardian directives, sensors and surges - but no way up.
     #[must_use]
     pub fn rogue(seed: u64, levels: u8, shapes: &[TileShape]) -> Self {
@@ -304,7 +304,7 @@ impl Deck {
         )
     }
 
-    /// Two of each of `shapes`, `stairs` stairs and `cisterns` cisterns in each district,
+    /// Two of each of `shapes` and `stairs` stairs in each district, Backrooms cisterns,
     /// and `extra` cards of no district, shuffled and dealt from the first `reach` districts.
     fn composed(
         seed: u64,
@@ -337,7 +337,12 @@ impl Deck {
                 });
                 next_id += 1;
             }
-            for _ in 0..cisterns {
+            let wonders = if district == District::GROUND {
+                cisterns
+            } else {
+                0
+            };
+            for _ in 0..wonders {
                 cards.push(Card {
                     id: CardId(next_id),
                     kind: CardKind::Cistern,
@@ -384,14 +389,25 @@ impl Deck {
     /// the hand now holds one. For evidence captures and tests, as the `stage_*` helpers
     /// are: play draws only by refill.
     pub fn stage_kind(&mut self, kind: CardKind) -> bool {
-        if self.hand.iter().any(|card| card.kind == kind) {
+        self.stage_matching(|card| card.kind == kind)
+    }
+
+    /// A fixture needing a local play must not depend on the shuffled hand's
+    /// district. Staging still exchanges a real card from the finite deck.
+    #[cfg(test)]
+    pub(crate) fn stage_in_district(&mut self, kind: CardKind, district: District) -> bool {
+        self.stage_matching(|card| card.kind == kind && card.district == Some(district))
+    }
+
+    fn stage_matching(&mut self, matches: impl Fn(&Card) -> bool) -> bool {
+        if self.hand.iter().any(&matches) {
             return true;
         }
         if self.hand.is_empty() {
             return false;
         }
         for pile in [&mut self.draw, &mut self.discard] {
-            if let Some(index) = pile.iter().position(|card| card.kind == kind) {
+            if let Some(index) = pile.iter().position(&matches) {
                 std::mem::swap(&mut self.hand[0], &mut pile[index]);
                 return true;
             }
@@ -625,6 +641,23 @@ mod tests {
         assert_eq!(climb[6].label(), "Sky");
         assert_eq!(District::for_floor(4, 8), District::for_floor(5, 8));
         assert_eq!(District::climb(1), vec![District::GROUND]);
+    }
+
+    #[test]
+    fn cistern_wonders_belong_only_to_the_backrooms() {
+        for deck in [
+            Deck::for_team(7, 8, &TileShape::AUTHORED, 3),
+            Deck::rogue(7, 8, &TileShape::AUTHORED),
+        ] {
+            let cisterns: Vec<_> = deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .filter(|card| card.kind == CardKind::Cistern)
+                .collect();
+            assert_eq!(cisterns.len(), 1);
+            assert_eq!(cisterns[0].district, Some(District::GROUND));
+        }
     }
 
     /// A team's deck deals the ground floor's tiles and none of a floor its bodies have

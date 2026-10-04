@@ -228,7 +228,15 @@ fn assert_geometry_is_fresh(game: &AscentMatch) {
 #[test]
 fn a_card_play_is_built_into_the_facility_the_bodies_walk_in() {
     let mut game = game(7);
-    let command = explore_until_playable(&mut game, |_, _, _, _| true);
+    let command = explore_until_playable(&mut game, |game, target, rotation, index| {
+        let crate::ascent::sim::CardKind::Tile(shape) =
+            game.session().hands[&TEAM].deck.hand[index].kind
+        else {
+            return false;
+        };
+        game.rules().played_placement(shape, target, rotation)
+            != game.rules().world.placements[&target]
+    });
     let target = target_of(command);
     let before = game.physical().facility.placements[&target];
     let generation = game.physical().facility.generation;
@@ -616,6 +624,10 @@ fn a_bot_architect_repairs_what_the_rogue_breaks_through_the_human_path() {
     }
     // The Rogue plays a contradiction near the body, somewhere it is not looking but its
     // team has mapped: an Architect can repair only what the team knows is there.
+    assert!(game.ascent.session.sim.deck.stage_in_district(
+        crate::ascent::sim::CardKind::Tile(crate::ascent::sim::TileShape::Junction),
+        game.rules().district(0),
+    ));
     let body = game.rules().observers[&ObserverId(BODY.0)].cell;
     let mapped = game.rules().team_knowledge[&TEAM].discovered_cells.clone();
     let sabotage = game
@@ -1000,7 +1012,7 @@ fn cistern_card_play_updates_physical_geometry_and_colliders() {
     for cell in &cells {
         let physical_p = game.physical().facility.placements[cell];
         assert_eq!(physical_p.space, HexSpace::Hall);
-        assert_eq!(physical_p.archetype, HexArchetype::Expanse);
+        assert!(matches!(physical_p.archetype, HexArchetype::Cistern { .. }));
         let has_colliders = game
             .physical()
             .geometry

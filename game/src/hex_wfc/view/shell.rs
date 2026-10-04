@@ -239,6 +239,17 @@ fn spawn_cell(
             )),
         ))
         .id();
+    let reservoir = world.placements.get(&coord).is_some_and(|p| {
+        matches!(
+            p.archetype,
+            observed_facility::hex_wfc::HexArchetype::Cistern { .. }
+        )
+    });
+    if reservoir {
+        commands
+            .entity(cell)
+            .insert(super::cistern::ReservoirCell(coord));
+    }
     let mut child_pieces = spawn_cell_practicals(
         commands,
         assets,
@@ -280,7 +291,11 @@ fn spawn_cell(
         else {
             continue;
         };
-        let material = assets.material_for_group(architecture, group_key);
+        let material = if reservoir {
+            assets.reservoir_material(group_key)
+        } else {
+            assets.material_for_group(architecture, group_key)
+        };
         let mut entity = commands.spawn((
             Mesh3d(mesh),
             MeshMaterial3d(material),

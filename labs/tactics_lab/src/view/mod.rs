@@ -213,7 +213,7 @@ pub fn sketch_role(archetype: HexArchetype, space: HexSpace, in_room: bool) -> H
             ClimbPart::High => HexSketchRole::ClimbHigh,
             ClimbPart::Landing { .. } => HexSketchRole::ClimbLanding,
         },
-        HexArchetype::Expanse => HexSketchRole::Expanse,
+        HexArchetype::Expanse | HexArchetype::Cistern { .. } => HexSketchRole::Expanse,
         HexArchetype::Room => HexSketchRole::Room,
     }
 }

@@ -340,7 +340,9 @@ pub(super) fn composition_at(
         .get(&coord)
         .map(|placement| placement.archetype)
     {
-        Some(HexArchetype::Room | HexArchetype::Expanse) => HexComposition::Room,
+        Some(HexArchetype::Room | HexArchetype::Expanse | HexArchetype::Cistern { .. }) => {
+            HexComposition::Room
+        }
         // A climb is the facility's vertical circulation: lit to stay readable the
         // whole length of its flight.
         Some(HexArchetype::Climb { .. }) => HexComposition::Vertical,

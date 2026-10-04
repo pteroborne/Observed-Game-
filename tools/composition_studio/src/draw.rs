@@ -251,7 +251,7 @@ pub fn sketch_role(archetype: HexArchetype, space: HexSpace, in_blueprint: bool)
             ClimbPart::High => HexSketchRole::ClimbHigh,
             ClimbPart::Landing { .. } => HexSketchRole::ClimbLanding,
         },
-        HexArchetype::Expanse => HexSketchRole::Expanse,
+        HexArchetype::Expanse | HexArchetype::Cistern { .. } => HexSketchRole::Expanse,
         HexArchetype::Room => HexSketchRole::Room,
     }
 }

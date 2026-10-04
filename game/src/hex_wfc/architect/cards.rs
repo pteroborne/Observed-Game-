@@ -246,7 +246,7 @@ pub(super) fn sync(
                                 let cell_offset = Vec3::from_array(hex_origin(p.coord))
                                     - Vec3::from_array(hex_origin(cell));
                                 for face in HexFace::LATERAL {
-                                    if p.is_open(face) {
+                                    if p.ports().port(face) == observed_hex::PortClass::Door {
                                         bars.push((face, cell_offset));
                                     }
                                 }
