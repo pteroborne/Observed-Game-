@@ -37,7 +37,7 @@ const DOOR_SCALE: f32 = 0.04;
 /// A stair stands two floors tall.
 const STAIR_SCALE: f32 = 0.13;
 /// A cistern spans three contiguous hexes.
-const CISTERN_SCALE: f32 = 0.14;
+const WONDER_SCALE: f32 = 0.14;
 
 /// Every card layer, for the light that lights them.
 pub(super) fn layers() -> impl Iterator<Item = usize> {
@@ -157,7 +157,7 @@ pub(super) fn sync(
                 ortho.scale = match card.kind {
                     CardKind::Tile(_) => TILE_SCALE,
                     CardKind::Stair => STAIR_SCALE,
-                    CardKind::Cistern => CISTERN_SCALE,
+                    CardKind::Cistern | CardKind::Chargeworks => WONDER_SCALE,
                     CardKind::Door
                     | CardKind::Station
                     | CardKind::Directive
@@ -179,7 +179,7 @@ pub(super) fn sync(
             ));
         };
         match card.kind {
-            CardKind::Tile(_) | CardKind::Stair | CardKind::Cistern => {
+            CardKind::Tile(_) | CardKind::Stair | CardKind::Cistern | CardKind::Chargeworks => {
                 let register = card
                     .district
                     .map_or(ArchitectureRegister::ALL[0], |district| district.register());
@@ -235,13 +235,21 @@ pub(super) fn sync(
                         .filter(|face| shape.doors(rotation) & (1 << face.index()) != 0)
                         .map(|face| (face, Vec3::ZERO))
                         .collect(),
-                    CardKind::Cistern => {
+                    CardKind::Cistern | CardKind::Chargeworks => {
                         let mut bars = Vec::new();
-                        if let Some(placements) = observed_facility::hex_wfc::authored_cistern_room(
-                            physical.facility.config,
-                            cell,
-                            rotation,
-                        ) {
+                        if let Some(placements) = if card.kind == CardKind::Cistern {
+                            observed_facility::hex_wfc::authored_cistern_room(
+                                physical.facility.config,
+                                cell,
+                                rotation,
+                            )
+                        } else {
+                            observed_facility::hex_wfc::authored_chargeworks(
+                                physical.facility.config,
+                                cell,
+                                rotation,
+                            )
+                        } {
                             for p in placements {
                                 let cell_offset = Vec3::from_array(hex_origin(p.coord))
                                     - Vec3::from_array(hex_origin(cell));

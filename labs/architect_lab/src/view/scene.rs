@@ -119,6 +119,7 @@ pub fn sync_previews(
             // facility's decks do.
             CardKind::Stair
             | CardKind::Cistern
+            | CardKind::Chargeworks
             | CardKind::Station
             | CardKind::Directive
             | CardKind::Sensor
@@ -333,6 +334,7 @@ pub fn rebuild_board(
                 CardKind::Door => door_parts(&models, models.ghost.clone(), session.rotation),
                 CardKind::Stair
                 | CardKind::Cistern
+                | CardKind::Chargeworks
                 | CardKind::Station
                 | CardKind::Directive
                 | CardKind::Sensor

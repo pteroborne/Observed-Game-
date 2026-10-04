@@ -776,18 +776,19 @@ impl ArchitectLab {
                     .is_some_and(|next| next.space.built() && next.is_open(entrance.opposite()));
                 (!fits).then_some(CommandRefusal::NoLocalAttachment)
             }
-            CardKind::Cistern => {
-                if self.district(target.level) != District::GROUND {
+            CardKind::Cistern | CardKind::Chargeworks => {
+                let district = if card.kind == CardKind::Cistern {
+                    District::GROUND
+                } else {
+                    District::REACTOR
+                };
+                if self.district(target.level) != district {
                     return Some(CommandRefusal::WrongDistrict);
                 }
                 if card.district.is_some() && card.district != Some(self.district(target.level)) {
                     return Some(CommandRefusal::WrongDistrict);
                 }
-                let Some(placements) = observed_facility::hex_wfc::authored_cistern_room(
-                    self.world.config,
-                    target,
-                    rotation,
-                ) else {
+                let Some(placements) = self.wonder_placements(card.kind, target, rotation) else {
                     return Some(CommandRefusal::Unbuildable);
                 };
                 let cells = placements.map(|p| p.coord);
@@ -957,11 +958,36 @@ impl ArchitectLab {
         .expect("legality proved the climb fits the facility")
     }
 
-    /// The three cells a Cistern play builds from `target`, turned by `rotation`.
+    /// The three cells one wonder card commits together.
+    #[must_use]
+    pub fn played_wonder(
+        &self,
+        kind: CardKind,
+        target: HexCoord,
+        rotation: u8,
+    ) -> [HexPlacement; 3] {
+        self.wonder_placements(kind, target, rotation)
+            .expect("legality proved the wonder fits")
+    }
+
+    fn wonder_placements(
+        &self,
+        kind: CardKind,
+        target: HexCoord,
+        rotation: u8,
+    ) -> Option<[HexPlacement; 3]> {
+        use observed_facility::hex_wfc::{authored_chargeworks, authored_cistern_room};
+        match kind {
+            CardKind::Cistern => authored_cistern_room(self.world.config, target, rotation),
+            CardKind::Chargeworks => authored_chargeworks(self.world.config, target, rotation),
+            _ => None,
+        }
+    }
+
+    /// The Cistern's three cells, retained for existing capture and tooling.
     #[must_use]
     pub fn played_cistern(&self, target: HexCoord, rotation: u8) -> [HexPlacement; 3] {
-        observed_facility::hex_wfc::authored_cistern_room(self.world.config, target, rotation)
-            .expect("legality proved the cistern fits the facility")
+        self.played_wonder(CardKind::Cistern, target, rotation)
     }
 
     pub fn submit(&mut self, command: ArchitectCommand) -> Result<(), CommandRefusal> {
@@ -1051,8 +1077,8 @@ impl ArchitectLab {
                                 .retain(|key, _| !threshold_touches(*key, cell, &self.world));
                         }
                     }
-                    CardKind::Cistern => {
-                        for placement in self.played_cistern(target, rotation) {
+                    CardKind::Cistern | CardKind::Chargeworks => {
+                        for placement in self.played_wonder(held.kind, target, rotation) {
                             let cell = placement.coord;
                             self.rewrite(placement);
                             self.retracted.remove(&cell);

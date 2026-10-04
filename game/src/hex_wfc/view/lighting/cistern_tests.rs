@@ -6,6 +6,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn the_whole_cistern_stays_lit_before_entry_and_across_sector_changes() {
+    fixed_wonder_lighting(false);
+}
+
+#[test]
+fn the_whole_chargeworks_stays_lit_and_follows_generator_power() {
+    fixed_wonder_lighting(true);
+}
+
+fn fixed_wonder_lighting(factory: bool) {
     let mut game = HexWfcMatch::new(
         44,
         HexMatchConfig::default(),
@@ -24,8 +33,15 @@ fn the_whole_cistern_stays_lit_before_entry_and_across_sector_changes() {
         .collect();
     assert_eq!(cells.len(), 3);
     for cell in &cells {
-        game.facility.placements.get_mut(cell).unwrap().archetype = HexArchetype::Cistern {
-            heading: HexFace::East,
+        game.facility.placements.get_mut(cell).unwrap().archetype = if factory {
+            HexArchetype::Chargeworks {
+                part: observed_facility::hex_wfc::ChargeworksPart::Transfer,
+                heading: HexFace::East,
+            }
+        } else {
+            HexArchetype::Cistern {
+                heading: HexFace::East,
+            }
         };
     }
     let mut ascent =
@@ -95,7 +111,11 @@ fn the_whole_cistern_stays_lit_before_entry_and_across_sector_changes() {
                     HexComposition::Room,
                     3,
                 ),
-                true,
+                Some(if factory {
+                    WonderLighting::Chargeworks
+                } else {
+                    WonderLighting::Cistern
+                }),
             );
         }
     }
@@ -114,7 +134,7 @@ fn the_whole_cistern_stays_lit_before_entry_and_across_sector_changes() {
         world
             .query_filtered::<(Entity, &Transform), (
                 With<PointLight>,
-                With<super::practicals::FixedReservoirLight>,
+                With<super::practicals::FixedPlaceLight>,
             )>()
             .iter(world)
             .map(|(e, t)| (e, *t))
@@ -162,7 +182,11 @@ fn the_whole_cistern_stays_lit_before_entry_and_across_sector_changes() {
         for (entity, pose) in &fixed {
             assert_eq!(
                 app.world().get::<SpotLight>(*entity).unwrap().intensity,
-                observed_style::cistern::FIXTURE_INTENSITY * scale
+                if factory {
+                    observed_style::chargeworks::FIXTURE_INTENSITY
+                } else {
+                    observed_style::cistern::FIXTURE_INTENSITY
+                } * scale
             );
             assert_eq!(app.world().get::<Transform>(*entity).unwrap(), pose);
         }
@@ -173,7 +197,11 @@ fn the_whole_cistern_stays_lit_before_entry_and_across_sector_changes() {
         for (entity, _) in &fills {
             assert_eq!(
                 app.world().get::<PointLight>(*entity).unwrap().intensity,
-                observed_style::cistern::FIXTURE_BOUNCE_INTENSITY * scale
+                if factory {
+                    observed_style::chargeworks::FIXTURE_BOUNCE_INTENSITY
+                } else {
+                    observed_style::cistern::FIXTURE_BOUNCE_INTENSITY
+                } * scale
             );
         }
     }

@@ -25,3 +25,6 @@ we-need-to-come-tidy-emerson.md
 
 # Python bytecode from tools/tileforge.py
 __pycache__/
+
+# Raw Chargeworks walkthrough frames; the verified MP4 is tracked.
+docs/evidence/chargeworks/chargeworks-walk-*.png

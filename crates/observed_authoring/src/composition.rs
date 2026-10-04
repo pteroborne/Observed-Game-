@@ -802,7 +802,7 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "0db7087c42dabbd3f912993572777d7f945d63578f85dadc8e807176aa7c0b27";
+            "1662451566b9f5676adbe006305f58a15a73afdcce07d9b031b3fe869a7ee546";
         // The open-air composition (void share 2,000), 2026-09-24, at profile
         // version 6 since the ramps and towers retired and its bias names `climb`.
         const PROFILE_HASH: &str =
@@ -811,7 +811,7 @@ mod tests {
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "8510a913c510c708b3601e35141411fe38b9edde6df5fe5195468d059599762c";
+            "4530a85863ddd58d81485caa51d18e4cbb791d025553912d0d685195ec041ee1";
 
         let root = committed_tiles();
         let compiled_text =
@@ -823,7 +823,7 @@ mod tests {
         // climbed by a composition since, and none of either is compiled. 230 since
         // climbs turn: four turning mid cells and three turned landings, in seven
         // dressings.
-        assert_eq!(compiled.modules.len(), 236, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 254, "committed strict source count");
         assert!(
             compiled
                 .modules

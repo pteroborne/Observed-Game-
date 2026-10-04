@@ -20,10 +20,10 @@ pub(in crate::hex_wfc) use super::mesh_group::MeshGroupKey;
 use super::open_edge_materials::OpenEdgeMaterials;
 use crate::view::environment::{cuboid_mesh, load_repeating_texture};
 
-mod reservoir;
 mod textures;
-use reservoir::ReservoirMaterials;
+mod wonder;
 use textures::surface_texture;
+use wonder::WonderMaterials;
 
 #[derive(Clone)]
 pub(in crate::hex_wfc) struct RegisterMaterials {
@@ -71,7 +71,9 @@ enum HorizontalSurface {
 #[derive(Resource)]
 pub(in crate::hex_wfc) struct HexWfcVisualAssets {
     registers: Vec<RegisterMaterials>,
-    reservoir: ReservoirMaterials,
+    reservoir: WonderMaterials,
+    chargeworks: WonderMaterials,
+    chargeworks_details: [Handle<StandardMaterial>; 4],
     hull_cache: HashMap<(String, usize), Handle<Mesh>>,
     cuboid_cache: HashMap<[u32; 3], Handle<Mesh>>,
     merged_hull_cache: HashMap<(String, MeshGroupKey), Handle<Mesh>>,
@@ -160,9 +162,12 @@ impl HexWfcVisualAssets {
                 }
             })
             .collect();
-        let reservoir = ReservoirMaterials::load(materials, images);
+        let reservoir = WonderMaterials::load(materials, images, false);
+        let chargeworks = WonderMaterials::load(materials, images, true);
         Self {
             reservoir,
+            chargeworks,
+            chargeworks_details: wonder::details(materials),
             registers,
             hull_cache: HashMap::new(),
             cuboid_cache: HashMap::new(),
@@ -185,13 +190,33 @@ impl HexWfcVisualAssets {
             })
             .collect();
         Self {
-            reservoir: ReservoirMaterials::for_test(&dummy),
+            reservoir: WonderMaterials::for_test(&dummy),
+            chargeworks: WonderMaterials::for_test(&dummy),
+            chargeworks_details: std::array::from_fn(|_| dummy.clone()),
             registers,
             hull_cache: HashMap::new(),
             cuboid_cache: HashMap::new(),
             merged_hull_cache: HashMap::new(),
             open_edge: OpenEdgeMaterials::new(materials),
         }
+    }
+
+    pub(super) fn chargeworks_detail(&self, index: usize) -> Handle<StandardMaterial> {
+        self.chargeworks_details[index].clone()
+    }
+    pub(super) fn detail_box(&mut self, meshes: &mut Assets<Mesh>, size: Vec3) -> Handle<Mesh> {
+        let key = [size.x.to_bits(), size.y.to_bits(), size.z.to_bits()];
+        self.cuboid_cache
+            .entry(key)
+            .or_insert_with(|| meshes.add(cuboid_mesh(size)))
+            .clone()
+    }
+
+    pub(in crate::hex_wfc) fn chargeworks_material(
+        &self,
+        group: MeshGroupKey,
+    ) -> Handle<StandardMaterial> {
+        self.chargeworks.for_group(group)
     }
 
     pub(in crate::hex_wfc) fn reservoir_material(

@@ -1530,9 +1530,10 @@ fn composition(
         return observed_style::HexComposition::Hall;
     };
     match placement.archetype {
-        HexArchetype::Room | HexArchetype::Expanse | HexArchetype::Cistern { .. } => {
-            observed_style::HexComposition::Room
-        }
+        HexArchetype::Room
+        | HexArchetype::Expanse
+        | HexArchetype::Cistern { .. }
+        | HexArchetype::Chargeworks { .. } => observed_style::HexComposition::Room,
         HexArchetype::Climb { .. } => observed_style::HexComposition::Vertical,
         _ => observed_style::HexComposition::Hall,
     }

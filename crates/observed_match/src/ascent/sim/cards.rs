@@ -24,6 +24,7 @@ pub struct District(ArchitectureRegister);
 impl District {
     /// The ground floor's: the Backrooms, on a facility of any height.
     pub const GROUND: Self = Self(ArchitectureRegister::CLIMB[0]);
+    pub const REACTOR: Self = Self(ArchitectureRegister::Megastructure);
 
     /// The district of floor `level` of a facility `levels` tall.
     #[must_use]
@@ -143,6 +144,8 @@ pub enum CardKind {
     /// A multi-tile liminal room: a vast 3-hex water basin and column hall placed
     /// atomically by the Architect. Sibling faces are opened with `Expanse` geometry.
     Cistern,
+    /// One Reactor card places the fabrication, transfer and receiving spaces.
+    Chargeworks,
     /// The Rogue's: send the major Guardians to the cell played on (`sim::directive`).
     Directive,
     /// The Rogue's: install a sensor on the cell played on (`sim::sensor`).
@@ -180,6 +183,10 @@ impl Card {
             (CardKind::Stair, None) => "stair".to_string(),
             (CardKind::Cistern, Some(district)) => format!("cistern - {}", district.label()),
             (CardKind::Cistern, None) => "cistern".to_string(),
+            (CardKind::Chargeworks, Some(district)) => {
+                format!("chargeworks - {}", district.label())
+            }
+            (CardKind::Chargeworks, None) => "chargeworks".to_string(),
             (CardKind::Tile(shape), None) => shape.label().to_string(),
             (CardKind::Directive, _) => "Guardian directive".to_string(),
             (CardKind::Sensor, _) => "sensor".to_string(),
@@ -218,22 +225,22 @@ impl Deck {
         Self::with_stairs(seed, levels, shapes, 0)
     }
 
-    /// Two of each of `shapes` and `stairs` stair cards in each district, Backrooms
-    /// Cistern cards, plus doors and deployable recharge stations.
+    /// Two of each of `shapes` and `stairs` stair cards in each district, Backrooms Cistern and Reactor
+    /// Chargeworks cards, plus doors and deployable recharge stations.
     #[must_use]
-    pub fn with_stairs_and_cisterns(
+    pub fn with_stairs_and_wonders(
         seed: u64,
         levels: u8,
         shapes: &[TileShape],
         stairs: u8,
-        cisterns: u8,
+        wonders: u8,
     ) -> Self {
         Self::composed(
             seed,
             levels,
             shapes,
             stairs,
-            cisterns,
+            wonders,
             &Self::loyal_extras(stairs),
             usize::MAX,
         )
@@ -243,33 +250,33 @@ impl Deck {
     /// and, for the first-person game, deployable recharge stations.
     #[must_use]
     pub fn with_stairs(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
-        Self::with_stairs_and_cisterns(seed, levels, shapes, stairs, 0)
+        Self::with_stairs_and_wonders(seed, levels, shapes, stairs, 0)
     }
 
-    /// A team's deck: [`Self::with_stairs_and_cisterns`], dealing only the ground floor's district until
+    /// A team's deck: [`Self::with_stairs_and_wonders`], dealing only the ground floor's district until
     /// the team's bodies reach another ([`Self::open_through`]). Includes one multi-tile
-    /// Backrooms Cistern room. Seven districts' tiles dealt from the start would leave most
+    /// Backrooms Cistern and Reactor Chargeworks. Seven districts' tiles dealt from the start would leave most
     /// of a hand for floors nobody can reach.
     #[must_use]
     pub fn for_team(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
-        Self::for_team_with_cisterns(seed, levels, shapes, stairs, 1)
+        Self::for_team_with_wonders(seed, levels, shapes, stairs, 1)
     }
 
-    /// A team's deck with an explicit number of Backrooms Cistern wonder cards.
+    /// A team's deck with an explicit number of each district's authored wonder cards.
     #[must_use]
-    pub fn for_team_with_cisterns(
+    pub fn for_team_with_wonders(
         seed: u64,
         levels: u8,
         shapes: &[TileShape],
         stairs: u8,
-        cisterns: u8,
+        wonders: u8,
     ) -> Self {
         Self::composed(
             seed,
             levels,
             shapes,
             stairs,
-            cisterns,
+            wonders,
             &Self::loyal_extras(stairs),
             1,
         )
@@ -284,7 +291,7 @@ impl Deck {
     }
 
     /// The Rogue's deck (design section 7): two of each of `shapes` in each district,
-    /// one Backrooms Cistern room, the doors, and the machinery -
+    /// one Cistern and one Chargeworks where their districts exist, the doors, and the machinery -
     /// Guardian directives, sensors and surges - but no way up.
     #[must_use]
     pub fn rogue(seed: u64, levels: u8, shapes: &[TileShape]) -> Self {
@@ -304,14 +311,14 @@ impl Deck {
         )
     }
 
-    /// Two of each of `shapes` and `stairs` stairs in each district, Backrooms cisterns,
+    /// Two of each of `shapes` and `stairs` stairs in each district, district wonders,
     /// and `extra` cards of no district, shuffled and dealt from the first `reach` districts.
     fn composed(
         seed: u64,
         levels: u8,
         shapes: &[TileShape],
         stairs: u8,
-        cisterns: u8,
+        wonders: u8,
         extra: &[(CardKind, u8)],
         reach: usize,
     ) -> Self {
@@ -337,15 +344,20 @@ impl Deck {
                 });
                 next_id += 1;
             }
-            let wonders = if district == District::GROUND {
-                cisterns
+            let wonder = if district == District::GROUND {
+                Some(CardKind::Cistern)
+            } else if district == District::REACTOR {
+                Some(CardKind::Chargeworks)
             } else {
-                0
+                None
             };
-            for _ in 0..wonders {
+            for kind in wonder
+                .into_iter()
+                .flat_map(|kind| std::iter::repeat_n(kind, usize::from(wonders)))
+            {
                 cards.push(Card {
                     id: CardId(next_id),
-                    kind: CardKind::Cistern,
+                    kind,
                     district: Some(district),
                 });
                 next_id += 1;
@@ -658,6 +670,31 @@ mod tests {
             assert_eq!(cisterns.len(), 1);
             assert_eq!(cisterns[0].district, Some(District::GROUND));
         }
+    }
+
+    #[test]
+    fn chargeworks_is_a_single_reactor_wonder_in_both_finite_decks() {
+        for deck in [
+            Deck::for_team(7, 8, &TileShape::AUTHORED, 3),
+            Deck::rogue(7, 8, &TileShape::AUTHORED),
+        ] {
+            let cards: Vec<_> = deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .filter(|c| c.kind == CardKind::Chargeworks)
+                .collect();
+            assert_eq!(cards.len(), 1);
+            assert_eq!(cards[0].district, Some(District::REACTOR));
+        }
+        let deck = Deck::for_team(7, 1, &TileShape::AUTHORED, 3);
+        assert!(
+            !deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .any(|c| c.kind == CardKind::Chargeworks)
+        );
     }
 
     /// A team's deck deals the ground floor's tiles and none of a floor its bodies have

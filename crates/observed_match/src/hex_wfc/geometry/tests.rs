@@ -1863,7 +1863,7 @@ fn cistern_crossings_and_galleries_are_physical_for_every_rotation() {
             if reverse {
                 route.reverse();
             }
-            walk_cistern_route(&scene, &route)
+            walk_room_route(&scene, &route)
                 .unwrap_or_else(|feet| panic!("rotation {rotation} crossing stalled at {feet:?}"));
         }
         for sector in sectors {
@@ -1886,7 +1886,7 @@ fn cistern_crossings_and_galleries_are_physical_for_every_rotation() {
                 if reverse {
                     route.reverse();
                 }
-                walk_cistern_route(&scene, &route).unwrap_or_else(|feet| {
+                walk_room_route(&scene, &route).unwrap_or_else(|feet| {
                     panic!("rotation {rotation}, sector {heading:?} gallery stalled at {feet:?}")
                 });
             }
@@ -1936,7 +1936,7 @@ fn cistern_crossings_and_galleries_are_physical_for_every_rotation() {
 }
 
 /// Walk real collision geometry, including the 25 cm gallery/deck steps.
-fn walk_cistern_route(scene: &RapierTraversalScene, route: &[Vec3]) -> Result<(), Vec3> {
+fn walk_room_route(scene: &RapierTraversalScene, route: &[Vec3]) -> Result<(), Vec3> {
     let config = FpsConfig::default();
     let mut body = FpsBody::spawned(route[0] + Vec3::Y * config.half_height, 0.0);
     for target in &route[1..] {
@@ -1944,7 +1944,7 @@ fn walk_cistern_route(scene: &RapierTraversalScene, route: &[Vec3]) -> Result<()
         for _ in 0..600 {
             let feet = body.position - Vec3::Y * config.half_height;
             let toward = (*target - feet).with_y(0.0);
-            if toward.length() < 0.25 {
+            if toward.length() < 0.25 && (feet.y - target.y).abs() < 0.35 {
                 arrived = true;
                 break;
             }
@@ -1966,3 +1966,5 @@ fn walk_cistern_route(scene: &RapierTraversalScene, route: &[Vec3]) -> Result<()
     }
     Ok(())
 }
+
+mod chargeworks;

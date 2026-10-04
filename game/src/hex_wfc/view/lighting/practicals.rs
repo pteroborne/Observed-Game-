@@ -9,7 +9,13 @@ use observed_style::{HexPracticalLight, cistern};
 use super::super::HexPractical;
 
 #[derive(Component)]
-pub(in crate::hex_wfc) struct FixedReservoirLight;
+pub(in crate::hex_wfc) struct FixedPlaceLight;
+
+#[derive(Clone, Copy)]
+pub(in crate::hex_wfc) enum WonderLighting {
+    Cistern,
+    Chargeworks,
+}
 
 pub(in crate::hex_wfc::view) fn spawn_practical(
     commands: &mut Commands,
@@ -17,7 +23,7 @@ pub(in crate::hex_wfc::view) fn spawn_practical(
     coord: HexCoord,
     position: Vec3,
     practical: HexPracticalLight,
-    reservoir: bool,
+    wonder: Option<WonderLighting>,
 ) -> usize {
     let mut light = commands.spawn((
         HexPractical(coord),
@@ -25,12 +31,22 @@ pub(in crate::hex_wfc::view) fn spawn_practical(
         ChildOf(parent),
         Name::new("Authored tile practical"),
     ));
-    if reservoir {
+    if let Some(theme) = wonder {
+        let factory = matches!(theme, WonderLighting::Chargeworks);
+        let color = if factory {
+            observed_style::chargeworks::fixture_color()
+        } else {
+            cistern::fixture_color()
+        };
         light.insert((
-            FixedReservoirLight,
+            FixedPlaceLight,
             SpotLight {
-                color: cistern::fixture_color(),
-                intensity: cistern::FIXTURE_INTENSITY,
+                color,
+                intensity: if factory {
+                    observed_style::chargeworks::FIXTURE_INTENSITY
+                } else {
+                    cistern::FIXTURE_INTENSITY
+                },
                 range: cistern::FIXTURE_RANGE,
                 radius: cistern::FIXTURE_RADIUS,
                 inner_angle: cistern::FIXTURE_INNER_ANGLE,
@@ -39,21 +55,25 @@ pub(in crate::hex_wfc::view) fn spawn_practical(
                 ..default()
             },
             Transform::from_translation(position).looking_to(Vec3::NEG_Y, Vec3::Z),
-            Name::new("Fixed Cistern fluorescent downlight"),
+            Name::new("Fixed wonder work downlight"),
         ));
         commands.spawn((
             HexPractical(coord),
-            FixedReservoirLight,
+            FixedPlaceLight,
             PointLight {
-                color: cistern::fixture_color(),
-                intensity: cistern::FIXTURE_BOUNCE_INTENSITY,
+                color,
+                intensity: if factory {
+                    observed_style::chargeworks::FIXTURE_BOUNCE_INTENSITY
+                } else {
+                    cistern::FIXTURE_BOUNCE_INTENSITY
+                },
                 range: cistern::FIXTURE_BOUNCE_RANGE,
                 shadow_maps_enabled: false,
                 ..default()
             },
             Transform::from_translation(position - Vec3::Y * 0.5),
             ChildOf(parent),
-            Name::new("Fixed Cistern diffuse bounce fill"),
+            Name::new("Fixed wonder diffuse bounce fill"),
         ));
         2
     } else {

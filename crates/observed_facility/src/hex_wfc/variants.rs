@@ -273,6 +273,11 @@ pub fn placement_tile_archetype(placement: &HexPlacement) -> Option<&'static str
         HexArchetype::Junction => Some("hall_junction_4way"),
         HexArchetype::Expanse => Some("expanse"),
         HexArchetype::Cistern { .. } => Some("cistern"),
+        HexArchetype::Chargeworks { part, .. } => Some(match part {
+            super::ChargeworksPart::Fabricator => "chargeworks_fabricator",
+            super::ChargeworksPart::Transfer => "chargeworks_transfer",
+            super::ChargeworksPart::Receiver => "chargeworks_receiver",
+        }),
         HexArchetype::Climb { part, .. } => Some(climb_tile_archetype(part)),
     }
 }

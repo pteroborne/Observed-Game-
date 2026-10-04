@@ -164,6 +164,33 @@ pub fn authored_cistern_room(
     anchor: HexCoord,
     rotation: u8,
 ) -> Option<[HexPlacement; 3]> {
+    authored_triad(config, anchor, rotation, |_, heading| {
+        HexArchetype::Cistern { heading }
+    })
+}
+
+/// One card places a fabrication bay, transfer floor and receiving vault.
+#[must_use]
+pub fn authored_chargeworks(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    use super::ChargeworksPart::{Fabricator, Receiver, Transfer};
+    authored_triad(config, anchor, rotation, |offset, heading| {
+        HexArchetype::Chargeworks {
+            part: [Fabricator, Transfer, Receiver][offset / 2],
+            heading,
+        }
+    })
+}
+
+fn authored_triad(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+    archetype: impl Fn(usize, HexFace) -> HexArchetype,
+) -> Option<[HexPlacement; 3]> {
     let turn = usize::from(rotation % 6);
     let face = |offset| HexFace::LATERAL[(turn + offset) % 6];
     let grid = config.grid();
@@ -174,7 +201,7 @@ pub fn authored_cistern_room(
     let cell_c = grid.neighbor(anchor, face(1))?;
     let cell = |coord, offset| {
         let heading = face(offset);
-        let archetype = HexArchetype::Cistern { heading };
+        let archetype = archetype(offset, heading);
         HexPlacement {
             coord,
             space: HexSpace::Hall,

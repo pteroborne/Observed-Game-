@@ -88,7 +88,7 @@ Each wonder should make that district's existing play memorable. These are a sho
 | Lumen / Overlit Grid | **The Switching Concourse** — an oversized, brightly lit station hall | Multiple approaches around the floor's existing generator let teams contest power while keeping sightlines readable. |
 | Zen / Shadow Screen | **The Rain Court** — sheltered engawa around an open garden | Screens and offset paths reward coordinated observation during crossing and rescue. |
 | Monument / Facet Monument | **The Jade Nave** — monumental piers and separated elevated landings | One Observer watches a Guardian while another crosses toward an ascent connection. |
-| Reactor / Megastructure | **The Cooling Exchange** — maintenance galleries around great cooling vessels | A contest over machinery access and route repair; a possible later hydraulic supply or discharge site. |
+| Reactor / Megastructure | [**The Chargeworks**](chargeworks_wonder_proposal.md) — charge factory, conveyor transfer floor and receiving vault; three hexes | Ground crossing and gantry observation now; a proposed factory-to-receiver Rogue delivery quota later. |
 | Sky / Thinning | **The Last Promenade** — thin bridges approaching the summit | The existing loyal-team finish becomes a visible act of regrouping and covering the last teammate. |
 
 The requested planning model is seven districts with one wonder per district floor. The branch currently defines an eight-floor climb with Monument repeated: see `ArchitectureRegister::CLIMB` in [observed_content](../crates/observed_content/src/lib.rs). This proposal does not change that progression. The seven-wonder set could serve a future seven-floor climb, or use two placements/variations of the Jade Nave on the current repeated district.

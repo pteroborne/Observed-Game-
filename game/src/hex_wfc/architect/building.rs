@@ -337,6 +337,12 @@ pub(super) fn built_by(
             rotation,
         )?
         .to_vec(),
+        CardKind::Chargeworks => observed_facility::hex_wfc::authored_chargeworks(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
         CardKind::Door
         | CardKind::Station
         | CardKind::Directive

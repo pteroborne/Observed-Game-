@@ -1025,3 +1025,183 @@ fn cistern_card_play_updates_physical_geometry_and_colliders() {
         );
     }
 }
+
+#[test]
+fn chargeworks_card_is_reactor_only_and_commits_three_physical_cells_atomically() {
+    use crate::ascent::sim::{CardKind, District};
+    use observed_facility::hex_wfc::{HexArchetype, HexSpace};
+    let config = HexMatchConfig {
+        teams: 1,
+        members_per_team: 1,
+        guardian: false,
+        wfc: HexWfcConfig {
+            levels: 8,
+            ..HexWfcConfig::default()
+        },
+    };
+    let physical = HexWfcMatch::new_with_content(
+        7,
+        config,
+        crate::hex_wfc::compatibility_test_content().clone(),
+    )
+    .unwrap();
+    let cell = physical
+        .facility
+        .placements
+        .iter()
+        .find_map(|(&c, p)| {
+            (District::for_floor(c.level, 8) == District::REACTOR
+                && matches!(
+                    p.archetype,
+                    HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
+                )
+                && !physical
+                    .facility
+                    .blueprints
+                    .iter()
+                    .any(|b| b.cells.contains(&c)))
+            .then_some(c)
+        })
+        .expect("a Reactor deck");
+    let mut game = AscentMatch::new(
+        physical,
+        7,
+        BTreeMap::from([(
+            ARCHITECT,
+            Seat {
+                role: Role::Architect(TEAM),
+                bot: false,
+            },
+        )]),
+    )
+    .unwrap();
+    game.ascent.stage_power(cell.level, true);
+    let card = game
+        .ascent
+        .stage_card(ARCHITECT, CardKind::Chargeworks)
+        .expect("real card from deck");
+    let ground = *game
+        .physical
+        .facility
+        .placements
+        .keys()
+        .find(|c| {
+            c.level == 0
+                && !game.rules().observed.contains(c)
+                && !game.rules().prison_core.contains(c)
+                && !game.rules().anchored.contains(c)
+        })
+        .unwrap();
+    game.ascent
+        .session
+        .sim
+        .team_knowledge
+        .get_mut(&TEAM)
+        .unwrap()
+        .discovered_cells
+        .insert(ground);
+    assert_eq!(
+        game.session().architect_refusal(
+            ARCHITECT,
+            ArchitectCommand::Play {
+                card,
+                target: ground,
+                rotation: 0
+            }
+        ),
+        Some(Refusal::Architect(CommandRefusal::WrongDistrict))
+    );
+    // Pick a suitable starting hall, then discover it and leave through its real door.
+    let mut probe = game.rules().clone();
+    probe.deck = game.session().hands[&TEAM].deck.clone();
+    probe.known = probe.world.placements.keys().copied().collect();
+    probe.cooldown = 0;
+    let grid = probe.world.config.grid();
+    let (site, departure) = probe
+        .world
+        .placements
+        .iter()
+        .find_map(|(&at, p)| {
+            if !matches!(
+                p.archetype,
+                HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
+            ) {
+                return None;
+            }
+            if !(0..6).any(|rotation| {
+                probe
+                    .refusal(ArchitectCommand::Play {
+                        card,
+                        target: at,
+                        rotation,
+                    })
+                    .is_none()
+            }) {
+                return None;
+            }
+            observed_hex::HexFace::LATERAL.into_iter().find_map(|face| {
+                let next = grid.neighbor(at, face)?;
+                let other = probe.world.placements.get(&next)?;
+                (p.is_open(face) && other.is_open(face.opposite()) && other.space.built())
+                    .then_some((at, next))
+            })
+        })
+        .expect("a legal Reactor hall with an existing exit");
+    for (at, ticks) in [(site, 60), (departure, 240)] {
+        let player = game.physical.players.get_mut(&BODY).unwrap();
+        player.cell = at;
+        player.position =
+            glam::Vec3::from_array(observed_hex::hex_origin(at)) + glam::Vec3::Y * 1.4;
+        for _ in 0..ticks {
+            step(&mut game, Body::Turn(0.6), SeatCommand::None);
+        }
+    }
+    let play = find_play(&game, |g, _, _, index| {
+        g.session().hands[&TEAM].deck.hand[index].kind == CardKind::Chargeworks
+    })
+    .expect("physically discovered legal Chargeworks site");
+    let ArchitectCommand::Play {
+        target, rotation, ..
+    } = play
+    else {
+        unreachable!()
+    };
+    let placements = game
+        .rules()
+        .played_wonder(CardKind::Chargeworks, target, rotation);
+    let protected = placements[1].coord;
+    let before = game.physical.facility.placements.clone();
+    game.ascent.session.sim.anchored.insert(protected);
+    assert_eq!(
+        game.session().architect_refusal(ARCHITECT, play),
+        Some(Refusal::Architect(CommandRefusal::Anchored))
+    );
+    assert_eq!(
+        game.physical.facility.placements, before,
+        "refusal changes no physical cell"
+    );
+    game.ascent.session.sim.anchored.remove(&protected);
+    let generation = game.physical.facility.generation;
+    let refusals = step(&mut game, Body::Turn(0.0), SeatCommand::Architect(play));
+    assert!(refusals.is_empty(), "{refusals:?}");
+    assert_eq!(game.physical.facility.generation, generation + 1);
+    for p in placements {
+        assert_eq!(game.physical.facility.placements[&p.coord], p);
+        assert_eq!(p.space, HexSpace::Hall);
+        assert!(matches!(p.archetype, HexArchetype::Chargeworks { .. }));
+        assert!(
+            game.physical
+                .geometry
+                .pieces
+                .iter()
+                .any(|piece| piece.source_cell == p.coord && piece.part.collides())
+        );
+    }
+    assert!(
+        !game.session().hands[&TEAM]
+            .deck
+            .hand
+            .iter()
+            .any(|c| c.id == card)
+    );
+}

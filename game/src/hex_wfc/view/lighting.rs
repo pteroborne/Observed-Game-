@@ -28,7 +28,7 @@ use crate::hex_wfc::sim::HexWfcRuntime;
 use crate::view::components::GameCam;
 
 mod practicals;
-pub(super) use practicals::spawn_practical;
+pub(super) use practicals::{WonderLighting, spawn_practical};
 #[cfg(test)]
 mod cistern_tests;
 
@@ -154,7 +154,7 @@ pub(in crate::hex_wfc) fn sync_practical_shadow_budget(
             &mut PointLight,
             Option<&GlobalTransform>,
         ),
-        Without<practicals::FixedReservoirLight>,
+        Without<practicals::FixedPlaceLight>,
     >,
     streamed: Query<(), Added<HexPractical>>,
 ) {
@@ -292,14 +292,17 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
     }
 
     if let Ok((mut light, mut transform)) = key.single_mut() {
-        let reservoir = matches!(
+        let fixed_wonder = matches!(
             runtime
                 .match_state
                 .facility
                 .placements
                 .get(&current)
                 .map(|p| p.archetype),
-            Some(observed_facility::hex_wfc::HexArchetype::Cistern { .. })
+            Some(
+                observed_facility::hex_wfc::HexArchetype::Cistern { .. }
+                    | observed_facility::hex_wfc::HexArchetype::Chargeworks { .. }
+            )
         );
         let (target_translation, target_rotation) = key_pose(current);
         if transform.translation == Vec3::ZERO {
@@ -311,9 +314,9 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
         }
         let target_color = lerp_color(light.color, palette.key_color, t);
         light.color = target_color;
-        // The bath's nine authored downlights are fixed to its arcades. A key
-        // that migrates between its hexes makes whole bays brighten on arrival.
-        light.intensity = if reservoir {
+        // Authored wonders have fixed downlights. A key that migrates between
+        // their hexes makes whole bays brighten on arrival.
+        light.intensity = if fixed_wonder {
             0.0
         } else {
             lerp_f(
@@ -326,7 +329,7 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
         light.radius = lerp_f(light.radius, palette.key_radius, t);
         light.inner_angle = lerp_f(light.inner_angle, palette.key_inner_angle, t);
         light.outer_angle = lerp_f(light.outer_angle, palette.key_outer_angle, t);
-        light.shadow_maps_enabled = palette.key_shadows_enabled && !reservoir;
+        light.shadow_maps_enabled = palette.key_shadows_enabled && !fixed_wonder;
     }
 }
 
@@ -364,9 +367,12 @@ pub(super) fn composition_at(
         .get(&coord)
         .map(|placement| placement.archetype)
     {
-        Some(HexArchetype::Room | HexArchetype::Expanse | HexArchetype::Cistern { .. }) => {
-            HexComposition::Room
-        }
+        Some(
+            HexArchetype::Room
+            | HexArchetype::Expanse
+            | HexArchetype::Cistern { .. }
+            | HexArchetype::Chargeworks { .. },
+        ) => HexComposition::Room,
         // A climb is the facility's vertical circulation: lit to stay readable the
         // whole length of its flight.
         Some(HexArchetype::Climb { .. }) => HexComposition::Vertical,

@@ -44,8 +44,8 @@ pub use blueprint::{
 };
 pub use context::{HexInfluenceField, PROFILE_MAX, PROFILE_MIN};
 pub use directed::{
-    authored_cistern_room, authored_climb, authored_climb_shaped, authored_hall, stair_rotation,
-    stair_shape,
+    authored_chargeworks, authored_cistern_room, authored_climb, authored_climb_shaped,
+    authored_hall, stair_rotation, stair_shape,
 };
 pub use neighborhood::{
     FaceDomain, NeighborCandidate, Neighborhood, NeighborhoodError, neighborhood,
@@ -151,8 +151,13 @@ pub enum HexArchetype {
     /// volume rather than as a row of tiles — the vocabulary the solver was
     /// missing for a vast space.
     Expanse,
-    /// A sector of the three-cell reservoir, with two full-height internal spans.
-    /// Heading selects an exact grid-fitted orientation of the authored sector.
+    /// A manufacturing wonder sector, selected by role and exact lattice heading.
+    Chargeworks {
+        part: ChargeworksPart,
+        #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
+        heading: HexFace,
+    },
+    /// A reservoir sector with two full-height spans and an exact lattice heading.
     Cistern {
         #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
         heading: HexFace,
@@ -166,6 +171,16 @@ pub enum HexArchetype {
         #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
         heading: HexFace,
     },
+}
+
+/// Three distinct spaces in the Chargeworks card composition.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum ChargeworksPart {
+    Fabricator,
+    Transfer,
+    Receiver,
 }
 
 /// One cell of a climb composition, in the order a body climbs through it.
@@ -316,7 +331,7 @@ impl HexArchetype {
     #[must_use]
     pub const fn span_mask(self) -> u8 {
         match self {
-            Self::Cistern { heading } => {
+            Self::Cistern { heading } | Self::Chargeworks { heading, .. } => {
                 lateral_bit(heading) | lateral_bit(HexFace::LATERAL[(heading.index() + 1) % 6])
             }
             Self::Climb { part, heading } => match part {

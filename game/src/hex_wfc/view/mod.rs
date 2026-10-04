@@ -9,8 +9,10 @@ use std::time::Instant;
 
 mod assets;
 pub(in crate::hex_wfc) mod camera;
+mod chargeworks;
 pub(in crate::hex_wfc) mod cistern;
 pub(in crate::hex_wfc) mod exterior;
+mod fixtures;
 pub(in crate::hex_wfc) use camera::{sync_camera, sync_projection};
 mod lighting;
 /// The full-screen isometric survivor map, wired by `hex_wfc::mod`.

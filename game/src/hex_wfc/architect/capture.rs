@@ -42,16 +42,8 @@ const MAPPING_TICKS: u64 = 1_200;
 const FALL_TICK: u64 = 150;
 const GIVE_UP_FRAMES: u16 = 12_000;
 
-/// Evidence-only traversal: the match is held still after a real card commit,
-/// but this body walks its live collision snapshot with the production controller.
-pub(in crate::hex_wfc) struct CisternWalk {
-    scene: observed_traversal::rapier_controller::RapierTraversalScene,
-    body: observed_traversal::FpsBody,
-    route: Vec<Vec3>,
-    cells: [observed_hex::HexCoord; 3],
-    waypoint: usize,
-    frame: u16,
-}
+mod wonder;
+use wonder::WonderWalk;
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::hex_wfc) fn capture(
@@ -65,13 +57,21 @@ pub(in crate::hex_wfc) fn capture(
     mut exit: MessageWriter<AppExit>,
     mut reservoir: Local<Option<(observed_hex::HexCoord, u8)>>,
     mut portrait_start: Local<Option<u16>>,
-    mut walk: Local<Option<CisternWalk>>,
+    mut walk: Local<Option<WonderWalk>>,
+    mut factory_staged: Local<Option<wonder::FactoryStart>>,
 ) {
     let Some(mut request) = request else {
         return;
     };
     let rogue = request.mode == HexWfcCaptureMode::Rogue;
-    let portraits = !rogue && std::env::var_os("OBSERVED2_CISTERN_PORTRAITS").is_some();
+    let factory = !rogue && std::env::var_os("OBSERVED2_CHARGEWORKS_PORTRAITS").is_some();
+    let portraits =
+        !rogue && (factory || std::env::var_os("OBSERVED2_CISTERN_PORTRAITS").is_some());
+    let kind = if factory {
+        CardKind::Chargeworks
+    } else {
+        CardKind::Cistern
+    };
     if request.mode != HexWfcCaptureMode::Architect && !rogue {
         return;
     }
@@ -99,6 +99,16 @@ pub(in crate::hex_wfc) fn capture(
     let (Some(mut runtime), Some(mut desk), Some(_)) = (runtime, desk, board) else {
         return;
     };
+    if factory {
+        if factory_staged.is_none() {
+            *factory_staged = wonder::stage_reactor(&mut runtime, &desk);
+        }
+        if let Some(start) = factory_staged.as_mut() {
+            start.depart(&mut runtime);
+        } else {
+            return;
+        }
+    }
     let prefix = if rogue { "rogue" } else { "architect" };
     let mapping = if rogue { FALL_TICK + 90 } else { MAPPING_TICKS };
     let tick = runtime.match_state.tick;
@@ -106,7 +116,7 @@ pub(in crate::hex_wfc) fn capture(
         && tick >= mapping
         && let Some(ascent) = runtime.ascent.as_mut()
     {
-        let _ = ascent.stage_card(desk.seat, CardKind::Cistern);
+        let _ = ascent.stage_card(desk.seat, kind);
     }
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
@@ -133,11 +143,11 @@ pub(in crate::hex_wfc) fn capture(
             let mut cards: Vec<_> = hand.deck.hand.iter().enumerate().collect();
             // A reservoir inspection must not silently capture a different card.
             if portraits {
-                cards.retain(|(_, card)| card.kind == CardKind::Cistern);
+                cards.retain(|(_, card)| card.kind == kind);
             }
             // A cistern when one is in hand, so the still shows the multi-tile room; a stair else; a tile else.
             cards.sort_by_key(|(_, card)| match card.kind {
-                CardKind::Cistern => 0,
+                CardKind::Cistern | CardKind::Chargeworks => 0,
                 CardKind::Stair => 1,
                 CardKind::Tile(_) => 2,
                 CardKind::Door => 3,
@@ -187,7 +197,7 @@ pub(in crate::hex_wfc) fn capture(
                     target,
                     rotation: desk.rotation,
                 };
-                if card.kind == CardKind::Cistern {
+                if matches!(card.kind, CardKind::Cistern | CardKind::Chargeworks) {
                     *reservoir = Some((target, desk.rotation));
                 }
                 let refusal = ascent.session().architect_refusal(desk.seat, play);
@@ -220,159 +230,19 @@ pub(in crate::hex_wfc) fn capture(
                 request.stills = 20;
             }
         }
-        20 => {
-            // Evidence poses: hold a real committed room still, then inspect it from
-            // its doorway, its pool and the opposite bay. Normal play never enters here.
-            let (Some((anchor, rotation)), Some(start), Some(eye)) =
-                (*reservoir, *portrait_start, desk.eyes)
-            else {
-                error!("Cistern portraits require a committed room and a team eye");
-                exit.write(AppExit::error());
-                return;
-            };
-            let elapsed = request.frame.saturating_sub(start);
-            let slot = elapsed / 180;
-            if slot >= 4 {
-                let cells = ascent
-                    .rules()
-                    .played_cistern(anchor, rotation)
-                    .map(|p| p.coord);
-                let centers = cells
-                    .map(|cell| Vec3::from_array(observed_hex::hex_origin(cell)) + Vec3::Y * 0.75);
-                let turn =
-                    Quat::from_rotation_y(-f32::from(rotation % 6) * std::f32::consts::TAU / 6.0);
-                let entry = centers[0] + turn * Vec3::new(-3.0, 0.0, -4.4);
-                let config = observed_traversal::FpsConfig::default();
-                *walk = Some(CisternWalk {
-                    scene: runtime.match_state.geometry.rapier_scene(),
-                    body: observed_traversal::FpsBody::spawned(
-                        entry + Vec3::Y * config.half_height,
-                        0.0,
-                    ),
-                    route: vec![entry, centers[0], centers[1], centers[2], centers[0], entry],
-                    cells,
-                    waypoint: 1,
-                    frame: 0,
-                });
-                request.stills = 21;
-                return;
-            }
-            let turn =
-                Quat::from_rotation_y(-f32::from(rotation % 6) * std::f32::consts::TAU / 6.0);
-            let origin = Vec3::from_array(observed_hex::hex_origin(anchor));
-            let (offset, focus, name) = match slot {
-                0 => (
-                    Vec3::new(-4.2, 0.5, -7.2),
-                    Vec3::new(6.0, 1.0, 6.0),
-                    "cistern-approach",
-                ),
-                1 => (
-                    Vec3::new(-3.0, 0.75, -4.4),
-                    Vec3::new(10.0, 1.0, 5.0),
-                    "cistern-entry",
-                ),
-                2 => (
-                    Vec3::new(5.2, 0.5, 2.9),
-                    Vec3::new(11.8, 0.7, 5.3),
-                    "cistern-water",
-                ),
-                _ => (
-                    Vec3::new(10.0, 0.75, 0.0),
-                    Vec3::new(2.0, 2.4, 4.8),
-                    "cistern-colonnade",
-                ),
-            };
-            let feet = origin + turn * offset;
-            let target = origin + turn * focus;
-            let camera = feet + Vec3::Y * 1.7;
-            let look = (target - camera).normalize();
-            let cell = runtime
-                .match_state
-                .facility
-                .config
-                .grid()
-                .neighbor(
-                    anchor,
-                    observed_hex::HexFace::LATERAL
-                        [usize::from((rotation + if slot == 0 { 4 } else { 0 }) % 6)],
-                )
-                .filter(|_| slot == 0 || slot == 3)
-                .unwrap_or(anchor);
-            if let Some(player) = runtime.match_state.players.get_mut(&eye) {
-                player.cell = cell;
-                player.position = feet + Vec3::Y * 0.9;
-                player.yaw = look.x.atan2(-look.z);
-                player.pitch = look.y.asin();
-            }
-            if elapsed % 180 == 160 {
-                shoot(&mut commands, name);
-            }
-        }
-        21 => {
-            let (Some(walk), Some(eye)) = (walk.as_mut(), desk.eyes) else {
-                exit.write(AppExit::error());
-                return;
-            };
-            if walk.frame >= 900 {
-                error!(
-                    "Cistern controller walkthrough stalled at {:?}",
-                    walk.body.position
-                );
-                exit.write(AppExit::error());
-                return;
-            }
-            let config = observed_traversal::FpsConfig::default();
-            for _ in 0..2 {
-                let feet = walk.body.position - Vec3::Y * config.half_height;
-                let Some(target) = walk.route.get(walk.waypoint) else {
-                    info!(
-                        "Cistern controller walkthrough complete: {} frames",
-                        walk.frame
-                    );
-                    exit.write(AppExit::Success);
-                    return;
-                };
-                let toward = (*target - feet).with_y(0.0);
-                if toward.length() < 0.25 {
-                    walk.waypoint += 1;
-                    continue;
-                }
-                walk.body.yaw = toward.x.atan2(-toward.z);
-                observed_traversal::rapier_controller::step_character(
-                    &walk.scene,
-                    &mut walk.body,
-                    player_input::PlayerIntent {
-                        movement: Vec2::Y,
-                        ..default()
-                    },
-                    &config,
-                    1.0 / 60.0,
-                );
-            }
-            if let Some(player) = runtime.match_state.players.get_mut(&eye) {
-                player.position = walk.body.position;
-                player.yaw = walk.body.yaw;
-                player.pitch = -0.1;
-                player.cell =
-                    *walk
-                        .cells
-                        .iter()
-                        .min_by(|a, b| {
-                            walk.body
-                                .position
-                                .distance_squared(Vec3::from_array(observed_hex::hex_origin(**a)))
-                                .total_cmp(&walk.body.position.distance_squared(Vec3::from_array(
-                                    observed_hex::hex_origin(**b),
-                                )))
-                        })
-                        .expect("three reservoir cells");
-            }
-            let name = format!("cistern-walk-{:03}.png", walk.frame);
-            commands
-                .spawn(Screenshot::primary_window())
-                .observe(save_to_disk(path.join(name)));
-            walk.frame += 1;
-        }
+        20 | 21 => wonder::inspect(
+            &mut commands,
+            &mut request,
+            &mut runtime,
+            &desk,
+            &mut exit,
+            wonder::Inspection {
+                reservoir: *reservoir,
+                portrait_start: *portrait_start,
+                walk: &mut walk,
+                factory,
+            },
+        ),
         // A teammate's request, as the desk shows it, and once it has been answered.
         5 => {
             let asked = super::requests::oldest_unanswered(ascent.session(), &desk);

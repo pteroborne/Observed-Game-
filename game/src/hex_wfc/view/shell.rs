@@ -15,17 +15,12 @@ use observed_match::hex_wfc::{
     derive_trim_for,
 };
 
+use super::HexWfcGeometry;
 use super::assets::HexWfcVisualAssets;
-use super::{HexPractical, HexWfcGeometry};
+use super::fixtures::{PracticalProjection, spawn_cell_practicals};
 use crate::GameState;
 use crate::hex_wfc::sim::HexWfcRuntime;
 
-/// Per-tile fixture tuning (lighting-lab "per-place staging"). A ceiling-seated omni
-/// fill lights the whole tile — floor, walls, ceiling — so every tile reads in first
-/// person, not just a floor disc. Every non-boundary cell gets one; the shadow budget
-/// ([`super::sync_practical_shadow_budget`]) turns a few of them into cast-shadow sources
-/// near the runner, which is where the contrast comes from.
-const PRACTICAL_HEIGHT: f32 = 5.6;
 /// Lightweight, presentation-only lookup into the authoritative geometry vectors.
 ///
 /// Keeping indices rather than cloning pieces makes the resident renderer cheap to
@@ -250,6 +245,22 @@ fn spawn_cell(
             .entity(cell)
             .insert(super::cistern::ReservoirCell(coord));
     }
+    let chargeworks = world
+        .placements
+        .get(&coord)
+        .and_then(|p| match p.archetype {
+            observed_facility::hex_wfc::HexArchetype::Chargeworks { part, heading } => {
+                Some((part, heading))
+            }
+            _ => None,
+        });
+    let wonder = if chargeworks.is_some() {
+        Some(super::lighting::WonderLighting::Chargeworks)
+    } else if reservoir {
+        Some(super::lighting::WonderLighting::Cistern)
+    } else {
+        None
+    };
     let mut child_pieces = spawn_cell_practicals(
         commands,
         assets,
@@ -262,9 +273,13 @@ fn spawn_cell(
             role: cell_role,
             composition,
             authored_lights: &lights,
-            reservoir,
+            wonder,
         },
     );
+    if let Some((part, heading)) = chargeworks {
+        child_pieces +=
+            super::chargeworks::spawn(commands, assets, meshes, cell, coord, part, heading);
+    }
     let origin = Vec3::from_array(hex_origin(coord));
     // The merged mesh cache is keyed on this string. A cell carrying open-edge or rim
     // pieces is no longer a pure function of its tile - its walls came down, or a
@@ -294,6 +309,8 @@ fn spawn_cell(
         };
         let material = if reservoir {
             assets.reservoir_material(group_key)
+        } else if chargeworks.is_some() {
+            assets.chargeworks_material(group_key)
         } else {
             assets.material_for_group(architecture, group_key)
         };
@@ -391,112 +408,7 @@ fn spawn_trim(
     ));
 }
 
-/// Stage the per-tile downlight fixture for a cell — tier 2 of the lighting-lab rig.
-///
-/// A `light_color`-tinted omni fill seated near the ceiling, parented to the cell so it
-/// streams (and relayout-rebuilds) with its geometry. Every non-boundary cell gets one or
-/// more, with a defensive centered fallback, so no tile is unlit;
-/// `pools_rhythm` halls read a touch dimmer for register identity.
-/// Shadows start off — [`super::sync_practical_shadow_budget`] turns them on for the
-/// handful of fixtures nearest the runner each time the cell changes, so wherever you
-/// stand there is real cast-shadow contrast.
-struct PracticalProjection<'a> {
-    parent: Entity,
-    coord: HexCoord,
-    /// The full set of cells this fixture group is responsible for lighting
-    /// — `[coord]` for an ordinary tile, or a room's complete footprint when
-    /// `coord` is a whole-room module's anchor (see [`cell_footprint`]).
-    footprint: &'a [HexCoord],
-    architecture: ArchitectureRegister,
-    role: HexStructureRole,
-    composition: observed_style::HexComposition,
-    authored_lights: &'a [&'a HexLightSource],
-    reservoir: bool,
-}
-
-fn spawn_cell_practicals(
-    commands: &mut Commands,
-    assets: &mut HexWfcVisualAssets,
-    meshes: &mut Assets<Mesh>,
-    projection: PracticalProjection<'_>,
-) -> usize {
-    let PracticalProjection {
-        parent,
-        coord,
-        footprint,
-        architecture,
-        role,
-        composition,
-        authored_lights,
-        reservoir,
-    } = projection;
-    if role == HexStructureRole::Boundary {
-        return 0;
-    }
-    let has_authored_lights = !authored_lights.is_empty();
-    let positions: Vec<Vec3> = if !has_authored_lights {
-        // Defensive fallback: one fixture per footprint cell, not just the
-        // anchor, so a whole-room module with no authored lights still has
-        // every part of its floor lit (Legibility Contract). For an
-        // ordinary tile `footprint` is exactly `[coord]`, so this produces
-        // the same single fixture as before.
-        footprint
-            .iter()
-            .map(|&cell| Vec3::from_array(hex_origin(cell)) + Vec3::Y * PRACTICAL_HEIGHT)
-            .collect()
-    } else {
-        authored_lights
-            .iter()
-            .map(|source| source.position)
-            .collect()
-    };
-    let practical = observed_style::hex_practical_light(architecture, composition, positions.len());
-    let mut child_pieces = 0;
-    for position in positions {
-        if has_authored_lights
-            && matches!(
-                role,
-                HexStructureRole::Room | HexStructureRole::Hall | HexStructureRole::Climb
-            )
-        {
-            // A diffuser is geometry, so it gets the same two treatments the
-            // rest of the geometry gets: the storey filter and the cutaway.
-            //
-            // It used to get neither. The light beside it carried
-            // `HexPractical` and the mesh carried nothing, so it drew on every
-            // storey at once whatever the cutaway said - and a ceiling-mounted
-            // diffuser whose ceiling had been cut away is a thin bright stub
-            // hanging in the air. That is what the "floating fixtures" over the
-            // overview's floor plan were.
-            let origin = Vec3::from_array(hex_origin(coord));
-            let at = position + Vec3::Y * 0.18;
-            commands.spawn((
-                Mesh3d(assets.fixture_mesh(meshes)),
-                MeshMaterial3d(assets.register(architecture).fixture()),
-                Transform::from_translation(at),
-                HexPractical(coord),
-                // Measured as a point: a diffuser is small next to the tests
-                // being applied to it, and its height is what decides them.
-                super::spectate::Cutaway {
-                    local: at - origin,
-                    min_y: at.y - origin.y,
-                    max_y: at.y - origin.y,
-                    origin_y: origin.y,
-                    cell_level: coord.level,
-                    climb_wall: false,
-                },
-                ChildOf(parent),
-                Name::new("Authored fluorescent diffuser"),
-            ));
-            child_pieces += 1;
-        }
-        child_pieces += super::lighting::spawn_practical(
-            commands, parent, coord, position, practical, reservoir,
-        );
-    }
-    child_pieces
-}
-
+/// Project a standalone authored piece into the resident shell.
 fn spawn_piece(
     commands: &mut Commands,
     assets: &mut HexWfcVisualAssets,

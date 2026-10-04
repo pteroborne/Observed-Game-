@@ -572,7 +572,9 @@ impl ArchetypeBias {
             HexArchetype::Corner => self.corner,
             HexArchetype::Junction => self.junction,
             HexArchetype::Climb { .. } => self.climb,
-            HexArchetype::Expanse | HexArchetype::Cistern { .. } => self.expanse,
+            HexArchetype::Expanse
+            | HexArchetype::Cistern { .. }
+            | HexArchetype::Chargeworks { .. } => self.expanse,
         }
     }
 
@@ -586,7 +588,9 @@ impl ArchetypeBias {
             HexArchetype::Corner => self.corner = factor,
             HexArchetype::Junction => self.junction = factor,
             HexArchetype::Climb { .. } => self.climb = factor,
-            HexArchetype::Expanse | HexArchetype::Cistern { .. } => self.expanse = factor,
+            HexArchetype::Expanse
+            | HexArchetype::Cistern { .. }
+            | HexArchetype::Chargeworks { .. } => self.expanse = factor,
         }
         self
     }
