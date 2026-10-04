@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
+pub(in crate::hex_wfc) mod archive;
 mod assets;
 pub(in crate::hex_wfc) mod camera;
 pub(in crate::hex_wfc) mod chargeworks;

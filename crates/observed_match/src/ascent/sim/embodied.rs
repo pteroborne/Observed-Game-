@@ -55,7 +55,7 @@ pub fn linked_vertically(world: &HexWfcWorld, cell: HexCoord) -> bool {
 
 /// Stair cards in each district of an Architect's deck on the real facility.
 pub const STAIRS_PER_DISTRICT: u8 = 3;
-/// Copies of each authored wonder in its district: Cistern and Chargeworks.
+/// Copies of each authored wonder in its district: Cistern, Chargeworks and Archive Well.
 pub const WONDERS_PER_DISTRICT: u8 = 1;
 
 impl ArchitectLab {

@@ -802,16 +802,15 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "1662451566b9f5676adbe006305f58a15a73afdcce07d9b031b3fe869a7ee546";
+            "9aa15ad620b8968acf516e757bfae8e5d94c019fab5969cdcfd3a8c0ecb00aeb";
         // The open-air composition (void share 2,000), 2026-09-24, at profile
         // version 6 since the ramps and towers retired and its bias names `climb`.
         const PROFILE_HASH: &str =
             "7b57da365f6c4de7876cd76adfd985db582d6f1610999c29d89d116739b639d1";
-        // Folds the catalog and the profile. Both sides moved this time, which
-        // is the point: a peer on the old build now fails the handshake instead
-        // of joining and generating a different facility.
+        // Archive Well changes the catalog while retaining the profile. Folding
+        // both keeps an old peer from joining with different authored geometry.
         const SIMULATION_HASH: &str =
-            "4530a85863ddd58d81485caa51d18e4cbb791d025553912d0d685195ec041ee1";
+            "5ac623c9f9103f4f912aa5772a916e8e274da2e5241951de4f30e4d267093f55";
 
         let root = committed_tiles();
         let compiled_text =
@@ -823,7 +822,8 @@ mod tests {
         // climbed by a composition since, and none of either is compiled. 230 since
         // climbs turn: four turning mid cells and three turned landings, in seven
         // dressings.
-        assert_eq!(compiled.modules.len(), 254, "committed strict source count");
+        // Archive Well adds six Library-only orientations; the profile stays unchanged.
+        assert_eq!(compiled.modules.len(), 260, "committed strict source count");
         assert!(
             compiled
                 .modules

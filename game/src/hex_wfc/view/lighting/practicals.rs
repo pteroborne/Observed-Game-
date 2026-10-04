@@ -15,6 +15,7 @@ pub(in crate::hex_wfc) struct FixedPlaceLight;
 pub(in crate::hex_wfc) enum WonderLighting {
     Cistern,
     Chargeworks,
+    Archive,
 }
 
 pub(in crate::hex_wfc::view) fn spawn_practical(
@@ -32,21 +33,28 @@ pub(in crate::hex_wfc::view) fn spawn_practical(
         Name::new("Authored tile practical"),
     ));
     if let Some(theme) = wonder {
-        let factory = matches!(theme, WonderLighting::Chargeworks);
-        let color = if factory {
-            observed_style::chargeworks::fixture_color()
-        } else {
-            cistern::fixture_color()
+        let (color, intensity, bounce) = match theme {
+            WonderLighting::Cistern => (
+                cistern::fixture_color(),
+                cistern::FIXTURE_INTENSITY,
+                cistern::FIXTURE_BOUNCE_INTENSITY,
+            ),
+            WonderLighting::Chargeworks => (
+                observed_style::chargeworks::fixture_color(),
+                observed_style::chargeworks::FIXTURE_INTENSITY,
+                observed_style::chargeworks::FIXTURE_BOUNCE_INTENSITY,
+            ),
+            WonderLighting::Archive => (
+                observed_style::archive::fixture_color(),
+                observed_style::archive::FIXTURE_INTENSITY,
+                observed_style::archive::FIXTURE_BOUNCE_INTENSITY,
+            ),
         };
         light.insert((
             FixedPlaceLight,
             SpotLight {
                 color,
-                intensity: if factory {
-                    observed_style::chargeworks::FIXTURE_INTENSITY
-                } else {
-                    cistern::FIXTURE_INTENSITY
-                },
+                intensity,
                 range: cistern::FIXTURE_RANGE,
                 radius: cistern::FIXTURE_RADIUS,
                 inner_angle: cistern::FIXTURE_INNER_ANGLE,
@@ -62,11 +70,7 @@ pub(in crate::hex_wfc::view) fn spawn_practical(
             FixedPlaceLight,
             PointLight {
                 color,
-                intensity: if factory {
-                    observed_style::chargeworks::FIXTURE_BOUNCE_INTENSITY
-                } else {
-                    cistern::FIXTURE_BOUNCE_INTENSITY
-                },
+                intensity: bounce,
                 range: cistern::FIXTURE_BOUNCE_RANGE,
                 shadow_maps_enabled: false,
                 ..default()

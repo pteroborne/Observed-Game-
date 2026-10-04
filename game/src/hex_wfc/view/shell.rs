@@ -254,7 +254,16 @@ fn spawn_cell(
             }
             _ => None,
         });
-    let wonder = if chargeworks.is_some() {
+    let archive = world
+        .placements
+        .get(&coord)
+        .and_then(|p| match p.archetype {
+            observed_facility::hex_wfc::HexArchetype::ArchiveWell { heading } => Some(heading),
+            _ => None,
+        });
+    let wonder = if archive.is_some() {
+        Some(super::lighting::WonderLighting::Archive)
+    } else if chargeworks.is_some() {
         Some(super::lighting::WonderLighting::Chargeworks)
     } else if reservoir {
         Some(super::lighting::WonderLighting::Cistern)
@@ -279,6 +288,9 @@ fn spawn_cell(
     if let Some((part, heading)) = chargeworks {
         child_pieces +=
             super::chargeworks::spawn(commands, assets, meshes, cell, coord, part, heading);
+    }
+    if let Some(heading) = archive {
+        child_pieces += super::archive::spawn(commands, assets, meshes, cell, coord, heading);
     }
     let origin = Vec3::from_array(hex_origin(coord));
     // The merged mesh cache is keyed on this string. A cell carrying open-edge or rim
@@ -307,7 +319,9 @@ fn spawn_cell(
         else {
             continue;
         };
-        let material = if reservoir {
+        let material = if archive.is_some() {
+            assets.archive_material(group_key)
+        } else if reservoir {
             assets.reservoir_material(group_key)
         } else if chargeworks.is_some() {
             assets.chargeworks_material(group_key)

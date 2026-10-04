@@ -1028,7 +1028,25 @@ fn cistern_card_play_updates_physical_geometry_and_colliders() {
 
 #[test]
 fn chargeworks_card_is_reactor_only_and_commits_three_physical_cells_atomically() {
-    use crate::ascent::sim::{CardKind, District};
+    wonder_commits_atomically(
+        crate::ascent::sim::CardKind::Chargeworks,
+        crate::ascent::sim::District::REACTOR,
+    );
+}
+
+#[test]
+fn archive_card_is_library_only_and_commits_three_physical_cells_atomically() {
+    wonder_commits_atomically(
+        crate::ascent::sim::CardKind::ArchiveWell,
+        crate::ascent::sim::District::LIBRARY,
+    );
+}
+
+fn wonder_commits_atomically(
+    kind: crate::ascent::sim::CardKind,
+    district: crate::ascent::sim::District,
+) {
+    use crate::ascent::sim::District;
     use observed_facility::hex_wfc::{HexArchetype, HexSpace};
     let config = HexMatchConfig {
         teams: 1,
@@ -1050,7 +1068,7 @@ fn chargeworks_card_is_reactor_only_and_commits_three_physical_cells_atomically(
         .placements
         .iter()
         .find_map(|(&c, p)| {
-            (District::for_floor(c.level, 8) == District::REACTOR
+            (District::for_floor(c.level, 8) == district
                 && matches!(
                     p.archetype,
                     HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
@@ -1078,7 +1096,7 @@ fn chargeworks_card_is_reactor_only_and_commits_three_physical_cells_atomically(
     game.ascent.stage_power(cell.level, true);
     let card = game
         .ascent
-        .stage_card(ARCHITECT, CardKind::Chargeworks)
+        .stage_card(ARCHITECT, kind)
         .expect("real card from deck");
     let ground = *game
         .physical
@@ -1157,7 +1175,7 @@ fn chargeworks_card_is_reactor_only_and_commits_three_physical_cells_atomically(
         }
     }
     let play = find_play(&game, |g, _, _, index| {
-        g.session().hands[&TEAM].deck.hand[index].kind == CardKind::Chargeworks
+        g.session().hands[&TEAM].deck.hand[index].kind == kind
     })
     .expect("physically discovered legal Chargeworks site");
     let ArchitectCommand::Play {
@@ -1166,9 +1184,7 @@ fn chargeworks_card_is_reactor_only_and_commits_three_physical_cells_atomically(
     else {
         unreachable!()
     };
-    let placements = game
-        .rules()
-        .played_wonder(CardKind::Chargeworks, target, rotation);
+    let placements = game.rules().played_wonder(kind, target, rotation);
     let protected = placements[1].coord;
     let before = game.physical.facility.placements.clone();
     game.ascent.session.sim.anchored.insert(protected);
@@ -1188,7 +1204,27 @@ fn chargeworks_card_is_reactor_only_and_commits_three_physical_cells_atomically(
     for p in placements {
         assert_eq!(game.physical.facility.placements[&p.coord], p);
         assert_eq!(p.space, HexSpace::Hall);
-        assert!(matches!(p.archetype, HexArchetype::Chargeworks { .. }));
+        assert_eq!(
+            observed_facility::hex_wfc::placement_tile_archetype(&p),
+            Some(if kind == crate::ascent::sim::CardKind::ArchiveWell {
+                "archive_well"
+            } else {
+                match p.archetype {
+                    HexArchetype::Chargeworks { part, .. } => match part {
+                        observed_facility::hex_wfc::ChargeworksPart::Fabricator => {
+                            "chargeworks_fabricator"
+                        }
+                        observed_facility::hex_wfc::ChargeworksPart::Transfer => {
+                            "chargeworks_transfer"
+                        }
+                        observed_facility::hex_wfc::ChargeworksPart::Receiver => {
+                            "chargeworks_receiver"
+                        }
+                    },
+                    _ => panic!("wrong wonder"),
+                }
+            })
+        );
         assert!(
             game.physical
                 .geometry

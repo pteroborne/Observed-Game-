@@ -6,15 +6,20 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn the_whole_cistern_stays_lit_before_entry_and_across_sector_changes() {
-    fixed_wonder_lighting(false);
+    fixed_wonder_lighting(WonderLighting::Cistern);
 }
 
 #[test]
 fn the_whole_chargeworks_stays_lit_and_follows_generator_power() {
-    fixed_wonder_lighting(true);
+    fixed_wonder_lighting(WonderLighting::Chargeworks);
 }
 
-fn fixed_wonder_lighting(factory: bool) {
+#[test]
+fn the_whole_archive_stays_lit_before_entry_and_follows_generator_power() {
+    fixed_wonder_lighting(WonderLighting::Archive);
+}
+
+fn fixed_wonder_lighting(theme: WonderLighting) {
     let mut game = HexWfcMatch::new(
         44,
         HexMatchConfig::default(),
@@ -33,15 +38,17 @@ fn fixed_wonder_lighting(factory: bool) {
         .collect();
     assert_eq!(cells.len(), 3);
     for cell in &cells {
-        game.facility.placements.get_mut(cell).unwrap().archetype = if factory {
-            HexArchetype::Chargeworks {
+        game.facility.placements.get_mut(cell).unwrap().archetype = match theme {
+            WonderLighting::Chargeworks => HexArchetype::Chargeworks {
                 part: observed_facility::hex_wfc::ChargeworksPart::Transfer,
                 heading: HexFace::East,
-            }
-        } else {
-            HexArchetype::Cistern {
+            },
+            WonderLighting::Cistern => HexArchetype::Cistern {
                 heading: HexFace::East,
-            }
+            },
+            WonderLighting::Archive => HexArchetype::ArchiveWell {
+                heading: HexFace::East,
+            },
         };
     }
     let mut ascent =
@@ -111,11 +118,7 @@ fn fixed_wonder_lighting(factory: bool) {
                     HexComposition::Room,
                     3,
                 ),
-                Some(if factory {
-                    WonderLighting::Chargeworks
-                } else {
-                    WonderLighting::Cistern
-                }),
+                Some(theme),
             );
         }
     }
@@ -182,10 +185,10 @@ fn fixed_wonder_lighting(factory: bool) {
         for (entity, pose) in &fixed {
             assert_eq!(
                 app.world().get::<SpotLight>(*entity).unwrap().intensity,
-                if factory {
-                    observed_style::chargeworks::FIXTURE_INTENSITY
-                } else {
-                    observed_style::cistern::FIXTURE_INTENSITY
+                match theme {
+                    WonderLighting::Chargeworks => observed_style::chargeworks::FIXTURE_INTENSITY,
+                    WonderLighting::Cistern => observed_style::cistern::FIXTURE_INTENSITY,
+                    WonderLighting::Archive => observed_style::archive::FIXTURE_INTENSITY,
                 } * scale
             );
             assert_eq!(app.world().get::<Transform>(*entity).unwrap(), pose);
@@ -197,10 +200,11 @@ fn fixed_wonder_lighting(factory: bool) {
         for (entity, _) in &fills {
             assert_eq!(
                 app.world().get::<PointLight>(*entity).unwrap().intensity,
-                if factory {
-                    observed_style::chargeworks::FIXTURE_BOUNCE_INTENSITY
-                } else {
-                    observed_style::cistern::FIXTURE_BOUNCE_INTENSITY
+                match theme {
+                    WonderLighting::Chargeworks =>
+                        observed_style::chargeworks::FIXTURE_BOUNCE_INTENSITY,
+                    WonderLighting::Cistern => observed_style::cistern::FIXTURE_BOUNCE_INTENSITY,
+                    WonderLighting::Archive => observed_style::archive::FIXTURE_BOUNCE_INTENSITY,
                 } * scale
             );
         }

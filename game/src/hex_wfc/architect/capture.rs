@@ -42,6 +42,7 @@ const MAPPING_TICKS: u64 = 1_200;
 const FALL_TICK: u64 = 150;
 const GIVE_UP_FRAMES: u16 = 12_000;
 
+mod archive;
 mod wonder;
 use wonder::WonderWalk;
 
@@ -65,9 +66,12 @@ pub(in crate::hex_wfc) fn capture(
     };
     let rogue = request.mode == HexWfcCaptureMode::Rogue;
     let factory = !rogue && std::env::var_os("OBSERVED2_CHARGEWORKS_PORTRAITS").is_some();
+    let archive = !rogue && std::env::var_os("OBSERVED2_ARCHIVE_PORTRAITS").is_some();
     let portraits =
-        !rogue && (factory || std::env::var_os("OBSERVED2_CISTERN_PORTRAITS").is_some());
-    let kind = if factory {
+        !rogue && (archive || factory || std::env::var_os("OBSERVED2_CISTERN_PORTRAITS").is_some());
+    let kind = if archive {
+        CardKind::ArchiveWell
+    } else if factory {
         CardKind::Chargeworks
     } else {
         CardKind::Cistern
@@ -99,9 +103,9 @@ pub(in crate::hex_wfc) fn capture(
     let (Some(mut runtime), Some(mut desk), Some(_)) = (runtime, desk, board) else {
         return;
     };
-    if factory {
+    if factory || archive {
         if factory_staged.is_none() {
-            *factory_staged = wonder::stage_reactor(&mut runtime, &desk);
+            *factory_staged = wonder::stage_wonder(&mut runtime, &desk, kind);
         }
         if let Some(start) = factory_staged.as_mut() {
             start.depart(&mut runtime);
@@ -147,7 +151,7 @@ pub(in crate::hex_wfc) fn capture(
             }
             // A cistern when one is in hand, so the still shows the multi-tile room; a stair else; a tile else.
             cards.sort_by_key(|(_, card)| match card.kind {
-                CardKind::Cistern | CardKind::Chargeworks => 0,
+                CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell => 0,
                 CardKind::Stair => 1,
                 CardKind::Tile(_) => 2,
                 CardKind::Door => 3,
@@ -197,7 +201,10 @@ pub(in crate::hex_wfc) fn capture(
                     target,
                     rotation: desk.rotation,
                 };
-                if matches!(card.kind, CardKind::Cistern | CardKind::Chargeworks) {
+                if matches!(
+                    card.kind,
+                    CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell
+                ) {
                     *reservoir = Some((target, desk.rotation));
                 }
                 let refusal = ascent.session().architect_refusal(desk.seat, play);
@@ -241,6 +248,7 @@ pub(in crate::hex_wfc) fn capture(
                 portrait_start: *portrait_start,
                 walk: &mut walk,
                 factory,
+                kind,
             },
         ),
         // A teammate's request, as the desk shows it, and once it has been answered.

@@ -5,6 +5,7 @@
 //! the same brush math. See [`geometry`] for why that mattered and how the port
 //! is gated.
 
+pub mod archive_well;
 pub mod audience;
 pub mod back;
 pub mod borrowed;
@@ -59,6 +60,7 @@ pub fn builders() -> Vec<Builder> {
     all.extend(silos::builders());
     all.extend(cistern::builders());
     all.extend(chargeworks::builders());
+    all.extend(archive_well::builders());
     all.extend(rooms::builders());
     all.extend(program::builders());
     all.extend(witness::builders());

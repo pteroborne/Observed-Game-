@@ -15,6 +15,7 @@
 //! `style_lab` lab is the visual proof app for these rules; the rules and their
 //! tests live here.
 
+pub mod archive;
 pub mod chargeworks;
 pub mod cistern;
 pub mod iso;

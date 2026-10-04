@@ -24,6 +24,7 @@ pub struct District(ArchitectureRegister);
 impl District {
     /// The ground floor's: the Backrooms, on a facility of any height.
     pub const GROUND: Self = Self(ArchitectureRegister::CLIMB[0]);
+    pub const LIBRARY: Self = Self(ArchitectureRegister::InfiniteGallery);
     pub const REACTOR: Self = Self(ArchitectureRegister::Megastructure);
 
     /// The district of floor `level` of a facility `levels` tall.
@@ -152,6 +153,8 @@ pub enum CardKind {
     Sensor,
     /// The Rogue's: raise floor disturbance and hasten a pending retraction (`sim::instability`).
     Surge,
+    /// One Library card places a reading well and its elevated gallery circuit.
+    ArchiveWell,
 }
 
 impl CardKind {
@@ -187,6 +190,10 @@ impl Card {
                 format!("chargeworks - {}", district.label())
             }
             (CardKind::Chargeworks, None) => "chargeworks".to_string(),
+            (CardKind::ArchiveWell, Some(district)) => {
+                format!("archive well - {}", district.label())
+            }
+            (CardKind::ArchiveWell, None) => "archive well".to_string(),
             (CardKind::Tile(shape), None) => shape.label().to_string(),
             (CardKind::Directive, _) => "Guardian directive".to_string(),
             (CardKind::Sensor, _) => "sensor".to_string(),
@@ -225,7 +232,7 @@ impl Deck {
         Self::with_stairs(seed, levels, shapes, 0)
     }
 
-    /// Two of each of `shapes` and `stairs` stair cards in each district, Backrooms Cistern and Reactor
+    /// Two of each of `shapes` and `stairs` stair cards in each district, Library Archive Well, Backrooms Cistern and Reactor
     /// Chargeworks cards, plus doors and deployable recharge stations.
     #[must_use]
     pub fn with_stairs_and_wonders(
@@ -255,7 +262,7 @@ impl Deck {
 
     /// A team's deck: [`Self::with_stairs_and_wonders`], dealing only the ground floor's district until
     /// the team's bodies reach another ([`Self::open_through`]). Includes one multi-tile
-    /// Backrooms Cistern and Reactor Chargeworks. Seven districts' tiles dealt from the start would leave most
+    /// Library Archive Well, Backrooms Cistern and Reactor Chargeworks. Seven districts' tiles dealt from the start would leave most
     /// of a hand for floors nobody can reach.
     #[must_use]
     pub fn for_team(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
@@ -291,7 +298,7 @@ impl Deck {
     }
 
     /// The Rogue's deck (design section 7): two of each of `shapes` in each district,
-    /// one Cistern and one Chargeworks where their districts exist, the doors, and the machinery -
+    /// one Archive Well, one Cistern and one Chargeworks where their districts exist, the doors, and the machinery -
     /// Guardian directives, sensors and surges - but no way up.
     #[must_use]
     pub fn rogue(seed: u64, levels: u8, shapes: &[TileShape]) -> Self {
@@ -369,6 +376,17 @@ impl Deck {
                     id: CardId(next_id),
                     kind,
                     district: None,
+                });
+                next_id += 1;
+            }
+        }
+        // Append new content so existing card identities retain their district and kind.
+        if climb.contains(&District::LIBRARY) {
+            for _ in 0..wonders {
+                cards.push(Card {
+                    id: CardId(next_id),
+                    kind: CardKind::ArchiveWell,
+                    district: Some(District::LIBRARY),
                 });
                 next_id += 1;
             }
@@ -694,6 +712,31 @@ mod tests {
                 .iter()
                 .chain(&deck.draw)
                 .any(|c| c.kind == CardKind::Chargeworks)
+        );
+    }
+
+    #[test]
+    fn archive_is_a_single_library_wonder_in_both_finite_decks() {
+        for deck in [
+            Deck::for_team(7, 8, &TileShape::AUTHORED, 3),
+            Deck::rogue(7, 8, &TileShape::AUTHORED),
+        ] {
+            let archive: Vec<_> = deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .filter(|c| c.kind == CardKind::ArchiveWell)
+                .collect();
+            assert_eq!(archive.len(), 1);
+            assert_eq!(archive[0].district, Some(District::LIBRARY));
+        }
+        let deck = Deck::for_team(7, 1, &TileShape::AUTHORED, 3);
+        assert!(
+            !deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .any(|c| c.kind == CardKind::ArchiveWell)
         );
     }
 

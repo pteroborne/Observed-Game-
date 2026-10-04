@@ -73,6 +73,8 @@ pub(in crate::hex_wfc) struct HexWfcVisualAssets {
     registers: Vec<RegisterMaterials>,
     reservoir: WonderMaterials,
     chargeworks: WonderMaterials,
+    archive: WonderMaterials,
+    archive_details: [Handle<StandardMaterial>; 8],
     chargeworks_details: [Handle<StandardMaterial>; 4],
     hull_cache: HashMap<(String, usize), Handle<Mesh>>,
     cuboid_cache: HashMap<[u32; 3], Handle<Mesh>>,
@@ -174,6 +176,8 @@ impl HexWfcVisualAssets {
         );
         Self {
             reservoir,
+            archive: WonderMaterials::load_archive(materials, images),
+            archive_details: wonder::archive_details(materials),
             chargeworks,
             chargeworks_details: wonder::details(materials),
             registers,
@@ -199,6 +203,8 @@ impl HexWfcVisualAssets {
             .collect();
         Self {
             reservoir: WonderMaterials::for_test(&dummy),
+            archive: WonderMaterials::for_test(&dummy),
+            archive_details: std::array::from_fn(|_| dummy.clone()),
             chargeworks: WonderMaterials::for_test(&dummy),
             chargeworks_details: std::array::from_fn(|_| dummy.clone()),
             registers,
@@ -207,6 +213,16 @@ impl HexWfcVisualAssets {
             merged_hull_cache: HashMap::new(),
             open_edge: OpenEdgeMaterials::new(materials),
         }
+    }
+
+    pub(super) fn archive_detail(&self, index: usize) -> Handle<StandardMaterial> {
+        self.archive_details[index].clone()
+    }
+    pub(in crate::hex_wfc) fn archive_material(
+        &self,
+        group: MeshGroupKey,
+    ) -> Handle<StandardMaterial> {
+        self.archive.for_group(group)
     }
 
     pub(super) fn chargeworks_detail(&self, index: usize) -> Handle<StandardMaterial> {

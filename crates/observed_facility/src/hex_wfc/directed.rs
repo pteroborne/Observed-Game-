@@ -185,6 +185,18 @@ pub fn authored_chargeworks(
     })
 }
 
+/// One Library card places the three sectors of a continuous reading well.
+#[must_use]
+pub fn authored_archive_well(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    authored_triad(config, anchor, rotation, |_, heading| {
+        HexArchetype::ArchiveWell { heading }
+    })
+}
+
 fn authored_triad(
     config: super::HexWfcConfig,
     anchor: HexCoord,

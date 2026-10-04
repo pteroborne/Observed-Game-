@@ -84,7 +84,7 @@ Each wonder should make that district's existing play memorable. These are a sho
 | District | Wonder composition | Connection to active goals |
 | --- | --- | --- |
 | Backrooms / Liminal Grid | **The Cistern** — tiled baths and aqueduct arcade; three hexes | A contested crossing now; the proposed fill-or-drain Rogue objective later. |
-| Library of Babel / Infinite Gallery | **The Archive Well** — galleries around a central reading void | Teammates hold different views while locating the onward route; pillars and balconies contest information and rescue access. |
+| Library of Babel / Infinite Gallery | [**The Archive Well**](archive_well_proposal.md) — packed shelf bays and connected upper galleries around a lower reading floor | Teammates hold different views while locating the onward route; pillars and balconies contest information and rescue access. |
 | Lumen / Overlit Grid | **The Switching Concourse** — an oversized, brightly lit station hall | Multiple approaches around the floor's existing generator let teams contest power while keeping sightlines readable. |
 | Zen / Shadow Screen | **The Rain Court** — sheltered engawa around an open garden | Screens and offset paths reward coordinated observation during crossing and rescue. |
 | Monument / Facet Monument | **The Jade Nave** — monumental piers and separated elevated landings | One Observer watches a Guardian while another crosses toward an ascent connection. |

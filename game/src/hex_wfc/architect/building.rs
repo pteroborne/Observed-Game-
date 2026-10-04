@@ -337,6 +337,12 @@ pub(super) fn built_by(
             rotation,
         )?
         .to_vec(),
+        CardKind::ArchiveWell => observed_facility::hex_wfc::authored_archive_well(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
         CardKind::Chargeworks => observed_facility::hex_wfc::authored_chargeworks(
             physical.facility.config,
             cell,
@@ -355,6 +361,28 @@ pub(super) fn built_by(
         physical.content().cells(),
     )
     .ok()
+}
+
+/// Find a district-matching anchor whose complete composition fits the preview.
+/// Boundary-facing wonders and stairs must not inherit the district's first edge cell.
+pub(super) fn preview_by(
+    physical: &observed_match::hex_wfc::HexWfcMatch,
+    kind: observed_match::ascent::sim::CardKind,
+    register: ArchitectureRegister,
+    rotation: u8,
+) -> Option<(HexCoord, Vec<HexStructurePiece>)> {
+    use observed_match::ascent::sim::CardKind;
+    let top = physical.facility.config.levels.saturating_sub(1);
+    physical
+        .facility
+        .architecture
+        .iter()
+        .filter(|(cell, found)| {
+            **found == register && (kind != CardKind::Stair || cell.level < top)
+        })
+        .find_map(|(&cell, _)| {
+            built_by(physical, kind, cell, rotation).map(|pieces| (cell, pieces))
+        })
 }
 
 /// A tile's floors (`floor`) or walls in `register`'s concrete, lit, as a room in view.
@@ -483,4 +511,51 @@ fn world_points(piece: &HexStructurePiece) -> Vec<Vec3> {
         .into_iter()
         .map(|p| piece.center + rotation * p)
         .collect()
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::*;
+    use observed_match::ascent::sim::{CardKind, District};
+    #[test]
+    fn archive_card_thumbnail_finds_the_whole_room_even_when_facing_off_the_first_edge() {
+        let game = observed_match::hex_wfc::HexWfcMatch::new(
+            7,
+            observed_match::hex_wfc::HexMatchConfig {
+                wfc: observed_facility::hex_wfc::HexWfcConfig {
+                    levels: 8,
+                    ..default()
+                },
+                ..default()
+            },
+            &crate::hex_wfc::sim::load_prototypes(),
+        )
+        .expect("preview fixture");
+        let register = District::LIBRARY.register();
+        let first = *game
+            .facility
+            .architecture
+            .iter()
+            .find(|(_, r)| **r == register)
+            .unwrap()
+            .0;
+        assert!(
+            (0..6).any(|r| built_by(&game, CardKind::ArchiveWell, first, r).is_none()),
+            "fixture exercises the border failure"
+        );
+        for rotation in 0..6 {
+            let (cell, pieces) = preview_by(&game, CardKind::ArchiveWell, register, rotation)
+                .expect("complete thumbnail");
+            let expected = observed_facility::hex_wfc::authored_archive_well(
+                game.facility.config,
+                cell,
+                rotation,
+            )
+            .unwrap();
+            let actual: BTreeSet<_> = pieces.iter().map(|p| p.source_cell).collect();
+            assert_eq!(actual, expected.map(|p| p.coord).into_iter().collect());
+            assert!(cutaway_mesh(&pieces, true, bearing()).is_some());
+            assert!(cutaway_mesh(&pieces, false, bearing()).is_some());
+        }
+    }
 }

@@ -312,7 +312,8 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
                 .get(&current)
                 .map(|p| p.archetype),
             Some(
-                observed_facility::hex_wfc::HexArchetype::Cistern { .. }
+                observed_facility::hex_wfc::HexArchetype::ArchiveWell { .. }
+                    | observed_facility::hex_wfc::HexArchetype::Cistern { .. }
                     | observed_facility::hex_wfc::HexArchetype::Chargeworks { .. }
             )
         );
@@ -382,6 +383,7 @@ pub(super) fn composition_at(
         Some(
             HexArchetype::Room
             | HexArchetype::Expanse
+            | HexArchetype::ArchiveWell { .. }
             | HexArchetype::Cistern { .. }
             | HexArchetype::Chargeworks { .. },
         ) => HexComposition::Room,

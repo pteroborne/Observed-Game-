@@ -157,7 +157,9 @@ pub(super) fn sync(
                 ortho.scale = match card.kind {
                     CardKind::Tile(_) => TILE_SCALE,
                     CardKind::Stair => STAIR_SCALE,
-                    CardKind::Cistern | CardKind::Chargeworks => WONDER_SCALE,
+                    CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell => {
+                        WONDER_SCALE
+                    }
                     CardKind::Door
                     | CardKind::Station
                     | CardKind::Directive
@@ -179,7 +181,11 @@ pub(super) fn sync(
             ));
         };
         match card.kind {
-            CardKind::Tile(_) | CardKind::Stair | CardKind::Cistern | CardKind::Chargeworks => {
+            CardKind::Tile(_)
+            | CardKind::Stair
+            | CardKind::Cistern
+            | CardKind::Chargeworks
+            | CardKind::ArchiveWell => {
                 let register = card
                     .district
                     .map_or(ArchitectureRegister::ALL[0], |district| district.register());
@@ -187,20 +193,26 @@ pub(super) fn sync(
                 // The tile as the corpus builds it in this district: projected at a cell
                 // of the district - with a floor above it, for a stair - and moved from
                 // there to the card.
-                let top = physical.facility.config.levels.saturating_sub(1);
-                let Some(cell) = physical
-                    .facility
-                    .architecture
-                    .iter()
-                    .find(|(cell, found)| {
-                        **found == register && (card.kind != CardKind::Stair || cell.level < top)
-                    })
-                    .map(|(&cell, _)| cell)
+                let Some((cell, pieces)) =
+                    building::preview_by(physical, card.kind, register, rotation)
                 else {
                     continue;
                 };
-                let Some(pieces) = building::built_by(physical, card.kind, cell, rotation) else {
-                    continue;
+                // Centre the entire wonder on its thumbnail, including doorway bars.
+                let center = if matches!(
+                    card.kind,
+                    CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell
+                ) {
+                    let cells: std::collections::BTreeSet<_> =
+                        pieces.iter().map(|p| p.source_cell).collect();
+                    cells
+                        .iter()
+                        .map(|&c| Vec3::from_array(hex_origin(c)))
+                        .sum::<Vec3>()
+                        / cells.len() as f32
+                        - Vec3::from_array(hex_origin(cell))
+                } else {
+                    Vec3::ZERO
                 };
                 // A stair sits half a floor low, so both of its floors are on the card.
                 let drop = if card.kind == CardKind::Stair {
@@ -208,8 +220,9 @@ pub(super) fn sync(
                 } else {
                     Vec3::ZERO
                 };
-                let moved =
-                    Transform::from_translation(at - Vec3::from_array(hex_origin(cell)) - drop);
+                let moved = Transform::from_translation(
+                    at - Vec3::from_array(hex_origin(cell)) - drop - center,
+                );
                 for floor in [true, false] {
                     if let Some(mesh) = building::cutaway_mesh(&pieces, floor, building::bearing())
                     {
@@ -235,10 +248,16 @@ pub(super) fn sync(
                         .filter(|face| shape.doors(rotation) & (1 << face.index()) != 0)
                         .map(|face| (face, Vec3::ZERO))
                         .collect(),
-                    CardKind::Cistern | CardKind::Chargeworks => {
+                    CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell => {
                         let mut bars = Vec::new();
                         if let Some(placements) = if card.kind == CardKind::Cistern {
                             observed_facility::hex_wfc::authored_cistern_room(
+                                physical.facility.config,
+                                cell,
+                                rotation,
+                            )
+                        } else if card.kind == CardKind::ArchiveWell {
+                            observed_facility::hex_wfc::authored_archive_well(
                                 physical.facility.config,
                                 cell,
                                 rotation,
@@ -287,7 +306,7 @@ pub(super) fn sync(
                 };
                 for (face, offset) in bars {
                     let mut bar = threshold_bar(face);
-                    bar.translation += at - drop + offset;
+                    bar.translation += at - drop - center + offset;
                     spawn(Cuboid::new(1.0, 1.0, 1.0).into(), threshold.clone(), bar);
                 }
             }

@@ -20,6 +20,7 @@ pub(super) struct Inspection<'a> {
     pub(super) portrait_start: Option<u16>,
     pub(super) walk: &'a mut Option<WonderWalk>,
     pub(super) factory: bool,
+    pub(super) kind: CardKind,
 }
 
 pub(super) fn inspect(
@@ -35,6 +36,7 @@ pub(super) fn inspect(
         portrait_start,
         walk,
         factory,
+        kind,
     } = state;
     let path = std::path::PathBuf::from(&request.path);
     let shoot = |commands: &mut Commands, name: &str| {
@@ -60,15 +62,7 @@ pub(super) fn inspect(
                 .as_ref()
                 .expect("ascent capture")
                 .rules()
-                .played_wonder(
-                    if factory {
-                        CardKind::Chargeworks
-                    } else {
-                        CardKind::Cistern
-                    },
-                    anchor,
-                    rotation,
-                );
+                .played_wonder(kind, anchor, rotation);
             if expected
                 .iter()
                 .any(|p| runtime.match_state.facility.placements.get(&p.coord) != Some(p))
@@ -87,15 +81,7 @@ pub(super) fn inspect(
                     .as_ref()
                     .expect("ascent capture")
                     .rules()
-                    .played_wonder(
-                        if factory {
-                            CardKind::Chargeworks
-                        } else {
-                            CardKind::Cistern
-                        },
-                        anchor,
-                        rotation,
-                    )
+                    .played_wonder(kind, anchor, rotation)
                     .map(|p| p.coord);
                 let centers = cells
                     .map(|cell| Vec3::from_array(observed_hex::hex_origin(cell)) + Vec3::Y * 0.75);
@@ -109,7 +95,9 @@ pub(super) fn inspect(
                         entry + Vec3::Y * config.half_height,
                         0.0,
                     ),
-                    route: if factory {
+                    route: if kind == CardKind::ArchiveWell {
+                        super::archive::route(cells, rotation)
+                    } else if factory {
                         let origin = Vec3::from_array(observed_hex::hex_origin(cells[1]));
                         let h = Quat::from_rotation_y(
                             -f32::from((rotation + 2) % 6) * std::f32::consts::TAU / 6.0,
@@ -166,7 +154,11 @@ pub(super) fn inspect(
                     "cistern-colonnade",
                 ),
             };
-            let (feet, target, name) = if factory {
+            let (feet, target, name) = if kind == CardKind::ArchiveWell {
+                let cells = expected.map(|p| p.coord);
+                let (feet, target, name, _) = super::archive::portrait(slot, cells, rotation);
+                (feet, target, name)
+            } else if factory {
                 let cells = runtime
                     .ascent
                     .as_ref()
@@ -222,7 +214,9 @@ pub(super) fn inspect(
                 )
                 .filter(|_| slot == 0 || slot == 3)
                 .unwrap_or(anchor);
-            let cell = if factory {
+            let cell = if kind == CardKind::ArchiveWell {
+                super::archive::portrait(slot, expected.map(|p| p.coord), rotation).3
+            } else if factory {
                 let cells = runtime
                     .ascent
                     .as_ref()
@@ -322,7 +316,13 @@ pub(super) fn inspect(
             }
             let name = format!(
                 "{}-walk-{:03}.png",
-                if factory { "chargeworks" } else { "cistern" },
+                if kind == CardKind::ArchiveWell {
+                    "archive"
+                } else if factory {
+                    "chargeworks"
+                } else {
+                    "cistern"
+                },
                 walk.frame
             );
             commands
@@ -359,14 +359,15 @@ fn place_bodies(runtime: &mut HexWfcRuntime, cell: observed_hex::HexCoord) {
         player.pitch = 0.0;
     }
 }
-pub(super) fn stage_reactor(
+pub(super) fn stage_wonder(
     runtime: &mut HexWfcRuntime,
     desk: &ArchitectDesk,
+    kind: CardKind,
 ) -> Option<FactoryStart> {
     use observed_facility::hex_wfc::HexArchetype;
     use observed_hex::HexFace;
     let ascent = runtime.ascent.as_mut()?;
-    let card = ascent.stage_card(desk.seat, CardKind::Chargeworks)?;
+    let card = ascent.stage_card(desk.seat, kind)?;
     let mut probe = ascent.rules().clone();
     probe.deck = desk.hand(ascent.session())?.deck.clone();
     probe.known = probe.world.placements.keys().copied().collect();
@@ -407,8 +408,8 @@ pub(super) fn stage_reactor(
     })?;
     place_bodies(runtime, site.0);
     info!(
-        "Chargeworks evidence: physical discovery begins at Reactor {:?}",
-        site.0
+        "Wonder {:?} evidence: physical discovery begins at {:?}",
+        kind, site.0
     );
     Some(FactoryStart {
         departure: site.1,

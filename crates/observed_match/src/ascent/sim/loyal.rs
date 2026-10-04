@@ -231,7 +231,11 @@ impl ArchitectLab {
         for card in &self.deck.hand {
             if !matches!(
                 card.kind,
-                CardKind::Tile(_) | CardKind::Stair | CardKind::Cistern | CardKind::Chargeworks
+                CardKind::Tile(_)
+                    | CardKind::Stair
+                    | CardKind::Cistern
+                    | CardKind::Chargeworks
+                    | CardKind::ArchiveWell
             ) {
                 continue;
             }
@@ -253,7 +257,7 @@ impl ArchitectLab {
                         CardKind::Tile(shape) => {
                             vec![self.played_placement(shape, target, rotation)]
                         }
-                        CardKind::Cistern | CardKind::Chargeworks => {
+                        CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell => {
                             self.played_wonder(card.kind, target, rotation).to_vec()
                         }
                         _ => self.played_stair(target, rotation).to_vec(),
