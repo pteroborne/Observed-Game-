@@ -14,12 +14,8 @@ impl WonderMaterials {
         images: &mut Assets<Image>,
         factory: bool,
     ) -> Self {
-        let albedo = if factory {
-            style::chargeworks::panel_albedo()
-        } else {
-            style::cistern::ceramic_albedo()
-        };
-        let ceramic = surface_texture(images, albedo, true);
+        let ceramic =
+            (!factory).then(|| surface_texture(images, style::cistern::ceramic_albedo(), true));
         Self(
             [
                 ArchitectureSurfaceRole::Floor,
@@ -32,9 +28,24 @@ impl WonderMaterials {
                 } else {
                     style::cistern::surface(role)
                 };
+                let (albedo, normal) = if factory {
+                    let generated = style::chargeworks::panel_images(role);
+                    (
+                        surface_texture(images, generated.albedo, true),
+                        Some(surface_texture(images, generated.normal, false)),
+                    )
+                } else {
+                    (ceramic.as_ref().expect("Cistern ceramic").clone(), None)
+                };
                 materials.add(StandardMaterial {
                     base_color: look.base_color,
-                    base_color_texture: Some(ceramic.clone()),
+                    base_color_texture: Some(albedo),
+                    normal_map_texture: normal,
+                    metallic: if factory {
+                        style::chargeworks::METALLIC
+                    } else {
+                        0.0
+                    },
                     perceptual_roughness: if factory {
                         style::chargeworks::ROUGHNESS
                     } else {

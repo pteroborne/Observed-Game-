@@ -28,3 +28,4 @@ __pycache__/
 
 # Raw Chargeworks walkthrough frames; the verified MP4 is tracked.
 docs/evidence/chargeworks/chargeworks-walk-*.png
+docs/evidence/chargeworks/chargeworks-field-*.png

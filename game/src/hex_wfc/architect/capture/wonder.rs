@@ -249,6 +249,15 @@ pub(super) fn inspect(
             if elapsed % 180 == 160 {
                 shoot(commands, name);
             }
+            // A settled eye-level view makes the decorative field motion reviewable.
+            if factory && slot == 0 && (20..160).contains(&(elapsed % 180)) {
+                commands
+                    .spawn(Screenshot::primary_window())
+                    .observe(save_to_disk(path.join(format!(
+                        "chargeworks-field-{:03}.png",
+                        elapsed % 180 - 20
+                    ))));
+            }
         }
         21 => {
             let (Some(walk), Some(eye)) = (walk.as_mut(), desk.eyes) else {

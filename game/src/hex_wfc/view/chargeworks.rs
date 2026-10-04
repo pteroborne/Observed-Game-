@@ -6,6 +6,17 @@ use bevy::prelude::*;
 use observed_facility::hex_wfc::ChargeworksPart;
 use observed_hex::{HexCoord, HexFace, hex_origin};
 
+mod field;
+pub(in crate::hex_wfc) fn install(app: &mut App) {
+    field::install(app);
+}
+
+#[derive(Component)]
+struct ConveyorDeck {
+    coord: HexCoord,
+    length: f32,
+}
+
 /// Quantized lattice turn matches forge/grid_turn, including slanted hex joins.
 fn turn(mut p: Vec3, heading: HexFace) -> Vec3 {
     for _ in 0..heading.index() {
@@ -25,41 +36,46 @@ pub(super) fn spawn(
 ) -> usize {
     let origin = Vec3::from_array(hex_origin(coord));
     let mut count = 0;
+    let mut decks = Vec::new();
     let mut add =
         |position: Vec3, size: Vec3, bearing: f32, material: usize, name: &'static str| {
             let local = turn(position, heading);
             let turned_axis = turn(Vec3::new(bearing.cos(), 0.0, bearing.sin()), heading);
             let angle = turned_axis.z.atan2(turned_axis.x);
-            commands.spawn((
-                Mesh3d(assets.detail_box(meshes, size)),
-                MeshMaterial3d(assets.chargeworks_detail(material)),
-                Transform::from_translation(origin + local)
-                    .with_rotation(Quat::from_rotation_y(-angle)),
-                ChildOf(parent),
-                NotShadowCaster,
-                Cutaway {
-                    local,
-                    min_y: position.y - size.y / 2.0,
-                    max_y: position.y + size.y / 2.0,
-                    origin_y: origin.y,
-                    cell_level: coord.level,
-                    climb_wall: false,
-                },
-                Name::new(name),
-            ));
+            let entity = commands
+                .spawn((
+                    Mesh3d(assets.detail_box(meshes, size)),
+                    MeshMaterial3d(assets.chargeworks_detail(material)),
+                    Transform::from_translation(origin + local)
+                        .with_rotation(Quat::from_rotation_y(-angle)),
+                    ChildOf(parent),
+                    NotShadowCaster,
+                    Cutaway {
+                        local,
+                        min_y: position.y - size.y / 2.0,
+                        max_y: position.y + size.y / 2.0,
+                        origin_y: origin.y,
+                        cell_level: coord.level,
+                        climb_wall: false,
+                    },
+                    Name::new(name),
+                ))
+                .id();
             count += 1;
+            entity
         };
     let mut conveyor = |from: Vec3, to: Vec3| {
         let delta = to - from;
         let length = delta.length();
         let bearing = delta.z.atan2(delta.x);
-        add(
+        let entity = add(
             (from + to) * 0.5 + Vec3::Y * 0.76,
             Vec3::new(length, 0.012, 1.65),
             bearing,
             0,
             "Static conveyor deck finish",
         );
+        decks.push((entity, length));
         let tangent = Vec3::new(-delta.z, 0.0, delta.x).normalize();
         for side in [-1.0, 1.0] {
             add(
@@ -152,6 +168,11 @@ pub(super) fn spawn(
                 "Fabricator status inset (inert)",
             );
         }
+    }
+    for (entity, length) in decks {
+        commands
+            .entity(entity)
+            .insert(ConveyorDeck { coord, length });
     }
     count
 }

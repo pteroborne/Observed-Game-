@@ -6,6 +6,12 @@ above the ground route. Six stationary sample canisters contain translucent
 cyan gas. These are original primitive-based geometry and finishes, inspired
 by Halo's gas-mine machinery and conveyor spaces.
 
+The Forerunner-inspired material pass replaces the square tile grid with original
+chamfered plates, dark blue recessed ribs, stepped inlays and brushed metal.
+Generated normal maps give the grooves relief under the fixed work lights.
+Five translucent cyan conveyor-field surfaces carry smoothly traveling bands
+and crossing electrical filaments. Their shader animates appearance only.
+
 [Research, imagined location and future delivery proposal](../../chargeworks_wonder_proposal.md).
 Production, moving cargo, explosions and the Rogue delivery victory are not
 implemented. The proposed quota begins at six canisters in a later lab, with
@@ -23,12 +29,16 @@ is storage and cannot complete that remote quota.
 ![View from the transfer gantry](architect-chargeworks-gantry-1280x800.png)
 
 Amber edges and chevrons mark the intended conveyor direction. Cyan marks
-inert sample gas and machinery light insets; these are decorative. Fixed cool
+inert sample gas, machinery light insets and decorative electrical fields.
+The fields carry no damage, cargo or delivery state. Fixed cool
 white work lights illuminate the whole location before entry. The room uses
 nine stationary shadowed downlights and fixed bounce fills, outside the moving
 nearest-player shadow budget. Inside the room, the moving district key is
 suppressed. The existing generator dims work lights to the normal emergency
 minimum and restores their original intensity when power returns.
+The decorative fields follow floor power too, retaining 12% emission without
+power. Field surfaces inherit deck ownership, storey filtering and cutaway;
+streaming out or rewriting a deck removes its field.
 
 ## Card placement and physical walkthrough
 
@@ -36,6 +46,15 @@ minimum and restores their original intensity when power returns.
 [Board before the play](architect-board-1280x800.png) ·
 [Building in](architect-building-in-1280x800.png) ·
 [Committed location](architect-built-1280x800.png).
+
+![Stationary view of the conveyor electricity](chargeworks-field.mp4)
+
+[Conveyor shimmer](chargeworks-field.mp4) records a settled arrival pose, so the
+traveling interference can be judged independently of camera movement. The
+effect uses render time; match events remain held still during this portrait.
+The video contains 129 saved frames at 30 fps (4.30 seconds). The capture
+requested 140 frames; eleven missing screenshot readbacks were omitted before
+encoding. All 129 frames show distinct content in a conveyor-only image region.
 
 ![Controller-driven tour through the three spaces and up the gantry](chargeworks-walk.mp4)
 
@@ -86,9 +105,13 @@ OBSERVED2_CHARGEWORKS_PORTRAITS=1 RUST_LOG=warn,observed_game=info \
 ffmpeg -y -framerate 30 -i docs/evidence/chargeworks/chargeworks-walk-%03d.png \
   -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart \
   docs/evidence/chargeworks/chargeworks-walk.mp4
+ffmpeg -y -framerate 30 -i docs/evidence/chargeworks/chargeworks-field-%03d.png \
+  -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart \
+  docs/evidence/chargeworks/chargeworks-field.mp4
 ```
 
-Clear old `chargeworks-walk-*.png` files before capturing again. Raw frames are
+Clear old `chargeworks-walk-*.png` and `chargeworks-field-*.png` files before
+capturing again. Raw frames are
 ignored and removed after video encoding and inspection. Check the controller
 completion log when reviewing a capture.
 
@@ -104,19 +127,23 @@ regression verifies fixed room illumination, disabled moving key, and repeated
 generator dimming and restoration. Forge tests verify reproducible sources,
 import validation and catalogue hash identity.
 
+The field lifecycle checks verify one effect per deck, parent-owned removal,
+storey/cutaway metadata, cache release on match exit and clean match reentry.
+
 Verified on 2026-10-04:
 
 - `cargo fmt --all` and `cargo dev-clippy`: passed, no warnings.
-- `cargo dev-test`: 2,683 passed, zero failed, 45 ignored.
-- After the final capture-helper cleanup, `cargo dev-clippy` passed again and
-  `cargo test -p observed_game --features bevy/dynamic_linking --lib` passed:
-  540 passed, zero failed, six ignored.
+- `cargo dev-test`, including the material pass: 2,685 passed, zero failed,
+  45 ignored.
+- Focused electric-field lifecycle checks: two passed, zero failed.
+  The GPU capture compiled and rendered the field shader without warnings
+  or errors, and the controller again completed its 436-frame route.
 - The affected ignored hand-playability measurement was run explicitly: passed.
   Quick Climb sampled 400 beats with four or five playable cards throughout;
   Full Ascent sampled 18 beats with five playable cards on 17 beats;
   Deep Stack sampled 377 beats with five playable cards on 376 beats.
   This measures hand availability, not cargo-objective balance.
-- H.264 metadata inspection and complete video decode: passed.
+- H.264 metadata inspection and complete decode of both videos: passed.
 - Local documentation links resolve; `git diff --check` passed.
 
 The extended `cargo dev-test-all` suite was not run. Its known baseline

@@ -10,11 +10,13 @@ Bungie's Elongation preview describes two conveyor corridors, ramps and upper ca
 
 Our design inference is to borrow that relationship between machinery, routes and elevation. The Chargeworks has original geometry and equipment silhouettes. It does not reproduce a Halo map or import its assets.
 
+For the material pass, the TSC:E artist's first-hand postmortem is a useful account of early Halo's layered gray surfaces, dark blue support panels, inset texture strips and recessed light. This is a community map artist's analysis, rather than an official Bungie specification. We interpret those relationships as original chamfered metal plates with stepped inlays and directional electrical interference across the belts. [Siliconmaster, “Forerunner Art,” 2015](https://tsce.info/postmortem-2015-silicon.html).
+
 ## Imagine
 
 An abandoned charge factory still waits for the next production run. An oversized angular press opens onto a low conveyor. Caged translucent cyan samples sit beside the line. Across the chamber, an overhead track and a service gantry mark the transfer floor. The belt bends into a tall receiving mouth, surrounded by armour, storage saddles and a crown that almost reaches the ceiling.
 
-The three spaces share cool mineral metal, pale worn deck panels, amber route markings and fixed cool work lights. The source is squat and heavy; the transfer is open and crossed by a gantry; the destination is tall and recessed. Machinery should be recognizable from a doorway, without a HUD explanation.
+The three spaces share layered gray metal, chamfered plates, dark blue recessed ribs, amber route markings and fixed cool work lights. Cyan field surfaces shimmer along the belt direction; the original machinery remains grounded in large, simple shapes. The source is squat and heavy; the transfer is open and crossed by a gantry; the destination is tall and recessed. Machinery should be recognizable from a doorway, without a HUD explanation.
 
 ## Design the card
 
@@ -24,7 +26,7 @@ The exposed conveyor crossing is the shortest ground route. Side aisles let Obse
 
 Placement uses the existing discovered-board, district, observation, occupancy, anchor, prison and local attachment rules. The location consumes one card and one normal play. Its three sectors enter the physical facility together. It should also appear as the complete composition in the card preview and placement ghost.
 
-This approved version contains **static belts, machinery and sample canisters**. It adds no manufacturing, cargo motion, explosions, damage, switches, delivery counter or alternate victory rule. Work lights belong to the room and illuminate it before the player arrives. The existing generator controls their power.
+This approved version contains **static belts, machinery and sample canisters**, with animated decorative electric fields. The shimmer conveys the machinery's visual direction; it does not move bodies or cargo or count deliveries. It adds no manufacturing, cargo motion, explosions, damage, switches, delivery counter or alternate victory rule. Work lights belong to the room and illuminate it before the player arrives. The existing generator controls their power and dims field emission to a legible emergency minimum.
 
 Acceptance evidence: authored overhead plan; a real Architect-card placement; eye-level views of all three roles; a physical walkthrough through the joins and up the gantry; all six rotations checked for collision and containment.
 
