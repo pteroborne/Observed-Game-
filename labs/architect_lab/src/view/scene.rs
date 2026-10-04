@@ -121,6 +121,7 @@ pub fn sync_previews(
             | CardKind::Cistern
             | CardKind::Chargeworks
             | CardKind::ArchiveWell
+            | CardKind::RainCourt
             | CardKind::Station
             | CardKind::Directive
             | CardKind::Sensor
@@ -337,6 +338,7 @@ pub fn rebuild_board(
                 | CardKind::Cistern
                 | CardKind::Chargeworks
                 | CardKind::ArchiveWell
+                | CardKind::RainCourt
                 | CardKind::Station
                 | CardKind::Directive
                 | CardKind::Sensor

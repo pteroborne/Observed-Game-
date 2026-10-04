@@ -75,6 +75,13 @@ pub(super) fn inspect(
             }
             let elapsed = request.frame.saturating_sub(start);
             let slot = elapsed / 180;
+            if kind == CardKind::RainCourt {
+                runtime
+                    .ascent
+                    .as_mut()
+                    .expect("ascent")
+                    .stage_power(anchor.level, slot != 3);
+            }
             if slot >= 4 {
                 let cells = runtime
                     .ascent
@@ -95,7 +102,9 @@ pub(super) fn inspect(
                         entry + Vec3::Y * config.half_height,
                         0.0,
                     ),
-                    route: if kind == CardKind::ArchiveWell {
+                    route: if kind == CardKind::RainCourt {
+                        super::rain::route(cells, rotation)
+                    } else if kind == CardKind::ArchiveWell {
                         super::archive::route(cells, rotation)
                     } else if factory {
                         let origin = Vec3::from_array(observed_hex::hex_origin(cells[1]));
@@ -154,7 +163,11 @@ pub(super) fn inspect(
                     "cistern-colonnade",
                 ),
             };
-            let (feet, target, name) = if kind == CardKind::ArchiveWell {
+            let (feet, target, name) = if kind == CardKind::RainCourt {
+                let (feet, target, name, _) =
+                    super::rain::portrait(slot, expected.map(|p| p.coord), rotation);
+                (feet, target, name)
+            } else if kind == CardKind::ArchiveWell {
                 let cells = expected.map(|p| p.coord);
                 let (feet, target, name, _) = super::archive::portrait(slot, cells, rotation);
                 (feet, target, name)
@@ -214,7 +227,9 @@ pub(super) fn inspect(
                 )
                 .filter(|_| slot == 0 || slot == 3)
                 .unwrap_or(anchor);
-            let cell = if kind == CardKind::ArchiveWell {
+            let cell = if kind == CardKind::RainCourt {
+                super::rain::portrait(slot, expected.map(|p| p.coord), rotation).3
+            } else if kind == CardKind::ArchiveWell {
                 super::archive::portrait(slot, expected.map(|p| p.coord), rotation).3
             } else if factory {
                 let cells = runtime
@@ -316,7 +331,9 @@ pub(super) fn inspect(
             }
             let name = format!(
                 "{}-walk-{:03}.png",
-                if kind == CardKind::ArchiveWell {
+                if kind == CardKind::RainCourt {
+                    "rain"
+                } else if kind == CardKind::ArchiveWell {
                     "archive"
                 } else if factory {
                     "chargeworks"

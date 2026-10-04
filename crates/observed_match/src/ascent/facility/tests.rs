@@ -1042,6 +1042,14 @@ fn archive_card_is_library_only_and_commits_three_physical_cells_atomically() {
     );
 }
 
+#[test]
+fn rain_card_is_zen_only_and_commits_three_physical_cells_atomically() {
+    wonder_commits_atomically(
+        crate::ascent::sim::CardKind::RainCourt,
+        crate::ascent::sim::District::ZEN,
+    );
+}
+
 fn wonder_commits_atomically(
     kind: crate::ascent::sim::CardKind,
     district: crate::ascent::sim::District,
@@ -1206,7 +1214,9 @@ fn wonder_commits_atomically(
         assert_eq!(p.space, HexSpace::Hall);
         assert_eq!(
             observed_facility::hex_wfc::placement_tile_archetype(&p),
-            Some(if kind == crate::ascent::sim::CardKind::ArchiveWell {
+            Some(if kind == crate::ascent::sim::CardKind::RainCourt {
+                "rain_court"
+            } else if kind == crate::ascent::sim::CardKind::ArchiveWell {
                 "archive_well"
             } else {
                 match p.archetype {

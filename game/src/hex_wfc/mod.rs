@@ -55,6 +55,7 @@ impl Plugin for HexWfcPlugin {
         perf::configure(app);
         view::cistern::install(app);
         view::chargeworks::install(app);
+        view::rain::install(app);
         view::spectate::overview_props::schedule(app);
         // Evidence for the spectator overview needs it *up*, and a capture run
         // has no keyboard. `OBSERVED2_SPECTATE_OVERVIEW=<detent>` opens it at

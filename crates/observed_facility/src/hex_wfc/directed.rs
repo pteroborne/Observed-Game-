@@ -197,6 +197,18 @@ pub fn authored_archive_well(
     })
 }
 
+/// One Zen card places three sheltered sectors around a continuous rain garden.
+#[must_use]
+pub fn authored_rain_court(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    authored_triad(config, anchor, rotation, |_, heading| {
+        HexArchetype::RainCourt { heading }
+    })
+}
+
 fn authored_triad(
     config: super::HexWfcConfig,
     anchor: HexCoord,

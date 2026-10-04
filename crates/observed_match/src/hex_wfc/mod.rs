@@ -81,6 +81,7 @@ pub(crate) fn compatibility_test_content() -> &'static std::sync::Arc<HexMatchCo
                     tile.key.archetype.starts_with("climb_")
                         || tile.key.archetype == "cistern"
                         || tile.key.archetype == "archive_well"
+                        || tile.key.archetype == "rain_court"
                         || tile.key.archetype.starts_with("chargeworks_")
                 })
                 .cloned(),

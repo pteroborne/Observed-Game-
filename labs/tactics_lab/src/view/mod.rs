@@ -214,6 +214,7 @@ pub fn sketch_role(archetype: HexArchetype, space: HexSpace, in_room: bool) -> H
             ClimbPart::Landing { .. } => HexSketchRole::ClimbLanding,
         },
         HexArchetype::Expanse
+        | HexArchetype::RainCourt { .. }
         | HexArchetype::ArchiveWell { .. }
         | HexArchetype::Cistern { .. }
         | HexArchetype::Chargeworks { .. } => HexSketchRole::Expanse,

@@ -337,6 +337,12 @@ pub(super) fn built_by(
             rotation,
         )?
         .to_vec(),
+        CardKind::RainCourt => observed_facility::hex_wfc::authored_rain_court(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
         CardKind::ArchiveWell => observed_facility::hex_wfc::authored_archive_well(
             physical.facility.config,
             cell,
@@ -518,7 +524,7 @@ mod preview_tests {
     use super::*;
     use observed_match::ascent::sim::{CardKind, District};
     #[test]
-    fn archive_card_thumbnail_finds_the_whole_room_even_when_facing_off_the_first_edge() {
+    fn wonder_thumbnails_find_the_whole_room_even_when_facing_off_the_first_edge() {
         let game = observed_match::hex_wfc::HexWfcMatch::new(
             7,
             observed_match::hex_wfc::HexMatchConfig {
@@ -531,31 +537,43 @@ mod preview_tests {
             &crate::hex_wfc::sim::load_prototypes(),
         )
         .expect("preview fixture");
-        let register = District::LIBRARY.register();
-        let first = *game
-            .facility
-            .architecture
-            .iter()
-            .find(|(_, r)| **r == register)
-            .unwrap()
-            .0;
-        assert!(
-            (0..6).any(|r| built_by(&game, CardKind::ArchiveWell, first, r).is_none()),
-            "fixture exercises the border failure"
-        );
-        for rotation in 0..6 {
-            let (cell, pieces) = preview_by(&game, CardKind::ArchiveWell, register, rotation)
-                .expect("complete thumbnail");
-            let expected = observed_facility::hex_wfc::authored_archive_well(
-                game.facility.config,
-                cell,
-                rotation,
-            )
-            .unwrap();
-            let actual: BTreeSet<_> = pieces.iter().map(|p| p.source_cell).collect();
-            assert_eq!(actual, expected.map(|p| p.coord).into_iter().collect());
-            assert!(cutaway_mesh(&pieces, true, bearing()).is_some());
-            assert!(cutaway_mesh(&pieces, false, bearing()).is_some());
+        for (kind, district) in [
+            (CardKind::ArchiveWell, District::LIBRARY),
+            (CardKind::RainCourt, District::ZEN),
+        ] {
+            let register = district.register();
+            let first = *game
+                .facility
+                .architecture
+                .iter()
+                .find(|(_, r)| **r == register)
+                .unwrap()
+                .0;
+            assert!(
+                (0..6).any(|r| built_by(&game, kind, first, r).is_none()),
+                "fixture exercises the border failure"
+            );
+            for rotation in 0..6 {
+                let (cell, pieces) =
+                    preview_by(&game, kind, register, rotation).expect("complete thumbnail");
+                let expected = match kind {
+                    CardKind::RainCourt => observed_facility::hex_wfc::authored_rain_court(
+                        game.facility.config,
+                        cell,
+                        rotation,
+                    ),
+                    _ => observed_facility::hex_wfc::authored_archive_well(
+                        game.facility.config,
+                        cell,
+                        rotation,
+                    ),
+                }
+                .unwrap();
+                let actual: BTreeSet<_> = pieces.iter().map(|p| p.source_cell).collect();
+                assert_eq!(actual, expected.map(|p| p.coord).into_iter().collect());
+                assert!(cutaway_mesh(&pieces, true, bearing()).is_some());
+                assert!(cutaway_mesh(&pieces, false, bearing()).is_some());
+            }
         }
     }
 }

@@ -20,6 +20,7 @@ pub(in crate::hex_wfc) use super::mesh_group::MeshGroupKey;
 use super::open_edge_materials::OpenEdgeMaterials;
 use crate::view::environment::{cuboid_mesh, load_repeating_texture};
 
+mod rain;
 mod textures;
 mod wonder;
 use textures::surface_texture;
@@ -74,6 +75,7 @@ pub(in crate::hex_wfc) struct HexWfcVisualAssets {
     reservoir: WonderMaterials,
     chargeworks: WonderMaterials,
     archive: WonderMaterials,
+    rain: rain::RainMaterials,
     archive_details: [Handle<StandardMaterial>; 8],
     chargeworks_details: [Handle<StandardMaterial>; 4],
     hull_cache: HashMap<(String, usize), Handle<Mesh>>,
@@ -180,6 +182,7 @@ impl HexWfcVisualAssets {
         Self {
             reservoir,
             archive,
+            rain: rain::RainMaterials::load(materials, images),
             archive_details: wonder::archive_details(materials),
             chargeworks,
             chargeworks_details: wonder::details(materials),
@@ -207,6 +210,7 @@ impl HexWfcVisualAssets {
         Self {
             reservoir: WonderMaterials::for_test(&dummy),
             archive: WonderMaterials::for_test(&dummy),
+            rain: rain::RainMaterials::for_test(&dummy),
             archive_details: std::array::from_fn(|_| dummy.clone()),
             chargeworks: WonderMaterials::for_test(&dummy),
             chargeworks_details: std::array::from_fn(|_| dummy.clone()),
@@ -216,6 +220,10 @@ impl HexWfcVisualAssets {
             merged_hull_cache: HashMap::new(),
             open_edge: OpenEdgeMaterials::new(materials),
         }
+    }
+
+    pub(super) fn rain_material(&self, index: usize) -> Handle<StandardMaterial> {
+        self.rain.0[index].clone()
     }
 
     pub(super) fn archive_detail(&self, index: usize) -> Handle<StandardMaterial> {

@@ -23,6 +23,7 @@ pub mod liminal;
 pub mod noon;
 pub mod probe;
 pub mod program;
+pub mod rain_court;
 pub mod recipe;
 pub mod rooms;
 pub mod silos;
@@ -61,6 +62,7 @@ pub fn builders() -> Vec<Builder> {
     all.extend(cistern::builders());
     all.extend(chargeworks::builders());
     all.extend(archive_well::builders());
+    all.extend(rain_court::builders());
     all.extend(rooms::builders());
     all.extend(program::builders());
     all.extend(witness::builders());

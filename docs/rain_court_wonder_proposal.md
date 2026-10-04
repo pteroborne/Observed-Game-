@@ -1,7 +1,8 @@
 # The Rain Court — a Zen wonder
 
-Research and design draft, 2026-10-04. This change contains the proposal and a
-schematic plan; the playable composition is not implemented yet.
+Researched and implemented on 2026-10-04. One Architect card now places the
+three-sector Rain Court on Zen floors. See the [game captures, physical
+walkthrough and verification](evidence/rain-court/README.md).
 
 Zen is `ShadowScreen`, displayed floor 4 in the current eight-floor ascent.
 Its existing identity is pale paper against dark timber, tatami, slatted ceilings
@@ -110,7 +111,7 @@ victory timer to justify its place in Zen.
 
 ## Authoring and review plan
 
-The location pass would deliver the three-sector composition, one Architect card,
+The implemented location pass delivers the three-sector composition, one Architect card,
 Zen floor restriction, six exact orientations, continuous navigation, the fixed
 light setup and bounded local rain presentation. Reserve the existing hull and
 light budgets; batched decorative detail must stream, rewrite, cut away and
@@ -133,7 +134,7 @@ Related: [district wonder shortlist](cistern_wonders_proposal.md),
 [Architect Ascent](architect_ascent_design.md),
 [authoring workflow](tile_authoring.md).
 
-Draft verification: local document links and SVG XML validated, the SVG rendered
-with `rsvg-convert`, and the resulting plan visually inspected. `git diff --check`
-passed. This is a documentation and diagram change; no Cargo gate or gameplay
-validation is claimed.
+The schematic above records the design direction. The [authored CAD plan](evidence/rain-court/rain-plan.png)
+records the production geometry, including the exact three door orientations,
+covered circuit, screen gaps and nine faceted garden stones. The evidence page
+records the implementation checks and reproducible capture commands.

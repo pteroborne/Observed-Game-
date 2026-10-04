@@ -86,6 +86,7 @@ fn archetype_name(archetype: HexArchetype) -> &'static str {
         HexArchetype::Corner => "corner",
         HexArchetype::Junction => "junction",
         HexArchetype::Expanse
+        | HexArchetype::RainCourt { .. }
         | HexArchetype::ArchiveWell { .. }
         | HexArchetype::Cistern { .. }
         | HexArchetype::Chargeworks { .. } => "expanse",

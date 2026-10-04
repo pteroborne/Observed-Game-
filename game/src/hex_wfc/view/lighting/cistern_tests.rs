@@ -19,6 +19,11 @@ fn the_whole_archive_stays_lit_before_entry_and_follows_generator_power() {
     fixed_wonder_lighting(WonderLighting::Archive);
 }
 
+#[test]
+fn rain_lights_are_fixed_and_follow_generator_power() {
+    fixed_wonder_lighting(WonderLighting::Rain);
+}
+
 fn fixed_wonder_lighting(theme: WonderLighting) {
     let mut game = HexWfcMatch::new(
         44,
@@ -44,6 +49,9 @@ fn fixed_wonder_lighting(theme: WonderLighting) {
                 heading: HexFace::East,
             },
             WonderLighting::Cistern => HexArchetype::Cistern {
+                heading: HexFace::East,
+            },
+            WonderLighting::Rain => HexArchetype::RainCourt {
                 heading: HexFace::East,
             },
             WonderLighting::Archive => HexArchetype::ArchiveWell {
@@ -188,6 +196,7 @@ fn fixed_wonder_lighting(theme: WonderLighting) {
                 match theme {
                     WonderLighting::Chargeworks => observed_style::chargeworks::FIXTURE_INTENSITY,
                     WonderLighting::Cistern => observed_style::cistern::FIXTURE_INTENSITY,
+                    WonderLighting::Rain => observed_style::rain_court::FIXTURE_INTENSITY,
                     WonderLighting::Archive => observed_style::archive::FIXTURE_INTENSITY,
                 } * scale
             );
@@ -204,6 +213,7 @@ fn fixed_wonder_lighting(theme: WonderLighting) {
                     WonderLighting::Chargeworks =>
                         observed_style::chargeworks::FIXTURE_BOUNCE_INTENSITY,
                     WonderLighting::Cistern => observed_style::cistern::FIXTURE_BOUNCE_INTENSITY,
+                    WonderLighting::Rain => observed_style::rain_court::FIXTURE_BOUNCE_INTENSITY,
                     WonderLighting::Archive => observed_style::archive::FIXTURE_BOUNCE_INTENSITY,
                 } * scale
             );

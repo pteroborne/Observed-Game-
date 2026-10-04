@@ -261,7 +261,16 @@ fn spawn_cell(
             observed_facility::hex_wfc::HexArchetype::ArchiveWell { heading } => Some(heading),
             _ => None,
         });
-    let wonder = if archive.is_some() {
+    let rain = world
+        .placements
+        .get(&coord)
+        .and_then(|p| match p.archetype {
+            observed_facility::hex_wfc::HexArchetype::RainCourt { heading } => Some(heading),
+            _ => None,
+        });
+    let wonder = if rain.is_some() {
+        Some(super::lighting::WonderLighting::Rain)
+    } else if archive.is_some() {
         Some(super::lighting::WonderLighting::Archive)
     } else if chargeworks.is_some() {
         Some(super::lighting::WonderLighting::Chargeworks)
@@ -295,6 +304,9 @@ fn spawn_cell(
         child_pieces +=
             super::library::spawn(commands, assets, meshes, cell, coord, world, &pieces);
     }
+    if let Some(heading) = rain {
+        child_pieces += super::rain::spawn(commands, assets, meshes, cell, coord, heading, &pieces);
+    }
     let origin = Vec3::from_array(hex_origin(coord));
     // The merged mesh cache is keyed on this string. A cell carrying open-edge or rim
     // pieces is no longer a pure function of its tile - its walls came down, or a
@@ -314,7 +326,16 @@ fn spawn_cell(
 
     let groups = super::mesh_group::gather(&pieces);
     for (group_key, group) in groups {
-        if group_key == super::assets::MeshGroupKey::Hidden {
+        if group_key == super::assets::MeshGroupKey::Hidden
+            || (rain.is_some()
+                && matches!(
+                    group_key,
+                    super::assets::MeshGroupKey::Floor
+                        | super::assets::MeshGroupKey::Ceiling
+                        | super::assets::MeshGroupKey::Interior
+                        | super::assets::MeshGroupKey::Perimeter(_)
+                ))
+        {
             continue;
         }
         let Some(mesh) =

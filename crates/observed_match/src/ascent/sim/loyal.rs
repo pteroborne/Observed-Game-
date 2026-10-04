@@ -236,6 +236,7 @@ impl ArchitectLab {
                     | CardKind::Cistern
                     | CardKind::Chargeworks
                     | CardKind::ArchiveWell
+                    | CardKind::RainCourt
             ) {
                 continue;
             }
@@ -257,7 +258,10 @@ impl ArchitectLab {
                         CardKind::Tile(shape) => {
                             vec![self.played_placement(shape, target, rotation)]
                         }
-                        CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell => {
+                        CardKind::Cistern
+                        | CardKind::Chargeworks
+                        | CardKind::ArchiveWell
+                        | CardKind::RainCourt => {
                             self.played_wonder(card.kind, target, rotation).to_vec()
                         }
                         _ => self.played_stair(target, rotation).to_vec(),

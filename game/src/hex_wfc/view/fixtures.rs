@@ -62,6 +62,7 @@ pub(super) fn spawn_cell_practicals(
     let mut child_pieces = 0;
     for position in positions {
         if has_authored_lights
+            && !matches!(wonder, Some(super::lighting::WonderLighting::Rain))
             && matches!(
                 role,
                 HexStructureRole::Room | HexStructureRole::Hall | HexStructureRole::Climb

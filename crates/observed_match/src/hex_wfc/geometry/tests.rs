@@ -1970,3 +1970,5 @@ fn walk_room_route(scene: &RapierTraversalScene, route: &[Vec3]) -> Result<(), V
 mod chargeworks;
 
 mod archive;
+
+mod rain;

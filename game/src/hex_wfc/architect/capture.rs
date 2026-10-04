@@ -43,6 +43,7 @@ const FALL_TICK: u64 = 150;
 const GIVE_UP_FRAMES: u16 = 12_000;
 
 mod archive;
+mod rain;
 mod wonder;
 use wonder::WonderWalk;
 
@@ -66,10 +67,16 @@ pub(in crate::hex_wfc) fn capture(
     };
     let rogue = request.mode == HexWfcCaptureMode::Rogue;
     let factory = !rogue && std::env::var_os("OBSERVED2_CHARGEWORKS_PORTRAITS").is_some();
+    let rain = !rogue && std::env::var_os("OBSERVED2_RAIN_PORTRAITS").is_some();
     let archive = !rogue && std::env::var_os("OBSERVED2_ARCHIVE_PORTRAITS").is_some();
-    let portraits =
-        !rogue && (archive || factory || std::env::var_os("OBSERVED2_CISTERN_PORTRAITS").is_some());
-    let kind = if archive {
+    let portraits = !rogue
+        && (rain
+            || archive
+            || factory
+            || std::env::var_os("OBSERVED2_CISTERN_PORTRAITS").is_some());
+    let kind = if rain {
+        CardKind::RainCourt
+    } else if archive {
         CardKind::ArchiveWell
     } else if factory {
         CardKind::Chargeworks
@@ -103,7 +110,7 @@ pub(in crate::hex_wfc) fn capture(
     let (Some(mut runtime), Some(mut desk), Some(_)) = (runtime, desk, board) else {
         return;
     };
-    if factory || archive {
+    if rain || factory || archive {
         if factory_staged.is_none() {
             *factory_staged = wonder::stage_wonder(&mut runtime, &desk, kind);
         }
@@ -151,7 +158,10 @@ pub(in crate::hex_wfc) fn capture(
             }
             // A cistern when one is in hand, so the still shows the multi-tile room; a stair else; a tile else.
             cards.sort_by_key(|(_, card)| match card.kind {
-                CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell => 0,
+                CardKind::Cistern
+                | CardKind::Chargeworks
+                | CardKind::ArchiveWell
+                | CardKind::RainCourt => 0,
                 CardKind::Stair => 1,
                 CardKind::Tile(_) => 2,
                 CardKind::Door => 3,
@@ -203,7 +213,10 @@ pub(in crate::hex_wfc) fn capture(
                 };
                 if matches!(
                     card.kind,
-                    CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell
+                    CardKind::Cistern
+                        | CardKind::Chargeworks
+                        | CardKind::ArchiveWell
+                        | CardKind::RainCourt
                 ) {
                     *reservoir = Some((target, desk.rotation));
                 }

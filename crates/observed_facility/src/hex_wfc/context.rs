@@ -121,6 +121,7 @@ pub(super) fn context_multiplier(
         // An expanse is flat floor: it wants neither the vertical core nor the
         // upper levels, so it takes no positional tendency at all.
         HexArchetype::Expanse
+        | HexArchetype::RainCourt { .. }
         | HexArchetype::ArchiveWell { .. }
         | HexArchetype::Cistern { .. }
         | HexArchetype::Chargeworks { .. } => 1.0,
@@ -175,6 +176,7 @@ fn slot(archetype: HexArchetype) -> Option<usize> {
         HexArchetype::Junction => 3,
         HexArchetype::Climb { .. } => 4,
         HexArchetype::Expanse
+        | HexArchetype::RainCourt { .. }
         | HexArchetype::ArchiveWell { .. }
         | HexArchetype::Cistern { .. }
         | HexArchetype::Chargeworks { .. } => 5,
@@ -286,7 +288,11 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Climb { .. } => 0.6,
             A::Room => 1.2,
             // The district the archetype exists for.
-            A::Expanse | A::ArchiveWell { .. } | A::Cistern { .. } | A::Chargeworks { .. } => 3.0,
+            A::Expanse
+            | A::RainCourt { .. }
+            | A::ArchiveWell { .. }
+            | A::Cistern { .. }
+            | A::Chargeworks { .. } => 3.0,
             A::Void => 1.0,
         },
         // Winding: turns and runs, junctions suppressed so a path commits.
@@ -300,7 +306,11 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             // cannot go without its expanses: suppressed (0.3) across Lumen's floor of
             // the climb, it took production solves from one attempt to as many as
             // twenty. Its winding is in the corners, runs and junctions.
-            A::Expanse | A::ArchiveWell { .. } | A::Cistern { .. } | A::Chargeworks { .. } => 1.0,
+            A::Expanse
+            | A::RainCourt { .. }
+            | A::ArchiveWell { .. }
+            | A::Cistern { .. }
+            | A::Chargeworks { .. } => 1.0,
             A::Void => 1.0,
         },
         // The vertical districts: both lean on climbs, Megastructure hardest, so it
@@ -311,7 +321,11 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Junction => 0.8,
             A::Climb { .. } => 1.6,
             A::Room => 0.9,
-            A::Expanse | A::ArchiveWell { .. } | A::Cistern { .. } | A::Chargeworks { .. } => 0.5,
+            A::Expanse
+            | A::RainCourt { .. }
+            | A::ArchiveWell { .. }
+            | A::Cistern { .. }
+            | A::Chargeworks { .. } => 0.5,
             A::Void => 1.0,
         },
         R::Megastructure => match archetype {
@@ -321,7 +335,11 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Climb { .. } => 2.6,
             A::Room => 1.0,
             // A megastructure earns its scale from open floor as well as climbs.
-            A::Expanse | A::ArchiveWell { .. } | A::Cistern { .. } | A::Chargeworks { .. } => 1.6,
+            A::Expanse
+            | A::RainCourt { .. }
+            | A::ArchiveWell { .. }
+            | A::Cistern { .. }
+            | A::Chargeworks { .. } => 1.6,
             A::Void => 1.0,
         },
         // The remaining registers take mild characters, so the strong four read

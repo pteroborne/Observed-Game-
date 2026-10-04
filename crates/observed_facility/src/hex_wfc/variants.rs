@@ -274,6 +274,7 @@ pub fn placement_tile_archetype(placement: &HexPlacement) -> Option<&'static str
         HexArchetype::Expanse => Some("expanse"),
         HexArchetype::Cistern { .. } => Some("cistern"),
         HexArchetype::ArchiveWell { .. } => Some("archive_well"),
+        HexArchetype::RainCourt { .. } => Some("rain_court"),
         HexArchetype::Chargeworks { part, .. } => Some(match part {
             super::ChargeworksPart::Fabricator => "chargeworks_fabricator",
             super::ChargeworksPart::Transfer => "chargeworks_transfer",

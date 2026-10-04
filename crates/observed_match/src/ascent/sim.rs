@@ -776,10 +776,14 @@ impl ArchitectLab {
                     .is_some_and(|next| next.space.built() && next.is_open(entrance.opposite()));
                 (!fits).then_some(CommandRefusal::NoLocalAttachment)
             }
-            CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell => {
+            CardKind::Cistern
+            | CardKind::Chargeworks
+            | CardKind::ArchiveWell
+            | CardKind::RainCourt => {
                 let district = match card.kind {
                     CardKind::Cistern => District::GROUND,
                     CardKind::Chargeworks => District::REACTOR,
+                    CardKind::RainCourt => District::ZEN,
                     _ => District::LIBRARY,
                 };
                 if self.district(target.level) != district {
@@ -980,6 +984,9 @@ impl ArchitectLab {
         match kind {
             CardKind::Cistern => authored_cistern_room(self.world.config, target, rotation),
             CardKind::Chargeworks => authored_chargeworks(self.world.config, target, rotation),
+            CardKind::RainCourt => {
+                observed_facility::hex_wfc::authored_rain_court(self.world.config, target, rotation)
+            }
             CardKind::ArchiveWell => observed_facility::hex_wfc::authored_archive_well(
                 self.world.config,
                 target,
@@ -1082,7 +1089,10 @@ impl ArchitectLab {
                                 .retain(|key, _| !threshold_touches(*key, cell, &self.world));
                         }
                     }
-                    CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell => {
+                    CardKind::Cistern
+                    | CardKind::Chargeworks
+                    | CardKind::ArchiveWell
+                    | CardKind::RainCourt => {
                         for placement in self.played_wonder(held.kind, target, rotation) {
                             let cell = placement.coord;
                             self.rewrite(placement);

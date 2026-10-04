@@ -25,6 +25,7 @@ impl District {
     /// The ground floor's: the Backrooms, on a facility of any height.
     pub const GROUND: Self = Self(ArchitectureRegister::CLIMB[0]);
     pub const LIBRARY: Self = Self(ArchitectureRegister::InfiniteGallery);
+    pub const ZEN: Self = Self(ArchitectureRegister::ShadowScreen);
     pub const REACTOR: Self = Self(ArchitectureRegister::Megastructure);
 
     /// The district of floor `level` of a facility `levels` tall.
@@ -155,6 +156,8 @@ pub enum CardKind {
     Surge,
     /// One Library card places a reading well and its elevated gallery circuit.
     ArchiveWell,
+    /// One Zen card places a sheltered veranda around an indoor rain garden.
+    RainCourt,
 }
 
 impl CardKind {
@@ -194,6 +197,8 @@ impl Card {
                 format!("archive well - {}", district.label())
             }
             (CardKind::ArchiveWell, None) => "archive well".to_string(),
+            (CardKind::RainCourt, Some(district)) => format!("rain court - {}", district.label()),
+            (CardKind::RainCourt, None) => "rain court".to_string(),
             (CardKind::Tile(shape), None) => shape.label().to_string(),
             (CardKind::Directive, _) => "Guardian directive".to_string(),
             (CardKind::Sensor, _) => "sensor".to_string(),
@@ -262,7 +267,7 @@ impl Deck {
 
     /// A team's deck: [`Self::with_stairs_and_wonders`], dealing only the ground floor's district until
     /// the team's bodies reach another ([`Self::open_through`]). Includes one multi-tile
-    /// Library Archive Well, Backrooms Cistern and Reactor Chargeworks. Seven districts' tiles dealt from the start would leave most
+    /// Library Archive Well, Zen Rain Court, Backrooms Cistern and Reactor Chargeworks. Seven districts' tiles dealt from the start would leave most
     /// of a hand for floors nobody can reach.
     #[must_use]
     pub fn for_team(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
@@ -298,7 +303,7 @@ impl Deck {
     }
 
     /// The Rogue's deck (design section 7): two of each of `shapes` in each district,
-    /// one Archive Well, one Cistern and one Chargeworks where their districts exist, the doors, and the machinery -
+    /// one of each authored wonder where its district exists, the doors, and the machinery -
     /// Guardian directives, sensors and surges - but no way up.
     #[must_use]
     pub fn rogue(seed: u64, levels: u8, shapes: &[TileShape]) -> Self {
@@ -387,6 +392,16 @@ impl Deck {
                     id: CardId(next_id),
                     kind: CardKind::ArchiveWell,
                     district: Some(District::LIBRARY),
+                });
+                next_id += 1;
+            }
+        }
+        if climb.contains(&District::ZEN) {
+            for _ in 0..wonders {
+                cards.push(Card {
+                    id: CardId(next_id),
+                    kind: CardKind::RainCourt,
+                    district: Some(District::ZEN),
                 });
                 next_id += 1;
             }
@@ -779,5 +794,38 @@ mod tests {
         // A Rogue deals every district from the start.
         let rogue = Deck::rogue(7, 8, &TileShape::AUTHORED);
         assert_eq!(rogue.reach, 7);
+    }
+    #[test]
+    fn rain_court_is_finite_zen_content_appended_after_existing_card_ids() {
+        for deck in [
+            Deck::for_team(7, 8, &TileShape::AUTHORED, 8),
+            Deck::rogue(7, 8, &TileShape::AUTHORED),
+        ] {
+            let all: Vec<_> = deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .chain(&deck.discard)
+                .collect();
+            let rain: Vec<_> = all
+                .iter()
+                .filter(|c| c.kind == CardKind::RainCourt)
+                .collect();
+            assert_eq!(rain.len(), 1);
+            assert_eq!(rain[0].district, Some(District::ZEN));
+            assert!(
+                all.iter()
+                    .filter(|c| c.kind != CardKind::RainCourt)
+                    .all(|c| c.id.0 < rain[0].id.0)
+            );
+        }
+        let deck = Deck::for_team(7, 1, &TileShape::AUTHORED, 1);
+        assert!(
+            !deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .any(|c| c.kind == CardKind::RainCourt)
+        );
     }
 }

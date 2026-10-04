@@ -20,6 +20,7 @@ pub mod chargeworks;
 pub mod cistern;
 pub mod iso;
 pub mod kinetic;
+pub mod rain_court;
 
 pub mod architect;
 pub mod equipment;

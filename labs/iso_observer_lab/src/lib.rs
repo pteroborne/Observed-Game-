@@ -392,6 +392,7 @@ pub fn sketch_role(archetype: HexArchetype, space: HexSpace, in_blueprint: bool)
             ClimbPart::Landing { .. } => HexSketchRole::ClimbLanding,
         },
         HexArchetype::Expanse
+        | HexArchetype::RainCourt { .. }
         | HexArchetype::ArchiveWell { .. }
         | HexArchetype::Cistern { .. }
         | HexArchetype::Chargeworks { .. } => HexSketchRole::Expanse,
@@ -419,6 +420,7 @@ pub fn archetype_label(archetype: HexArchetype) -> &'static str {
         HexArchetype::Junction => "junction",
         HexArchetype::Room => "room",
         HexArchetype::Expanse
+        | HexArchetype::RainCourt { .. }
         | HexArchetype::ArchiveWell { .. }
         | HexArchetype::Cistern { .. }
         | HexArchetype::Chargeworks { .. } => "expanse",

@@ -157,9 +157,10 @@ pub(super) fn sync(
                 ortho.scale = match card.kind {
                     CardKind::Tile(_) => TILE_SCALE,
                     CardKind::Stair => STAIR_SCALE,
-                    CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell => {
-                        WONDER_SCALE
-                    }
+                    CardKind::Cistern
+                    | CardKind::Chargeworks
+                    | CardKind::ArchiveWell
+                    | CardKind::RainCourt => WONDER_SCALE,
                     CardKind::Door
                     | CardKind::Station
                     | CardKind::Directive
@@ -185,7 +186,8 @@ pub(super) fn sync(
             | CardKind::Stair
             | CardKind::Cistern
             | CardKind::Chargeworks
-            | CardKind::ArchiveWell => {
+            | CardKind::ArchiveWell
+            | CardKind::RainCourt => {
                 let register = card
                     .district
                     .map_or(ArchitectureRegister::ALL[0], |district| district.register());
@@ -201,7 +203,10 @@ pub(super) fn sync(
                 // Centre the entire wonder on its thumbnail, including doorway bars.
                 let center = if matches!(
                     card.kind,
-                    CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell
+                    CardKind::Cistern
+                        | CardKind::Chargeworks
+                        | CardKind::ArchiveWell
+                        | CardKind::RainCourt
                 ) {
                     let cells: std::collections::BTreeSet<_> =
                         pieces.iter().map(|p| p.source_cell).collect();
@@ -248,10 +253,19 @@ pub(super) fn sync(
                         .filter(|face| shape.doors(rotation) & (1 << face.index()) != 0)
                         .map(|face| (face, Vec3::ZERO))
                         .collect(),
-                    CardKind::Cistern | CardKind::Chargeworks | CardKind::ArchiveWell => {
+                    CardKind::Cistern
+                    | CardKind::Chargeworks
+                    | CardKind::ArchiveWell
+                    | CardKind::RainCourt => {
                         let mut bars = Vec::new();
                         if let Some(placements) = if card.kind == CardKind::Cistern {
                             observed_facility::hex_wfc::authored_cistern_room(
+                                physical.facility.config,
+                                cell,
+                                rotation,
+                            )
+                        } else if card.kind == CardKind::RainCourt {
+                            observed_facility::hex_wfc::authored_rain_court(
                                 physical.facility.config,
                                 cell,
                                 rotation,

@@ -22,6 +22,7 @@ pub(crate) mod map;
 mod mesh_group;
 mod open_edge_materials;
 mod prison;
+pub(in crate::hex_wfc) mod rain;
 mod residency;
 mod shell;
 pub(in crate::hex_wfc) mod sky;

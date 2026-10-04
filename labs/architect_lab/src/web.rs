@@ -228,6 +228,7 @@ impl RogueGame {
                     CardKind::Cistern => ("cistern", 0, "3-hex reservoir with raised causeways"),
                     CardKind::Chargeworks => ("chargeworks", 0, "3-hex factory with service gantry"),
                     CardKind::ArchiveWell => ("archive well", 0, "3-hex reading well with elevated galleries"),
+                    CardKind::RainCourt => ("rain court", 0, "3-hex rain garden with sheltered veranda"),
                     CardKind::Directive => ("directive", 0, "Send major Guardians"),
                     CardKind::Sensor => ("sensor", 0, "Watch a floor"),
                     CardKind::Surge => ("surge", 0, "Raise floor pressure"),
