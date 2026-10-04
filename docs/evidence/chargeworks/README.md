@@ -12,6 +12,11 @@ Generated normal maps give the grooves relief under the fixed work lights.
 Five translucent cyan conveyor-field surfaces carry smoothly traveling bands
 and crossing electrical filaments. Their shader animates appearance only.
 
+The metal finish is now shared across the whole Reactor district. The
+Chargeworks uses the same cached floor, wall and ceiling materials as ordinary
+Reactor rooms and corridors; electrical fields remain on its machinery.
+[Ordinary Reactor tile and shared-material verification](../reactor-metal/README.md).
+
 [Research, imagined location and future delivery proposal](../../chargeworks_wonder_proposal.md).
 Production, moving cargo, explosions and the Rogue delivery victory are not
 implemented. The proposed quota begins at six canisters in a later lab, with

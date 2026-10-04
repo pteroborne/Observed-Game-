@@ -25,6 +25,7 @@ pub mod equipment;
 pub mod guardian;
 pub mod observer;
 pub mod open_air;
+pub mod reactor;
 pub mod surfaces;
 
 use bevy::color::{Color, LinearRgba};
@@ -1068,10 +1069,10 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
         // Screens and dust. Matte, and the deepest dark between pools of any
         // district: the gaps are what the members are for.
         Register::ShadowScreen => (0.95, 0.45),
-        // Nothing has been cleaned here in a very long time.
-        Register::Megastructure => (0.96, 0.34),
-        // Painted steel, wiped by hands for years. The only district with a
-        // sheen, and shallow gaps because people needed to see each other.
+        // Folded alien metal, with relief and a restrained specular sheen.
+        Register::Megastructure => (reactor::ROUGHNESS, 0.34),
+        // Painted steel, wiped by hands for years, with shallow gaps because
+        // people needed to see each other.
         Register::Wellshaft => (0.62, 0.80),
         // Sealed institutional floor: semi-gloss, and the source of that
         // particular squeak.
@@ -1283,6 +1284,15 @@ pub fn architecture_surface(
     role: ArchitectureSurfaceRole,
 ) -> Treatment {
     use observed_content::ArchitectureRegister as Register;
+    if register == Register::Megastructure && role != ArchitectureSurfaceRole::PracticalFixture {
+        let look = reactor::surface(role);
+        return Treatment {
+            base_color: look.base_color,
+            emissive: look.emissive,
+            signal: false,
+            edge: None,
+        };
+    }
     if register == Register::OverlitGrid {
         let [floor, wall, ceiling] = architecture_material(register);
         return match role {
@@ -1944,8 +1954,11 @@ pub fn hex_shell_surface(
     register: observed_content::ArchitectureRegister,
     role: ArchitectureSurfaceRole,
 ) -> HexSurfaceLook {
-    let treatment = architecture_surface(register, role);
     use observed_content::ArchitectureRegister as Register;
+    if register == Register::Megastructure && role != ArchitectureSurfaceRole::PracticalFixture {
+        return reactor::surface(role);
+    }
+    let treatment = architecture_surface(register, role);
     if matches!(register, Register::OverlitGrid | Register::ShadowScreen) {
         // These districts already own their albedo contrast. Generic palette
         // mixing dims the Noon's plaster and raises Shadow Screen's near-black

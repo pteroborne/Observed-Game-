@@ -64,6 +64,7 @@ impl Plugin for HexWfcPlugin {
             .ok()
             .map(|value| value.trim().parse::<usize>().unwrap_or(0));
         app.init_resource::<overlay::MatchOverlayState>()
+            .add_systems(Startup, view::configure_clusters)
             .insert_resource(view::spectate::SpectatorOverview {
                 active: overview_detent.is_some(),
                 detent: overview_detent.unwrap_or(0),

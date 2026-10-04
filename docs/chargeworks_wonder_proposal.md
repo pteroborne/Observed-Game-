@@ -53,3 +53,8 @@ Implemented on `codex/chargeworks-wonder`, branched from the approved Cistern li
 The location ships as one finite-deck wonder card for Reactor in both loyal and Rogue decks. Loyal dealing still unlocks by reached district. Eighteen forge sources provide the three roles at six grid-fitted orientations; the complete card preview and placement ghost use their authored geometry. Canisters and conveyors are stationary; translucent decorative gas leaves obstruction to the authored cage. The generator dims and restores fixed work lights.
 
 See [game captures, authored plan and verification](evidence/chargeworks/README.md). This evidence establishes placement and local traversal; the proposed delivery game still needs its own later lab.
+
+The folded-metal material has also been promoted to the shared Reactor district
+finish. Ordinary Reactor structural surfaces and the Chargeworks share the same
+cached materials, while its electric conveyors remain location-specific.
+See [district material evidence](evidence/reactor-metal/README.md).

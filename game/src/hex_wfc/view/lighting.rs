@@ -49,6 +49,18 @@ mod cistern_tests;
 /// At four it happens to be in the budget, and the floor there is brighter.
 const PRACTICAL_SHADOW_BUDGET: usize = 3;
 
+/// The streamed multi-floor rig needs 2,048 Z-list entries in the surface tour.
+/// Reserve them before rendering so Bevy never presents an overflow frame while growing.
+pub(in crate::hex_wfc) fn configure_clusters(
+    settings: Option<ResMut<bevy::light::cluster::GlobalClusterSettings>>,
+) {
+    if let Some(mut settings) = settings
+        && let Some(gpu) = settings.gpu_clustering.as_mut()
+    {
+        gpu.initial_z_slice_list_capacity = gpu.initial_z_slice_list_capacity.max(2_048);
+    }
+}
+
 const BLEND_RATE: f32 = 2.5;
 /// The key trim, which now lives in `observed_style` beside the palette it
 /// trims: a preview that reproduces this rig needs the same number or it is

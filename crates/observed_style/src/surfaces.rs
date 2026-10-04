@@ -25,7 +25,7 @@ pub const SURFACE_TEXTURE_SIZE: u32 = 512;
 /// repeats a texture once every four metres.
 pub const SURFACE_TILE_METRES: f32 = 4.0;
 
-/// A surface's images: the albedo multiplier as greyscale RGBA8 (sRGB), and a
+/// A surface's images: the albedo multiplier as RGBA8 (sRGB), and a
 /// tangent-space normal map as RGBA8 (linear).
 pub struct SurfaceImages {
     pub albedo: Vec<u8>,
@@ -46,6 +46,11 @@ pub fn surface_images(
     register: ArchitectureRegister,
     role: ArchitectureSurfaceRole,
 ) -> SurfaceImages {
+    if register == ArchitectureRegister::Megastructure
+        && role != ArchitectureSurfaceRole::PracticalFixture
+    {
+        return crate::reactor::panel_images(role);
+    }
     let material = material(register, role);
     // A wall carries its district's weave too - the lattice, the dado, the shuttering
     // (`architecture_weave`) - struck into the material as joints.

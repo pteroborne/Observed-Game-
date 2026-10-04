@@ -9,13 +9,19 @@ use super::{MeshGroupKey, surface_texture};
 pub(super) struct WonderMaterials([Handle<StandardMaterial>; 3]);
 
 impl WonderMaterials {
-    pub(super) fn load(
+    pub(super) fn from_register(register: &super::RegisterMaterials) -> Self {
+        Self([
+            register.floor.clone(),
+            register.wall.clone(),
+            register.ceiling.clone(),
+        ])
+    }
+
+    pub(super) fn load_cistern(
         materials: &mut Assets<StandardMaterial>,
         images: &mut Assets<Image>,
-        factory: bool,
     ) -> Self {
-        let ceramic =
-            (!factory).then(|| surface_texture(images, style::cistern::ceramic_albedo(), true));
+        let ceramic = surface_texture(images, style::cistern::ceramic_albedo(), true);
         Self(
             [
                 ArchitectureSurfaceRole::Floor,
@@ -23,34 +29,11 @@ impl WonderMaterials {
                 ArchitectureSurfaceRole::Ceiling,
             ]
             .map(|role| {
-                let look = if factory {
-                    style::chargeworks::surface(role)
-                } else {
-                    style::cistern::surface(role)
-                };
-                let (albedo, normal) = if factory {
-                    let generated = style::chargeworks::panel_images(role);
-                    (
-                        surface_texture(images, generated.albedo, true),
-                        Some(surface_texture(images, generated.normal, false)),
-                    )
-                } else {
-                    (ceramic.as_ref().expect("Cistern ceramic").clone(), None)
-                };
+                let look = style::cistern::surface(role);
                 materials.add(StandardMaterial {
                     base_color: look.base_color,
-                    base_color_texture: Some(albedo),
-                    normal_map_texture: normal,
-                    metallic: if factory {
-                        style::chargeworks::METALLIC
-                    } else {
-                        0.0
-                    },
-                    perceptual_roughness: if factory {
-                        style::chargeworks::ROUGHNESS
-                    } else {
-                        style::cistern::CERAMIC_ROUGHNESS
-                    },
+                    base_color_texture: Some(ceramic.clone()),
+                    perceptual_roughness: style::cistern::CERAMIC_ROUGHNESS,
                     ..default()
                 })
             }),

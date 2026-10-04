@@ -90,7 +90,7 @@ impl HexWfcVisualAssets {
         _content: &observed_content::ContentManifest,
     ) -> Self {
         let wall_texture = load_repeating_texture(asset_server, observed_assets::WALL.path);
-        let registers = ArchitectureRegister::ALL
+        let registers: Vec<RegisterMaterials> = ArchitectureRegister::ALL
             .into_iter()
             .map(|register| {
                 let palette = style::architecture(register);
@@ -124,6 +124,11 @@ impl HexWfcVisualAssets {
                             base_color_texture: Some(albedo),
                             normal_map_texture: Some(normal),
                             perceptual_roughness: palette.surface_roughness,
+                            metallic: if register == ArchitectureRegister::Megastructure {
+                                style::reactor::METALLIC
+                            } else {
+                                0.0
+                            },
                             ..default()
                         })
                     };
@@ -162,8 +167,11 @@ impl HexWfcVisualAssets {
                 }
             })
             .collect();
-        let reservoir = WonderMaterials::load(materials, images, false);
-        let chargeworks = WonderMaterials::load(materials, images, true);
+        let reservoir = WonderMaterials::load_cistern(materials, images);
+        // The wonder uses the district's exact cached handles, so the finishes stay together.
+        let chargeworks = WonderMaterials::from_register(
+            &registers[ArchitectureRegister::Megastructure.stable_id() as usize],
+        );
         Self {
             reservoir,
             chargeworks,
