@@ -62,7 +62,9 @@ positions. It is outside the active tile catalog.
 `observed_style::rain_court` owns the local cedar, opaque rice paper, wet paving,
 stone, moss, tatami and weather palette. Structural visuals use the authoritative
 projected hulls. Cedar lattice, moss finishes, drains and slats add no collision.
-Ordinary Zen materials and the district progression retain their existing style.
+Ordinary Zen now shares the exact cached cedar and paper finishes and adds fitted
+wall lattice, ceiling slats and cedar lantern rims. See the [ordinary Zen captures](../zen-cedar/README.md).
+The district progression is unchanged.
 
 The shell and decorative detail merge into seven material batches per sector.
 Rain streaks are deterministic crossed quads in one batch, bounded by the roof

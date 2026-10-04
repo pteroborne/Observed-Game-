@@ -29,7 +29,9 @@ pub(in crate::hex_wfc) mod sky;
 pub(in crate::hex_wfc) mod spectate;
 #[cfg(test)]
 mod spectate_tests;
+mod support;
 pub(in crate::hex_wfc) mod thresholds;
+mod zen;
 
 use bevy::anti_alias::fxaa::Fxaa;
 use bevy::camera::Hdr;

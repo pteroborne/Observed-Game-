@@ -79,6 +79,10 @@ pub(super) fn spawn_cell_practicals(
             // overview's floor plan were.
             let origin = Vec3::from_array(hex_origin(coord));
             let at = position + Vec3::Y * 0.18;
+            if architecture == ArchitectureRegister::ShadowScreen && wonder.is_none() {
+                child_pieces +=
+                    super::zen::fixture_frame(commands, assets, meshes, parent, coord, at);
+            }
             commands.spawn((
                 Mesh3d(assets.fixture_mesh(meshes)),
                 MeshMaterial3d(assets.register(architecture).fixture()),

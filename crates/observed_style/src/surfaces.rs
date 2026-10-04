@@ -46,6 +46,20 @@ pub fn surface_images(
     register: ArchitectureRegister,
     role: ArchitectureSurfaceRole,
 ) -> SurfaceImages {
+    if register == ArchitectureRegister::ShadowScreen
+        && role != ArchitectureSurfaceRole::PracticalFixture
+    {
+        return SurfaceImages {
+            albedo: crate::rain_court::albedo(if role == ArchitectureSurfaceRole::Wall {
+                1
+            } else {
+                0
+            }),
+            // Physical lattice and slats supply the relief, as in the Rain Court.
+            normal: [128, 128, 255, 255]
+                .repeat((SURFACE_TEXTURE_SIZE * SURFACE_TEXTURE_SIZE) as usize),
+        };
+    }
     if register == ArchitectureRegister::Megastructure
         && role != ArchitectureSurfaceRole::PracticalFixture
     {

@@ -306,6 +306,8 @@ fn spawn_cell(
     }
     if let Some(heading) = rain {
         child_pieces += super::rain::spawn(commands, assets, meshes, cell, coord, heading, &pieces);
+    } else if architecture == ArchitectureRegister::ShadowScreen && wonder.is_none() {
+        child_pieces += super::zen::spawn(commands, assets, meshes, cell, coord, world, &pieces);
     }
     let origin = Vec3::from_array(hex_origin(coord));
     // The merged mesh cache is keyed on this string. A cell carrying open-edge or rim
@@ -327,6 +329,13 @@ fn spawn_cell(
     let groups = super::mesh_group::gather(&pieces);
     for (group_key, group) in groups {
         if group_key == super::assets::MeshGroupKey::Hidden
+            || (architecture == ArchitectureRegister::ShadowScreen
+                && wonder.is_none()
+                && matches!(
+                    group_key,
+                    super::assets::MeshGroupKey::Interior
+                        | super::assets::MeshGroupKey::Perimeter(_)
+                ))
             || (rain.is_some()
                 && matches!(
                     group_key,

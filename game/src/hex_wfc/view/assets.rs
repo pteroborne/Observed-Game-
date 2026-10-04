@@ -2,9 +2,8 @@
 //!
 //! Every structural surface is a district-tinted `observed_style` treatment, one set
 //! per [`ArchitectureRegister`], keyed at render time by each collider piece's role and
-//! its source cell's architecture. Authored tile hulls carry the geometric detail, so
-//! there is no separate procedural "register dressing" pass — the tiles *are* the
-//! dressing.
+//! its source cell's architecture. Authored hulls remain authoritative; shallow
+//! Library and Zen detail fits their actual convex supports.
 
 use std::collections::HashMap;
 
@@ -137,11 +136,7 @@ impl HexWfcVisualAssets {
                         })
                     };
                 let floor = surface(ArchitectureSurfaceRole::Floor, false, materials);
-                let wall = surface(
-                    ArchitectureSurfaceRole::Wall,
-                    register == ArchitectureRegister::ShadowScreen,
-                    materials,
-                );
+                let wall = surface(ArchitectureSurfaceRole::Wall, false, materials);
                 let ceiling = surface(ArchitectureSurfaceRole::Ceiling, false, materials);
                 let mut tinted = |look: style::HexSurfaceLook, texture: Option<Handle<Image>>| {
                     materials.add(StandardMaterial {
@@ -182,7 +177,11 @@ impl HexWfcVisualAssets {
         Self {
             reservoir,
             archive,
-            rain: rain::RainMaterials::load(materials, images),
+            rain: rain::RainMaterials::load(
+                materials,
+                images,
+                &registers[ArchitectureRegister::ShadowScreen.stable_id() as usize],
+            ),
             archive_details: wonder::archive_details(materials),
             chargeworks,
             chargeworks_details: wonder::details(materials),

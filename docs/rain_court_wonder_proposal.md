@@ -86,8 +86,8 @@ arrangement, not authored collision or a final placement contract.
 - **Materials with physical roles.** Dry timber and limited tatami belong under
   the eaves; pale stone, subdued moss and wet mineral surfaces belong in the
   garden. Shared Zen style APIs own the palette. Architectural glows remain
-  distinct from gameplay signals. No district-wide material revision is included
-  in this location proposal.
+  distinct from gameplay signals. The completed ordinary-tile follow-through
+  below now shares the dry cedar and paper finish across Zen.
 
 Authored floors, panels, posts, rocks, thresholds and roof determine collision
 and observation. Decorative lattice detail, rain and water follow that geometry.
@@ -138,3 +138,16 @@ The schematic above records the design direction. The [authored CAD plan](eviden
 records the production geometry, including the exact three door orientations,
 covered circuit, screen gaps and nine faceted garden stones. The evidence page
 records the implementation checks and reproducible capture commands.
+
+## Ordinary Zen follow-through
+
+The ordinary Shadow Screen tiles now share the Rain Court’s cedar and opaque
+paper materials. Shallow cedar lattice and upper timber panels fit individual
+convex wall supports, and ceiling slats follow each real slab underside. Existing
+authored diffuser positions receive cedar rims. Door faces, split window
+apertures and climb ceiling gaps remain clear. The rain aperture, wet garden,
+moss, stones and seated tatami veranda remain the wonder’s local identity.
+
+See the [ordinary Zen evidence](evidence/zen-cedar/README.md). This is a
+presentation change; card rules, collision, district progression and content
+hashes are unchanged.

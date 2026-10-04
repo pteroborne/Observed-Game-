@@ -1,7 +1,7 @@
 use super::*;
 use observed_facility::hex_wfc::{HexArchetype, HexWfcConfig};
 use observed_match::hex_wfc::HexStructureRole;
-use observed_traversal::StableColliderId;
+use observed_traversal::{ColliderShape, StableColliderId};
 
 fn fixture() -> (HexWfcWorld, HexCoord) {
     let mut facility = HexWfcWorld::generate(7, HexWfcConfig::default()).unwrap();

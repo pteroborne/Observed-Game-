@@ -1,5 +1,8 @@
-//! Local Zen wonder palette: dry cedar, opaque rice paper and wet garden stone.
+//! Shared Zen cedar and paper, with the Rain Court's local garden finishes.
 use bevy::color::Color;
+pub const ROUGHNESS: f32 = 0.82;
+/// Ordinary lanterns light reflective paper and cedar instead of emissive walls.
+pub const ORDINARY_FIXTURE_INTENSITY: f32 = 2_400_000.0;
 pub const FIXTURE_INTENSITY: f32 = 3_800_000.0;
 pub const FIXTURE_BOUNCE_INTENSITY: f32 = 110_000.0;
 #[must_use]
@@ -18,6 +21,19 @@ pub fn colors() -> [Color; 7] {
         Color::srgb(0.48, 0.43, 0.29),
         Color::srgb(0.12, 0.10, 0.08),
     ]
+}
+#[must_use]
+pub fn surface(role: crate::ArchitectureSurfaceRole) -> crate::HexSurfaceLook {
+    crate::HexSurfaceLook {
+        base_color: colors()[if role == crate::ArchitectureSurfaceRole::Wall {
+            1
+        } else {
+            0
+        }],
+        emissive: bevy::color::LinearRgba::BLACK,
+        unlit: false,
+        textured: true,
+    }
 }
 #[must_use]
 pub fn weather_colors() -> [Color; 3] {
