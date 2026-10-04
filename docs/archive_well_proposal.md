@@ -84,22 +84,30 @@ bindings, bridges and fixed wonder lights retain their local geometry and setup.
 Related: [district wonder shortlist](cistern_wonders_proposal.md),
 [Architect Ascent](architect_ascent_design.md), [authoring workflow](tile_authoring.md).
 
-## Proposed ordinary Library dressing
+## Ordinary Library dressing
 
-The shared finish and warm interior colors are implemented. Ordinary tiles still
-have empty shelf bands and broad blank walls, so their next pass should establish
-the contents and human scale of a library:
+The shared finish and warm interior colors are implemented. The approved first
+dressing pass adds the contents and repeated bays of a library to ordinary
+Babel tiles:
 
 - Fill existing shelves with the Archive's muted bindings, broken by occasional
   gaps, tilted volumes and small stacks. Fit books to each tile's actual shelves.
 - Group the shelves into tall bookcase bays with narrow uprights and bronze trim;
   retain pale mineral frames, columns and ceiling coffers.
+- Fit shallow bookcase inlays to inward-facing convex wall surfaces where the
+  source has only a wall and plinth or leaves wide gaps between shelf courses.
+  Keep openings clear and preserve traversal.
+
+The remaining proposals are separate authoring and lighting passes:
+
 - Place warm fixed light on shelf faces and reading spots so collections remain
   visible before entry. Keep light budgets and powered behavior reviewable.
 - Give routes different library functions: stack corridors, catalogue junctions
   and reading rooms with small desks or recessed alcoves.
 
-Start with shelf contents and bookcase bays on the existing ordinary geometry.
+Shelf contents and bookcase bays use existing ordinary geometry, share the
+Archive's binding and bronze materials, and stream with their owning cells.
 Reading alcoves and new collision geometry can follow as a separate authoring
 pass. The Archive's three-bay room, elevated perches and continuous upper circuit
-remain its distinguishing features. This dressing proposal is not implemented.
+remain its distinguishing features.
+[Ordinary library dressing captures and verification](evidence/babel-books/README.md).

@@ -13,8 +13,9 @@ light now use warm reading-room colors, with neutral warm fog and a bronze
 structural accent. This removes the inherited Spillway palette's teal wash.
 Practical fixtures retain their existing treatments, light geometry, intensity
 budgets and power behavior. Fog distances and the blue-hour sky remain intact.
-Archive shelf bindings, bronze details, bridge geometry and fixed wonder
-lighting continue to belong to the wonder.
+The Archive retains its shelf geometry, bridges and fixed wonder lighting.
+A later [ordinary Library dressing pass](../babel-books/README.md) shares its
+binding and bronze materials across fitted bookcase bays.
 
 This is a presentation change. Authored hulls, collision, card placement,
 finite decks, simulation rules and content hashes are unchanged.

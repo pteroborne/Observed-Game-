@@ -13,7 +13,7 @@ fn turn(mut p: Vec3, heading: HexFace) -> Vec3 {
     }
     p
 }
-fn cuboid(center: Vec3, size: Vec3, axis: Vec3, heading: HexFace) -> Vec<Vec3> {
+pub(super) fn cuboid(center: Vec3, size: Vec3, axis: Vec3, heading: HexFace) -> Vec<Vec3> {
     let across = Vec3::new(-axis.z, 0.0, axis.x);
     let mut points = Vec::with_capacity(8);
     for x in [-0.5, 0.5] {

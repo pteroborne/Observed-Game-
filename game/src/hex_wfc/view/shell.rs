@@ -291,6 +291,9 @@ fn spawn_cell(
     }
     if let Some(heading) = archive {
         child_pieces += super::archive::spawn(commands, assets, meshes, cell, coord, heading);
+    } else if architecture == ArchitectureRegister::InfiniteGallery && wonder.is_none() {
+        child_pieces +=
+            super::library::spawn(commands, assets, meshes, cell, coord, world, &pieces);
     }
     let origin = Vec3::from_array(hex_origin(coord));
     // The merged mesh cache is keyed on this string. A cell carrying open-edge or rim

@@ -11,6 +11,9 @@ use observed_match::hex_wfc::open_edges;
 use super::{VistaPose, pose};
 
 pub(in crate::hex_wfc) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
+    if std::env::var_os("OBSERVED2_LIBRARY_PORTRAITS").is_some() {
+        return library_poses(world);
+    }
     const NAMES: [&str; 8] = [
         "floor_1", "floor_2", "floor_3", "floor_4", "floor_5", "floor_6", "floor_7", "floor_8",
     ];
@@ -46,4 +49,28 @@ pub(in crate::hex_wfc) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
             Some(pose(NAMES[usize::from(level)], at, face, 6.2, 0.02))
         })
         .collect()
+}
+
+/// Ordinary production tiles, with no staged props or altered source geometry.
+fn library_poses(world: &HexWfcWorld) -> Vec<VistaPose> {
+    use observed_content::ArchitectureRegister;
+    let mut out = Vec::new();
+    for (name, archetype, back) in [
+        ("babel_straight", HexArchetype::Straight, 6.2),
+        ("babel_corner", HexArchetype::Corner, 5.4),
+        ("babel_room", HexArchetype::Room, 6.2),
+        ("babel_junction", HexArchetype::Junction, 6.2),
+    ] {
+        if let Some((at, face)) = world.placements.values().find_map(|p| {
+            (world.architecture.get(&p.coord) == Some(&ArchitectureRegister::InfiniteGallery)
+                && p.archetype == archetype
+                && (archetype == HexArchetype::Room || open_edges(world, p.coord).is_none()))
+            .then(|| HexFace::LATERAL.into_iter().find(|&face| !p.is_open(face)))
+            .flatten()
+            .map(|face| (p.coord, face))
+        }) {
+            out.push(pose(name, at, face, back, 0.10));
+        }
+    }
+    out
 }
