@@ -72,7 +72,34 @@ Implemented on `codex/archive-well`, continuing the approved district material
 revision `4ce10549` in `Observed-cistern-reimagined`. The source
 `.claude/worktrees/architect-multi-tile` checkout remains unchanged.
 
+The approved follow-up shares the Archive's mineral tint, checker-cut floor,
+panelled walls, coffered ceiling and roughness across Babel / Infinite Gallery.
+Warm reading-room lighting replaces its inherited teal interior cast.
+The wonder uses the district's exact cached structural materials. Its shelves,
+bindings, bridges and fixed wonder lights retain their local geometry and setup.
+[Ordinary Babel tile and material verification](evidence/babel-mineral/README.md).
+
 [Game captures, authored plan, physical walkthrough and verification](evidence/archive-well/README.md)
 
 Related: [district wonder shortlist](cistern_wonders_proposal.md),
 [Architect Ascent](architect_ascent_design.md), [authoring workflow](tile_authoring.md).
+
+## Proposed ordinary Library dressing
+
+The shared finish and warm interior colors are implemented. Ordinary tiles still
+have empty shelf bands and broad blank walls, so their next pass should establish
+the contents and human scale of a library:
+
+- Fill existing shelves with the Archive's muted bindings, broken by occasional
+  gaps, tilted volumes and small stacks. Fit books to each tile's actual shelves.
+- Group the shelves into tall bookcase bays with narrow uprights and bronze trim;
+  retain pale mineral frames, columns and ceiling coffers.
+- Place warm fixed light on shelf faces and reading spots so collections remain
+  visible before entry. Keep light budgets and powered behavior reviewable.
+- Give routes different library functions: stack corridors, catalogue junctions
+  and reading rooms with small desks or recessed alcoves.
+
+Start with shelf contents and bookcase bays on the existing ordinary geometry.
+Reading alcoves and new collision geometry can follow as a separate authoring
+pass. The Archive's three-bay room, elevated perches and continuous upper circuit
+remain its distinguishing features. This dressing proposal is not implemented.

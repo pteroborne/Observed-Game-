@@ -101,6 +101,11 @@ pub fn surface_images(
             normal.extend_from_slice(&[encode(nx), encode(ny), encode(nz), 255]);
         }
     }
+    // Share the Archive Well's checker-cut floor, including the established
+    // relief beneath it. Walls and ceilings already use the same district images.
+    if register == ArchitectureRegister::InfiniteGallery && role == ArchitectureSurfaceRole::Floor {
+        albedo = crate::archive::floor_albedo();
+    }
     SurfaceImages { albedo, normal }
 }
 

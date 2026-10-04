@@ -1019,6 +1019,13 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.pools_rhythm = true;
         }
         Register::InfiniteGallery => {
+            // Babel's mineral shell needs the Archive's warm reading light.
+            // The inherited Spillway rig washed every surface in teal.
+            palette.ambient_color = Color::srgb(0.68, 0.64, 0.56);
+            palette.light_color = archive::fixture_color();
+            palette.key_color = palette.light_color;
+            palette.fog_color = Color::srgb(0.023, 0.020, 0.016);
+            palette.accent = LinearRgba::rgb(0.36, 0.27, 0.14);
             palette.fog_start = 12.0;
             palette.fog_end = 38.0;
             palette.pools_rhythm = true;
@@ -1083,9 +1090,8 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
         // Cut stone, honed rather than polished: monumental surfaces are matte
         // so the facets read as form rather than as glare.
         Register::FacetMonument => (0.88, 0.72),
-        // Old timber and cloth bindings. The most light-absorbent surface in
-        // the facility.
-        Register::InfiniteGallery => (0.93, 0.58),
+        // Honed mineral shell, shared with the Archive Well's reading galleries.
+        Register::InfiniteGallery => (archive::ROUGHNESS, 0.58),
         // Everything even, including the reflections. Flat by construction.
         Register::OverlitGrid => (0.90, 0.95),
         // Vinyl and gloss paint under fluorescent light: the specific sheen of
@@ -1287,6 +1293,15 @@ pub fn architecture_surface(
     use observed_content::ArchitectureRegister as Register;
     if register == Register::Megastructure && role != ArchitectureSurfaceRole::PracticalFixture {
         let look = reactor::surface(role);
+        return Treatment {
+            base_color: look.base_color,
+            emissive: look.emissive,
+            signal: false,
+            edge: None,
+        };
+    }
+    if register == Register::InfiniteGallery && role != ArchitectureSurfaceRole::PracticalFixture {
+        let look = archive::surface(role);
         return Treatment {
             base_color: look.base_color,
             emissive: look.emissive,
@@ -1958,6 +1973,9 @@ pub fn hex_shell_surface(
     use observed_content::ArchitectureRegister as Register;
     if register == Register::Megastructure && role != ArchitectureSurfaceRole::PracticalFixture {
         return reactor::surface(role);
+    }
+    if register == Register::InfiniteGallery && role != ArchitectureSurfaceRole::PracticalFixture {
+        return archive::surface(role);
     }
     let treatment = architecture_surface(register, role);
     if matches!(register, Register::OverlitGrid | Register::ShadowScreen) {

@@ -1,4 +1,4 @@
-//! Surface materials shared by the two authored wonder compositions.
+//! Surface materials shared by the authored wonder compositions.
 
 use bevy::prelude::*;
 use observed_style::{self as style, ArchitectureSurfaceRole};
@@ -34,38 +34,6 @@ impl WonderMaterials {
                     base_color: look.base_color,
                     base_color_texture: Some(ceramic.clone()),
                     perceptual_roughness: style::cistern::CERAMIC_ROUGHNESS,
-                    ..default()
-                })
-            }),
-        )
-    }
-
-    pub(super) fn load_archive(
-        materials: &mut Assets<StandardMaterial>,
-        images: &mut Assets<Image>,
-    ) -> Self {
-        Self(
-            [
-                ArchitectureSurfaceRole::Floor,
-                ArchitectureSurfaceRole::Wall,
-                ArchitectureSurfaceRole::Ceiling,
-            ]
-            .map(|role| {
-                let look = style::archive::surface(role);
-                let generated = style::surfaces::surface_images(
-                    observed_content::ArchitectureRegister::InfiniteGallery,
-                    role,
-                );
-                let albedo = if role == ArchitectureSurfaceRole::Floor {
-                    style::archive::floor_albedo()
-                } else {
-                    generated.albedo
-                };
-                materials.add(StandardMaterial {
-                    base_color: look.base_color,
-                    base_color_texture: Some(surface_texture(images, albedo, true)),
-                    normal_map_texture: Some(surface_texture(images, generated.normal, false)),
-                    perceptual_roughness: style::archive::ROUGHNESS,
                     ..default()
                 })
             }),

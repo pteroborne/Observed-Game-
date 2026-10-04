@@ -65,7 +65,10 @@ The composition profile and ordinary WFC demand alphabet are unchanged.
 Books, spine bands, bookcase uprights and ceiling details are batched into eight
 material meshes per sector and cached by exact heading. The shared
 `observed_style::archive` module owns their treatments and the room's structural
-finish; ordinary Library tiles retain their existing district finish.
+finish. The approved follow-up applies those structural materials throughout
+Babel / Infinite Gallery, with the wonder using the district's exact cached
+floor, wall and ceiling handles.
+[Ordinary Babel tile and shared-material verification](../babel-mineral/README.md).
 
 ## Reproduce
 

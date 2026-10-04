@@ -174,9 +174,12 @@ impl HexWfcVisualAssets {
         let chargeworks = WonderMaterials::from_register(
             &registers[ArchitectureRegister::Megastructure.stable_id() as usize],
         );
+        let archive = WonderMaterials::from_register(
+            &registers[ArchitectureRegister::InfiniteGallery.stable_id() as usize],
+        );
         Self {
             reservoir,
-            archive: WonderMaterials::load_archive(materials, images),
+            archive,
             archive_details: wonder::archive_details(materials),
             chargeworks,
             chargeworks_details: wonder::details(materials),

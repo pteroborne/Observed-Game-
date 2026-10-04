@@ -1,4 +1,5 @@
-//! The Archive Well: mineral shell, dark bindings, bronze gallery details and fixed light.
+//! Shared Babel / Infinite Gallery mineral finish, established by the Archive Well.
+//! Bindings, bronze gallery details and fixed wonder light remain local to the Archive.
 use crate::{ArchitectureSurfaceRole, HexSurfaceLook};
 use bevy::color::{Color, LinearRgba};
 
