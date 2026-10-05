@@ -310,6 +310,8 @@ pub(super) fn setup_runtime(
             spectator,
         ));
         replay.record_ascent(&match_state, rules);
+    } else {
+        replay.record_hex_wfc(&match_state);
     }
     let map_level = match_state.players[&local_player].cell.level;
     let presented_revisions = match_state.facility.cell_revisions.clone();

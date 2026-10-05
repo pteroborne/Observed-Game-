@@ -1,0 +1,11 @@
+cargo fmt --all: PASS
+cargo dev-clippy: PASS; no warnings
+cargo dev-test: PASS; 2705 passed, 0 failed, 45 existing ignored
+observed_game: 574 passed, 0 failed, 6 existing ignored
+real-UDP multi-client, late-joiner and Architect command recording tests: PASS
+native dynamic build: PASS
+9 native 1280x800 screens: PASS
+14 controls per screen; viewport/text bounds and control/legend separation: PASS
+70 native captures; first render-target warmup frame omitted; 69 frames in H.264/yuv420p/1280x800/6.9-second MP4: PASS
+human and two graphical LAN processes: OPEN
+known extended asserting hex_full_match_soak: unresolved; dev-test-all not rerun/claimed green

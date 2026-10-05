@@ -1,8 +1,10 @@
-//! Passive tactical replay recording for the assembled game.
+//! Passive replay recording for the assembled game.
 //!
 //! The recorder samples already-owned simulation state during Match and stores a compact
-//! room/place trace. Replay presentation reads this tape after the match; it never drives
+//! visual history. Replay presentation reads this tape after the match; it never drives
 //! or mutates gameplay.
+
+pub mod scene;
 
 use std::collections::BTreeSet;
 
@@ -72,6 +74,8 @@ pub struct ReplayMarker {
     pub live_round: u32,
     pub series_round: u32,
     pub label: String,
+    pub cell: Option<observed_hex::HexCoord>,
+    pub player: Option<PlayerId>,
 }
 
 #[derive(Resource, Clone, Debug, PartialEq)]
@@ -85,6 +89,7 @@ pub struct ReplayTape {
     pub actors: Vec<ReplayActor>,
     pub samples: Vec<ReplaySample>,
     pub markers: Vec<ReplayMarker>,
+    pub scene_frames: Vec<scene::ReplaySceneFrame>,
     pub result: Option<MatchResult>,
     pub ascent_result: Option<crate::flow::AscentResult>,
     /// Presentation-side story facts retained after Match-scoped resources are
@@ -130,6 +135,7 @@ impl ReplayTape {
             actors: Vec::new(),
             samples: Vec::new(),
             markers: Vec::new(),
+            scene_frames: Vec::new(),
             result: None,
             ascent_result: None,
             visited_rooms: Vec::new(),
@@ -161,6 +167,7 @@ impl ReplayTape {
             actors: Vec::new(),
             samples: Vec::new(),
             markers: Vec::new(),
+            scene_frames: Vec::new(),
             result: None,
             ascent_result: None,
             visited_rooms: Vec::new(),
@@ -298,6 +305,7 @@ impl ReplayTape {
             actors: Vec::new(),
             samples: Vec::new(),
             markers: Vec::new(),
+            scene_frames: Vec::new(),
             result: None,
             ascent_result: None,
             visited_rooms: Vec::new(),
@@ -322,6 +330,10 @@ impl ReplayTape {
     /// Sample the hex match. Same passive shape as [`Self::record_full_wfc`]: it reads
     /// already-owned simulation state and never drives gameplay.
     pub fn record_hex_wfc(&mut self, game: &observed_match::hex_wfc::HexWfcMatch) {
+        self.record_hex_scene(game, false);
+    }
+
+    fn record_hex_scene(&mut self, game: &observed_match::hex_wfc::HexWfcMatch, force: bool) {
         if self.seed != game.seed {
             return;
         }
@@ -345,13 +357,26 @@ impl ReplayTape {
         }
         self.anchor_was_placed = anchor_is_placed;
 
-        if game.tick.is_multiple_of(6)
+        if (game.tick.is_multiple_of(6)
+            || force
+            || game
+                .recent_events
+                .iter()
+                .any(|event| event.tick == game.tick)
+            || self
+                .scene_frames
+                .last()
+                .is_some_and(|frame| frame.facility.generation != game.facility.generation)
             || self.samples.is_empty()
             || (game.status == observed_match::hex_wfc::HexMatchStatus::Finished
                 && self
                     .samples
                     .last()
-                    .is_none_or(|sample| u64::from(sample.live_round) != game.tick))
+                    .is_none_or(|sample| u64::from(sample.live_round) != game.tick)))
+            && self
+                .scene_frames
+                .last()
+                .is_none_or(|frame| frame.tick != game.tick)
         {
             let actors = game
                 .players
@@ -373,18 +398,36 @@ impl ReplayTape {
                 game.facility.generation,
                 actors,
             );
+            self.scene_frames.push(scene::ReplaySceneFrame::capture(
+                game,
+                local,
+                self.samples.len() - 1,
+                self.scene_frames.last(),
+            ));
         }
         for event in &game.recent_events {
+            let before = self.markers.len();
+            let player = event
+                .player
+                .map_or(String::new(), |p| format!(" | Observer {}", p.0 + 1));
             self.push_marker(
-                game.tick.min(u64::from(u32::MAX)) as u32,
+                event.tick.min(u64::from(u32::MAX)) as u32,
                 game.facility.generation,
-                format!("t{} {:?}", game.tick, event.kind),
+                format!(
+                    "t{} {}{}",
+                    event.tick,
+                    scene::event_label(event.kind),
+                    player
+                ),
             );
+            if self.markers.len() > before {
+                self.markers.last_mut().unwrap().cell = event.cell;
+                self.markers.last_mut().unwrap().player = event.player;
+            }
         }
     }
 
-    /// Record physical rooms with Ascent-owned Observer states. This remains a
-    /// room trace, not a reconstruction of card plays or evolving geometry.
+    /// Record Ascent states and events beside owned physical scene snapshots.
     pub fn record_ascent(
         &mut self,
         game: &observed_match::hex_wfc::HexWfcMatch,
@@ -429,7 +472,12 @@ impl ReplayTape {
         }
         self.ascent_result = Some(facts);
         let previous = self.samples.len();
-        self.record_hex_wfc(game);
+        let changed = rules
+            .rules()
+            .events
+            .iter()
+            .any(|event| event.tick.saturating_add(1) >= game.tick);
+        self.record_hex_scene(game, changed);
         if self.samples.len() > previous {
             let sample = self
                 .samples
@@ -459,6 +507,63 @@ impl ReplayTape {
                 pose.status = status.to_string();
                 pose.task = task.to_string();
             }
+        }
+        for event in &rules.rules().events {
+            let before = self.markers.len();
+            let cell = event
+                .cell
+                .map(|c| format!(" | floor {} ({},{})", c.level + 1, c.q, c.r))
+                .unwrap_or_default();
+            self.push_marker(
+                event.tick.min(u64::from(u32::MAX)) as u32,
+                game.facility.generation,
+                format!("t{} {}{}", event.tick, event.message, cell),
+            );
+            if self.markers.len() > before {
+                self.markers.last_mut().unwrap().cell = event.cell;
+            }
+        }
+        if let Some(frame) = self
+            .scene_frames
+            .last_mut()
+            .filter(|frame| frame.tick == game.tick)
+        {
+            frame.highlights = rules.rules().contradictions.iter().copied().collect();
+            frame.doors = rules
+                .rules()
+                .doors
+                .iter()
+                .map(|(&key, &state)| (key, state))
+                .collect();
+            frame.stations = rules.rules().economy.stations.iter().copied().collect();
+            frame.dark_floors = rules
+                .rules()
+                .economy
+                .power
+                .iter()
+                .filter_map(|(&level, &powered)| (!powered).then_some(level))
+                .collect();
+        }
+        if facts.outcome != observed_match::ascent::sim::MatchOutcome::Running {
+            let label = match facts.outcome {
+                observed_match::ascent::sim::MatchOutcome::LoyalVictory => format!(
+                    "t{} {} reached the summit",
+                    game.tick,
+                    facts
+                        .winner
+                        .map_or_else(|| "Loyal team".into(), TeamId::label)
+                ),
+                _ if facts.rogue_by_capture => format!(
+                    "t{} Rogue victory: all loyal Observers jailed or corrupted",
+                    game.tick
+                ),
+                _ => format!("t{} Rogue victory: Darkness objective", game.tick),
+            };
+            self.push_marker(
+                game.tick.min(u64::from(u32::MAX)) as u32,
+                game.facility.generation,
+                label,
+            );
         }
         if matches!(
             facts.role,
@@ -526,6 +631,8 @@ impl ReplayTape {
             live_round,
             series_round,
             label,
+            cell: None,
+            player: None,
         });
     }
 

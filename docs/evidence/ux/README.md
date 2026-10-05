@@ -139,3 +139,11 @@ this separate 18-screen native set. See [completion checks](completion_checks.tx
 Outcomes are synthetic fixtures over a prepared hex room trace; LAN captures stage
 client presence without a server handshake. They are layout/wording evidence,
 not a completed human match or connected multiplayer acceptance.
+
+## Recorded world replay evidence (2026-10-05)
+
+[Replay replacement](../../ux/replay_implementation.md) documents the canonical
+world viewer. The [native evidence set](replay_1280x800/README.md) includes nine
+1280x800 views, bounds sidecars, a playback video and provenance. The fixture runs
+real rules and physics with explicitly staged card/catch/corruption events;
+it does not establish completed human or graphical LAN acceptance.

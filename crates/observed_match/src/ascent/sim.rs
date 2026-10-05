@@ -918,8 +918,8 @@ impl ArchitectLab {
                 .hand
                 .iter()
                 .find(|held| held.id == card)
-                .map(|held| held.kind)
-                .filter(|kind| kind.rogue_only())
+                .copied()
+                .filter(|held| held.kind.rogue_only())
         {
             // An order, not architecture: nothing is built, nothing is disturbed.
             assert!(self.deck.spend(card), "legality proved the card is held");
@@ -929,12 +929,17 @@ impl ArchitectLab {
                 self.cooldown = ARCHITECT_COOLDOWN_TICKS;
             }
             self.command_log.push((self.tick, command));
-            match kind {
+            match kind.kind {
                 CardKind::Directive => self.direct(target),
                 CardKind::Sensor => self.sense(target),
                 CardKind::Surge => self.surge(target),
                 _ => unreachable!("only Rogue effects reach this branch"),
             }
+            self.record_event(
+                LabEventKind::Played,
+                Some(target),
+                &format!("Rogue played {}.", kind.label()),
+            );
             return Ok(());
         }
         match command {
@@ -1010,7 +1015,15 @@ impl ArchitectLab {
                 self.record_event(
                     LabEventKind::Played,
                     Some(target),
-                    "Card played. Guardian investigates this tile.",
+                    &format!(
+                        "{} played {} (rotation {}).",
+                        team.map_or_else(
+                            || "Rogue".into(),
+                            |team| format!("Team {} Architect", team.0 + 1)
+                        ),
+                        held.label(),
+                        rotation % 6
+                    ),
                 );
             }
             ArchitectCommand::Requisition => {

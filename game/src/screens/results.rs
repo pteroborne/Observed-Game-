@@ -341,12 +341,24 @@ pub(crate) fn build_ascent_story(
             )
         },
     );
-    ResultsStory { headline: headline.to_string(), lines: vec![
-        ascent_outcome_label(facts), reason.to_string(), perspective,
-        format!("Observers: {} loyal ({} jailed) | {} corrupted.", facts.loyal, facts.jailed, facts.corrupted),
-        run,
-        "Replay is a room trace; cards, prison layouts and facility rewrites are not reconstructed.".to_string(),
-    ] }
+    ResultsStory {
+        headline: headline.to_string(),
+        lines: vec![
+            ascent_outcome_label(facts),
+            reason.to_string(),
+            perspective,
+            format!(
+                "Observers: {} loyal ({} jailed) | {} corrupted.",
+                facts.loyal, facts.jailed, facts.corrupted
+            ),
+            run,
+            if tape.is_some_and(|t| !t.scene_frames.is_empty()) {
+                "Replay shows the recorded facility, Observers, Guardians and match events.".into()
+            } else {
+                "No world playback was recorded for this run.".into()
+            },
+        ],
+    }
 }
 
 pub(crate) fn build_results_story(

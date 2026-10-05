@@ -1,0 +1,233 @@
+[
+  {
+    "max": [
+      901.0,
+      782.0
+    ],
+    "min": [
+      380.0,
+      765.0
+    ],
+    "text": "Tab / arrows / D-pad move focus | Enter / A / pointer activate"
+  },
+  {
+    "max": [
+      1140.0,
+      755.0
+    ],
+    "min": [
+      140.0,
+      738.0
+    ],
+    "text": "Tall beacon = event | red tile = instability | green beacon = exit | station = recharge | doors: red closed, green open"
+  },
+  {
+    "max": [
+      972.0,
+      696.0
+    ],
+    "min": [
+      308.0,
+      679.0
+    ],
+    "text": "Recorded world | eyes = Observers | pyramids = major Guardians | cages = minors"
+  },
+  {
+    "max": [
+      1005.0,
+      99.0
+    ],
+    "min": [
+      275.0,
+      79.0
+    ],
+    "text": "Architect Ascent | Observer | Rogue victory | no loyal Observer remains free"
+  },
+  {
+    "max": [
+      716.0,
+      69.0
+    ],
+    "min": [
+      564.0,
+      18.0
+    ],
+    "text": "REPLAY"
+  },
+  {
+    "max": [
+      1195.0,
+      246.0
+    ],
+    "min": [
+      724.0,
+      128.0
+    ],
+    "text": "2.0s / 7.0s | paused | 1x\nFloor 1 | Floor view | revision 1\nYou | loyal\n0.2s Team 2 Architect played recharge station (rotation 0). | floor 1 (3,0)\n0.0s Rogue played corridor / 2 - Monument (rotation 1). | floor 3 (0,4)"
+  },
+  {
+    "max": [
+      1124.0,
+      635.0
+    ],
+    "min": [
+      1026.0,
+      613.0
+    ],
+    "text": "Main menu"
+  },
+  {
+    "max": [
+      925.0,
+      635.0
+    ],
+    "min": [
+      762.0,
+      613.0
+    ],
+    "text": "Back to results"
+  },
+  {
+    "max": [
+      1124.0,
+      581.0
+    ],
+    "min": [
+      1026.0,
+      559.0
+    ],
+    "text": "Speed: 1x"
+  },
+  {
+    "max": [
+      897.0,
+      581.0
+    ],
+    "min": [
+      789.0,
+      559.0
+    ],
+    "text": "Next floor"
+  },
+  {
+    "max": [
+      1135.0,
+      527.0
+    ],
+    "min": [
+      1016.0,
+      505.0
+    ],
+    "text": "Rotate view"
+  },
+  {
+    "max": [
+      903.0,
+      527.0
+    ],
+    "min": [
+      784.0,
+      505.0
+    ],
+    "text": "View: Floor"
+  },
+  {
+    "max": [
+      1129.0,
+      473.0
+    ],
+    "min": [
+      1021.0,
+      451.0
+    ],
+    "text": "Next event"
+  },
+  {
+    "max": [
+      919.0,
+      473.0
+    ],
+    "min": [
+      767.0,
+      451.0
+    ],
+    "text": "Previous event"
+  },
+  {
+    "max": [
+      1162.0,
+      419.0
+    ],
+    "min": [
+      989.0,
+      397.0
+    ],
+    "text": "Focus next actor"
+  },
+  {
+    "max": [
+      903.0,
+      419.0
+    ],
+    "min": [
+      784.0,
+      397.0
+    ],
+    "text": "+10 seconds"
+  },
+  {
+    "max": [
+      1135.0,
+      365.0
+    ],
+    "min": [
+      1016.0,
+      343.0
+    ],
+    "text": "-10 seconds"
+  },
+  {
+    "max": [
+      908.0,
+      365.0
+    ],
+    "min": [
+      778.0,
+      343.0
+    ],
+    "text": "Step forward"
+  },
+  {
+    "max": [
+      1124.0,
+      311.0
+    ],
+    "min": [
+      1026.0,
+      289.0
+    ],
+    "text": "Step back"
+  },
+  {
+    "max": [
+      903.0,
+      311.0
+    ],
+    "min": [
+      784.0,
+      289.0
+    ],
+    "text": "Play replay"
+  },
+  {
+    "max": [
+      761.0,
+      314.0
+    ],
+    "min": [
+      747.0,
+      287.0
+    ],
+    "text": ">"
+  }
+]

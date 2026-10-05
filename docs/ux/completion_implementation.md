@@ -1,5 +1,9 @@
 # Results, replay and playing again
 
+> Subsequent work: [recorded world replay](replay_implementation.md) replaces the
+> canonical room-trace playback described here. This report and its evidence
+> retain the scope and verification of the earlier Results/context commit.
+
 The Results/replay portion of Slice 4 from the [UX audit](end_to_end_audit.md)
 is implemented on `codex/end-to-end-ux`, following the
 [in-match guidance milestone](in_match_implementation.md).

@@ -119,8 +119,15 @@ pub(super) fn configure_captures(app: &mut App) {
                     .after(crate::screens::place::present_match_camera),
             );
     } else if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE_FRONTEND") {
-        app.insert_resource(frontend::FrontendCaptureRequest::new(dir))
+        app.insert_resource(frontend::FrontendCaptureRequest::new(dir.clone()))
             .add_systems(Update, frontend::capture_frontend_progress);
+        if std::env::var_os("OBSERVED2_CAPTURE_REPLAY_VIDEO").is_some() {
+            app.insert_resource(frontend::ReplayVideo::new(dir))
+                .add_systems(
+                    Update,
+                    frontend::capture_video.after(frontend::capture_frontend_progress),
+                );
+        }
     } else if let Ok(path) = std::env::var("OBSERVED2_CAPTURE_REBIND") {
         app.insert_resource(scenarios::RebindCaptureRequest::new(path))
             .add_systems(Update, scenarios::capture_rebind_progress);

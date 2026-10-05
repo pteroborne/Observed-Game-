@@ -142,10 +142,23 @@ pub(super) fn step(
                 runtime.map_level = runtime.local().cell.level;
                 runtime.resync_attempts = runtime.resync_attempts.saturating_add(1);
                 if let Some(replay) = replay {
+                    let previous_role = replay.ascent_result.map(|f| f.role);
                     *replay = crate::sim::replay::ReplayTape::new_hex_wfc_for_player(
                         &runtime.match_state,
                         runtime.local_player,
                     );
+                    if let Some(rules) = &runtime.ascent {
+                        replay.ascent_result = Some(super::ascent::completion_for(
+                            rules,
+                            &runtime.match_state,
+                            runtime.local_player,
+                            launch.is_architect(runtime.local_player),
+                            previous_role == Some(crate::flow::AscentResultRole::Spectator),
+                        ));
+                        replay.record_ascent(&runtime.match_state, rules);
+                    } else {
+                        replay.record_hex_wfc(&runtime.match_state);
+                    }
                 }
                 if let Err(error) = client.request_resync() {
                     runtime.status = format!("LAN resync request failed: {error}");
@@ -185,6 +198,7 @@ mod tests {
         /// The Architect's desk, when this peer's human sits at it.
         desk: Option<crate::hex_wfc::architect::ArchitectDesk>,
         ask: crate::hex_wfc::ask::AskTheArchitect,
+        replay: Option<crate::sim::replay::ReplayTape>,
     }
 
     impl Peer {
@@ -196,6 +210,7 @@ mod tests {
                 lan,
                 runtime: None,
                 desk: None,
+                replay: None,
                 ask: crate::hex_wfc::ask::AskTheArchitect::default(),
             }
         }
@@ -230,6 +245,21 @@ mod tests {
                     0,
                 )
             });
+            let mut replay =
+                crate::sim::replay::ReplayTape::new_hex_wfc_for_player(&match_state, local);
+            if let Some(rules) = &ascent {
+                replay.ascent_result = Some(super::super::ascent::completion_for(
+                    rules,
+                    &match_state,
+                    local,
+                    launch.is_architect(local),
+                    false,
+                ));
+                replay.record_ascent(&match_state, rules);
+            } else {
+                replay.record_hex_wfc(&match_state);
+            }
+            self.replay = Some(replay);
             self.runtime = Some(HexWfcRuntime {
                 presented_revisions: match_state.facility.cell_revisions.clone(),
                 match_state,
@@ -257,7 +287,7 @@ mod tests {
             let local = runtime.local_player;
             let command = runtime.bot_command(local);
             let seats = (self.desk.as_mut(), Some(&mut self.ask));
-            let leave = step(runtime, &mut self.lan, None, command, seats);
+            let leave = step(runtime, &mut self.lan, self.replay.as_mut(), command, seats);
             assert!(!leave, "a client was dropped: {}", runtime.status);
             assert_eq!(
                 runtime.resync_attempts, 0,
@@ -280,6 +310,8 @@ mod tests {
                 "127.0.0.1:0",
                 "--no-discovery",
                 "--ascent",
+                "--seed",
+                "42",
             ]
             .map(str::to_owned),
         )
@@ -381,6 +413,22 @@ mod tests {
                 "peer {index} ends where the server does"
             );
             assert!(runtime.ascent.is_some(), "peer {index} plays the rules");
+            let tape = peer.replay.as_ref().expect("recorded LAN replay");
+            assert!(tape.ascent_result.is_some());
+            assert!(
+                tape.scene_frames
+                    .windows(2)
+                    .all(|frames| frames[0].tick < frames[1].tick)
+            );
+            let frame = tape.scene_frames.last().expect("physical LAN frames");
+            assert!(server_tick.saturating_sub(frame.tick) < 6);
+            assert_eq!(
+                frame.facility.generation,
+                runtime.match_state.facility.generation
+            );
+            assert!(frame.bodies.iter().all(|body| body.actor
+                == crate::sim::replay::ReplayActorId::LocalPlayer
+                || body.player != runtime.local_player));
         }
         eprintln!(
             "LAN soak: {server_tick} ticks, {} peers in step, catches {}, the late joiner in \
@@ -525,6 +573,15 @@ mod tests {
             assert!(
                 !ascent.rules().command_log.is_empty(),
                 "peer {index} applied the Architect's play"
+            );
+            assert!(
+                peer.replay
+                    .as_ref()
+                    .unwrap()
+                    .markers
+                    .iter()
+                    .any(|m| m.label.contains("Architect played") && m.cell.is_some()),
+                "peer {index} recorded the Architect's named card and target"
             );
         }
         let asker = peers[1].runtime.as_ref().expect("playing").local_player;

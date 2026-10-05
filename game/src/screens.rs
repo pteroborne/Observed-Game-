@@ -59,6 +59,7 @@ impl Plugin for ScreensPlugin {
             .add_observer(loadout::activate)
             .add_observer(results::activate)
             .add_observer(replay::activate)
+            .add_observer(replay::scrub)
             .add_systems(OnEnter(GameState::Splash), menu::setup_splash)
             .add_systems(OnExit(GameState::Splash), menu::cleanup_splash)
             .add_observer(main_menu::activate)
@@ -79,8 +80,14 @@ impl Plugin for ScreensPlugin {
             .add_systems(OnEnter(GameState::Loadout), loadout::setup)
             .add_systems(OnEnter(GameState::Lobby), lobby::setup_lobby)
             .add_systems(OnEnter(GameState::Results), results::setup)
-            .add_systems(OnEnter(GameState::Replay), replay::setup_replay)
-            .add_systems(OnExit(GameState::Replay), replay::cleanup)
+            .add_systems(
+                OnEnter(GameState::Replay),
+                (replay::setup_replay, replay::scene::setup).chain(),
+            )
+            .add_systems(
+                OnExit(GameState::Replay),
+                (replay::cleanup, replay::scene::cleanup),
+            )
             .add_systems(OnEnter(GameState::Settings), settings::setup)
             .add_systems(OnExit(GameState::Settings), settings::cleanup)
             .add_systems(OnEnter(GameState::HexWfc), onboarding::spawn)
@@ -107,6 +114,8 @@ impl Plugin for ScreensPlugin {
                     replay::refresh_controls.run_if(in_state(GameState::Replay)),
                     replay::update_replay_info.run_if(in_state(GameState::Replay)),
                     replay::draw_replay_map.run_if(in_state(GameState::Replay)),
+                    replay::scene::sync.run_if(in_state(GameState::Replay)),
+                    replay::refresh_timeline.run_if(in_state(GameState::Replay)),
                     audio::play_frontend_feedback,
                 )
                     .chain(),

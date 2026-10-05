@@ -243,3 +243,8 @@ records the Observer/spectator and map portion of Slice 3. The
 mode/faction-aware Results and replay/rematch context. Connected LAN acceptance,
 roster compatibility, cosmetics previews and loading wording remain outstanding;
 see those records for the exact automated and human validation boundaries.
+
+The subsequent [recorded world replay replacement](replay_implementation.md)
+supersedes the room-trace playback described by the completion slice. It adds
+actual geometry/actor/prison history, event navigation and camera views before
+cosmetics work. Human and graphical LAN acceptance remain open.

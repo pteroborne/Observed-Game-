@@ -17,6 +17,9 @@ use std::path::PathBuf;
 mod completion;
 #[path = "guidance.rs"]
 mod guidance;
+#[path = "replay.rs"]
+mod replay;
+pub(super) use replay::{ReplayVideo, capture_video};
 
 use crate::screens::widgets::WidgetId;
 use bevy::prelude::*;
@@ -38,7 +41,7 @@ const SETTLE: f32 = 0.9;
 
 /// One photograph in the sweep. `page_action` fires an in-screen action first, which is
 /// how the Controls page is reached without leaving `GameState::Settings`.
-struct Shot {
+pub(super) struct Shot {
     label: &'static str,
     state: GameState,
     page_action: Option<SettingsPageAction>,
@@ -51,10 +54,10 @@ struct Shot {
     help_action: Option<OnboardingAction>,
     production_launch: bool,
     guidance: Option<crate::hex_wfc::GuidanceCaptureCase>,
-    completion: Option<usize>,
+    pub(super) completion: Option<usize>,
 }
 
-const fn shot(label: &'static str, state: GameState) -> Shot {
+pub(super) const fn shot(label: &'static str, state: GameState) -> Shot {
     Shot {
         label,
         state,
@@ -275,7 +278,9 @@ impl FrontendCaptureRequest {
     pub(super) fn new(dir: String) -> Self {
         Self {
             dir: PathBuf::from(dir),
-            shots: if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_COMPLETION").is_some() {
+            shots: if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_REPLAY").is_some() {
+                replay::sweep()
+            } else if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_COMPLETION").is_some() {
                 completion::sweep()
             } else if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_GUIDANCE").is_some() {
                 guidance::sweep()
@@ -396,7 +401,13 @@ pub(super) fn capture_frontend_progress(
                 }
             } else {
                 if let Some(case) = request.shots[request.index].completion {
-                    commands.queue(move |world: &mut World| completion::stage(world, case));
+                    commands.queue(move |world: &mut World| {
+                        if case >= 100 {
+                            replay::stage(world);
+                        } else {
+                            completion::stage(world, case);
+                        }
+                    });
                 }
                 // Entering the canonical match without going through Loading is the
                 // private harness path, and it requires a direct driver. It also gives
@@ -412,6 +423,9 @@ pub(super) fn capture_frontend_progress(
         }
         Phase::Act => {
             let shot = &request.shots[request.index];
+            if let Some(case) = shot.completion.filter(|case| *case >= 100) {
+                commands.queue(move |world: &mut World| replay::pose(world, case - 100));
+            }
             if let Some(wanted) = shot.page_action
                 && let Some((entity, _)) =
                     page_actions.iter().find(|(_, action)| **action == wanted)
