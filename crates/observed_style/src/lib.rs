@@ -20,6 +20,7 @@ pub mod chargeworks;
 pub mod cistern;
 pub mod concourse;
 pub mod iso;
+pub mod jade;
 pub mod kinetic;
 pub mod rain_court;
 

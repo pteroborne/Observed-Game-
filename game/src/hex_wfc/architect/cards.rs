@@ -160,6 +160,7 @@ pub(super) fn sync(
                     CardKind::Cistern
                     | CardKind::Chargeworks
                     | CardKind::ArchiveWell
+                    | CardKind::JadeNave
                     | CardKind::SwitchingConcourse
                     | CardKind::RainCourt => WONDER_SCALE,
                     CardKind::Door
@@ -188,6 +189,7 @@ pub(super) fn sync(
             | CardKind::Cistern
             | CardKind::Chargeworks
             | CardKind::ArchiveWell
+            | CardKind::JadeNave
             | CardKind::SwitchingConcourse
             | CardKind::RainCourt => {
                 let register = card
@@ -208,6 +210,7 @@ pub(super) fn sync(
                     CardKind::Cistern
                         | CardKind::Chargeworks
                         | CardKind::ArchiveWell
+                        | CardKind::JadeNave
                         | CardKind::SwitchingConcourse
                         | CardKind::RainCourt
                 ) {
@@ -259,11 +262,18 @@ pub(super) fn sync(
                     CardKind::Cistern
                     | CardKind::Chargeworks
                     | CardKind::ArchiveWell
+                    | CardKind::JadeNave
                     | CardKind::SwitchingConcourse
                     | CardKind::RainCourt => {
                         let mut bars = Vec::new();
                         if let Some(placements) = if card.kind == CardKind::Cistern {
                             observed_facility::hex_wfc::authored_cistern_room(
+                                physical.facility.config,
+                                cell,
+                                rotation,
+                            )
+                        } else if card.kind == CardKind::JadeNave {
+                            observed_facility::hex_wfc::authored_jade_nave(
                                 physical.facility.config,
                                 cell,
                                 rotation,

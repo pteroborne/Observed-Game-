@@ -32,7 +32,7 @@ cached materials. Lights retain their positions and shadows across sector change
 
 ## Physical geometry and traversal
 
-![Production plan, elevations and isometric](concourse-plan.png)
+oridinary![Production plan, elevations and isometric](concourse-plan.png)oridinaryoridinary
 
 [Vector CAD](concourse-plan.svg) · [Full-room snapshot](concourse-plan.map) ·
 [Snapshot assembler](assemble_plan.py)

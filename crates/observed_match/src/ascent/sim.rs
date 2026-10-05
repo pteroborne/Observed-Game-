@@ -779,12 +779,14 @@ impl ArchitectLab {
             CardKind::Cistern
             | CardKind::Chargeworks
             | CardKind::ArchiveWell
+            | CardKind::JadeNave
             | CardKind::SwitchingConcourse
             | CardKind::RainCourt => {
                 let district = match card.kind {
                     CardKind::Cistern => District::GROUND,
                     CardKind::Chargeworks => District::REACTOR,
                     CardKind::RainCourt => District::ZEN,
+                    CardKind::JadeNave => District::MONUMENT,
                     CardKind::SwitchingConcourse => District::LUMEN,
                     _ => District::LIBRARY,
                 };
@@ -986,6 +988,9 @@ impl ArchitectLab {
         match kind {
             CardKind::Cistern => authored_cistern_room(self.world.config, target, rotation),
             CardKind::Chargeworks => authored_chargeworks(self.world.config, target, rotation),
+            CardKind::JadeNave => {
+                observed_facility::hex_wfc::authored_jade_nave(self.world.config, target, rotation)
+            }
             CardKind::SwitchingConcourse => {
                 observed_facility::hex_wfc::authored_switching_concourse(
                     self.world.config,
@@ -1101,6 +1106,7 @@ impl ArchitectLab {
                     CardKind::Cistern
                     | CardKind::Chargeworks
                     | CardKind::ArchiveWell
+                    | CardKind::JadeNave
                     | CardKind::SwitchingConcourse
                     | CardKind::RainCourt => {
                         for placement in self.played_wonder(held.kind, target, rotation) {

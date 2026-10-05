@@ -337,6 +337,12 @@ pub(super) fn built_by(
             rotation,
         )?
         .to_vec(),
+        CardKind::JadeNave => observed_facility::hex_wfc::authored_jade_nave(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
         CardKind::SwitchingConcourse => observed_facility::hex_wfc::authored_switching_concourse(
             physical.facility.config,
             cell,
@@ -454,7 +460,19 @@ pub(super) fn cutaway_mesh(
         let min_y = world.iter().map(|p| p.y).fold(f32::INFINITY, f32::min) - base;
         let max_y = world.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max) - base;
         let local = centroid - origin;
-        let region = hull_region(min_y, max_y, local);
+        // The Nave's raised walking slabs are routes, not ceiling. Preserve their
+        // real height in cards and ghosts while cutting away the sealed roof.
+        let jade_route = piece
+            .tile
+            .as_ref()
+            .is_some_and(|key| key.archetype == "jade_nave")
+            && max_y > 0.51
+            && max_y <= 3.9;
+        let region = if jade_route {
+            HullRegion::Interior
+        } else {
+            hull_region(min_y, max_y, local)
+        };
         let is_floor = matches!(region, HullRegion::Floor);
         if is_floor != floor || matches!(region, HullRegion::Ceiling) {
             continue;
@@ -467,7 +485,7 @@ pub(super) fn cutaway_mesh(
         let capped: Vec<Vec3> = world
             .iter()
             .map(|p| {
-                if is_floor {
+                if is_floor || jade_route {
                     *p
                 } else {
                     Vec3::new(p.x, p.y.min(cap), p.z)
@@ -526,68 +544,4 @@ fn world_points(piece: &HexStructurePiece) -> Vec<Vec3> {
 }
 
 #[cfg(test)]
-mod preview_tests {
-    use super::*;
-    use observed_match::ascent::sim::{CardKind, District};
-    #[test]
-    fn wonder_thumbnails_find_the_whole_room_even_when_facing_off_the_first_edge() {
-        let game = observed_match::hex_wfc::HexWfcMatch::new(
-            7,
-            observed_match::hex_wfc::HexMatchConfig {
-                wfc: observed_facility::hex_wfc::HexWfcConfig {
-                    levels: 8,
-                    ..default()
-                },
-                ..default()
-            },
-            &crate::hex_wfc::sim::load_prototypes(),
-        )
-        .expect("preview fixture");
-        for (kind, district) in [
-            (CardKind::ArchiveWell, District::LIBRARY),
-            (CardKind::RainCourt, District::ZEN),
-            (CardKind::SwitchingConcourse, District::LUMEN),
-        ] {
-            let register = district.register();
-            let first = *game
-                .facility
-                .architecture
-                .iter()
-                .find(|(_, r)| **r == register)
-                .unwrap()
-                .0;
-            assert!(
-                (0..6).any(|r| built_by(&game, kind, first, r).is_none()),
-                "fixture exercises the border failure"
-            );
-            for rotation in 0..6 {
-                let (cell, pieces) =
-                    preview_by(&game, kind, register, rotation).expect("complete thumbnail");
-                let expected = match kind {
-                    CardKind::SwitchingConcourse => {
-                        observed_facility::hex_wfc::authored_switching_concourse(
-                            game.facility.config,
-                            cell,
-                            rotation,
-                        )
-                    }
-                    CardKind::RainCourt => observed_facility::hex_wfc::authored_rain_court(
-                        game.facility.config,
-                        cell,
-                        rotation,
-                    ),
-                    _ => observed_facility::hex_wfc::authored_archive_well(
-                        game.facility.config,
-                        cell,
-                        rotation,
-                    ),
-                }
-                .unwrap();
-                let actual: BTreeSet<_> = pieces.iter().map(|p| p.source_cell).collect();
-                assert_eq!(actual, expected.map(|p| p.coord).into_iter().collect());
-                assert!(cutaway_mesh(&pieces, true, bearing()).is_some());
-                assert!(cutaway_mesh(&pieces, false, bearing()).is_some());
-            }
-        }
-    }
-}
+mod tests;

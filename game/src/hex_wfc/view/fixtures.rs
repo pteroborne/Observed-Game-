@@ -67,6 +67,7 @@ pub(super) fn spawn_cell_practicals(
                 Some(
                     super::lighting::WonderLighting::Rain
                         | super::lighting::WonderLighting::Concourse
+                        | super::lighting::WonderLighting::Jade
                 )
             )
             && matches!(

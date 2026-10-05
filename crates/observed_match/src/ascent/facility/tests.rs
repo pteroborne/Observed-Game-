@@ -1058,9 +1058,27 @@ fn concourse_card_is_lumen_only_and_commits_three_physical_cells_atomically() {
     );
 }
 
+#[test]
+fn jade_card_is_monument_only_and_commits_three_physical_cells_atomically() {
+    for level in [4, 5] {
+        wonder_commits_atomically_at(
+            crate::ascent::sim::CardKind::JadeNave,
+            crate::ascent::sim::District::MONUMENT,
+            Some(level),
+        );
+    }
+}
+
 fn wonder_commits_atomically(
     kind: crate::ascent::sim::CardKind,
     district: crate::ascent::sim::District,
+) {
+    wonder_commits_atomically_at(kind, district, None);
+}
+fn wonder_commits_atomically_at(
+    kind: crate::ascent::sim::CardKind,
+    district: crate::ascent::sim::District,
+    preferred_level: Option<u8>,
 ) {
     use crate::ascent::sim::District;
     use observed_facility::hex_wfc::{HexArchetype, HexSpace};
@@ -1084,7 +1102,8 @@ fn wonder_commits_atomically(
         .placements
         .iter()
         .find_map(|(&c, p)| {
-            (District::for_floor(c.level, 8) == district
+            (preferred_level.is_none_or(|level| c.level == level)
+                && District::for_floor(c.level, 8) == district
                 && matches!(
                     p.archetype,
                     HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
@@ -1156,44 +1175,70 @@ fn wonder_commits_atomically(
         .placements
         .iter()
         .find_map(|(&at, p)| {
-            if !matches!(
-                p.archetype,
-                HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
-            ) {
+            if !preferred_level.is_none_or(|level| at.level == level)
+                || !matches!(
+                    p.archetype,
+                    HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
+                )
+            {
                 return None;
             }
-            if !(0..6).any(|rotation| {
-                probe
+            (0..6).find_map(|rotation| {
+                if probe
                     .refusal(ArchitectCommand::Play {
                         card,
                         target: at,
                         rotation,
                     })
-                    .is_none()
-            }) {
-                return None;
-            }
-            observed_hex::HexFace::LATERAL.into_iter().find_map(|face| {
-                let next = grid.neighbor(at, face)?;
-                let other = probe.world.placements.get(&next)?;
-                (p.is_open(face) && other.is_open(face.opposite()) && other.space.built())
+                    .is_some()
+                {
+                    return None;
+                }
+                let footprint = probe.played_wonder(kind, at, rotation);
+                observed_hex::HexFace::LATERAL.into_iter().find_map(|face| {
+                    let next = grid.neighbor(at, face)?;
+                    let other = probe.world.placements.get(&next)?;
+                    (p.is_open(face)
+                        && other.is_open(face.opposite())
+                        && other.space.built()
+                        && (preferred_level.is_none()
+                            || !footprint.iter().any(|p| p.coord == next)))
                     .then_some((at, next))
+                })
             })
         })
-        .expect("a legal Reactor hall with an existing exit");
+        .expect("a legal wonder site with an exit outside its footprint");
     for (at, ticks) in [(site, 60), (departure, 240)] {
         let player = game.physical.players.get_mut(&BODY).unwrap();
         player.cell = at;
         player.position =
             glam::Vec3::from_array(observed_hex::hex_origin(at)) + glam::Vec3::Y * 1.4;
+        if preferred_level.is_some() && at == departure {
+            let away = glam::Vec3::from_array(observed_hex::hex_origin(departure))
+                - glam::Vec3::from_array(observed_hex::hex_origin(site));
+            player.yaw = away.x.atan2(-away.z);
+        }
         for _ in 0..ticks {
-            step(&mut game, Body::Turn(0.6), SeatCommand::None);
+            step(
+                &mut game,
+                Body::Turn(if preferred_level.is_some() && at == departure {
+                    0.0
+                } else {
+                    0.6
+                }),
+                SeatCommand::None,
+            );
         }
     }
-    let play = find_play(&game, |g, _, _, index| {
-        g.session().hands[&TEAM].deck.hand[index].kind == kind
+    let play = find_play(&game, |g, target, _, index| {
+        preferred_level.is_none_or(|level| target.level == level)
+            && g.session().hands[&TEAM].deck.hand[index].kind == kind
     })
-    .expect("physically discovered legal Chargeworks site");
+    .unwrap_or_else(|| {
+        let cards: Vec<_> = game.session().hands[&TEAM].deck.hand.iter().map(|c|(c.id,c.kind)).collect();
+        let refused: Vec<_> = (0..6).map(|rotation| game.session().architect_refusal(ARCHITECT, ArchitectCommand::Play { card, target:site, rotation })).collect();
+        panic!("wonder {kind:?} floor {preferred_level:?}, site {site:?}, departure {departure:?}, hand {cards:?}, refusals {refused:?}, known {:?}",game.rules().team_knowledge[&TEAM].discovered_cells);
+    });
     let ArchitectCommand::Play {
         target, rotation, ..
     } = play
@@ -1227,30 +1272,30 @@ fn wonder_commits_atomically(
         assert_eq!(p.space, HexSpace::Hall);
         assert_eq!(
             observed_facility::hex_wfc::placement_tile_archetype(&p),
-            Some(
-                if kind == crate::ascent::sim::CardKind::SwitchingConcourse {
-                    "switching_concourse"
-                } else if kind == crate::ascent::sim::CardKind::RainCourt {
-                    "rain_court"
-                } else if kind == crate::ascent::sim::CardKind::ArchiveWell {
-                    "archive_well"
-                } else {
-                    match p.archetype {
-                        HexArchetype::Chargeworks { part, .. } => match part {
-                            observed_facility::hex_wfc::ChargeworksPart::Fabricator => {
-                                "chargeworks_fabricator"
-                            }
-                            observed_facility::hex_wfc::ChargeworksPart::Transfer => {
-                                "chargeworks_transfer"
-                            }
-                            observed_facility::hex_wfc::ChargeworksPart::Receiver => {
-                                "chargeworks_receiver"
-                            }
-                        },
-                        _ => panic!("wrong wonder"),
-                    }
+            Some(if kind == crate::ascent::sim::CardKind::JadeNave {
+                "jade_nave"
+            } else if kind == crate::ascent::sim::CardKind::SwitchingConcourse {
+                "switching_concourse"
+            } else if kind == crate::ascent::sim::CardKind::RainCourt {
+                "rain_court"
+            } else if kind == crate::ascent::sim::CardKind::ArchiveWell {
+                "archive_well"
+            } else {
+                match p.archetype {
+                    HexArchetype::Chargeworks { part, .. } => match part {
+                        observed_facility::hex_wfc::ChargeworksPart::Fabricator => {
+                            "chargeworks_fabricator"
+                        }
+                        observed_facility::hex_wfc::ChargeworksPart::Transfer => {
+                            "chargeworks_transfer"
+                        }
+                        observed_facility::hex_wfc::ChargeworksPart::Receiver => {
+                            "chargeworks_receiver"
+                        }
+                    },
+                    _ => panic!("wrong wonder"),
                 }
-            )
+            })
         );
         assert!(
             game.physical

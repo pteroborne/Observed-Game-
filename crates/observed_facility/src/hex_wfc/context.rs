@@ -121,6 +121,7 @@ pub(super) fn context_multiplier(
         // An expanse is flat floor: it wants neither the vertical core nor the
         // upper levels, so it takes no positional tendency at all.
         HexArchetype::Expanse
+        | HexArchetype::JadeNave { .. }
         | HexArchetype::SwitchingConcourse { .. }
         | HexArchetype::RainCourt { .. }
         | HexArchetype::ArchiveWell { .. }
@@ -177,6 +178,7 @@ fn slot(archetype: HexArchetype) -> Option<usize> {
         HexArchetype::Junction => 3,
         HexArchetype::Climb { .. } => 4,
         HexArchetype::Expanse
+        | HexArchetype::JadeNave { .. }
         | HexArchetype::SwitchingConcourse { .. }
         | HexArchetype::RainCourt { .. }
         | HexArchetype::ArchiveWell { .. }
@@ -291,6 +293,7 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Room => 1.2,
             // The district the archetype exists for.
             A::Expanse
+            | A::JadeNave { .. }
             | A::SwitchingConcourse { .. }
             | A::RainCourt { .. }
             | A::ArchiveWell { .. }
@@ -310,6 +313,7 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             // the climb, it took production solves from one attempt to as many as
             // twenty. Its winding is in the corners, runs and junctions.
             A::Expanse
+            | A::JadeNave { .. }
             | A::SwitchingConcourse { .. }
             | A::RainCourt { .. }
             | A::ArchiveWell { .. }
@@ -326,6 +330,7 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Climb { .. } => 1.6,
             A::Room => 0.9,
             A::Expanse
+            | A::JadeNave { .. }
             | A::SwitchingConcourse { .. }
             | A::RainCourt { .. }
             | A::ArchiveWell { .. }
@@ -341,6 +346,7 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::Room => 1.0,
             // A megastructure earns its scale from open floor as well as climbs.
             A::Expanse
+            | A::JadeNave { .. }
             | A::SwitchingConcourse { .. }
             | A::RainCourt { .. }
             | A::ArchiveWell { .. }

@@ -277,7 +277,16 @@ fn spawn_cell(
             }
             _ => None,
         });
-    let wonder = if concourse.is_some() {
+    let jade = world
+        .placements
+        .get(&coord)
+        .and_then(|p| match p.archetype {
+            observed_facility::hex_wfc::HexArchetype::JadeNave { heading } => Some(heading),
+            _ => None,
+        });
+    let wonder = if jade.is_some() {
+        Some(super::lighting::WonderLighting::Jade)
+    } else if concourse.is_some() {
         Some(super::lighting::WonderLighting::Concourse)
     } else if rain.is_some() {
         Some(super::lighting::WonderLighting::Rain)
@@ -324,6 +333,9 @@ fn spawn_cell(
         child_pieces +=
             super::concourse::spawn(commands, assets, meshes, cell, coord, heading, &pieces);
     }
+    if let Some(heading) = jade {
+        child_pieces += super::jade::spawn(commands, assets, meshes, cell, coord, heading, &pieces);
+    }
     let origin = Vec3::from_array(hex_origin(coord));
     // The merged mesh cache is keyed on this string. A cell carrying open-edge or rim
     // pieces is no longer a pure function of its tile - its walls came down, or a
@@ -351,7 +363,7 @@ fn spawn_cell(
                     super::assets::MeshGroupKey::Interior
                         | super::assets::MeshGroupKey::Perimeter(_)
                 ))
-            || ((rain.is_some() || concourse.is_some())
+            || ((rain.is_some() || concourse.is_some() || jade.is_some())
                 && matches!(
                     group_key,
                     super::assets::MeshGroupKey::Floor

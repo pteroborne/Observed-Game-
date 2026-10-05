@@ -75,7 +75,10 @@ pub(super) fn inspect(
             }
             let elapsed = request.frame.saturating_sub(start);
             let slot = elapsed / 180;
-            if kind == CardKind::RainCourt || kind == CardKind::SwitchingConcourse {
+            if matches!(
+                kind,
+                CardKind::RainCourt | CardKind::SwitchingConcourse | CardKind::JadeNave
+            ) {
                 runtime
                     .ascent
                     .as_mut()
@@ -94,7 +97,9 @@ pub(super) fn inspect(
                     .map(|cell| Vec3::from_array(observed_hex::hex_origin(cell)) + Vec3::Y * 0.75);
                 let turn =
                     Quat::from_rotation_y(-f32::from(rotation % 6) * std::f32::consts::TAU / 6.0);
-                let entry = if kind == CardKind::SwitchingConcourse {
+                let entry = if kind == CardKind::JadeNave {
+                    super::jade::route(cells, rotation)[0]
+                } else if kind == CardKind::SwitchingConcourse {
                     super::concourse::route(cells, rotation)[0]
                 } else {
                     centers[0] + turn * Vec3::new(-3.0, 0.0, -4.4)
@@ -106,7 +111,9 @@ pub(super) fn inspect(
                         entry + Vec3::Y * config.half_height,
                         0.0,
                     ),
-                    route: if kind == CardKind::SwitchingConcourse {
+                    route: if kind == CardKind::JadeNave {
+                        super::jade::route(cells, rotation)
+                    } else if kind == CardKind::SwitchingConcourse {
                         super::concourse::route(cells, rotation)
                     } else if kind == CardKind::RainCourt {
                         super::rain::route(cells, rotation)
@@ -169,7 +176,11 @@ pub(super) fn inspect(
                     "cistern-colonnade",
                 ),
             };
-            let (feet, target, name) = if kind == CardKind::SwitchingConcourse {
+            let (feet, target, name) = if kind == CardKind::JadeNave {
+                let (feet, target, name, _) =
+                    super::jade::portrait(slot, expected.map(|p| p.coord), rotation);
+                (feet, target, name)
+            } else if kind == CardKind::SwitchingConcourse {
                 let (feet, target, name, _) =
                     super::concourse::portrait(slot, expected.map(|p| p.coord), rotation);
                 (feet, target, name)
@@ -237,7 +248,9 @@ pub(super) fn inspect(
                 )
                 .filter(|_| slot == 0 || slot == 3)
                 .unwrap_or(anchor);
-            let cell = if kind == CardKind::SwitchingConcourse {
+            let cell = if kind == CardKind::JadeNave {
+                super::jade::portrait(slot, expected.map(|p| p.coord), rotation).3
+            } else if kind == CardKind::SwitchingConcourse {
                 super::concourse::portrait(slot, expected.map(|p| p.coord), rotation).3
             } else if kind == CardKind::RainCourt {
                 super::rain::portrait(slot, expected.map(|p| p.coord), rotation).3
@@ -343,7 +356,9 @@ pub(super) fn inspect(
             }
             let name = format!(
                 "{}-walk-{:03}.png",
-                if kind == CardKind::SwitchingConcourse {
+                if kind == CardKind::JadeNave {
+                    "jade"
+                } else if kind == CardKind::SwitchingConcourse {
                     "concourse"
                 } else if kind == CardKind::RainCourt {
                     "rain"
@@ -369,6 +384,7 @@ pub(super) fn inspect(
 /// then move into its existing neighbour. No knowledge or geometry is injected.
 pub(in crate::hex_wfc) struct FactoryStart {
     departure: observed_hex::HexCoord,
+    departure_yaw: f32,
     release_tick: u64,
     departed: bool,
 }
@@ -378,6 +394,9 @@ impl FactoryStart {
             return;
         }
         place_bodies(runtime, self.departure);
+        for player in runtime.match_state.players.values_mut() {
+            player.yaw = self.departure_yaw;
+        }
         self.departed = true;
     }
 }
@@ -422,12 +441,14 @@ pub(super) fn stage_wonder(
             {
                 continue;
             }
+            let footprint = probe.played_wonder(kind, cell, rotation);
             let neighbour = HexFace::LATERAL.into_iter().find_map(|face| {
                 let next = grid.neighbor(cell, face)?;
                 let other = probe.world.placements.get(&next)?;
                 (p.is_open(face)
                     && other.is_open(face.opposite())
                     && other.space.built()
+                    && !footprint.iter().any(|p| p.coord == next)
                     && !matches!(other.archetype, HexArchetype::Climb { .. }))
                 .then_some(next)
             });
@@ -444,6 +465,11 @@ pub(super) fn stage_wonder(
     );
     Some(FactoryStart {
         departure: site.1,
+        departure_yaw: {
+            let away = Vec3::from_array(observed_hex::hex_origin(site.1))
+                - Vec3::from_array(observed_hex::hex_origin(site.0));
+            away.x.atan2(-away.z)
+        },
         release_tick: runtime.match_state.tick + 120,
         departed: false,
     })

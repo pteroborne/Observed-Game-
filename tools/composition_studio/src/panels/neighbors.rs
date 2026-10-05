@@ -174,6 +174,7 @@ fn short(archetype: HexArchetype) -> &'static str {
         HexArchetype::Corner => "turn",
         HexArchetype::Junction => "junc",
         HexArchetype::Expanse
+        | HexArchetype::JadeNave { .. }
         | HexArchetype::SwitchingConcourse { .. }
         | HexArchetype::RainCourt { .. }
         | HexArchetype::ArchiveWell { .. }

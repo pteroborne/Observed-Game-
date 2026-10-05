@@ -221,6 +221,18 @@ pub fn authored_switching_concourse(
     })
 }
 
+/// One Monument card places three joined bays with a raised crossing circuit.
+#[must_use]
+pub fn authored_jade_nave(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    authored_triad(config, anchor, rotation, |_, heading| {
+        HexArchetype::JadeNave { heading }
+    })
+}
+
 fn authored_triad(
     config: super::HexWfcConfig,
     anchor: HexCoord,

@@ -19,6 +19,7 @@ mod grid_turn;
 pub mod halls;
 pub mod index;
 pub mod intake;
+pub mod jade_nave;
 pub mod liminal;
 pub mod noon;
 pub mod probe;
@@ -65,6 +66,7 @@ pub fn builders() -> Vec<Builder> {
     all.extend(archive_well::builders());
     all.extend(rain_court::builders());
     all.extend(switching_concourse::builders());
+    all.extend(jade_nave::builders());
     all.extend(rooms::builders());
     all.extend(program::builders());
     all.extend(witness::builders());

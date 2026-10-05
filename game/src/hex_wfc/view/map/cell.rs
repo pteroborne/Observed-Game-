@@ -46,6 +46,7 @@ pub(in crate::hex_wfc::view) fn sketch_role(
             ClimbPart::Landing { .. } => HexSketchRole::ClimbLanding,
         },
         HexArchetype::Expanse
+        | HexArchetype::JadeNave { .. }
         | HexArchetype::SwitchingConcourse { .. }
         | HexArchetype::RainCourt { .. }
         | HexArchetype::ArchiveWell { .. }
