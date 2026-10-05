@@ -1,0 +1,11 @@
+cargo fmt --all: PASS
+cargo dev-clippy: PASS; no warnings
+cargo dev-test: PASS; 2708 passed, 0 failed, 45 existing ignored
+observed_game: 577 passed, 0 failed, 6 existing ignored
+native dynamic build: PASS
+17 native 1280x800 screens: PASS
+12 controls on each Cosmetics screen; 2 controls on each Loading screen: PASS
+control bounds and non-overlap; text viewport bounds with half-pixel tolerance: PASS
+locked Equip, finalized role entry, preview immutability and cleanup/reentry: PASS
+human and two connected graphical LAN clients: OPEN
+known extended asserting hex_full_match_soak: unresolved; dev-test-all not rerun/claimed green

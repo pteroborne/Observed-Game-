@@ -78,6 +78,7 @@ impl Plugin for ScreensPlugin {
                 crate::hex_wfc::loading::cleanup_loading_worker,
             )
             .add_systems(OnEnter(GameState::Loadout), loadout::setup)
+            .add_systems(OnExit(GameState::Loadout), loadout::cleanup)
             .add_systems(OnEnter(GameState::Lobby), lobby::setup_lobby)
             .add_systems(OnEnter(GameState::Results), results::setup)
             .add_systems(

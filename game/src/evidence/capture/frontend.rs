@@ -17,6 +17,8 @@ use std::path::PathBuf;
 mod completion;
 #[path = "guidance.rs"]
 mod guidance;
+#[path = "polish.rs"]
+mod polish;
 #[path = "replay.rs"]
 mod replay;
 pub(super) use replay::{ReplayVideo, capture_video};
@@ -55,6 +57,7 @@ pub(super) struct Shot {
     production_launch: bool,
     guidance: Option<crate::hex_wfc::GuidanceCaptureCase>,
     pub(super) completion: Option<usize>,
+    pub(super) polish: Option<usize>,
 }
 
 pub(super) const fn shot(label: &'static str, state: GameState) -> Shot {
@@ -69,6 +72,7 @@ pub(super) const fn shot(label: &'static str, state: GameState) -> Shot {
         production_launch: false,
         guidance: None,
         completion: None,
+        polish: None,
     }
 }
 
@@ -280,6 +284,8 @@ impl FrontendCaptureRequest {
             dir: PathBuf::from(dir),
             shots: if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_REPLAY").is_some() {
                 replay::sweep()
+            } else if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_POLISH").is_some() {
+                polish::sweep()
             } else if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_COMPLETION").is_some() {
                 completion::sweep()
             } else if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_GUIDANCE").is_some() {
@@ -400,6 +406,9 @@ pub(super) fn capture_frontend_progress(
                     commands.trigger(Activate { entity });
                 }
             } else {
+                if let Some(case) = request.shots[request.index].polish {
+                    commands.queue(move |world: &mut World| polish::stage(world, case));
+                }
                 if let Some(case) = request.shots[request.index].completion {
                     commands.queue(move |world: &mut World| {
                         if case >= 100 {
@@ -423,6 +432,9 @@ pub(super) fn capture_frontend_progress(
         }
         Phase::Act => {
             let shot = &request.shots[request.index];
+            if let Some(case) = shot.polish {
+                commands.queue(move |world: &mut World| polish::pose(world, case));
+            }
             if let Some(case) = shot.completion.filter(|case| *case >= 100) {
                 commands.queue(move |world: &mut World| replay::pose(world, case - 100));
             }
@@ -507,7 +519,9 @@ pub(super) fn capture_frontend_progress(
                 request.next_at = elapsed + 1.0;
                 request.phase = Phase::Done;
             } else {
-                if request.shots[request.index].completion.is_some() {
+                if request.shots[request.index].completion.is_some()
+                    || request.shots[request.index].polish.is_some()
+                {
                     next.set(GameState::MainMenu);
                 }
                 request.phase = Phase::Enter;

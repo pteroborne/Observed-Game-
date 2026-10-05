@@ -1,0 +1,24 @@
+[
+  {
+    "max": [
+      850.0,
+      592.0
+    ],
+    "min": [
+      430.0,
+      540.0
+    ],
+    "widget": "WidgetId { namespace: \"hex_loading.cancel\", key: 0 }"
+  },
+  {
+    "max": [
+      850.0,
+      526.0
+    ],
+    "min": [
+      430.0,
+      474.0
+    ],
+    "widget": "WidgetId { namespace: \"hex_loading.retry\", key: 0 }"
+  }
+]

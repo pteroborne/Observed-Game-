@@ -295,6 +295,7 @@ fn autostart_capture(
                 config: sim::runtime_config_for(&play_setup),
                 seed_policy: launch::HexSeedPolicy::Nearby,
             },
+            (play_setup.rules, play_setup.seat),
         ));
         next.set(GameState::Loading);
         return;

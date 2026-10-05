@@ -1,0 +1,101 @@
+[
+  {
+    "max": [
+      802.0,
+      333.0
+    ],
+    "min": [
+      293.0,
+      275.0
+    ],
+    "text": "Local run | Architect Ascent | Observer\n2 teams | 2 Observers per team + 1 Architect per team\n4 floors"
+  },
+  {
+    "max": [
+      823.0,
+      240.0
+    ],
+    "min": [
+      458.0,
+      220.0
+    ],
+    "text": "Preparing the facility for your match."
+  },
+  {
+    "max": [
+      804.0,
+      210.0
+    ],
+    "min": [
+      476.0,
+      159.0
+    ],
+    "text": "GETTING READY"
+  },
+  {
+    "max": [
+      460.0,
+      571.0
+    ],
+    "min": [
+      446.0,
+      544.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      705.0,
+      568.0
+    ],
+    "min": [
+      575.0,
+      546.0
+    ],
+    "text": "Back to Play"
+  },
+  {
+    "max": [
+      732.0,
+      502.0
+    ],
+    "min": [
+      548.0,
+      480.0
+    ],
+    "text": "Retry preparation"
+  },
+  {
+    "max": [
+      527.0,
+      391.0
+    ],
+    "min": [
+      293.0,
+      373.0
+    ],
+    "text": "Elapsed: 2.4 s | attempt 1"
+  },
+  {
+    "max": [
+      693.0,
+      364.0
+    ],
+    "min": [
+      293.0,
+      342.0
+    ],
+    "text": "Facility ready. Entering the match..."
+  },
+  {
+    "max": [
+      802.0,
+      641.0
+    ],
+    "min": [
+      478.0,
+      623.0
+    ],
+    "text": "Your match is ready. Entering now..."
+  }
+]

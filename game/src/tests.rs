@@ -1849,11 +1849,30 @@ fn equipping_a_cosmetic_from_the_loadout_persists_in_the_career() {
         let career = app.world().resource::<Career>();
         catalog()
             .iter()
-            .find(|c| career.profile.is_unlocked(c.id))
+            .find(|c| career.profile.is_unlocked(c.id) && !career.profile.is_equipped(c.id))
             .map(|c| c.id)
             .expect("at least one cosmetic is unlocked after a few wins")
     };
     go(&mut app, GameState::Loadout);
+    let select = {
+        let world = app.world_mut();
+        let mut actions = world.query::<(Entity, &screens::loadout::LoadoutAction)>();
+        actions
+            .iter(world)
+            .find_map(|(entity, action)| {
+                (*action == screens::loadout::LoadoutAction::Select(id)).then_some(entity)
+            })
+            .expect("cosmetic can be inspected")
+    };
+    let before = app.world().resource::<Career>().profile.clone();
+    app.world_mut()
+        .trigger(bevy::ui_widgets::Activate { entity: select });
+    app.update();
+    assert_eq!(
+        app.world().resource::<Career>().profile,
+        before,
+        "preview never saves or equips"
+    );
     let equip = {
         let world = app.world_mut();
         let mut actions = world.query::<(Entity, &screens::loadout::LoadoutAction)>();
@@ -1869,6 +1888,15 @@ fn equipping_a_cosmetic_from_the_loadout_persists_in_the_career() {
     assert!(
         app.world().resource::<Career>().profile.is_equipped(id),
         "equipping from the loadout updates the persistent profile"
+    );
+    go(&mut app, GameState::MainMenu);
+    go(&mut app, GameState::Loadout);
+    assert_eq!(
+        app.world()
+            .resource::<screens::loadout::CosmeticSelection>()
+            .0,
+        id,
+        "reentry compares the saved color"
     );
 }
 
@@ -5732,4 +5760,65 @@ fn play_grid_keyboard_selection_skips_disabled_roles_and_restores_focus_after_ba
     let setup = app.world().resource::<crate::play_setup::PlaySetupDraft>();
     assert_eq!(setup.seat, PlaySeat::Architect);
     assert_eq!(setup.preset, PlayPreset::Spectate);
+}
+
+#[test]
+fn canonical_entry_uses_the_finalized_role_when_the_menu_draft_changes() {
+    use crate::hex_wfc::{
+        launch::{HexLaunchSpec, HexSeedPolicy, prepare},
+        loading::{HexLaunchRequestSequence, PreparedHexLaunchSlot},
+    };
+    use crate::play_setup::{LaunchContext, PlayRules, PlaySeat, PlaySetupDraft};
+    let mut app = test_app();
+    let setup = PlaySetupDraft {
+        rules: PlayRules::Ascent,
+        seat: PlaySeat::Architect,
+        ..default()
+    };
+    let spec = HexLaunchSpec {
+        requested_seed: 0xF011_FAC1_1177,
+        config: crate::hex_wfc::sim::runtime_config_for(&setup),
+        seed_policy: HexSeedPolicy::Nearby,
+    };
+    let request = app
+        .world_mut()
+        .resource_mut::<HexLaunchRequestSequence>()
+        .issue(
+            LaunchContext::Local,
+            observed_core::PlayerId(0),
+            false,
+            false,
+            spec,
+            (setup.rules, setup.seat),
+        );
+    app.insert_resource(request);
+    app.insert_resource(PreparedHexLaunchSlot::ready(
+        prepare(spec).expect("solvable finalized facility"),
+    ));
+    app.insert_resource(PlaySetupDraft {
+        rules: PlayRules::Race,
+        seat: PlaySeat::Observer,
+        ..setup
+    });
+    go(&mut app, GameState::HexWfc);
+    assert!(
+        app.world()
+            .resource::<crate::hex_wfc::sim::HexWfcRuntime>()
+            .ascent
+            .is_some()
+    );
+    assert_eq!(
+        app.world()
+            .resource::<crate::sim::replay::ReplayTape>()
+            .ascent_result
+            .unwrap()
+            .role,
+        crate::flow::AscentResultRole::Architect
+    );
+    let launched = &app
+        .world()
+        .resource::<crate::play_setup::LaunchedPlaySetup>()
+        .0;
+    assert_eq!(launched.rules, PlayRules::Ascent);
+    assert_eq!(launched.seat, PlaySeat::Architect);
 }

@@ -19,6 +19,7 @@ pub mod iso;
 pub mod kinetic;
 
 pub mod architect;
+pub mod cosmetics;
 pub mod equipment;
 pub mod guardian;
 pub mod observer;

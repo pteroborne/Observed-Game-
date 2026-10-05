@@ -358,6 +358,7 @@ fn launch_local(
             config: crate::hex_wfc::sim::runtime_config_for(setup),
             seed_policy: HexSeedPolicy::Nearby,
         },
+        (setup.rules, setup.seat),
     ));
     next.set(GameState::Loading);
 }

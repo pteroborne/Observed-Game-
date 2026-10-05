@@ -1,0 +1,134 @@
+[
+  {
+    "max": [
+      1176.0,
+      679.0
+    ],
+    "min": [
+      706.0,
+      633.0
+    ],
+    "widget": "WidgetId { namespace: \"loadout.back\", key: 0 }"
+  },
+  {
+    "max": [
+      679.0,
+      680.0
+    ],
+    "min": [
+      99.0,
+      634.0
+    ],
+    "widget": "WidgetId { namespace: \"loadout.cosmetic\", key: 9 }"
+  },
+  {
+    "max": [
+      679.0,
+      212.0
+    ],
+    "min": [
+      99.0,
+      166.0
+    ],
+    "widget": "WidgetId { namespace: \"loadout.cosmetic\", key: 0 }"
+  },
+  {
+    "max": [
+      679.0,
+      576.0
+    ],
+    "min": [
+      99.0,
+      530.0
+    ],
+    "widget": "WidgetId { namespace: \"loadout.cosmetic\", key: 7 }"
+  },
+  {
+    "max": [
+      679.0,
+      524.0
+    ],
+    "min": [
+      99.0,
+      478.0
+    ],
+    "widget": "WidgetId { namespace: \"loadout.cosmetic\", key: 6 }"
+  },
+  {
+    "max": [
+      679.0,
+      472.0
+    ],
+    "min": [
+      99.0,
+      426.0
+    ],
+    "widget": "WidgetId { namespace: \"loadout.cosmetic\", key: 5 }"
+  },
+  {
+    "max": [
+      679.0,
+      420.0
+    ],
+    "min": [
+      99.0,
+      374.0
+    ],
+    "widget": "WidgetId { namespace: \"loadout.cosmetic\", key: 4 }"
+  },
+  {
+    "max": [
+      679.0,
+      368.0
+    ],
+    "min": [
+      99.0,
+      322.0
+    ],
+    "widget": "WidgetId { namespace: \"loadout.cosmetic\", key: 3 }"
+  },
+  {
+    "max": [
+      679.0,
+      316.0
+    ],
+    "min": [
+      99.0,
+      270.0
+    ],
+    "widget": "WidgetId { namespace: \"loadout.cosmetic\", key: 2 }"
+  },
+  {
+    "max": [
+      679.0,
+      264.0
+    ],
+    "min": [
+      99.0,
+      218.0
+    ],
+    "widget": "WidgetId { namespace: \"loadout.cosmetic\", key: 1 }"
+  },
+  {
+    "max": [
+      679.0,
+      628.0
+    ],
+    "min": [
+      99.0,
+      582.0
+    ],
+    "widget": "WidgetId { namespace: \"loadout.cosmetic\", key: 8 }"
+  },
+  {
+    "max": [
+      1176.0,
+      615.0
+    ],
+    "min": [
+      706.0,
+      569.0
+    ],
+    "widget": "WidgetId { namespace: \"loadout.equip\", key: 0 }"
+  }
+]

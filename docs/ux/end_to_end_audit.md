@@ -248,3 +248,8 @@ The subsequent [recorded world replay replacement](replay_implementation.md)
 supersedes the room-trace playback described by the completion slice. It adds
 actual geometry/actor/prison history, event navigation and camera views before
 cosmetics work. Human and graphical LAN acceptance remain open.
+
+The subsequent [cosmetics comparison and loading clarity](cosmetics_loading_implementation.md)
+implements the representative designs and player-facing phase/recovery wording of
+UX-11/12. Applying cosmetics to canonical match presentation, roster compatibility,
+human input acceptance and connected graphical LAN acceptance remain open.

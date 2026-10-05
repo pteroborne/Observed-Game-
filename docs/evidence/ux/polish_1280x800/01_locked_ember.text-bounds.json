@@ -1,0 +1,299 @@
+[
+  {
+    "max": [
+      859.0,
+      767.0
+    ],
+    "min": [
+      422.0,
+      750.0
+    ],
+    "text": "Enter / A / pointer selects or equips | Esc / B back"
+  },
+  {
+    "max": [
+      892.0,
+      740.0
+    ],
+    "min": [
+      388.0,
+      723.0
+    ],
+    "text": "Representative designs | Match appearance is not applied yet"
+  },
+  {
+    "max": [
+      517.0,
+      163.0
+    ],
+    "min": [
+      262.0,
+      142.0
+    ],
+    "text": "Select an item to compare"
+  },
+  {
+    "max": [
+      748.0,
+      82.0
+    ],
+    "min": [
+      532.0,
+      34.0
+    ],
+    "text": "COSMETICS"
+  },
+  {
+    "max": [
+      857.0,
+      174.0
+    ],
+    "min": [
+      775.0,
+      153.0
+    ],
+    "text": "Equipped"
+  },
+  {
+    "max": [
+      859.0,
+      387.0
+    ],
+    "min": [
+      774.0,
+      370.0
+    ],
+    "text": "Color: Ash"
+  },
+  {
+    "max": [
+      880.0,
+      412.0
+    ],
+    "min": [
+      753.0,
+      395.0
+    ],
+    "text": "Trail: No Trail"
+  },
+  {
+    "max": [
+      871.0,
+      437.0
+    ],
+    "min": [
+      761.0,
+      420.0
+    ],
+    "text": "Badge: Rookie"
+  },
+  {
+    "max": [
+      1144.0,
+      174.0
+    ],
+    "min": [
+      980.0,
+      153.0
+    ],
+    "text": "Selected preview"
+  },
+  {
+    "max": [
+      1113.0,
+      387.0
+    ],
+    "min": [
+      1012.0,
+      370.0
+    ],
+    "text": "Color: Ember"
+  },
+  {
+    "max": [
+      1126.0,
+      412.0
+    ],
+    "min": [
+      999.0,
+      395.0
+    ],
+    "text": "Trail: No Trail"
+  },
+  {
+    "max": [
+      1117.0,
+      437.0
+    ],
+    "min": [
+      1007.0,
+      420.0
+    ],
+    "text": "Badge: Rookie"
+  },
+  {
+    "max": [
+      129.0,
+      255.0
+    ],
+    "min": [
+      115.0,
+      228.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      1033.0,
+      667.0
+    ],
+    "min": [
+      849.0,
+      645.0
+    ],
+    "text": "Back to main menu"
+  },
+  {
+    "max": [
+      1055.0,
+      603.0
+    ],
+    "min": [
+      828.0,
+      581.0
+    ],
+    "text": "Locked - preview only"
+  },
+  {
+    "max": [
+      595.0,
+      668.0
+    ],
+    "min": [
+      184.0,
+      646.0
+    ],
+    "text": "Champion | Badge | LOCKED: win 1 match"
+  },
+  {
+    "max": [
+      600.0,
+      616.0
+    ],
+    "min": [
+      178.0,
+      594.0
+    ],
+    "text": "Veteran | Badge | LOCKED: reach level 5"
+  },
+  {
+    "max": [
+      525.0,
+      564.0
+    ],
+    "min": [
+      254.0,
+      542.0
+    ],
+    "text": "Rookie | Badge | EQUIPPED"
+  },
+  {
+    "max": [
+      589.0,
+      512.0
+    ],
+    "min": [
+      189.0,
+      490.0
+    ],
+    "text": "Comet | Trail | LOCKED: reach level 3"
+  },
+  {
+    "max": [
+      589.0,
+      460.0
+    ],
+    "min": [
+      189.0,
+      438.0
+    ],
+    "text": "Spark | Trail | LOCKED: reach level 1"
+  },
+  {
+    "max": [
+      535.0,
+      408.0
+    ],
+    "min": [
+      243.0,
+      386.0
+    ],
+    "text": "No Trail | Trail | EQUIPPED"
+  },
+  {
+    "max": [
+      584.0,
+      356.0
+    ],
+    "min": [
+      195.0,
+      334.0
+    ],
+    "text": "Void | Color | LOCKED: win 3 matches"
+  },
+  {
+    "max": [
+      595.0,
+      304.0
+    ],
+    "min": [
+      184.0,
+      282.0
+    ],
+    "text": "Cobalt | Color | LOCKED: reach level 4"
+  },
+  {
+    "max": [
+      643.0,
+      252.0
+    ],
+    "min": [
+      135.0,
+      230.0
+    ],
+    "text": "[Preview] Ember | Color | LOCKED: reach level 2"
+  },
+  {
+    "max": [
+      508.0,
+      200.0
+    ],
+    "min": [
+      270.0,
+      178.0
+    ],
+    "text": "Ash | Color | EQUIPPED"
+  },
+  {
+    "max": [
+      1176.0,
+      554.0
+    ],
+    "min": [
+      706.0,
+      474.0
+    ],
+    "text": "Ember | Color\nLocked: reach level 2.\nPreview changes only this slot."
+  },
+  {
+    "max": [
+      1008.0,
+      113.0
+    ],
+    "min": [
+      273.0,
+      92.0
+    ],
+    "text": "Level 0 | 0 wins | unlocked 3 / 10 | cosmetic choices save when equipped"
+  }
+]

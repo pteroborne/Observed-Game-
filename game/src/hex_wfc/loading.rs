@@ -20,11 +20,10 @@ use bevy::{
     prelude::*,
     tasks::{AsyncComputeTaskPool, Task, block_on, poll_once},
 };
-use observed_core::PlayerId;
 
-use crate::{GameState, play_setup::LaunchContext};
+use crate::GameState;
 
-use super::launch::{HexLaunchSpec, PreparedHexLaunch, prepare};
+use super::launch::{PreparedHexLaunch, prepare};
 
 #[path = "loading_diagnosis.rs"]
 mod diagnosis;
@@ -35,71 +34,10 @@ use diagnosis::{
     worker_watchdog,
 };
 
-/// Stable identity for one preparation attempt. Retry always receives a fresh value.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct HexLaunchRequestId(u64);
+#[path = "loading_request.rs"]
+mod request;
 
-impl HexLaunchRequestId {
-    #[must_use]
-    pub(crate) const fn get(self) -> u64 {
-        self.0
-    }
-}
-
-/// Monotonic request-id allocator shared by local, rematch, and LAN launch paths.
-#[derive(Resource, Debug, Default)]
-pub(crate) struct HexLaunchRequestSequence {
-    last_issued: u64,
-}
-
-impl HexLaunchRequestSequence {
-    /// Finalize a launch request. Callers must insert the returned resource before
-    /// requesting [`GameState::Loading`].
-    pub(crate) fn issue(
-        &mut self,
-        context: LaunchContext,
-        local_player: PlayerId,
-        spectator: bool,
-        networked: bool,
-        spec: HexLaunchSpec,
-    ) -> HexLaunchRequest {
-        HexLaunchRequest {
-            request_id: self.next_id(),
-            context,
-            local_player,
-            spectator,
-            networked,
-            spec,
-        }
-    }
-
-    fn reissue(&mut self, request: HexLaunchRequest) -> HexLaunchRequest {
-        HexLaunchRequest {
-            request_id: self.next_id(),
-            ..request
-        }
-    }
-
-    fn next_id(&mut self) -> HexLaunchRequestId {
-        self.last_issued = self.last_issued.wrapping_add(1).max(1);
-        HexLaunchRequestId(self.last_issued)
-    }
-}
-
-/// Complete immutable input and presentation metadata for one launch attempt.
-///
-/// Simulation preparation reads only [`Self::spec`]. The remaining fields let the
-/// runtime and loading screen preserve ownership, spectator, network, and back-route
-/// behavior without reconstructing those decisions from UI entities.
-#[derive(Resource, Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct HexLaunchRequest {
-    pub(crate) request_id: HexLaunchRequestId,
-    pub(crate) context: LaunchContext,
-    pub(crate) local_player: PlayerId,
-    pub(crate) spectator: bool,
-    pub(crate) networked: bool,
-    pub(crate) spec: HexLaunchSpec,
-}
+pub(crate) use request::{HexLaunchRequest, HexLaunchRequestId, HexLaunchRequestSequence};
 
 /// One-shot handoff from the loading worker to `HexWfc` runtime setup.
 ///

@@ -281,13 +281,21 @@ pub(super) fn setup_runtime(
     ));
     let seed_offset = prepared.seed_offset;
     let mut match_state = prepared.match_state;
+    let finalized_setup = request
+        .as_ref()
+        .map(|request| crate::play_setup::PlaySetupDraft {
+            rules: request.rules,
+            seat: request.seat,
+            ..play_setup.clone()
+        });
+    let play_setup = finalized_setup.as_ref().unwrap_or(&play_setup);
     // A LAN match plays the rules its launch names.
     let lan = networked.then(|| lan.client.as_ref().and_then(|client| client.launch));
     let ascent = super::ascent::seat(
         &mut commands,
         &mut match_state,
         local_player,
-        &play_setup,
+        play_setup,
         lan,
     );
     let mut replay =

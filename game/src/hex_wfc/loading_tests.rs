@@ -3,9 +3,12 @@
 use observed_facility::hex_wfc::HexWfcConfig;
 use observed_match::hex_wfc::HexMatchConfig;
 
+use super::super::launch::HexLaunchSpec;
 use super::diagnosis::WORKER_WATCHDOG_GRACE;
 use super::*;
 use crate::hex_wfc::launch::{HexLaunchError, HexSeedPolicy};
+use crate::play_setup::{LaunchContext, PlayRules, PlaySeat};
+use observed_core::PlayerId;
 
 fn request(sequence: &mut HexLaunchRequestSequence) -> HexLaunchRequest {
     sequence.issue(
@@ -31,6 +34,7 @@ fn request(sequence: &mut HexLaunchRequestSequence) -> HexLaunchRequest {
             },
             seed_policy: HexSeedPolicy::Nearby,
         },
+        (PlayRules::Race, PlaySeat::Observer),
     )
 }
 
@@ -137,6 +141,14 @@ fn request_ids_are_unique_and_metadata_survives_finalization() {
     assert!(first.spectator);
     assert!(!first.networked);
     assert_eq!(first.spec.requested_seed, 41);
+    let mut architect = first;
+    architect.rules = PlayRules::Ascent;
+    architect.seat = PlaySeat::Architect;
+    let retried = sequence.reissue(architect);
+    assert_ne!(retried.request_id, architect.request_id);
+    assert_eq!(retried.rules, PlayRules::Ascent);
+    assert_eq!(retried.seat, PlaySeat::Architect);
+    assert_eq!(retried.spec, architect.spec);
 }
 
 #[test]

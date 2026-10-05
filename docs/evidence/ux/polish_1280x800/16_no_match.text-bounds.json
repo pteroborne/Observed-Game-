@@ -1,0 +1,112 @@
+[
+  {
+    "max": [
+      764.0,
+      305.0
+    ],
+    "min": [
+      293.0,
+      285.0
+    ],
+    "text": "No match was selected. Go back to choose a match."
+  },
+  {
+    "max": [
+      823.0,
+      250.0
+    ],
+    "min": [
+      458.0,
+      230.0
+    ],
+    "text": "Preparing the facility for your match."
+  },
+  {
+    "max": [
+      804.0,
+      220.0
+    ],
+    "min": [
+      476.0,
+      169.0
+    ],
+    "text": "GETTING READY"
+  },
+  {
+    "max": [
+      460.0,
+      561.0
+    ],
+    "min": [
+      446.0,
+      534.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      705.0,
+      558.0
+    ],
+    "min": [
+      575.0,
+      536.0
+    ],
+    "text": "Back to Play"
+  },
+  {
+    "max": [
+      732.0,
+      492.0
+    ],
+    "min": [
+      548.0,
+      470.0
+    ],
+    "text": "Retry preparation"
+  },
+  {
+    "max": [
+      419.0,
+      363.0
+    ],
+    "min": [
+      293.0,
+      345.0
+    ],
+    "text": "Elapsed: 0.0 s"
+  },
+  {
+    "max": [
+      725.0,
+      336.0
+    ],
+    "min": [
+      293.0,
+      314.0
+    ],
+    "text": "Facility preparation could not complete."
+  },
+  {
+    "max": [
+      802.0,
+      631.0
+    ],
+    "min": [
+      478.0,
+      613.0
+    ],
+    "text": "Go back and choose a match to start."
+  },
+  {
+    "max": [
+      788.0,
+      390.0
+    ],
+    "min": [
+      293.0,
+      372.0
+    ],
+    "text": "No match setup is available. Go back to choose a match."
+  }
+]

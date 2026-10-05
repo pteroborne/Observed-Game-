@@ -16,10 +16,10 @@ use super::widgets::{self, FocusScope, FocusScopeId, WidgetId, WidgetSpec, activ
 use crate::{
     GameState,
     hex_wfc::loading::{
-        HexLaunchRequest, HexLaunchRequestSequence, HexLoadingPhase, HexLoadingState,
-        cancel_loading, retry_loading,
+        HexLaunchRequest, HexLaunchRequestSequence, HexLoadingError, HexLoadingPhase,
+        HexLoadingState, cancel_loading, retry_loading,
     },
-    play_setup::LaunchContext,
+    play_setup::{LaunchContext, PlayRules, PlaySeat},
     view::theme::{ACCENT, DIM, TITLE, WARNING, panel, screen_root, summary_panel, text},
 };
 
@@ -41,6 +41,9 @@ pub(crate) struct LoadingElapsedText;
 
 #[derive(Component)]
 pub(crate) struct LoadingErrorText;
+
+#[derive(Component)]
+struct LoadingNextActionText;
 
 #[derive(Component)]
 pub(crate) struct RetryAvailability {
@@ -71,6 +74,18 @@ type LoadingErrorQuery<'w, 's> = Query<
     ),
 >;
 
+type LoadingNextActionQuery<'w, 's> = Query<
+    'w,
+    's,
+    &'static mut Text,
+    (
+        With<LoadingNextActionText>,
+        Without<LoadingStatusText>,
+        Without<LoadingElapsedText>,
+        Without<LoadingErrorText>,
+    ),
+>;
+
 #[derive(SystemParam)]
 pub(crate) struct LoadingRefreshContext<'w, 's> {
     state: Res<'w, HexLoadingState>,
@@ -83,11 +98,12 @@ pub(crate) struct LoadingRefreshContext<'w, 's> {
     cancel: Query<'w, 's, Entity, With<CancelButton>>,
     focus: ResMut<'w, InputFocus>,
     commands: Commands<'w, 's>,
+    next_action_text: LoadingNextActionQuery<'w, 's>,
 }
 
 pub(crate) fn setup(mut commands: Commands, request: Option<Res<HexLaunchRequest>>) {
     let summary = request.as_deref().map_or_else(
-        || "No finalized launch request is available.".to_string(),
+        || "No match was selected. Go back to choose a match.".to_string(),
         request_summary,
     );
     let cancel_label = request
@@ -97,21 +113,13 @@ pub(crate) fn setup(mut commands: Commands, request: Option<Res<HexLaunchRequest
     commands
         .spawn(screen_root(GameState::Loading))
         .with_children(|root| {
-            root.spawn(text("ASSEMBLING FACILITY", 42.0, TITLE));
-            root.spawn(text(
-                "The deterministic layout is being prepared off the main thread.",
-                16.0,
-                DIM,
-            ));
+            root.spawn(text("GETTING READY", 42.0, TITLE));
+            root.spawn(text("Preparing the facility for your match.", 16.0, DIM));
             root.spawn(summary_panel()).with_children(|summary_panel| {
                 summary_panel.spawn(text(summary, 16.0, ACCENT));
                 summary_panel.spawn((
                     LoadingStatusText,
-                    text(
-                        "Solving connected rooms and traversal routes...",
-                        18.0,
-                        TITLE,
-                    ),
+                    text("Preparing rooms and routes...", 18.0, TITLE),
                 ));
                 summary_panel.spawn((
                     LoadingElapsedText,
@@ -145,10 +153,11 @@ pub(crate) fn setup(mut commands: Commands, request: Option<Res<HexLaunchRequest
                 actions.commands().entity(cancel).insert(CancelButton);
             });
             root.spawn(text(
-                "No progress percentage is shown: solve time varies with the selected seed.",
-                13.0,
+                "You can go back while the facility is being prepared.",
+                15.0,
                 DIM,
-            ));
+            ))
+            .insert(LoadingNextActionText);
         });
 }
 
@@ -196,6 +205,9 @@ pub(crate) fn activate(
 /// Keep status, elapsed time, errors, and retry availability synchronized with the
 /// core state. Register in `Update` while `GameState::Loading` is active.
 pub(crate) fn refresh(mut context: LoadingRefreshContext) {
+    for mut text in &mut context.next_action_text {
+        **text = next_action_label(context.state.phase, context.request.as_deref()).to_string();
+    }
     for mut text in &mut context.status_text {
         **text = status_label(context.state.phase).to_string();
     }
@@ -212,7 +224,7 @@ pub(crate) fn refresh(mut context: LoadingRefreshContext) {
     }
     for (mut text, mut visibility) in &mut context.error_text {
         if let Some(error) = &context.state.error {
-            **text = format!("Error: {error}");
+            **text = error_label(error).to_string();
             *visibility = Visibility::Inherited;
         } else {
             **text = String::new();
@@ -258,16 +270,83 @@ fn request_summary(request: &HexLaunchRequest) -> String {
         LaunchContext::Rematch => "Rematch",
         LaunchContext::Lan => "LAN match",
     };
+    let role = if request.spectator {
+        "Spectator"
+    } else if request.rules == PlayRules::Ascent {
+        match request.seat {
+            PlaySeat::Architect => "Architect",
+            PlaySeat::Observer => "Observer",
+        }
+    } else {
+        "Explorer"
+    };
+    let bodies = match (request.rules, config.members_per_team == 1) {
+        (PlayRules::Ascent, true) => "Observer",
+        (PlayRules::Ascent, false) => "Observers",
+        (PlayRules::Race, true) => "explorer",
+        (PlayRules::Race, false) => "explorers",
+    };
+    let architects = if request.rules == PlayRules::Ascent {
+        " + 1 Architect per team"
+    } else {
+        ""
+    };
     format!(
-        "{context} | {} teams x {} | {}x{}x{} cells | seed {} | request {}",
+        "{context} | {} | {role}\n{} team{} | {} {bodies} per team{architects}\n{} floors",
+        request.rules.label(),
         config.teams,
+        if config.teams == 1 { "" } else { "s" },
         config.members_per_team,
-        config.wfc.cols,
-        config.wfc.rows,
-        config.wfc.levels,
-        request.spec.requested_seed,
-        request.request_id.get(),
+        config.wfc.levels
     )
+}
+
+fn error_label(error: &HexLoadingError) -> &'static str {
+    use crate::hex_wfc::launch::HexLaunchError;
+    match error {
+        HexLoadingError::MissingRequest => {
+            "No match setup is available. Go back to choose a match."
+        }
+        HexLoadingError::Preparation(HexLaunchError::CatalogLoad(_)) => {
+            "The facility files could not be loaded. Check your game installation, then retry."
+        }
+        HexLoadingError::Preparation(HexLaunchError::ContentHashMismatch { .. }) => {
+            "Your facility files differ from the host's. Use the same game version and files, then join again."
+        }
+        HexLoadingError::Preparation(HexLaunchError::ExactSeedRejected { .. }) => {
+            "The host's facility could not be prepared here. Leave and ask the host to start a new match."
+        }
+        HexLoadingError::Preparation(HexLaunchError::NearbySeedsExhausted { .. }) => {
+            "This facility could not be prepared. Go back and start a new match to try another layout."
+        }
+        HexLoadingError::PreparationPanicked(_) | HexLoadingError::WorkerLost(_) => {
+            "Facility preparation stopped unexpectedly. Retry, or go back to choose another match."
+        }
+        HexLoadingError::LanLaunchUnavailable | HexLoadingError::LanLaunchWithdrawn => {
+            "The host changed or cancelled this match. Leave and join the host again."
+        }
+        HexLoadingError::LanTransport(_) => {
+            "Could not contact the host. Check your connection, then retry or leave."
+        }
+        HexLoadingError::LanServerSilent => {
+            "The host stopped responding. Leave and find the host again."
+        }
+    }
+}
+
+fn next_action_label(phase: HexLoadingPhase, request: Option<&HexLaunchRequest>) -> &'static str {
+    let lan = request.is_some_and(|request| request.context == LaunchContext::Lan);
+    match phase {
+        HexLoadingPhase::Failed if request.is_none() => "Go back and choose a match to start.",
+        HexLoadingPhase::Failed if lan => "Retry this launch, or leave to find a host again.",
+        HexLoadingPhase::Failed => "Retry this match, or go back to change your setup.",
+        HexLoadingPhase::WaitingForPlayers => {
+            "The match starts when everyone is ready. You can leave while waiting."
+        }
+        HexLoadingPhase::Ready => "Your match is ready. Entering now...",
+        _ if lan => "You can leave while the host's facility is being prepared.",
+        _ => "You can go back while the facility is being prepared.",
+    }
 }
 
 const fn cancel_target(context: LaunchContext) -> GameState {
@@ -288,8 +367,8 @@ const fn cancel_label(context: LaunchContext) -> &'static str {
 
 const fn status_label(phase: HexLoadingPhase) -> &'static str {
     match phase {
-        HexLoadingPhase::AwaitingRequest => "Waiting for a finalized launch request...",
-        HexLoadingPhase::Preparing => "Solving connected rooms and traversal routes...",
+        HexLoadingPhase::AwaitingRequest => "Waiting for your match setup...",
+        HexLoadingPhase::Preparing => "Preparing rooms and routes...",
         HexLoadingPhase::WaitingForPlayers => {
             "Facility ready. Waiting for other players and server start..."
         }
@@ -322,5 +401,54 @@ mod tests {
         ] {
             assert!(!status_label(phase).contains('%'));
         }
+    }
+
+    #[test]
+    fn loading_summary_uses_finalized_roles_and_actual_body_counts() {
+        use crate::hex_wfc::launch::{HexLaunchSpec, HexSeedPolicy};
+        let mut sequence = HexLaunchRequestSequence::default();
+        let mut request = sequence.issue(
+            LaunchContext::Rematch,
+            observed_core::PlayerId(0),
+            false,
+            false,
+            HexLaunchSpec {
+                requested_seed: 42,
+                config: observed_match::hex_wfc::HexMatchConfig {
+                    teams: 1,
+                    members_per_team: 1,
+                    ..default()
+                },
+                seed_policy: HexSeedPolicy::Nearby,
+            },
+            (PlayRules::Ascent, PlaySeat::Architect),
+        );
+        let summary = request_summary(&request);
+        assert!(summary.contains("Rematch | Architect Ascent | Architect"));
+        assert!(summary.contains("1 team | 1 Observer per team + 1 Architect per team"));
+        request.spectator = true;
+        assert!(request_summary(&request).contains("Spectator"));
+        request.spectator = false;
+        request.rules = PlayRules::Race;
+        assert!(request_summary(&request).contains("Facility race | Explorer"));
+        assert!(!request_summary(&request).contains("Architect"));
+    }
+
+    #[test]
+    fn a_missing_request_offers_back_and_lan_errors_explain_reconnection() {
+        assert_eq!(
+            next_action_label(HexLoadingPhase::Failed, None),
+            "Go back and choose a match to start."
+        );
+        assert!(error_label(&HexLoadingError::LanServerSilent).contains("Leave"));
+        assert!(
+            error_label(&HexLoadingError::Preparation(
+                crate::hex_wfc::launch::HexLaunchError::ContentHashMismatch {
+                    expected: [0; 32],
+                    actual: [1; 32]
+                }
+            ))
+            .contains("same game version and files")
+        );
     }
 }

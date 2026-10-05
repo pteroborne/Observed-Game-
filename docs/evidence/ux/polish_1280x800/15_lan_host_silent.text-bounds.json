@@ -1,0 +1,112 @@
+[
+  {
+    "max": [
+      802.0,
+      324.0
+    ],
+    "min": [
+      293.0,
+      266.0
+    ],
+    "text": "LAN match | Architect Ascent | Observer\n2 teams | 2 Observers per team + 1 Architect per team\n4 floors"
+  },
+  {
+    "max": [
+      823.0,
+      231.0
+    ],
+    "min": [
+      458.0,
+      211.0
+    ],
+    "text": "Preparing the facility for your match."
+  },
+  {
+    "max": [
+      804.0,
+      201.0
+    ],
+    "min": [
+      476.0,
+      150.0
+    ],
+    "text": "GETTING READY"
+  },
+  {
+    "max": [
+      460.0,
+      514.0
+    ],
+    "min": [
+      446.0,
+      487.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      722.0,
+      577.0
+    ],
+    "min": [
+      559.0,
+      555.0
+    ],
+    "text": "Leave LAN match"
+  },
+  {
+    "max": [
+      732.0,
+      511.0
+    ],
+    "min": [
+      548.0,
+      489.0
+    ],
+    "text": "Retry preparation"
+  },
+  {
+    "max": [
+      527.0,
+      382.0
+    ],
+    "min": [
+      293.0,
+      364.0
+    ],
+    "text": "Elapsed: 2.4 s | attempt 1"
+  },
+  {
+    "max": [
+      725.0,
+      355.0
+    ],
+    "min": [
+      293.0,
+      333.0
+    ],
+    "text": "Facility preparation could not complete."
+  },
+  {
+    "max": [
+      861.0,
+      650.0
+    ],
+    "min": [
+      420.0,
+      632.0
+    ],
+    "text": "Retry this launch, or leave to find a host again."
+  },
+  {
+    "max": [
+      824.0,
+      409.0
+    ],
+    "min": [
+      293.0,
+      391.0
+    ],
+    "text": "The host stopped responding. Leave and find the host again."
+  }
+]

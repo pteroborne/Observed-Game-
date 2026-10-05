@@ -147,3 +147,11 @@ world viewer. The [native evidence set](replay_1280x800/README.md) includes nine
 1280x800 views, bounds sidecars, a playback video and provenance. The fixture runs
 real rules and physics with explicitly staged card/catch/corruption events;
 it does not establish completed human or graphical LAN acceptance.
+
+## Cosmetics and loading polish evidence (2026-10-05)
+
+[Implementation](../../ux/cosmetics_loading_implementation.md) and
+[17 native screens](polish_1280x800/README.md) cover equipped/selected comparison,
+locked inspection, loading perspectives and recovery states. Profiles and loading
+phases are staged. Bounds and source/artifact provenance accompany the screens;
+these do not establish human or connected graphical LAN acceptance.

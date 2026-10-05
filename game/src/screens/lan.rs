@@ -293,6 +293,18 @@ pub(crate) fn poll_lan(
                     expected_content_hash: launch.simulation_content_hash,
                 },
             },
+            (
+                if launch.ascent {
+                    crate::play_setup::PlayRules::Ascent
+                } else {
+                    crate::play_setup::PlayRules::Race
+                },
+                if launch.is_architect(local_player) {
+                    crate::play_setup::PlaySeat::Architect
+                } else {
+                    crate::play_setup::PlaySeat::Observer
+                },
+            ),
         );
         commands.insert_resource(request);
         lan.consumed_match = Some(launch.match_number);
