@@ -80,6 +80,7 @@ pub struct ReplayMarker {
 
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct ReplayTape {
+    pub cosmetics: std::collections::BTreeMap<PlayerId, observed_core::cosmetics::CosmeticLook>,
     pub seed: u64,
     pub input_version: u16,
     pub map_name: String,
@@ -118,6 +119,7 @@ impl ReplayTape {
         presentation_content_hash: [u8; 32],
     ) -> Self {
         let mut tape = Self {
+            cosmetics: default(),
             seed,
             input_version: 0,
             map_name: map_spec.name.to_string(),
@@ -158,6 +160,7 @@ impl ReplayTape {
 
     pub fn new_full_wfc(game: &observed_match::full_wfc::FullWfcMatch) -> Self {
         let mut tape = Self {
+            cosmetics: default(),
             seed: game.seed,
             input_version: observed_match::full_wfc::FULL_WFC_INPUT_VERSION,
             map_name: "full_wfc_v1".to_string(),
@@ -296,6 +299,7 @@ impl ReplayTape {
         local: PlayerId,
     ) -> Self {
         let mut tape = Self {
+            cosmetics: default(),
             seed: game.seed,
             input_version: observed_match::hex_wfc::HEX_INPUT_VERSION,
             map_name: "hex_wfc_v3".to_string(),

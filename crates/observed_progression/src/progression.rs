@@ -166,6 +166,25 @@ impl Default for Profile {
 }
 
 impl Profile {
+    /// Validated cosmetic choices, frozen by presentation when a match launches.
+    pub fn cosmetic_look(&self) -> observed_core::cosmetics::CosmeticLook {
+        use observed_core::cosmetics::CosmeticLook;
+        let equipped = |slot, fallback| {
+            self.equipped
+                .get(&slot)
+                .copied()
+                .filter(|&id| {
+                    self.is_unlocked(id) && cosmetic(id).is_some_and(|item| item.slot == slot)
+                })
+                .unwrap_or(fallback)
+        };
+        CosmeticLook {
+            color: equipped(Slot::Color, 0),
+            trail: equipped(Slot::Trail, 4),
+            badge: equipped(Slot::Badge, 7),
+        }
+    }
+
     pub fn new() -> Self {
         let mut profile = Self {
             xp: 0,

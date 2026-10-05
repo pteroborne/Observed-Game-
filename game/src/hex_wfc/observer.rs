@@ -38,7 +38,8 @@ const NEAR_ALPHA: f32 = 0.22;
 pub(super) struct ObserverArt {
     parts: Vec<(Handle<Mesh>, Look)>,
     globe: Handle<StandardMaterial>,
-    trim: Handle<StandardMaterial>,
+    trims: Vec<Handle<StandardMaterial>>,
+    near_trims: Vec<Handle<StandardMaterial>>,
     pupil: Handle<StandardMaterial>,
     /// Iris and haze for each role, in `style::ROLES` order.
     roles: Vec<(
@@ -105,7 +106,12 @@ impl ObserverArt {
                 })
                 .collect(),
             globe: materials.add(finish(style::finish(Part::Globe))),
-            trim: materials.add(finish(style::finish(Part::Trim))),
+            trims: (0..4)
+                .map(|id| materials.add(finish(observed_style::cosmetics::trim(id))))
+                .collect(),
+            near_trims: (0..4)
+                .map(|id| materials.add(near(observed_style::cosmetics::trim(id))))
+                .collect(),
             pupil: materials.add(finish(style::finish(Part::Pupil))),
             roles: style::ROLES
                 .into_iter()
@@ -131,20 +137,28 @@ impl ObserverArt {
     }
 
     /// Dress `root` as an eye in `role`'s colour.
-    pub(super) fn dress(&self, commands: &mut Commands, root: Entity, role: MarkerRole, seed: u32) {
+    pub(super) fn dress(
+        &self,
+        commands: &mut Commands,
+        root: Entity,
+        role: MarkerRole,
+        seed: u32,
+        look: observed_core::cosmetics::CosmeticLook,
+    ) {
         let index = self
             .roles
             .iter()
             .position(|(r, ..)| *r == role)
             .expect("an Observer's role is one of style::ROLES");
         let (_, iris, haze) = &self.roles[index];
-        let [near_globe, near_trim, near_pupil] = &self.near;
+        let [near_globe, _, near_pupil] = &self.near;
+        let color = usize::from(look.color.min(3));
         let (solid, near): (Vec<_>, Vec<_>) = self
             .parts
             .iter()
             .map(|(_, look)| match look {
                 Look::Globe => (self.globe.clone(), near_globe.clone()),
-                Look::Trim => (self.trim.clone(), near_trim.clone()),
+                Look::Trim => (self.trims[color].clone(), self.near_trims[color].clone()),
                 Look::Iris => (iris.clone(), self.near_irises[index].clone()),
                 Look::Pupil => (self.pupil.clone(), near_pupil.clone()),
                 // The haze is already only light.
@@ -252,6 +266,51 @@ pub(super) fn sync(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn equipped_color_dresses_only_decorative_parts_and_retains_role_irises() {
+        let mut app = crate::tests::test_app();
+        {
+            let mut career = app.world_mut().resource_mut::<crate::flow::Career>();
+            for _ in 0..15 {
+                career.profile.award_match(Some(1));
+            }
+            assert!(career.profile.equip(2));
+        }
+        let mut setup = crate::play_setup::PlaySetupDraft::default();
+        setup.select_preset(crate::play_setup::PlayPreset::CoOp);
+        app.insert_resource(setup);
+        crate::tests::go(&mut app, crate::GameState::HexWfc);
+        let local = app.world().resource::<HexWfcRuntime>().local_player;
+        let world = app.world_mut();
+        let mut eyes = world.query::<(&ActorVisual, &EyeMaterials)>();
+        let assets = world.resource::<Assets<StandardMaterial>>();
+        for (actor, materials) in eyes.iter(world) {
+            let role = if actor.player() == local {
+                MarkerRole::You
+            } else {
+                MarkerRole::Teammate
+            };
+            assert_eq!(
+                assets
+                    .get(&materials.solid[form::IRIS_PART])
+                    .unwrap()
+                    .base_color,
+                style::finish(Part::Iris(role)).base_color
+            );
+            for (index, _) in form::parts()
+                .iter()
+                .enumerate()
+                .filter(|(_, part)| part.look == Look::Trim)
+            {
+                assert_eq!(
+                    assets.get(&materials.solid[index]).unwrap().base_color,
+                    observed_style::cosmetics::trim(if actor.player() == local { 2 } else { 0 })
+                        .base_color
+                );
+            }
+        }
+    }
 
     /// The drawn eye must sit where the camera puts the body's own eye, or looking
     /// through a body and looking at it disagree about where it sees from.

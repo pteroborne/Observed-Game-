@@ -59,6 +59,7 @@ type ObjectiveVisualQuery<'w, 's> = Query<
 pub(super) fn setup(
     mut commands: Commands,
     runtime: Res<HexWfcRuntime>,
+    cosmetics: Res<super::cosmetics::MatchCosmetics>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -68,6 +69,19 @@ pub(super) fn setup(
         interactable_material: outline_material(&mut materials, OutlineRole::Interactable),
     };
     let eyes = super::observer::ObserverArt::new(&mut meshes, &mut materials);
+    let badge = meshes.add(Cuboid::new(1.0, 1.0, 1.0));
+    let trail = meshes.add(Sphere::new(1.0));
+    let cosmetic_materials: Vec<_> = (0..4)
+        .map(|id| {
+            let finish = observed_style::cosmetics::trim(id);
+            materials.add(StandardMaterial {
+                base_color: finish.base_color,
+                metallic: finish.metallic,
+                perceptual_roughness: finish.roughness,
+                ..default()
+            })
+        })
+        .collect();
     // Every body gets an eye, yours included: which one the camera is inside changes
     // during a match - a spectator's focus, the Architect looking through an Observer -
     // so `sync` hides it there rather than this leaving it out here.
@@ -92,7 +106,19 @@ pub(super) fn setup(
                 Name::new(format!("Observer {} eye", player.id.0)),
             ))
             .id();
-        eyes.dress(&mut commands, root, role, u32::from(player.id.0));
+        let look = cosmetics.look(player.id);
+        eyes.dress(&mut commands, root, role, u32::from(player.id.0), look);
+        super::cosmetics::decorate(
+            &mut commands,
+            root,
+            player.id,
+            look,
+            (
+                &badge,
+                &trail,
+                &cosmetic_materials[usize::from(look.color.min(3))],
+            ),
+        );
     }
     let models = ObjectiveModels::new(
         &mut meshes,

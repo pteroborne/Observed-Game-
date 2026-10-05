@@ -155,3 +155,11 @@ it does not establish completed human or graphical LAN acceptance.
 locked inspection, loading perspectives and recovery states. Profiles and loading
 phases are staged. Bounds and source/artifact provenance accompany the screens;
 these do not establish human or connected graphical LAN acceptance.
+
+## Canonical cosmetics and roster evidence (2026-10-05)
+
+[Implementation](../../ux/canonical_cosmetics_roster_implementation.md) and
+[native screens](canonical_1280x800/README.md) cover the canonical body limits,
+retained Facility race roster, a real loopback lobby, cosmetic portraits and replay.
+The lobby has one graphical client and a second UDP client. Portrait poses and replay
+look metadata are staged; this does not establish human or two-client graphical acceptance.

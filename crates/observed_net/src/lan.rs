@@ -5,7 +5,7 @@ use std::io;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
-use observed_core::{PlayerId, TeamId};
+use observed_core::{PlayerId, TeamId, cosmetics::CosmeticLook};
 use observed_facility::hex_wfc::HexWfcConfig;
 use observed_match::hex_wfc::{
     HEX_INPUT_VERSION, HexActionButtons, HexInputFrame, HexMatchConfig, HexPlayerCommand,
@@ -41,7 +41,8 @@ use crate::protocol::WireIntent;
 /// the Rogue's own deck now, played like any other, and the bot Rogue plays them.
 /// Version 15 carries a plumb and its aim after a body's action bits, and every body now
 /// wards and knows by its real sight, so the same frames make a different match.
-pub const LAN_PROTOCOL_VERSION: u16 = 15;
+/// Version 16 carries frozen cosmetic looks and enforces canonical Ascent rosters.
+pub const LAN_PROTOCOL_VERSION: u16 = 16;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;
@@ -54,6 +55,8 @@ pub const FRAME_WINDOW: usize = 16;
 pub const MAX_SEATS: usize = 16;
 const MAGIC: [u8; 4] = *b"O2LN";
 
+mod appearance;
+use appearance::{decode_look, decode_looks, encode_look, validate_looks};
 mod seat;
 pub use seat::WireSeatCommand;
 
@@ -302,6 +305,7 @@ pub enum LanPacket {
         resume_token: Option<u64>,
         input_version: u16,
         simulation_content_hash: [u8; 32],
+        appearance: CosmeticLook,
     },
     Welcome {
         session: u32,
@@ -324,6 +328,8 @@ pub enum LanPacket {
         server_tick: u64,
         phase: WirePhase,
         countdown_ticks: u16,
+        ascent: bool,
+        fill_empty_seats: bool,
         seats: Vec<WireSeat>,
     },
     Launch {
@@ -334,6 +340,7 @@ pub enum LanPacket {
         ascent: bool,
         /// The seats whose humans sit at their team's Architect desk, one bit a seat.
         architects: u16,
+        appearances: Vec<CosmeticLook>,
     },
     InputBundle {
         token: u64,
@@ -445,12 +452,14 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             resume_token,
             input_version,
             simulation_content_hash,
+            appearance,
         } => {
             put_u16(&mut out, *account);
             out.push(requested_team.map_or(u8::MAX, |team| team.0));
             put_u64(&mut out, resume_token.unwrap_or(0));
             put_u16(&mut out, *input_version);
             out.extend_from_slice(simulation_content_hash);
+            encode_look(&mut out, *appearance)?;
             2
         }
         LanPacket::Welcome {
@@ -497,6 +506,8 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             server_tick,
             phase,
             countdown_ticks,
+            ascent,
+            fill_empty_seats,
             seats,
         } => {
             put_u32(&mut out, *session);
@@ -504,6 +515,8 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             put_u64(&mut out, *server_tick);
             out.push(phase.encode());
             put_u16(&mut out, *countdown_ticks);
+            out.push(u8::from(*ascent));
+            out.push(u8::from(*fill_empty_seats));
             out.push(seats.len() as u8);
             for seat in seats {
                 put_u16(&mut out, seat.player.0);
@@ -521,13 +534,19 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             simulation_content_hash,
             ascent,
             architects,
+            appearances,
         } => {
+            validate_looks(*config, *ascent, appearances)?;
             put_u64(&mut out, *seed);
             put_u32(&mut out, *match_number);
             encode_config(&mut out, *config);
             out.extend_from_slice(simulation_content_hash);
             out.push(u8::from(*ascent));
             put_u16(&mut out, *architects);
+            out.push(appearances.len() as u8);
+            for look in appearances {
+                encode_look(&mut out, *look)?;
+            }
             7
         }
         LanPacket::InputBundle { token, commands } => {
@@ -608,6 +627,7 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
                 resume_token: (resume != 0).then_some(resume),
                 input_version: cursor.u16()?,
                 simulation_content_hash: cursor.array32()?,
+                appearance: decode_look(&mut cursor)?,
             }
         }
         3 => LanPacket::Welcome {
@@ -637,6 +657,8 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
             let server_tick = cursor.u64()?;
             let phase = WirePhase::decode(cursor.u8()?)?;
             let countdown_ticks = cursor.u16()?;
+            let ascent = cursor.bool()?;
+            let fill_empty_seats = cursor.bool()?;
             let count = usize::from(cursor.u8()?);
             let mut seats = Vec::with_capacity(count);
             for _ in 0..count {
@@ -654,6 +676,8 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
                 server_tick,
                 phase,
                 countdown_ticks,
+                ascent,
+                fill_empty_seats,
                 seats,
             }
         }
@@ -664,6 +688,7 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
             simulation_content_hash: cursor.array32()?,
             ascent: cursor.u8()? != 0,
             architects: cursor.u16()?,
+            appearances: decode_looks(&mut cursor)?,
         },
         8 => {
             let token = cursor.u64()?;
@@ -726,6 +751,15 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
     };
     if cursor.remaining() != 0 {
         return Err(LanCodecError::WrongLength);
+    }
+    if let LanPacket::Launch {
+        config,
+        ascent,
+        appearances,
+        ..
+    } = &packet
+    {
+        validate_looks(*config, *ascent, appearances)?;
     }
     Ok(packet)
 }
@@ -997,6 +1031,8 @@ pub struct LanLobby {
     pub server_tick: u64,
     pub phase: WirePhase,
     pub countdown_ticks: u16,
+    pub ascent: bool,
+    pub fill_empty_seats: bool,
     pub seats: Vec<WireSeat>,
 }
 
@@ -1009,6 +1045,8 @@ pub struct LanClient {
     requested_team: Option<TeamId>,
     resume_token: Option<u64>,
     simulation_content_hash: [u8; 32],
+    appearance: CosmeticLook,
+    pub appearances: Vec<CosmeticLook>,
     pub token: Option<u64>,
     pub player: Option<PlayerId>,
     pub team: Option<TeamId>,
@@ -1034,6 +1072,30 @@ impl LanClient {
         resume_token: Option<u64>,
         simulation_content_hash: [u8; 32],
     ) -> io::Result<Self> {
+        Self::connect_with_appearance(
+            server,
+            account,
+            requested_team,
+            resume_token,
+            simulation_content_hash,
+            CosmeticLook::default(),
+        )
+    }
+
+    pub fn connect_with_appearance(
+        server: SocketAddr,
+        account: u16,
+        requested_team: Option<TeamId>,
+        resume_token: Option<u64>,
+        simulation_content_hash: [u8; 32],
+        appearance: CosmeticLook,
+    ) -> io::Result<Self> {
+        if !appearance.is_valid() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid cosmetic look",
+            ));
+        }
         let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
         socket.set_nonblocking(true)?;
         let client = Self {
@@ -1043,6 +1105,8 @@ impl LanClient {
             requested_team,
             resume_token,
             simulation_content_hash,
+            appearance,
+            appearances: Vec::new(),
             token: None,
             player: None,
             team: None,
@@ -1064,6 +1128,7 @@ impl LanClient {
             resume_token,
             input_version: HEX_INPUT_VERSION,
             simulation_content_hash,
+            appearance,
         })?;
         Ok(client)
     }
@@ -1110,6 +1175,7 @@ impl LanClient {
                     resume_token: self.resume_token,
                     input_version: HEX_INPUT_VERSION,
                     simulation_content_hash: self.simulation_content_hash,
+                    appearance: self.appearance,
                 });
             }
             self.last_heartbeat = Instant::now();
@@ -1140,6 +1206,8 @@ impl LanClient {
                 server_tick,
                 phase,
                 countdown_ticks,
+                ascent,
+                fill_empty_seats,
                 seats,
             } => {
                 self.receive_lobby(LanLobby {
@@ -1148,6 +1216,8 @@ impl LanClient {
                     server_tick,
                     phase,
                     countdown_ticks,
+                    ascent,
+                    fill_empty_seats,
                     seats,
                 });
             }
@@ -1158,15 +1228,27 @@ impl LanClient {
                 simulation_content_hash,
                 ascent,
                 architects,
+                appearances,
             } => {
-                self.receive_launch(LanLaunch {
+                let incoming = LanLaunch {
                     seed,
                     match_number,
                     config,
                     simulation_content_hash,
                     ascent,
                     architects,
-                });
+                };
+                if self.launch == Some(incoming)
+                    && !self.appearances.is_empty()
+                    && self.appearances != appearances
+                {
+                    self.rejection = Some("conflicting cosmetic metadata for this match".into());
+                    return;
+                }
+                self.receive_launch(incoming);
+                if self.launch == Some(incoming) && !self.lobby_withdrew(match_number) {
+                    self.appearances = appearances;
+                }
             }
             LanPacket::LaunchStart { match_number } => {
                 self.receive_launch_start(match_number);
@@ -1452,6 +1534,11 @@ mod tests {
                 resume_token: Some(9),
                 input_version: HEX_INPUT_VERSION,
                 simulation_content_hash: [3; 32],
+                appearance: CosmeticLook {
+                    color: 2,
+                    trail: 6,
+                    badge: 9,
+                },
             },
             LanPacket::Welcome {
                 session: 4,
@@ -1471,6 +1558,8 @@ mod tests {
                 server_tick: 120,
                 phase: WirePhase::Lobby,
                 countdown_ticks: 0,
+                ascent: false,
+                fill_empty_seats: true,
                 seats: vec![
                     WireSeat {
                         player: PlayerId(0),
@@ -1495,6 +1584,7 @@ mod tests {
                 simulation_content_hash: [4; 32],
                 ascent: true,
                 architects: 0b1010_0000_0000_0101,
+                appearances: vec![CosmeticLook::default(); 4],
             },
             LanPacket::InputBundle {
                 token: 9,
@@ -1748,7 +1838,67 @@ mod tests {
             simulation_content_hash: launch.simulation_content_hash,
             ascent: launch.ascent,
             architects: launch.architects,
+            appearances: vec![
+                CosmeticLook::default();
+                usize::from(launch.config.teams)
+                    * usize::from(launch.config.members_per_team)
+            ],
         }
+    }
+
+    #[test]
+    fn repeated_and_stale_launches_cannot_rewrite_frozen_looks() {
+        let mut client =
+            LanClient::connect("127.0.0.1:9".parse().unwrap(), 9, None, None, [4; 32]).unwrap();
+        let descriptor = launch(2, 55);
+        client.receive(launch_packet(descriptor));
+        let original = client.appearances.clone();
+        let mut stale = launch_packet(launch(1, 54));
+        if let LanPacket::Launch { appearances, .. } = &mut stale {
+            appearances[0].color = 1;
+        }
+        client.receive(stale);
+        assert_eq!(client.appearances, original);
+        let mut conflicting = launch_packet(descriptor);
+        if let LanPacket::Launch { appearances, .. } = &mut conflicting {
+            appearances[0].color = 2;
+        }
+        client.receive(conflicting);
+        assert_eq!(client.appearances, original);
+        assert!(
+            client
+                .rejection
+                .as_deref()
+                .unwrap()
+                .contains("conflicting cosmetic")
+        );
+    }
+
+    #[test]
+    fn codec_rejects_invalid_looks_and_ascent_rosters_but_retains_race_capacity() {
+        let mut packet = launch_packet(launch(1, 54));
+        if let LanPacket::Launch { appearances, .. } = &mut packet {
+            appearances[0].trail = 3;
+        }
+        assert_eq!(packet.encode(), Err(LanCodecError::InvalidValue));
+        if let LanPacket::Launch {
+            appearances,
+            config,
+            ascent,
+            ..
+        } = &mut packet
+        {
+            config.teams = 4;
+            config.members_per_team = 4;
+            *appearances = vec![CosmeticLook::default(); 16];
+            *ascent = false;
+        }
+        let bytes = packet.encode().unwrap();
+        assert_eq!(LanPacket::decode(&bytes).unwrap(), packet);
+        if let LanPacket::Launch { ascent, .. } = &mut packet {
+            *ascent = true;
+        }
+        assert_eq!(packet.encode(), Err(LanCodecError::InvalidValue));
     }
 
     fn preserve_candidate_transport(client: &mut LanClient, next_frame: u64) -> WireFrame {
@@ -1899,6 +2049,8 @@ mod tests {
             server_tick,
             phase,
             countdown_ticks: 0,
+            ascent: false,
+            fill_empty_seats: true,
             seats: Vec::new(),
         };
         client.receive(snapshot(20, WirePhase::Lobby));

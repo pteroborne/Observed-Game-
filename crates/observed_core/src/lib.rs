@@ -15,6 +15,7 @@
 
 pub use player_input::{PlayerId, PlayerIntent};
 
+pub mod cosmetics;
 pub mod prng;
 pub use prng::SplitMix;
 

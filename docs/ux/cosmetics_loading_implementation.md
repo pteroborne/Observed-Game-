@@ -6,6 +6,10 @@ in player language. This completes the representative-preview and wording work
 from UX-11/12 in the [end-to-end audit](end_to_end_audit.md), following the
 [recorded world replay replacement](replay_implementation.md).
 
+The subsequent [canonical cosmetics and roster compatibility slice](canonical_cosmetics_roster_implementation.md)
+applies the designs in canonical matches and replay, and adds LAN look metadata and
+Ascent body limits. The report below describes the earlier preview/loading slice.
+
 ## Cosmetics
 
 The screen opens on the equipped color. All ten items can be inspected with the

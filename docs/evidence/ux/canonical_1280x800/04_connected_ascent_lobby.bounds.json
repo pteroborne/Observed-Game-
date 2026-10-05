@@ -1,0 +1,46 @@
+[
+  {
+    "max": [
+      987.0,
+      535.0
+    ],
+    "min": [
+      827.0,
+      467.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.team\", key: 0 }"
+  },
+  {
+    "max": [
+      1067.0,
+      656.0
+    ],
+    "min": [
+      747.0,
+      610.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.leave\", key: 0 }"
+  },
+  {
+    "max": [
+      1067.0,
+      250.0
+    ],
+    "min": [
+      747.0,
+      204.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.ready\", key: 0 }"
+  },
+  {
+    "max": [
+      1067.0,
+      393.0
+    ],
+    "min": [
+      747.0,
+      325.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.architect\", key: 0 }"
+  }
+]

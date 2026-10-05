@@ -68,7 +68,10 @@ impl Plugin for ScreensPlugin {
             .add_systems(OnEnter(GameState::MainMenu), main_menu::setup)
             .add_systems(OnEnter(GameState::Play), play::setup_hub)
             .add_systems(OnEnter(GameState::PlayAdvanced), play::setup_advanced)
-            .add_systems(OnEnter(GameState::LanBrowser), lan::setup_browser)
+            .add_systems(
+                OnEnter(GameState::LanBrowser),
+                (crate::lan::prepare_cosmetic_identity, lan::setup_browser).chain(),
+            )
             .add_systems(
                 OnEnter(GameState::Loading),
                 (crate::hex_wfc::loading::start_loading, loading::setup).chain(),

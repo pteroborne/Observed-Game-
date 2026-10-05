@@ -10,6 +10,7 @@ mod ask;
 mod audio;
 mod capture;
 pub(in crate::hex_wfc) use capture::{HexWfcCapture, HexWfcCaptureMode};
+pub(crate) mod cosmetics;
 mod cues;
 mod doors;
 mod entities;
@@ -74,6 +75,7 @@ impl Plugin for HexWfcPlugin {
             .init_resource::<view::PrisonView>()
             .add_observer(overlay::activate)
             .add_plugins(ask::AskPlugin)
+            .add_systems(OnExit(GameState::HexWfc), cosmetics::cleanup)
             .add_systems(
                 OnEnter(GameState::HexWfc),
                 (
@@ -86,6 +88,7 @@ impl Plugin for HexWfcPlugin {
                     view::map::setup,
                     feedback::setup,
                     audio::setup,
+                    cosmetics::setup,
                     entities::setup,
                     equipment::setup,
                     lantern::setup,
@@ -196,7 +199,7 @@ impl Plugin for HexWfcPlugin {
                     feedback::sync,
                     feedback::animate,
                     audio::sync,
-                    (entities::sync, observer::sync).chain(),
+                    (entities::sync, observer::sync, cosmetics::sync).chain(),
                     // Grouped: hand equipment, posed after the hands have swayed.
                     (
                         equipment::sway,

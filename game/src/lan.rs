@@ -4,7 +4,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bevy::prelude::Resource;
-use observed_core::TeamId;
+use observed_core::{TeamId, cosmetics::CosmeticLook};
 use observed_net::lan::{DEFAULT_LAN_PORT, DiscoveryBrowser, LanClient};
 use observed_server::{ServerConfig, ServerHandle};
 
@@ -17,6 +17,7 @@ pub(crate) struct LanRuntime {
     pub listen_server: Option<ServerHandle>,
     pub direct_address: String,
     pub status: String,
+    pub appearance: CosmeticLook,
     pub ready: bool,
     /// The local seat holds its team's Architect desk, as the server's roster says.
     pub architect: bool,
@@ -36,6 +37,7 @@ impl LanRuntime {
             listen_server: None,
             direct_address,
             status: "Search the LAN or enter an address.".to_string(),
+            appearance: CosmeticLook::default(),
             ready: false,
             architect: false,
             consumed_match: None,
@@ -89,12 +91,13 @@ impl LanRuntime {
     pub fn join_server(&mut self, address: SocketAddr) -> Result<(), String> {
         let resume = self.client.as_ref().and_then(|client| client.token);
         self.client = Some(
-            LanClient::connect(
+            LanClient::connect_with_appearance(
                 address,
                 self.account,
                 self.requested_team,
                 resume,
                 crate::hex_wfc::sim::simulation_content_hash(),
+                self.appearance,
             )
             .map_err(|error| format!("connect {address}: {error}"))?,
         );
@@ -171,6 +174,13 @@ fn listen_server_config(setup: ValidatedPlaySetup) -> Result<ServerConfig, Strin
         arguments.push("--ascent".to_string());
     }
     ServerConfig::from_args(arguments)
+}
+
+pub(crate) fn prepare_cosmetic_identity(
+    career: bevy::prelude::Res<crate::flow::Career>,
+    mut lan: bevy::prelude::ResMut<LanRuntime>,
+) {
+    lan.appearance = career.profile.cosmetic_look();
 }
 
 #[cfg(test)]

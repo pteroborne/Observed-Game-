@@ -2,7 +2,6 @@
 use crate::view::theme::{BORDER, DIM, PANEL, TITLE, text};
 use bevy::prelude::*;
 use observed_progression::progression::{Profile, Slot, cosmetic};
-use observed_style::cosmetics::{Colorway, accent};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Look {
@@ -28,14 +27,6 @@ impl Look {
             }
         }
         self
-    }
-    fn colorway(self) -> Colorway {
-        match self.color {
-            1 => Colorway::Ember,
-            2 => Colorway::Cobalt,
-            3 => Colorway::Void,
-            _ => Colorway::Ash,
-        }
     }
 }
 
@@ -65,7 +56,7 @@ pub(crate) fn card(parent: &mut ChildSpawnerCommands, heading: &str, look: Look)
                 ..default()
             })
             .with_children(|canvas| {
-                let color = accent(look.colorway());
+                let color = observed_style::cosmetics::trim(look.color).base_color;
                 // A trail and badge have shape as well as hue; no trail draws nothing.
                 let segments = match look.trail {
                     5 => 3,
@@ -116,7 +107,14 @@ pub(crate) fn card(parent: &mut ChildSpawnerCommands, heading: &str, look: Look)
                                 justify_content: JustifyContent::Center,
                                 ..default()
                             },
-                            BackgroundColor(color),
+                            BackgroundColor(
+                                observed_style::observer::finish(
+                                    observed_style::observer::Part::Iris(
+                                        observed_style::MarkerRole::You,
+                                    ),
+                                )
+                                .base_color,
+                            ),
                         ))
                         .with_children(|iris| {
                             iris.spawn((

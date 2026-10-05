@@ -253,3 +253,10 @@ The subsequent [cosmetics comparison and loading clarity](cosmetics_loading_impl
 implements the representative designs and player-facing phase/recovery wording of
 UX-11/12. Applying cosmetics to canonical match presentation, roster compatibility,
 human input acceptance and connected graphical LAN acceptance remain open.
+
+The subsequent [canonical cosmetics and roster compatibility slice](canonical_cosmetics_roster_implementation.md)
+applies saved designs to canonical presentation/replay and LAN launch metadata, and
+enforces one-to-three Ascent Observer bodies while retaining Facility race capacity.
+The existing LAN desk-to-bot-body connection model remains explicit; an independent
+Architect connection, human/controller acceptance and two graphical LAN clients
+remain separate work.

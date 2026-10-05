@@ -205,7 +205,7 @@ pub(crate) fn activate_hub(
             save_play_setup(&setup);
         }
         PlayAction::SelectRules(rules) => {
-            setup.rules = rules;
+            setup.select_rules(rules);
             save_play_setup(&setup);
         }
         PlayAction::SelectSeat(seat) => {
@@ -247,7 +247,7 @@ pub(crate) fn activate_advanced(
             setup.preset = PlayPreset::Custom;
         }
         AdvancedAction::CycleTeamSize => {
-            let maximum = 16 / setup.teams.max(1);
+            let maximum = setup.maximum_team_size();
             setup.members_per_team = if setup.members_per_team >= maximum {
                 1
             } else {

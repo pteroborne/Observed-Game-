@@ -56,7 +56,7 @@ fn spectate_and_race_disable_roles_without_forgetting_the_playable_role() {
 fn summary_uses_final_local_roster_and_distinguishes_architect_from_bodies() {
     let mut setup = PlaySetupDraft {
         teams: 4,
-        members_per_team: 4,
+        members_per_team: 3,
         preset: PlayPreset::Custom,
         seat: PlaySeat::Architect,
         ..PlaySetupDraft::default()
@@ -66,11 +66,11 @@ fn summary_uses_final_local_roster_and_distinguishes_architect_from_bodies() {
     assert!(summary.contains("You: Architect desk"));
     assert!(summary.contains("1 bot Observer body"));
     setup.fill_empty_seats = true;
-    assert!(play_summary(&setup).contains("4 teams x 4 Observer bodies"));
+    assert!(play_summary(&setup).contains("4 teams x 3 Observer bodies"));
     setup.preset = PlayPreset::Spectate;
     let summary = play_summary(&setup);
     assert!(summary.contains("You: bot view"));
-    assert!(summary.contains("16 bot Observer bodies"));
+    assert!(summary.contains("12 bot Observer bodies"));
     assert!(!summary.contains("LAN still"));
 }
 
@@ -79,11 +79,11 @@ fn every_rules_role_preset_combination_has_an_explicit_launch_and_summary() {
     for rules in [PlayRules::Race, PlayRules::Ascent] {
         for seat in [PlaySeat::Observer, PlaySeat::Architect] {
             for preset in PlayPreset::ALL {
-                let setup = PlaySetupDraft {
-                    rules,
+                let mut setup = PlaySetupDraft {
                     seat,
                     ..PlaySetupDraft::for_preset(preset)
                 };
+                setup.select_rules(rules);
                 let summary = play_summary(&setup);
                 assert!(summary.contains(rules.label()));
                 assert!(summary.contains("Guardian on"));
@@ -128,7 +128,7 @@ fn launch_finalizes_the_visible_no_fill_roster_and_spectator_perspective() {
     app.insert_resource(PlaySetupDraft {
         preset: PlayPreset::Custom,
         teams: 4,
-        members_per_team: 4,
+        members_per_team: 3,
         guardian: false,
         seat: PlaySeat::Architect,
         ..PlaySetupDraft::default()

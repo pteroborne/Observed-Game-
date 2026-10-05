@@ -140,12 +140,13 @@ fn local_rematch_restores_launched_rules_seat_and_roster() {
         (PlayPreset::Spectate, PlaySeat::Observer),
     ] {
         let mut app = test_app();
-        let launched = PlaySetupDraft {
+        let mut launched = PlaySetupDraft {
             rules: PlayRules::Ascent,
             seat,
             guardian: false,
             ..PlaySetupDraft::for_preset(preset)
         };
+        launched.select_rules(PlayRules::Ascent);
         app.insert_resource(LaunchedPlaySetup(launched.clone()));
         app.insert_resource(PlaySetupDraft::for_preset(PlayPreset::Solo));
         app.insert_resource(crate::flow::ActiveMatchSeed(99));
@@ -452,7 +453,7 @@ fn four_seat_coop_replay_keeps_every_observer_identity_distinct() {
         std::time::Duration::ZERO,
     ));
     app.insert_resource(PlaySetupDraft {
-        rules: PlayRules::Ascent,
+        rules: PlayRules::Race,
         guardian: false,
         ..PlaySetupDraft::for_preset(PlayPreset::CoOp)
     });

@@ -133,7 +133,7 @@ pub(crate) fn setup(mut commands: Commands, career: Res<Career>) {
                 });
             });
             root.spawn(text(
-                "Representative designs | Match appearance is not applied yet",
+                "Your design applies at match start | Iris shows team role",
                 14.0,
                 DIM,
             ));

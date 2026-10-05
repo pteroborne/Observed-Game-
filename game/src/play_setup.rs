@@ -44,7 +44,7 @@ impl PlayPreset {
     pub const fn description(self) -> &'static str {
         match self {
             Self::Solo => "Explore alone with the Guardian active.",
-            Self::CoOp => "One four-seat team; empty seats are bot-filled.",
+            Self::CoOp => "One cooperative team; empty seats are bot-filled.",
             Self::TeamRace => "Two teams of two race through the same facility.",
             Self::Spectate => "Watch two bot teams solve and traverse the facility.",
             Self::Custom => "Choose teams, team size, bot fill, and Guardian pressure.",
@@ -170,12 +170,36 @@ impl PlaySetupDraft {
                 ..Self::for_preset(preset)
             };
         }
+        self.cap_observers();
+    }
+
+    pub fn select_rules(&mut self, rules: PlayRules) {
+        self.rules = rules;
+        if self.preset == PlayPreset::CoOp {
+            self.members_per_team = if rules == PlayRules::Ascent { 3 } else { 4 };
+        }
+        self.cap_observers();
+    }
+
+    pub fn maximum_team_size(&self) -> u8 {
+        let wire_limit = (MAX_ROSTER / self.teams.max(1)).max(1);
+        if self.rules == PlayRules::Ascent {
+            wire_limit.min(observed_match::ascent::MAX_OBSERVERS_PER_TEAM)
+        } else {
+            wire_limit
+        }
+    }
+
+    fn cap_observers(&mut self) {
+        if self.rules == PlayRules::Ascent {
+            self.members_per_team = self.members_per_team.min(self.maximum_team_size());
+        }
     }
 
     fn normalized_after_load(mut self) -> Self {
-        if self.preset == PlayPreset::Custom {
+        let mut normalized = if self.preset == PlayPreset::Custom {
             self.teams = self.teams.clamp(1, MAX_ROSTER);
-            let maximum_team_size = (MAX_ROSTER / self.teams).max(1);
+            let maximum_team_size = self.maximum_team_size();
             self.members_per_team = self.members_per_team.clamp(1, maximum_team_size);
             self
         } else {
@@ -184,7 +208,9 @@ impl PlaySetupDraft {
                 seat: self.seat,
                 ..Self::for_preset(self.preset)
             }
-        }
+        };
+        normalized.cap_observers();
+        normalized
     }
 
     pub fn validate(&self) -> Result<ValidatedPlaySetup, PlaySetupError> {
@@ -193,6 +219,11 @@ impl PlaySetupDraft {
         }
         if self.members_per_team == 0 {
             return Err(PlaySetupError::EmptyTeams);
+        }
+        if self.rules == PlayRules::Ascent
+            && self.members_per_team > observed_match::ascent::MAX_OBSERVERS_PER_TEAM
+        {
+            return Err(PlaySetupError::TooManyObservers);
         }
         let seats = self.teams.saturating_mul(self.members_per_team);
         if seats == 0 || seats > MAX_ROSTER {
@@ -351,6 +382,7 @@ impl ValidatedPlaySetup {
 pub enum PlaySetupError {
     NoTeams,
     EmptyTeams,
+    TooManyObservers,
     TooManySeats { requested: u8, maximum: u8 },
 }
 
@@ -359,6 +391,8 @@ impl std::fmt::Display for PlaySetupError {
         match self {
             Self::NoTeams => formatter.write_str("Choose at least one team."),
             Self::EmptyTeams => formatter.write_str("Choose at least one seat per team."),
+            Self::TooManyObservers => formatter
+                .write_str("Architect Ascent supports 1-3 Observers plus one Architect per team."),
             Self::TooManySeats { requested, maximum } => {
                 write!(
                     formatter,
@@ -478,6 +512,37 @@ mod tests {
         assert_eq!(restored.normalized_after_load(), saved);
         let old: PlaySetupDraft = serde_json::from_str(r#"{"preset":"solo"}"#).unwrap();
         assert_eq!(old.rules, PlayRules::Race);
+    }
+
+    #[test]
+    fn saved_ascent_rosters_migrate_without_reinterpreting_race_seats() {
+        for preset in [PlayPreset::CoOp, PlayPreset::Custom] {
+            let saved = PlaySetupDraft {
+                preset,
+                teams: 1,
+                members_per_team: 4,
+                fill_empty_seats: true,
+                rules: PlayRules::Ascent,
+                ..PlaySetupDraft::default()
+            };
+            assert_eq!(saved.validate(), Err(PlaySetupError::TooManyObservers));
+            let migrated = saved.clone().normalized_after_load();
+            assert_eq!(migrated.members_per_team, 3);
+            assert!(migrated.validate().is_ok());
+            let race = PlaySetupDraft {
+                rules: PlayRules::Race,
+                ..saved
+            }
+            .normalized_after_load();
+            assert_eq!(race.members_per_team, 4);
+        }
+        let mut setup = PlaySetupDraft::default();
+        setup.select_preset(PlayPreset::CoOp);
+        assert_eq!(setup.members_per_team, 3);
+        setup.select_rules(PlayRules::Race);
+        assert_eq!(setup.members_per_team, 4);
+        setup.select_rules(PlayRules::Ascent);
+        assert_eq!(setup.members_per_team, 3);
     }
 
     #[test]

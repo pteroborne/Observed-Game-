@@ -1,11 +1,12 @@
 # LAN integration
 
-Observed 2 LAN play is server authoritative and deterministic. A headless dedicated
-server or an in-game listen host owns one four-seat match: Team 1 is P0/P1 and Team 2
-is P2/P3. Humans may request either team while a bot seat is free; otherwise joins are
-balanced. Bots fill every unoccupied seat. A team finishes only after both members
-escape, and teammates share one survivor-map ledger while rival knowledge remains
-private.
+Observed 2 LAN play is server authoritative and deterministic. Dedicated and listen
+hosts configure teams and Observer/body seats, with up to sixteen connection seats.
+Facility race defaults to two teams of two and retains four-body co-op. Architect
+Ascent supports one-to-three Observer bodies per team plus a non-embodied rules
+Architect. Humans may request teams with free seats; unoccupied seats are bot-filled
+unless the host requires a full human roster. Teammates share one survivor-map
+ledger while rival knowledge remains private.
 
 ## Run
 
@@ -31,12 +32,16 @@ from the launch alone (`observed_match::ascent::facility::architect_seats_where`
 bot everywhere else.
 
 **The desk.** In the lobby, *Architect: ON* claims your team's Architect desk (one a team;
-the roster marks it ARCHITECT). At launch you sit at the desk and a bot walks your body.
+the roster marks it ARCHITECT + BOT BODY). At launch you sit at the desk and a bot
+walks your body. A teammate's claim disables a competing claim. Facility race has no
+Architect claim. The connection quota remains the body quota: claiming the desk
+does not add an independently connectable human Architect. A three-body team with
+a human Architect has room for two human Observers and one bot Observer.
 
-**Seat commands** (LAN protocol 5, `observed_net::lan::WireSeatCommand`). Every body
+**Seat commands** (introduced in protocol 5; current LAN protocol 16, `observed_net::lan::WireSeatCommand`). Every body
 command carries its seat's say in the rules this tick, nothing on most: a card played, a
 requisition, an ask for help (T), an answer to one, and from a corrupted player at the
-Rogue board a directive to the major Guardians (protocol 11) or a sensor (protocol 12). The server puts each into the frame,
+Rogue board a card play, including its directive and sensor cards. The server puts each into the frame,
 and every peer maps it to a rules seat the same way (`seat_for`: the team's Architect seat
 for a human at the desk, the player's own otherwise) and applies it on the same tick, so
 the digest keeps them honest exactly as it does movement. A resync rebuilds the rules from
@@ -45,6 +50,16 @@ so a bundle never outgrows a datagram.
 
 Not yet over LAN: bot bodies' asks, because which bodies bots drive changes with who is
 connected, and every peer must agree.
+
+## Cosmetics and version compatibility
+
+Protocol 16 carries equipped color/trail/badge IDs in Hello and freezes a validated
+look per body in Launch. Gimbals, badges and trails use those choices; team/role
+irises remain readable. Every client and reconnect sees the same launch metadata;
+late joiners receive their chosen look on the next match. These are presentation
+facts and never affect input frames or simulation digests. Lobby snapshots also name
+the host's rules and bot-fill policy. Update hosts and clients together; protocol
+15 packets fail the version check. See the [implementation and evidence](ux/canonical_cosmetics_roster_implementation.md).
 
 ## Session lifecycle
 

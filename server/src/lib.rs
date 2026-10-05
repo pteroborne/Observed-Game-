@@ -10,7 +10,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use observed_content::ArchitectureRegister;
-use observed_core::{PlayerId, TeamId};
+use observed_core::{PlayerId, TeamId, cosmetics::CosmeticLook};
 use observed_facility::hex_wfc::HexWfcConfig;
 use observed_match::ascent::facility::AscentRules;
 use observed_match::ascent::session::{ASCENT_INPUT_VERSION, InputFrame};
@@ -141,7 +141,7 @@ impl ServerConfig {
 }
 
 pub fn help_text() -> &'static str {
-    "observed_server [--bind 0.0.0.0:47624] [--name TEXT] [--min-humans 1..16] [--teams 1..16] [--team-size 1..16] [--require-full-roster] [--seed INTEGER] [--tiles PATH] [--no-discovery]"
+    "observed_server [--bind 0.0.0.0:47624] [--name TEXT] [--ascent (1..3 Observers per team)] [--min-humans 1..16] [--teams 1..16] [--team-size 1..16] [--require-full-roster] [--seed INTEGER] [--tiles PATH] [--no-discovery]"
 }
 
 fn parse_seed(value: &str) -> Result<u64, String> {
@@ -164,6 +164,7 @@ fn default_tile_dir() -> PathBuf {
 #[derive(Clone, Debug)]
 struct ClientConnection {
     account: AccountId,
+    appearance: CosmeticLook,
     token: u64,
     player: PlayerId,
     address: SocketAddr,
@@ -186,6 +187,7 @@ pub struct AuthoritativeServer {
     /// The seats whose humans sit at their team's Architect desk this match, one bit a
     /// seat: their bodies walk by the bot, and their seat commands are the Architect's.
     launch_architects: u16,
+    launch_appearances: Vec<CosmeticLook>,
     bot_driver: HexBotDriver,
     launch_config: Option<HexMatchConfig>,
     launch_started: Option<u32>,
@@ -199,6 +201,14 @@ impl AuthoritativeServer {
         // The wire format used to require exactly 2v2, because a frame carried a
         // fixed four commands. It now carries a counted list, so the only limit
         // left is the cap the count byte and the datagram budget imply.
+        if config.ascent
+            && !(1..=observed_match::ascent::MAX_OBSERVERS_PER_TEAM)
+                .contains(&config.roster.members_per_team)
+        {
+            return Err(
+                "Architect Ascent requires 1-3 Observer bodies plus one Architect per team".into(),
+            );
+        }
         let roster = config.roster.clamped();
         if !roster.is_valid() {
             return Err(format!(
@@ -241,6 +251,7 @@ impl AuthoritativeServer {
             match_state: None,
             ascent: None,
             launch_architects: 0,
+            launch_appearances: Vec::new(),
             bot_driver: HexBotDriver::new(),
             launch_config: None,
             launch_started: None,
@@ -348,9 +359,10 @@ impl AuthoritativeServer {
                 resume_token,
                 input_version,
                 simulation_content_hash,
+                appearance,
             } => self.handle_hello(
                 address,
-                AccountId(account),
+                (AccountId(account), appearance),
                 requested_team,
                 resume_token,
                 input_version,
@@ -448,12 +460,13 @@ impl AuthoritativeServer {
     fn handle_hello(
         &mut self,
         address: SocketAddr,
-        account: AccountId,
+        identity: (AccountId, CosmeticLook),
         requested_team: Option<TeamId>,
         resume_token: Option<u64>,
         input_version: u16,
         simulation_content_hash: [u8; 32],
     ) {
+        let (account, appearance) = identity;
         if input_version != HEX_INPUT_VERSION {
             self.reject(address, "hex input version mismatch");
             return;
@@ -465,12 +478,18 @@ impl AuthoritativeServer {
         if let Some(token) = resume_token
             && let Some(existing) = self.clients.get(&token).cloned()
             && existing.account == account
-            && self.session.reconnect(account, self.server_tick).is_some()
+            && (self.session.reconnect(account, self.server_tick).is_some()
+                || self
+                    .session
+                    .seats
+                    .get(existing.player.index())
+                    .is_some_and(|seat| seat.connected_human() == Some(account)))
         {
             let phase = wire_phase(self.session.phase);
             let live_tick = self.match_state.as_ref().map_or(0, |game| game.tick);
             if let Some(client) = self.clients.get_mut(&token) {
                 client.address = address;
+                client.appearance = appearance;
                 client.last_seen = Instant::now();
                 client.synchronizing = matches!(self.session.phase, LanPhase::InMatch);
                 client.ack_through = 0;
@@ -513,6 +532,7 @@ impl AuthoritativeServer {
             token,
             ClientConnection {
                 account,
+                appearance,
                 token,
                 player,
                 address,
@@ -541,6 +561,21 @@ impl AuthoritativeServer {
         // Every peer builds the same rules from the same launch: an Architect a team, a
         // human's where a connected human claimed the desk, a bot's everywhere else.
         let mut game = game;
+        self.launch_appearances = self
+            .session
+            .seats
+            .iter()
+            .map(|seat| {
+                seat.connected_human()
+                    .and_then(|account| {
+                        self.clients
+                            .values()
+                            .find(|client| client.account == account)
+                            .map(|client| client.appearance)
+                    })
+                    .unwrap_or_default()
+            })
+            .collect();
         self.launch_architects = if self.config.ascent {
             self.session
                 .seats
@@ -588,6 +623,7 @@ impl AuthoritativeServer {
             simulation_content_hash: self.content.simulation_content_hash(),
             ascent: self.ascent.is_some(),
             architects: self.launch_architects,
+            appearances: self.launch_appearances.clone(),
         });
         Ok(())
     }
@@ -733,6 +769,7 @@ impl AuthoritativeServer {
                 simulation_content_hash: self.content.simulation_content_hash(),
                 ascent: self.ascent.is_some(),
                 architects: self.launch_architects,
+                appearances: self.launch_appearances.clone(),
             },
         );
     }
@@ -856,6 +893,8 @@ impl AuthoritativeServer {
             server_tick: self.server_tick,
             phase: wire_phase(self.session.phase),
             countdown_ticks,
+            ascent: self.config.ascent,
+            fill_empty_seats: self.config.fill_empty_seats,
             seats,
         });
     }
@@ -1409,6 +1448,103 @@ mod tests {
         );
     }
 
+    #[test]
+    fn ascent_rejects_four_observers_before_loading_content() {
+        let config = ServerConfig {
+            ascent: true,
+            roster: LanRoster::co_op(4),
+            tile_dir: PathBuf::from("not-a-catalog"),
+            ..ServerConfig::default()
+        };
+        let error = AuthoritativeServer::bind(config)
+            .err()
+            .expect("four Observers must be rejected");
+        assert!(error.contains("1-3 Observer"));
+    }
+
+    #[test]
+    fn three_observer_lan_launch_freezes_each_look_across_reconnect() {
+        let config = ServerConfig {
+            bind: "127.0.0.1:0".parse().unwrap(),
+            discovery: false,
+            ascent: true,
+            roster: LanRoster::co_op(3),
+            base_seed: 0xF011_FAC1_1177,
+            min_humans: 2,
+            ..ServerConfig::default()
+        };
+        let mut server = AuthoritativeServer::bind(config).expect("canonical server");
+        let address = server.local_addr().unwrap();
+        let hash = server.content.simulation_content_hash();
+        let amber = CosmeticLook {
+            color: 1,
+            trail: 5,
+            badge: 8,
+        };
+        let cobalt = CosmeticLook {
+            color: 2,
+            trail: 6,
+            badge: 9,
+        };
+        let mut first =
+            LanClient::connect_with_appearance(address, 901, None, None, hash, amber).unwrap();
+        let mut second =
+            LanClient::connect_with_appearance(address, 902, None, None, hash, cobalt).unwrap();
+        drive_pair_until(&mut server, &mut first, &mut second, |a, b| {
+            a.token.is_some() && b.token.is_some()
+        });
+        first.claim_architect(true).unwrap();
+        first.set_ready(true).unwrap();
+        second.set_ready(true).unwrap();
+        drive_pair_until(&mut server, &mut first, &mut second, |a, b| {
+            a.launch.is_some() && b.launch.is_some()
+        });
+        let a = first.player.unwrap();
+        let b = second.player.unwrap();
+        assert_eq!(first.appearances[a.index()], amber);
+        assert_eq!(first.appearances[b.index()], cobalt);
+        assert_eq!(first.appearances, second.appearances);
+        assert_eq!(first.appearances.len(), 3);
+        assert!(first.launch.unwrap().is_architect(a));
+        assert_eq!(
+            server.match_state().unwrap().players.len(),
+            3,
+            "the Architect adds no fourth body"
+        );
+        assert_eq!(server.ascent.as_ref().unwrap().rules().observers.len(), 3);
+        let lobby = first.lobby.as_ref().unwrap();
+        assert!(lobby.ascent && lobby.fill_empty_seats);
+        let token = first.token.unwrap();
+        drop(first);
+        server.clients.get_mut(&token).unwrap().last_seen = Instant::now() - Duration::from_secs(3);
+        server.disconnect_timed_out_clients();
+        let mut resumed =
+            LanClient::connect_with_appearance(address, 901, None, Some(token), hash, cobalt)
+                .unwrap();
+        drive_pair_until(&mut server, &mut resumed, &mut second, |a, _| {
+            a.launch.is_some()
+        });
+        assert_eq!(
+            resumed.appearances[a.index()],
+            amber,
+            "reconnect cannot rewrite this launch's look"
+        );
+        assert_eq!(
+            server.clients[&token].appearance, cobalt,
+            "new choice is retained for the next match"
+        );
+        resumed
+            .mark_launch_ready(resumed.launch.unwrap().match_number)
+            .unwrap();
+        second
+            .mark_launch_ready(second.launch.unwrap().match_number)
+            .unwrap();
+        drive_pair_until(&mut server, &mut resumed, &mut second, |a, b| {
+            a.launch_has_started(a.launch.unwrap().match_number)
+                && b.launch_has_started(b.launch.unwrap().match_number)
+        });
+    }
+
     fn drive_until(
         server: &mut AuthoritativeServer,
         client: &mut LanClient,
@@ -1440,6 +1576,15 @@ mod tests {
             }
             thread::yield_now();
         }
-        panic!("loopback pair condition was not reached");
+        panic!(
+            "loopback pair condition was not reached: server={:?}, first=({:?}, {:?}, {:?}), second=({:?}, {:?}, {:?})",
+            server.session.phase,
+            first.token,
+            first.launch,
+            first.rejection,
+            second.token,
+            second.launch,
+            second.rejection
+        );
     }
 }

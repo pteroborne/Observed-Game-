@@ -1,0 +1,156 @@
+[
+  {
+    "max": [
+      1187.0,
+      647.0
+    ],
+    "min": [
+      963.0,
+      601.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.continue\", key: 0 }"
+  },
+  {
+    "max": [
+      955.0,
+      647.0
+    ],
+    "min": [
+      731.0,
+      601.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.back\", key: 0 }"
+  },
+  {
+    "max": [
+      1187.0,
+      593.0
+    ],
+    "min": [
+      963.0,
+      547.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.speed\", key: 0 }"
+  },
+  {
+    "max": [
+      955.0,
+      593.0
+    ],
+    "min": [
+      731.0,
+      547.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.floor\", key: 0 }"
+  },
+  {
+    "max": [
+      1187.0,
+      539.0
+    ],
+    "min": [
+      963.0,
+      493.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.rotate\", key: 0 }"
+  },
+  {
+    "max": [
+      955.0,
+      539.0
+    ],
+    "min": [
+      731.0,
+      493.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.camera\", key: 0 }"
+  },
+  {
+    "max": [
+      1187.0,
+      485.0
+    ],
+    "min": [
+      963.0,
+      439.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.next_event\", key: 0 }"
+  },
+  {
+    "max": [
+      955.0,
+      485.0
+    ],
+    "min": [
+      731.0,
+      439.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.previous_event\", key: 0 }"
+  },
+  {
+    "max": [
+      1187.0,
+      431.0
+    ],
+    "min": [
+      963.0,
+      385.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.next_actor\", key: 0 }"
+  },
+  {
+    "max": [
+      955.0,
+      431.0
+    ],
+    "min": [
+      731.0,
+      385.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.jump_forward\", key: 0 }"
+  },
+  {
+    "max": [
+      1187.0,
+      377.0
+    ],
+    "min": [
+      963.0,
+      331.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.jump_back\", key: 0 }"
+  },
+  {
+    "max": [
+      955.0,
+      377.0
+    ],
+    "min": [
+      731.0,
+      331.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.step_forward\", key: 0 }"
+  },
+  {
+    "max": [
+      1187.0,
+      323.0
+    ],
+    "min": [
+      963.0,
+      277.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.step_back\", key: 0 }"
+  },
+  {
+    "max": [
+      955.0,
+      323.0
+    ],
+    "min": [
+      731.0,
+      277.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.play_pause\", key: 0 }"
+  }
+]

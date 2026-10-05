@@ -1,0 +1,13 @@
+cargo fmt --all: PASS
+cargo dev-clippy: PASS; no warnings
+cargo dev-test: PASS; 2716 passed, 0 failed, 45 existing ignored
+observed_game: 581 passed, 0 failed, 6 existing ignored
+native dynamic build: PASS
+9 native 1280x800 screens: PASS; manually reviewed
+control bounds and non-overlap; text viewport bounds with half-pixel tolerance: PASS
+canonical materials preserve role iris; frozen live/replay metadata, trails and cleanup/reentry: PASS
+real UDP Ascent launch, claimed desk, frozen looks across reconnect and preparation barrier: PASS
+Ascent 1-3-body migration/validation and retained Facility race capacity: PASS
+independently connectable Architect outside body quota: FOLLOW-UP
+human/controller, two connected graphical LAN clients and physical LAN/firewall: OPEN
+known extended asserting hex_full_match_soak: unresolved; dev-test-all not rerun/claimed green

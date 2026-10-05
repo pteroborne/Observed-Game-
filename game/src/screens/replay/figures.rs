@@ -57,6 +57,11 @@ pub(super) fn draw(
             following.and_then(|f| f.bodies.iter().find(|b| b.player == actor.player)),
             fraction,
         );
+        let look = tape
+            .cosmetics
+            .get(&actor.player)
+            .copied()
+            .unwrap_or_default();
         let gaze = observed_observer::form::Gaze {
             yaw: actor.yaw,
             pitch: actor.pitch,
@@ -81,16 +86,24 @@ pub(super) fn draw(
             } else {
                 observed_style::MarkerRole::Rival
             };
-            let finish = observed_style::observer::finish(match part.look {
-                Look::Globe => Part::Globe,
-                Look::Trim => Part::Trim,
-                Look::Iris | Look::Haze => Part::Iris(role),
-                Look::Pupil => Part::Pupil,
-            });
+            let finish = if part.look == Look::Trim {
+                observed_style::cosmetics::trim(look.color)
+            } else {
+                observed_style::observer::finish(match part.look {
+                    Look::Globe => Part::Globe,
+                    Look::Trim => Part::Trim,
+                    Look::Iris | Look::Haze => Part::Iris(role),
+                    Look::Pupil => Part::Pupil,
+                })
+            };
             let material = figure_material(
                 cache,
                 materials,
-                40 + role as u8 * 5 + part.look as u8,
+                if part.look == Look::Trim {
+                    100 + look.color as u8
+                } else {
+                    40 + role as u8 * 5 + part.look as u8
+                },
                 finish.base_color,
                 finish.emissive,
             );
@@ -102,6 +115,14 @@ pub(super) fn draw(
             transform.translation += at;
             spawn_figure(commands, mesh, material, transform);
         }
+        draw_cosmetics(
+            commands,
+            cache,
+            meshes,
+            materials,
+            (tape, frame, actor),
+            (at, look, eye_view),
+        );
     }
     if !prison {
         for guardian in &frame.guardians {
@@ -343,4 +364,73 @@ fn beacon(
             Transform::from_translation(at).with_scale(size),
         ))
         .id()
+}
+
+fn draw_cosmetics(
+    commands: &mut Commands,
+    cache: &mut ReplayScene,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    recording: (&ReplayTape, &ReplaySceneFrame, &ReplayBody),
+    placement: (Vec3, observed_core::cosmetics::CosmeticLook, bool),
+) {
+    use crate::hex_wfc::cosmetics::{badge_parts, remember, trail_count, trail_scale};
+    let (tape, frame, actor) = recording;
+    let (at, look, eye_view) = placement;
+    let finish = observed_style::cosmetics::trim(look.color);
+    let material = figure_material(
+        cache,
+        materials,
+        140 + look.color as u8,
+        finish.base_color,
+        finish.emissive,
+    );
+    let cube = cache
+        .figure_meshes
+        .entry((4, 0))
+        .or_insert_with(|| meshes.add(Cuboid::new(1.0, 1.0, 1.0)))
+        .clone();
+    for mut transform in badge_parts(look) {
+        if !eye_view {
+            transform.translation *= 3.0;
+            transform.scale *= 3.0;
+        }
+        transform.translation += at;
+        spawn_figure(commands, cube.clone(), material.clone(), transform);
+    }
+    if trail_count(look) == 0 {
+        return;
+    }
+    let sphere = cache
+        .figure_meshes
+        .entry((4, 1))
+        .or_insert_with(|| meshes.add(Sphere::new(1.0)))
+        .clone();
+    let recent: Vec<_> = tape
+        .scene_frames
+        .iter()
+        .rev()
+        .filter(|f| f.tick <= frame.tick)
+        .take(8)
+        .collect();
+    let mut history = std::collections::VecDeque::new();
+    for sample in recent.iter().rev() {
+        if let Some(body) = sample
+            .bodies
+            .iter()
+            .find(|b| b.player == actor.player && b.place == actor.place)
+        {
+            remember(&mut history, body.position);
+        } else {
+            history.clear();
+        }
+    }
+    remember(&mut history, at);
+    for (index, point) in history.iter().skip(1).take(trail_count(look)).enumerate() {
+        let mut transform = Transform::from_translation(
+            *point + Vec3::Y * (observed_observer::form::EYE_RISE - 0.35),
+        );
+        transform.scale = trail_scale(look, index) * if eye_view { 1.0 } else { 3.0 };
+        spawn_figure(commands, sphere.clone(), material.clone(), transform);
+    }
 }

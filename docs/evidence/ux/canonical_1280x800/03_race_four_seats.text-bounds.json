@@ -1,0 +1,123 @@
+[
+  {
+    "max": [
+      1090.0,
+      713.0
+    ],
+    "min": [
+      191.0,
+      696.0
+    ],
+    "text": "Activate a row to cycle it. Local no-fill uses one Observer body; an Architect's body seats are bot-driven."
+  },
+  {
+    "max": [
+      982.0,
+      166.0
+    ],
+    "min": [
+      298.0,
+      148.0
+    ],
+    "text": "Choose the roster for local play or LAN hosting. Maximum 16 Observer bodies."
+  },
+  {
+    "max": [
+      817.0,
+      138.0
+    ],
+    "min": [
+      464.0,
+      87.0
+    ],
+    "text": "ADVANCED SETUP"
+  },
+  {
+    "max": [
+      722.0,
+      573.0
+    ],
+    "min": [
+      559.0,
+      551.0
+    ],
+    "text": "Back to presets"
+  },
+  {
+    "max": [
+      727.0,
+      507.0
+    ],
+    "min": [
+      554.0,
+      485.0
+    ],
+    "text": "Start custom run"
+  },
+  {
+    "max": [
+      754.0,
+      441.0
+    ],
+    "min": [
+      527.0,
+      419.0
+    ],
+    "text": "Guardian pressure: ON"
+  },
+  {
+    "max": [
+      802.0,
+      375.0
+    ],
+    "min": [
+      478.0,
+      353.0
+    ],
+    "text": "Fill empty seats with bots: ON"
+  },
+  {
+    "max": [
+      786.0,
+      309.0
+    ],
+    "min": [
+      494.0,
+      287.0
+    ],
+    "text": "Observer bodies per team: 4"
+  },
+  {
+    "max": [
+      684.0,
+      243.0
+    ],
+    "min": [
+      597.0,
+      221.0
+    ],
+    "text": "Teams: 1"
+  },
+  {
+    "max": [
+      460.0,
+      246.0
+    ],
+    "min": [
+      446.0,
+      219.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      1100.0,
+      686.0
+    ],
+    "min": [
+      180.0,
+      628.0
+    ],
+    "text": "Facility race | Start facility race\nLocal: 1 team(s) x 4 Observer bodies\nLAN host: 1 team(s) x 4 bodies | empty seats bot-filled"
+  }
+]

@@ -1,0 +1,255 @@
+[
+  {
+    "max": [
+      934.0,
+      766.0
+    ],
+    "min": [
+      346.0,
+      749.0
+    ],
+    "text": "Arrow keys / D-pad / stick / pointer | Enter / A select | Esc / B back"
+  },
+  {
+    "max": [
+      1085.0,
+      480.0
+    ],
+    "min": [
+      699.0,
+      446.0
+    ],
+    "text": "LAN: joining uses the host's rules. Claim your team and Architect desk in the lobby."
+  },
+  {
+    "max": [
+      1085.0,
+      165.0
+    ],
+    "min": [
+      699.0,
+      148.0
+    ],
+    "text": "YOUR RUN"
+  },
+  {
+    "max": [
+      621.0,
+      412.0
+    ],
+    "min": [
+      195.0,
+      395.0
+    ],
+    "text": "PLAY WITH"
+  },
+  {
+    "max": [
+      621.0,
+      272.0
+    ],
+    "min": [
+      195.0,
+      255.0
+    ],
+    "text": "YOUR ROLE IN ASCENT"
+  },
+  {
+    "max": [
+      621.0,
+      165.0
+    ],
+    "min": [
+      195.0,
+      148.0
+    ],
+    "text": "RULES"
+  },
+  {
+    "max": [
+      852.0,
+      111.0
+    ],
+    "min": [
+      429.0,
+      91.0
+    ],
+    "text": "Choose your role, then the company you keep."
+  },
+  {
+    "max": [
+      846.0,
+      81.0
+    ],
+    "min": [
+      435.0,
+      35.0
+    ],
+    "text": "ENTER THE FACILITY"
+  },
+  {
+    "max": [
+      984.0,
+      720.0
+    ],
+    "min": [
+      800.0,
+      698.0
+    ],
+    "text": "Start as Observer"
+  },
+  {
+    "max": [
+      430.0,
+      720.0
+    ],
+    "min": [
+      386.0,
+      698.0
+    ],
+    "text": "Back"
+  },
+  {
+    "max": [
+      559.0,
+      623.0
+    ],
+    "min": [
+      472.0,
+      601.0
+    ],
+    "text": "LAN play"
+  },
+  {
+    "max": [
+      375.0,
+      623.0
+    ],
+    "min": [
+      223.0,
+      601.0
+    ],
+    "text": "Advanced setup"
+  },
+  {
+    "max": [
+      580.0,
+      548.0
+    ],
+    "min": [
+      450.0,
+      526.0
+    ],
+    "text": "[ ] Spectate"
+  },
+  {
+    "max": [
+      383.0,
+      559.0
+    ],
+    "min": [
+      215.0,
+      515.0
+    ],
+    "text": "[ ] Team competition"
+  },
+  {
+    "max": [
+      564.0,
+      467.0
+    ],
+    "min": [
+      466.0,
+      445.0
+    ],
+    "text": "[*] Co-op"
+  },
+  {
+    "max": [
+      343.0,
+      467.0
+    ],
+    "min": [
+      256.0,
+      445.0
+    ],
+    "text": "[ ] Solo"
+  },
+  {
+    "max": [
+      591.0,
+      343.0
+    ],
+    "min": [
+      439.0,
+      299.0
+    ],
+    "text": "[ ] Architect\nBuild from map"
+  },
+  {
+    "max": [
+      364.0,
+      343.0
+    ],
+    "min": [
+      234.0,
+      299.0
+    ],
+    "text": "[*] Observer\nTraverse"
+  },
+  {
+    "max": [
+      599.0,
+      232.0
+    ],
+    "min": [
+      431.0,
+      188.0
+    ],
+    "text": "[ ] Facility race"
+  },
+  {
+    "max": [
+      353.0,
+      221.0
+    ],
+    "min": [
+      245.0,
+      199.0
+    ],
+    "text": "[*] Ascent"
+  },
+  {
+    "max": [
+      225.0,
+      626.0
+    ],
+    "min": [
+      211.0,
+      599.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      1083.0,
+      438.0
+    ],
+    "min": [
+      699.0,
+      173.0
+    ],
+    "text": "Architect Ascent | Co-op\n\n1 team x 3 Observer bodies\nYou: Observer body\n2 bot Observer bodies\nArchitects: 1 separate bot desk\n\nBring all your Observers to the summit.\nCaught: prison. Falls: corruption.\nGuardian on"
+  },
+  {
+    "max": [
+      621.0,
+      387.0
+    ],
+    "min": [
+      195.0,
+      370.0
+    ],
+    "text": "Observer: traverse. Architect: build from the map."
+  }
+]

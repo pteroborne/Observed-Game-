@@ -82,9 +82,11 @@ pub(crate) fn setup_lobby(mut commands: Commands) {
                     roster.spawn((
                         LanLobbyRosterText,
                         text("Waiting for server roster...", 15.0, DIM),
+                        Node { width: percent(100), ..default() },
                     ));
                     roster.spawn(text(
-                        "Seat legend: HUMAN | BOT | RESERVED | PREPARING | EMPTY | ARCHITECT at the desk",
+                        "HUMAN | BOT | RESERVED | PREPARING | EMPTY
+ARCHITECT: your Observer body is bot-driven",
                         12.0,
                         ACCENT,
                     ));
@@ -138,7 +140,7 @@ pub(crate) fn setup_lobby(mut commands: Commands) {
                 });
             });
             root.spawn(text(
-                "Choose any listed team | every teammate must escape | Esc / B leaves",
+                "Choose your team and role | Ready together | Esc / B leaves",
                 14.0,
                 ACCENT,
             ));
@@ -220,7 +222,27 @@ pub(crate) fn lobby_update_labels(
         set_widget_availability(&mut commands, entity, 0, connected, label);
     }
     if let Ok(entity) = architect_widgets.single() {
-        let label = if connected {
+        let ascent = lan
+            .client
+            .as_ref()
+            .and_then(|c| c.lobby.as_ref())
+            .is_some_and(|l| l.ascent);
+        let claimed_elsewhere = lan
+            .client
+            .as_ref()
+            .and_then(|c| c.lobby.as_ref().map(|l| (c, l)))
+            .is_some_and(|(client, lobby)| {
+                lobby.seats.iter().any(|seat| {
+                    Some(seat.team) == client.team
+                        && seat.architect
+                        && Some(seat.player) != client.player
+                })
+            });
+        let label = if connected && ascent && claimed_elsewhere {
+            "Architect | teammate claimed".into()
+        } else if connected && !ascent {
+            "Architect | Ascent only".into()
+        } else if connected {
             format!(
                 "Architect: {} (Ascent)",
                 if lan.architect { "ON" } else { "OFF" }
@@ -228,7 +250,13 @@ pub(crate) fn lobby_update_labels(
         } else {
             "Architect | waiting for roster".to_string()
         };
-        set_widget_availability(&mut commands, entity, ARCHITECT_ORDER, connected, label);
+        set_widget_availability(
+            &mut commands,
+            entity,
+            ARCHITECT_ORDER,
+            connected && ascent && !claimed_elsewhere,
+            label,
+        );
     }
 
     let teams = lobby_teams(&lan);
@@ -278,6 +306,8 @@ pub(crate) fn lobby_roster_text(lan: &crate::lan::LanRuntime) -> String {
         lobby.countdown_ticks,
         &lobby.seats,
         client.player,
+        lobby.ascent,
+        lobby.fill_empty_seats,
     )
 }
 
@@ -286,6 +316,8 @@ fn format_roster(
     countdown: u16,
     seats: &[WireSeat],
     local_player: Option<PlayerId>,
+    ascent: bool,
+    fill_empty_seats: bool,
 ) -> String {
     let countdown = if countdown > 0 {
         format!(" | launch in {:.1}s", f32::from(countdown) / 60.0)
@@ -293,13 +325,31 @@ fn format_roster(
         String::new()
     };
     let teams = seats.iter().map(|seat| seat.team).collect::<BTreeSet<_>>();
-    let mut lines = vec![format!("{phase:?}{countdown} | {} seats", seats.len())];
+    let mut lines = vec![
+        format!(
+            "{} | {} {}",
+            if ascent {
+                "Architect Ascent"
+            } else {
+                "Facility race"
+            },
+            seats.len(),
+            if ascent { "Observer bodies" } else { "seats" }
+        ),
+        format!(
+            "{phase:?}{countdown} | {}",
+            if fill_empty_seats {
+                "empty seats: bots"
+            } else {
+                "all connection seats need humans"
+            }
+        ),
+    ];
     for team in teams {
         let team_seats = seats
             .iter()
             .filter(|seat| seat.team == team)
             .collect::<Vec<_>>();
-        let mut entries = Vec::with_capacity(team_seats.len());
         for seat in team_seats {
             let occupant = match seat.occupant {
                 WireSeatOccupant::Bot => "BOT",
@@ -314,18 +364,17 @@ fn format_roster(
                 ""
             };
             let ready = if seat.ready { " | READY" } else { "" };
-            let desk = if seat.architect { " | ARCHITECT" } else { "" };
-            entries.push(format!(
-                "{}{you}: {occupant}{ready}{desk}",
+            let desk = if seat.architect {
+                " | ARCHITECT + BOT BODY"
+            } else {
+                ""
+            };
+            lines.push(format!(
+                "{} | {}{you}: {occupant}{ready}{desk}",
+                team.label().to_uppercase(),
                 seat.player.label()
             ));
         }
-        lines.push(format!(
-            "{} | {} seats | {}",
-            team.label().to_uppercase(),
-            entries.len(),
-            entries.join(" | ")
-        ));
     }
     lines.join("\n")
 }
@@ -387,9 +436,21 @@ mod tests {
 
     #[test]
     fn four_by_four_roster_renders_every_team_and_all_sixteen_seats() {
-        let text = format_roster(WirePhase::Lobby, 0, &four_by_four(), Some(PlayerId(0)));
+        let text = format_roster(
+            WirePhase::Lobby,
+            0,
+            &four_by_four(),
+            Some(PlayerId(0)),
+            false,
+            true,
+        );
         for team in 1..=4 {
-            assert!(text.contains(&format!("TEAM {team} | 4 seats")));
+            assert_eq!(
+                text.lines()
+                    .filter(|line| line.starts_with(&format!("TEAM {team} |")))
+                    .count(),
+                4
+            );
         }
         for player in 1..=16 {
             assert!(text.contains(&format!("P{player}")));
@@ -416,7 +477,7 @@ mod tests {
                 architect: false,
             },
         ];
-        let text = format_roster(WirePhase::Countdown, 120, &seats, None);
+        let text = format_roster(WirePhase::Countdown, 120, &seats, None, false, true);
         assert!(text.find("TEAM 2").expect("team 2") < text.find("TEAM 4").expect("team 4"));
         assert!(text.contains("launch in 2.0s"));
     }
@@ -430,7 +491,7 @@ mod tests {
             ready: false,
             architect: false,
         }];
-        let text = format_roster(WirePhase::Lobby, 0, &seats, None);
+        let text = format_roster(WirePhase::Lobby, 0, &seats, None, false, false);
         assert!(text.contains(": EMPTY"));
         assert!(!text.contains(": BOT"));
     }
