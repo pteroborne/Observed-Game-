@@ -238,6 +238,8 @@ its completed checks are evidence from the earlier revision, not current accepta
 This audit and its original captures remain historical evidence. The
 [menu and role-entry implementation](menu_implementation.md) records Slices 1 and
 2's menu/help work. The [in-match guidance and map implementation](in_match_implementation.md)
-records the Observer/spectator and map portion of Slice 3. Connected LAN acceptance,
-roster compatibility and Slice 4 remain outstanding; see those records for the
-exact automated and human validation boundaries.
+records the Observer/spectator and map portion of Slice 3. The
+[completion implementation](completion_implementation.md) records Slice 4's
+mode/faction-aware Results and replay/rematch context. Connected LAN acceptance,
+roster compatibility, cosmetics previews and loading wording remain outstanding;
+see those records for the exact automated and human validation boundaries.

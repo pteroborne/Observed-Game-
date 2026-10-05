@@ -130,3 +130,12 @@ those notes. Three JPEGs record the complete stage.
 The managed worktree creation failed with no space on `/home`. The feature checkout
 was created using ordinary Git on BigFastDrive; Codex app attachment rejected it
 because it is not a managed checkout. The primary checkout was left unchanged.
+
+## Completion implementation evidence (2026-10-05)
+
+[Results and replay implementation](../../ux/completion_implementation.md) records
+this separate 18-screen native set. See [completion checks](completion_checks.txt),
+[manifest](completion_manifest.json) and [1280x800 captures](completion_1280x800/).
+Outcomes are synthetic fixtures over a prepared hex room trace; LAN captures stage
+client presence without a server handshake. They are layout/wording evidence,
+not a completed human match or connected multiplayer acceptance.

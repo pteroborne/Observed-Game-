@@ -1,0 +1,101 @@
+[
+  {
+    "max": [
+      933.0,
+      175.0
+    ],
+    "min": [
+      347.0,
+      155.0
+    ],
+    "text": "Architect Ascent | Spectator | Spectate | 2 teams x 2 | local"
+  },
+  {
+    "max": [
+      928.0,
+      145.0
+    ],
+    "min": [
+      352.0,
+      87.0
+    ],
+    "text": "OBSERVATION COMPLETE"
+  },
+  {
+    "max": [
+      689.0,
+      668.0
+    ],
+    "min": [
+      591.0,
+      646.0
+    ],
+    "text": "Main menu"
+  },
+  {
+    "max": [
+      705.0,
+      602.0
+    ],
+    "min": [
+      575.0,
+      580.0
+    ],
+    "text": "Watch replay"
+  },
+  {
+    "max": [
+      819.0,
+      536.0
+    ],
+    "min": [
+      462.0,
+      514.0
+    ],
+    "text": "Play again | same setup, new seed"
+  },
+  {
+    "max": [
+      460.0,
+      539.0
+    ],
+    "min": [
+      446.0,
+      512.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      428.0,
+      434.0
+    ],
+    "min": [
+      293.0,
+      414.0
+    ],
+    "text": "no new unlocks"
+  },
+  {
+    "max": [
+      564.0,
+      405.0
+    ],
+    "min": [
+      293.0,
+      383.0
+    ],
+    "text": "Level 0 | 50 XP | 1 match"
+  },
+  {
+    "max": [
+      987.0,
+      374.0
+    ],
+    "min": [
+      293.0,
+      210.0
+    ],
+    "text": "Rogue victory | no loyal Observer remains free\nEvery Observer was jailed or corrupted; no loyal Observer remained free.\nYou watched the bot teams; this is their outcome.\nObservers: 4 loyal (4 jailed) | 0 corrupted.\nRun 263960012067191 | 1 recorded moment.\nReplay is a room trace; cards, prison layouts and facility rewrites are not reconstructed."
+  }
+]

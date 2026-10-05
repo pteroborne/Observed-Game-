@@ -1,0 +1,101 @@
+[
+  {
+    "max": [
+      789.0,
+      186.0
+    ],
+    "min": [
+      491.0,
+      166.0
+    ],
+    "text": "Team race | 4 teams x 1 | local"
+  },
+  {
+    "max": [
+      741.0,
+      156.0
+    ],
+    "min": [
+      539.0,
+      98.0
+    ],
+    "text": "VICTORY"
+  },
+  {
+    "max": [
+      689.0,
+      658.0
+    ],
+    "min": [
+      591.0,
+      636.0
+    ],
+    "text": "Main menu"
+  },
+  {
+    "max": [
+      705.0,
+      592.0
+    ],
+    "min": [
+      575.0,
+      570.0
+    ],
+    "text": "Watch replay"
+  },
+  {
+    "max": [
+      819.0,
+      526.0
+    ],
+    "min": [
+      462.0,
+      504.0
+    ],
+    "text": "Play again | same setup, new seed"
+  },
+  {
+    "max": [
+      460.0,
+      529.0
+    ],
+    "min": [
+      446.0,
+      502.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      534.0,
+      424.0
+    ],
+    "min": [
+      293.0,
+      404.0
+    ],
+    "text": "unlocked: Spark, Champion"
+  },
+  {
+    "max": [
+      574.0,
+      395.0
+    ],
+    "min": [
+      293.0,
+      373.0
+    ],
+    "text": "Level 1 | 140 XP | 1 match"
+  },
+  {
+    "max": [
+      977.0,
+      364.0
+    ],
+    "min": [
+      293.0,
+      221.0
+    ],
+    "text": "You finished 1st; your team won the series.\nEscape order: You -> Team 2.\nThe collapse sealed 3 rooms: R0 -> R3 -> R7; 2 teams were absorbed.\nYour path crossed 5 rooms: R0 -> R3 -> R7 -> R11 -> R18.\nYou recovered 3/3 keystones and opened the exit.\nYou deployed the anchor once.\nRun 6600 | WFC Liminal Map V2 | 6 replay moments."
+  }
+]

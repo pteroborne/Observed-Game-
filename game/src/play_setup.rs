@@ -379,6 +379,11 @@ pub enum LaunchContext {
     Lan,
 }
 
+/// Frozen local launch choices. Results rematches restore these before Loading,
+/// rather than reading an editable draft or a role changed by corruption.
+#[derive(Resource, Clone, Debug)]
+pub(crate) struct LaunchedPlaySetup(pub(crate) PlaySetupDraft);
+
 /// Player-facing shape of the match that was actually launched.
 ///
 /// This is intentionally derived from the finalized launch request rather than the

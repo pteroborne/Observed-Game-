@@ -74,7 +74,11 @@ pub(crate) enum ReplayAction {
     Continue,
 }
 
-pub(crate) fn setup_replay(mut commands: Commands, tape: Option<Res<ReplayTape>>) {
+pub(crate) fn setup_replay(
+    mut commands: Commands,
+    tape: Option<Res<ReplayTape>>,
+    lan: Res<crate::lan::LanRuntime>,
+) {
     let focus = tape
         .as_ref()
         .map(|tape| tape.default_focus())
@@ -85,6 +89,17 @@ pub(crate) fn setup_replay(mut commands: Commands, tape: Option<Res<ReplayTape>>
         .spawn(screen_root(GameState::Replay))
         .with_children(|root| {
             root.spawn(text("REPLAY", 42.0, TITLE));
+            if let Some(facts) = tape.as_ref().and_then(|tape| tape.ascent_result) {
+                root.spawn(text(
+                    format!(
+                        "Architect Ascent | {} | {}",
+                        super::results::ascent_role_label(facts.role),
+                        super::results::ascent_outcome_label(facts)
+                    ),
+                    16.0,
+                    DIM,
+                ));
+            }
             root.spawn(Node {
                 width: px(MAP_W + DETAILS_W + BODY_GAP),
                 height: px(MAP_H),
@@ -156,13 +171,23 @@ pub(crate) fn setup_replay(mut commands: Commands, tape: Option<Res<ReplayTape>>
                             );
                             widgets::spawn_button(
                                 controls,
-                                WidgetSpec::enabled(CONTINUE, SCOPE, 7, "Continue to menu")
-                                    .with_size(CONTROL_W, 44.0),
+                                WidgetSpec::enabled(
+                                    CONTINUE,
+                                    SCOPE,
+                                    7,
+                                    if lan.client.is_some() {
+                                        "Return to lobby"
+                                    } else {
+                                        "Main menu"
+                                    },
+                                )
+                                .with_size(CONTROL_W, 44.0),
                                 ReplayAction::Continue,
                             );
                         });
                 });
             });
+            root.spawn(text("Map: numbered rooms | large marker = focus | small markers = other recorded actors", 14.0, DIM));
             root.spawn(text(
                 "Tab / arrows / D-pad move focus | Enter / A / pointer activate",
                 14.0,
@@ -213,6 +238,7 @@ pub(crate) fn activate(
     tape: Option<Res<ReplayTape>>,
     mut playback: Option<ResMut<ReplayPlayback>>,
     mut next: ResMut<NextState<GameState>>,
+    lan: Res<crate::lan::LanRuntime>,
 ) {
     if !activation_enabled(&activation, &disabled) {
         return;
@@ -253,12 +279,17 @@ pub(crate) fn activate(
             }
         }
         ReplayAction::Back => next.set(GameState::Results),
-        ReplayAction::Continue => next.set(GameState::MainMenu),
+        ReplayAction::Continue => next.set(if lan.client.is_some() {
+            GameState::Lobby
+        } else {
+            GameState::MainMenu
+        }),
     }
 }
 
 pub(crate) fn refresh_controls(
     playback: Res<ReplayPlayback>,
+    lan: Res<crate::lan::LanRuntime>,
     mut labels: Query<(&ReplayAction, &mut WidgetLabel), Without<bevy::ui::InteractionDisabled>>,
 ) {
     if !playback.is_changed() {
@@ -274,7 +305,12 @@ pub(crate) fn refresh_controls(
             ReplayAction::JumpForward => "Jump forward".to_string(),
             ReplayAction::NextActor => "Focus next actor".to_string(),
             ReplayAction::Back => "Back to results".to_string(),
-            ReplayAction::Continue => "Continue to main menu".to_string(),
+            ReplayAction::Continue => if lan.client.is_some() {
+                "Return to lobby"
+            } else {
+                "Main menu"
+            }
+            .to_string(),
         };
     }
 }
@@ -305,13 +341,56 @@ pub(crate) fn update_replay_info(
     };
     let focus = focused_pose(sample, playback.focus)
         .or_else(|| sample.actors.first())
-        .map(focus_line)
+        .map(|pose| focus_line(pose, &tape))
         .unwrap_or_else(|| "focus unavailable".to_string());
     let markers = recent_markers(tape.as_ref(), sample.index)
         .into_iter()
-        .map(|marker| format!("r{} {}", marker.live_round, marker.label))
+        .map(|marker| {
+            format!(
+                "{}{} {}",
+                if tape.ascent_result.is_some() {
+                    "t"
+                } else {
+                    "r"
+                },
+                marker.live_round,
+                if tape.ascent_result.is_some() && marker.label.chars().count() > 60 {
+                    format!("{}...", marker.label.chars().take(60).collect::<String>())
+                } else {
+                    marker.label.clone()
+                }
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
+    if tape.ascent_result.is_some() {
+        **text = format!(
+            "seed {} | {} | moment {} / {}\n\
+             tick {} | facility revision {}\n\
+             focus: {}\n\
+             Room trace only: card plays, prison layouts\n\
+             and facility rewrites are not reconstructed.\n\
+             recent physical events:\n{}",
+            tape.seed,
+            if playback.playing {
+                "playing"
+            } else {
+                "paused"
+            },
+            sample.index + 1,
+            tape.len(),
+            sample.live_round,
+            sample.series_round,
+            focus,
+            if markers.is_empty() {
+                "  none".to_string()
+            } else {
+                markers
+            }
+        );
+        // Facts are also rendered in the heading; this branch avoids race vocabulary.
+        return;
+    }
     let result = tape
         .result
         .as_ref()
@@ -370,8 +449,18 @@ pub(crate) fn draw_replay_map(
             let center = room_center(room, bounds);
             root.spawn((
                 ReplayMapElement,
-                replay_box(center, MAP_ROOM, MAP_ROOM, room_color(room)),
-                Text::new(format!("{}", room.id.0)),
+                replay_box(
+                    center,
+                    MAP_ROOM,
+                    MAP_ROOM,
+                    if tape.ascent_result.is_some() {
+                        PANEL
+                    } else {
+                        room_color(room)
+                    },
+                    true,
+                ),
+                Text::new(format!("R{}", room.id.0)),
                 TextFont {
                     font_size: FontSize::Px(10.0),
                     ..default()
@@ -395,13 +484,14 @@ pub(crate) fn draw_replay_map(
                     if is_focus { 18.0 } else { 11.0 },
                     if is_focus { 18.0 } else { 11.0 },
                     actor_color(pose.actor).with_alpha(if is_focus { 1.0 } else { 0.75 }),
+                    false,
                 ),
             ));
         }
     });
 }
 
-fn replay_box(center: Vec2, w: f32, h: f32, color: Color) -> impl Bundle {
+fn replay_box(center: Vec2, w: f32, h: f32, color: Color, outlined: bool) -> impl Bundle {
     (
         Node {
             position_type: PositionType::Absolute,
@@ -409,11 +499,13 @@ fn replay_box(center: Vec2, w: f32, h: f32, color: Color) -> impl Bundle {
             top: px(center.y - h * 0.5),
             width: px(w),
             height: px(h),
+            border: UiRect::all(px(if outlined { 1.0 } else { 0.0 })),
             align_items: AlignItems::Center,
             justify_content: JustifyContent::Center,
             ..default()
         },
         BackgroundColor(color),
+        BorderColor::all(BORDER),
     )
 }
 
@@ -421,15 +513,26 @@ fn focused_pose(sample: &ReplaySample, focus: ReplayActorId) -> Option<&ReplayAc
     sample.actors.iter().find(|pose| pose.actor == focus)
 }
 
-fn focus_line(pose: &ReplayActorPose) -> String {
+fn focus_line(pose: &ReplayActorPose, tape: &ReplayTape) -> String {
     let where_at = pose
         .place
         .map(|place| format!("{place:?}"))
         .or_else(|| pose.room.map(|room| format!("Room {}", room.0)))
-        .unwrap_or_else(|| "unknown".to_string());
+        .unwrap_or_else(|| {
+            match pose.status.as_str() {
+                "jailed" => "prison (not mapped)",
+                "Rogue" => "no Observer body",
+                _ => "unknown",
+            }
+            .to_string()
+        });
     format!(
         "{} | {} | {} | {}",
-        pose.actor.label(),
+        tape.actors
+            .iter()
+            .find(|actor| actor.id == pose.actor)
+            .map(|actor| actor.label.clone())
+            .unwrap_or_else(|| pose.actor.label()),
         where_at,
         pose.status,
         pose.task
@@ -441,7 +544,7 @@ fn recent_markers(tape: &ReplayTape, sample: usize) -> Vec<&crate::sim::replay::
         .iter()
         .filter(|marker| marker.sample <= sample)
         .rev()
-        .take(5)
+        .take(if tape.ascent_result.is_some() { 2 } else { 5 })
         .collect::<Vec<_>>()
         .into_iter()
         .rev()

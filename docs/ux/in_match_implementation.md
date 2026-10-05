@@ -106,3 +106,7 @@ role contention and roster compatibility remain in Slice 3. Mode/faction-aware
 results, replay/rematch context, cosmetics previews and loading wording remain in
 Slice 4; loading cancellation/retry also retains its hands-on gate. The known
 extended-suite `hex_full_match_soak` exception is not resolved by this change.
+
+The subsequent [completion implementation](completion_implementation.md) handles
+Slice 4's Results and replay/rematch portion. Its separate evidence and checks do
+not close the hands-on acceptance described above.

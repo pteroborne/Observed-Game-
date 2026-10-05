@@ -1,0 +1,101 @@
+[
+  {
+    "max": [
+      962.0,
+      165.0
+    ],
+    "min": [
+      318.0,
+      145.0
+    ],
+    "text": "Architect Ascent | Rogue operator | Team race | 2 teams x 2 | local"
+  },
+  {
+    "max": [
+      770.0,
+      135.0
+    ],
+    "min": [
+      510.0,
+      77.0
+    ],
+    "text": "RUN ENDED"
+  },
+  {
+    "max": [
+      689.0,
+      678.0
+    ],
+    "min": [
+      591.0,
+      656.0
+    ],
+    "text": "Main menu"
+  },
+  {
+    "max": [
+      705.0,
+      612.0
+    ],
+    "min": [
+      575.0,
+      590.0
+    ],
+    "text": "Watch replay"
+  },
+  {
+    "max": [
+      819.0,
+      546.0
+    ],
+    "min": [
+      462.0,
+      524.0
+    ],
+    "text": "Play again | same setup, new seed"
+  },
+  {
+    "max": [
+      460.0,
+      549.0
+    ],
+    "min": [
+      446.0,
+      522.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      428.0,
+      444.0
+    ],
+    "min": [
+      293.0,
+      424.0
+    ],
+    "text": "no new unlocks"
+  },
+  {
+    "max": [
+      564.0,
+      415.0
+    ],
+    "min": [
+      293.0,
+      393.0
+    ],
+    "text": "Level 0 | 50 XP | 1 match"
+  },
+  {
+    "max": [
+      987.0,
+      384.0
+    ],
+    "min": [
+      293.0,
+      200.0
+    ],
+    "text": "Team 2 reached the summit\nEvery remaining loyal Observer on the winning team reached the summit.\nYou joined the Rogue faction after falling into void; your faction lost.\nObservers: 3 loyal (0 jailed) | 1 corrupted.\nRun 263960012067191 | 1 recorded moment.\nReplay is a room trace; cards, prison layouts and facility rewrites are not reconstructed."
+  }
+]

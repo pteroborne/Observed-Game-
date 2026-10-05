@@ -1,0 +1,360 @@
+{
+  "date": "2026-10-05",
+  "recorded_at_utc": "2026-10-05T13:51:14.753163+00:00",
+  "branch": "codex/end-to-end-ux",
+  "source_base_commit": "994ee697",
+  "resolution": [
+    1280,
+    800
+  ],
+  "scale_factor": 1,
+  "capture_mode": "OBSERVED2_CAPTURE_FRONTEND_COMPLETION=1",
+  "capture_run": "/tmp/observed-ux-results-bb6foue4",
+  "provenance": {
+    "ascent": "Synthetic completion facts over a real prepared hex room trace; not human-play completion.",
+    "lan": "Local UDP client object with no server handshake; navigation/layout fixture only.",
+    "race": "Existing synthetic legacy race results fixture.",
+    "configuration": "Isolated empty working and configuration directories.",
+    "screenshots": "Native Bevy screenshots; each state held until ScreenshotCaptured."
+  },
+  "validation": {
+    "format": "pass",
+    "clippy": "pass, no warnings",
+    "workspace_tests": {
+      "passed": 2701,
+      "failed": 0,
+      "ignored": 45
+    },
+    "focused_completion_tests": 9,
+    "native_screen_count": 18,
+    "physical_png_dimensions": "pass",
+    "widget_bounds": "pass, 4px baseline margin",
+    "visible_ui_text_bounds": "pass, 0.5px rounding tolerance",
+    "visual_review": "All 18 final native PNGs inspected by Codex; layout, legibility, actor identity, neutral room trace and lobby wording verified.",
+    "human_acceptance": "open",
+    "connected_lan_acceptance": "open",
+    "extended_suite": "not run for presentation slice; known hex_full_match_soak failure remains unresolved"
+  },
+  "shots": [
+    {
+      "label": "00_observer_summit",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/00_observer_summit.png",
+        "sha256": "1442c0436a88dbe75052d603470cdb1138a7d67c834391c46d12e8c0dc1ab422"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/00_observer_summit.bounds.json",
+        "sha256": "42eff567a0d87662744513058c81ced07328583027dfdb70e9a2679997b40a0d"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/00_observer_summit.text-bounds.json",
+        "sha256": "4844ed8044a7418cadc4ca2791da945c5abca101a5af2a352e5e5b4ba4d1e364"
+      }
+    },
+    {
+      "label": "01_observer_other_team",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/01_observer_other_team.png",
+        "sha256": "05e7e1ce23274e2648f22de35be3aa6eccb351405ce72bc045e9440db8b9e9b9"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/01_observer_other_team.bounds.json",
+        "sha256": "42eff567a0d87662744513058c81ced07328583027dfdb70e9a2679997b40a0d"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/01_observer_other_team.text-bounds.json",
+        "sha256": "9acf8acc5d46d1cf140c7c1f06426793c4ad246ed72c679b0ba56e36d2b018b5"
+      }
+    },
+    {
+      "label": "02_architect_summit",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/02_architect_summit.png",
+        "sha256": "1e8de27963dc19c6b9f49aba5d2c31b480c81ff6314ca7b4a69778bf48f3c2a5"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/02_architect_summit.bounds.json",
+        "sha256": "42eff567a0d87662744513058c81ced07328583027dfdb70e9a2679997b40a0d"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/02_architect_summit.text-bounds.json",
+        "sha256": "caafb3212c2d29769d3b78f1cfce22a3e9ec4d3981b611609ca221dc5305f206"
+      }
+    },
+    {
+      "label": "03_architect_rogue_loss",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/03_architect_rogue_loss.png",
+        "sha256": "4629bc7ae47858c0410503698d834c54c8d2ddcc5e8e38e450ae8a05d49f6f33"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/03_architect_rogue_loss.bounds.json",
+        "sha256": "42eff567a0d87662744513058c81ced07328583027dfdb70e9a2679997b40a0d"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/03_architect_rogue_loss.text-bounds.json",
+        "sha256": "482617b3eedce6678bb57adb59d609855002edeaef7d532e24cd050482c23d96"
+      }
+    },
+    {
+      "label": "04_rogue_victory",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/04_rogue_victory.png",
+        "sha256": "9598473cdcbf834ffabec1d1ae19e34b161c679da64e440a8b33a7ec43e337ec"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/04_rogue_victory.bounds.json",
+        "sha256": "3b971546df8fc13daed49679a8bcab0f3220f9388a3695ec7295f450a8bff7cd"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/04_rogue_victory.text-bounds.json",
+        "sha256": "a776dfe51666f87eb776cd160a9c834ae66e9ed2c4d2e8d4987f2196de8d6a00"
+      }
+    },
+    {
+      "label": "05_rogue_summit_loss",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/05_rogue_summit_loss.png",
+        "sha256": "80c6d302f00e883fe3fd69c11c7f0de4231a4dad08569f5486ad5f029c32db14"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/05_rogue_summit_loss.bounds.json",
+        "sha256": "3b971546df8fc13daed49679a8bcab0f3220f9388a3695ec7295f450a8bff7cd"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/05_rogue_summit_loss.text-bounds.json",
+        "sha256": "3ec2508d4e152cb2adc9619eb70151bea8afb44d705e9a928be7f6f889732aa7"
+      }
+    },
+    {
+      "label": "06_spectator_summit",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/06_spectator_summit.png",
+        "sha256": "c26391ad59b655f0a6f173a75491317db6ea1ed6ec8310b5ee01962206e43c17"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/06_spectator_summit.bounds.json",
+        "sha256": "42eff567a0d87662744513058c81ced07328583027dfdb70e9a2679997b40a0d"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/06_spectator_summit.text-bounds.json",
+        "sha256": "24477bbf75a0619a0bfa8d1f3af946c948ccab7a52f851a741147a9ab14cfe29"
+      }
+    },
+    {
+      "label": "07_spectator_rogue",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/07_spectator_rogue.png",
+        "sha256": "2295f9f4d78c8ae4526d1b21390b942c67878879dfc3731f3a6cfe03b61a92f1"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/07_spectator_rogue.bounds.json",
+        "sha256": "42eff567a0d87662744513058c81ced07328583027dfdb70e9a2679997b40a0d"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/07_spectator_rogue.text-bounds.json",
+        "sha256": "e19d836a34427cde5cd57e4b6323187b6d1186e86a5942b684a698385df53b71"
+      }
+    },
+    {
+      "label": "08_rogue_darkness",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/08_rogue_darkness.png",
+        "sha256": "5489ec027573d11a724cc0fe13e5a48e673f55e1109dc423ba912ad17aa9bd1e"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/08_rogue_darkness.bounds.json",
+        "sha256": "3b971546df8fc13daed49679a8bcab0f3220f9388a3695ec7295f450a8bff7cd"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/08_rogue_darkness.text-bounds.json",
+        "sha256": "34adecbbc0f86a261421aea07f729ef1dc4baba12ff71ebef4b4c74727af8e7a"
+      }
+    },
+    {
+      "label": "09_replay_absent",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/09_replay_absent.png",
+        "sha256": "5add665564f76b9572460f7372f1ad440c138a3538a7526dae7138413751e669"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/09_replay_absent.bounds.json",
+        "sha256": "7a100030cdb4620cba3f6d726d84679330b9aeab45ceca72f72b96eb00f30ff9"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/09_replay_absent.text-bounds.json",
+        "sha256": "6fb112495384e4441967bc3759a2f029f110150e940fe064f052ced3b2781293"
+      }
+    },
+    {
+      "label": "10_replay_empty",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/10_replay_empty.png",
+        "sha256": "5add665564f76b9572460f7372f1ad440c138a3538a7526dae7138413751e669"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/10_replay_empty.bounds.json",
+        "sha256": "7a100030cdb4620cba3f6d726d84679330b9aeab45ceca72f72b96eb00f30ff9"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/10_replay_empty.text-bounds.json",
+        "sha256": "6fb112495384e4441967bc3759a2f029f110150e940fe064f052ced3b2781293"
+      }
+    },
+    {
+      "label": "11_replay_observer",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/11_replay_observer.png",
+        "sha256": "1862a0cab1e2f3a9ae87ce49bab91237d7c47c0364cd04e73e34fb65597c5e3b"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/11_replay_observer.bounds.json",
+        "sha256": "135dbbdc848d452c588a1674540adaf937cb640bb22dcaab7096fa346886c5d0"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/11_replay_observer.text-bounds.json",
+        "sha256": "34a0a8ed99fbea6e34b0752c110457f9031ce0313ee1ec8fe08af48e2fa1de41"
+      }
+    },
+    {
+      "label": "12_replay_architect",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/12_replay_architect.png",
+        "sha256": "aed16d55edb57689de4c6b88b9b9cb33f9d67ec7e88e134a1f3fc65e4c77468d"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/12_replay_architect.bounds.json",
+        "sha256": "135dbbdc848d452c588a1674540adaf937cb640bb22dcaab7096fa346886c5d0"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/12_replay_architect.text-bounds.json",
+        "sha256": "8b322cad164fdaeeaf09a9aadbaef0f88ff11847b70ada053083cf21cc104f5b"
+      }
+    },
+    {
+      "label": "13_replay_rogue",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/13_replay_rogue.png",
+        "sha256": "06194f09fb0e98d1901eb4c0a475633aa7258bbbf6154effb366b7fdf24969b4"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/13_replay_rogue.bounds.json",
+        "sha256": "135dbbdc848d452c588a1674540adaf937cb640bb22dcaab7096fa346886c5d0"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/13_replay_rogue.text-bounds.json",
+        "sha256": "278b968dd23da3e778491f2fd11c63adca2a47d4b92047f86098e164edda1598"
+      }
+    },
+    {
+      "label": "14_replay_spectator",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/14_replay_spectator.png",
+        "sha256": "b2ba79c557db18a0da682edc8ada47abe7cd6b9fb9338d828ad1c3c45c6dae6a"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/14_replay_spectator.bounds.json",
+        "sha256": "135dbbdc848d452c588a1674540adaf937cb640bb22dcaab7096fa346886c5d0"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/14_replay_spectator.text-bounds.json",
+        "sha256": "2243c483aa5ec9adecb60a264119fe8991e64d05193cc9f8d2cac5e9a008d134"
+      }
+    },
+    {
+      "label": "15_lan_results",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/15_lan_results.png",
+        "sha256": "a18c1c7f3559666b00b45114486efdb23b3bd3e215aade363b22ea189f51fe3b"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/15_lan_results.bounds.json",
+        "sha256": "42eff567a0d87662744513058c81ced07328583027dfdb70e9a2679997b40a0d"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/15_lan_results.text-bounds.json",
+        "sha256": "b22fc4cb233f482a96397e86119db2fea11706c4a3509e3f06861f31d9f0fcac"
+      }
+    },
+    {
+      "label": "16_lan_replay",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/16_lan_replay.png",
+        "sha256": "0cb5e6d4f3f5d8d7f38d9239f7b6e21f7ab9e62d64c88847e424db790f1a0654"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/16_lan_replay.bounds.json",
+        "sha256": "135dbbdc848d452c588a1674540adaf937cb640bb22dcaab7096fa346886c5d0"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/16_lan_replay.text-bounds.json",
+        "sha256": "9adbdc46d2073b27ddffbfa2478a1e5b1a5ad9bbc9c47b3aaf6699f25c79bc12"
+      }
+    },
+    {
+      "label": "17_race_results",
+      "png": {
+        "path": "docs/evidence/ux/completion_1280x800/17_race_results.png",
+        "sha256": "5337e8a9c9d33a972f3e1720d9e2b0ddb7068ff6215a2df172129a3d05f44c7e"
+      },
+      "widgets": {
+        "path": "docs/evidence/ux/completion_1280x800/17_race_results.bounds.json",
+        "sha256": "caa37dd5bdedde6bc33bfd2fba538d11733007b1ee6bc53985980ccca54c039f"
+      },
+      "visible_text": {
+        "path": "docs/evidence/ux/completion_1280x800/17_race_results.text-bounds.json",
+        "sha256": "d5863603884b38674126031c94641e8fd4307124caf56f8fdbd8050be81fc690"
+      }
+    }
+  ],
+  "source_files": [
+    {
+      "path": "game/src/evidence/capture/completion.rs",
+      "sha256": "0f16887a9126f10adea97b5dd4ffb87f6eb18887fefadfae82c138c570ee82a8"
+    },
+    {
+      "path": "game/src/evidence/capture/frontend.rs",
+      "sha256": "744f2b3b67afecf6bd5ba3e3665bb9dfe22ca22b75e4afa1cb7f6d9a80542bc8"
+    },
+    {
+      "path": "game/src/flow.rs",
+      "sha256": "26e6798efc8cf7eadf3eaebca3d8a5f38610d5324580a1e3049b696e6d388c12"
+    },
+    {
+      "path": "game/src/hex_wfc/ascent.rs",
+      "sha256": "f0b39b588ca6e1683edb0863c35f2f222f02f7b31f802caafedd753969fd4ca3"
+    },
+    {
+      "path": "game/src/hex_wfc/mod.rs",
+      "sha256": "eff1bdea124444e419650778f011327c2ec8b6bba48da10df493b6eb7ec80131"
+    },
+    {
+      "path": "game/src/hex_wfc/net.rs",
+      "sha256": "a694d7fdeea36c27c0e3802c5883c8e41c1447acaaac2d948d6834236e7a2f17"
+    },
+    {
+      "path": "game/src/hex_wfc/sim.rs",
+      "sha256": "b203e18aafd099793b7665c10723c705c49e600e1b334f0c34dd7767e94fcd10"
+    },
+    {
+      "path": "game/src/play_setup.rs",
+      "sha256": "9c74a24cc4fe98f52cf99d248c4aa918527c20031e3111ea257dd94f9fbd7506"
+    },
+    {
+      "path": "game/src/screens/replay.rs",
+      "sha256": "9220f1505f22c407b6516b12f343f88e5058a7224f4e43f0ecfa6b161cdf1b8a"
+    },
+    {
+      "path": "game/src/screens/results.rs",
+      "sha256": "da7ff0c46e9ef0ffd3439428c1f4fbdbe6fbcfee606697037b1767f48c18080e"
+    },
+    {
+      "path": "game/src/sim/replay.rs",
+      "sha256": "5feb361d41d0a13afe970433d8c17e0796b633cf2f99bcdb05fc643876c88d14"
+    },
+    {
+      "path": "game/src/tests/ux_completion.rs",
+      "sha256": "f4d08e9e566763a7fc856e5eaca6169161da8d8c5780e2dc3bced91696a5e7db"
+    }
+  ]
+}

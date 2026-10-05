@@ -251,3 +251,7 @@ pub(crate) use guidance_capture::{Case as GuidanceCaptureCase, stage as stage_gu
 #[cfg(test)]
 #[path = "../tests/ux_guidance.rs"]
 mod ux_guidance;
+
+#[cfg(test)]
+#[path = "../tests/ux_completion.rs"]
+mod ux_completion;

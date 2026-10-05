@@ -1,0 +1,101 @@
+[
+  {
+    "max": [
+      933.0,
+      175.0
+    ],
+    "min": [
+      347.0,
+      155.0
+    ],
+    "text": "Architect Ascent | Observer | Team race | 2 teams x 2 | local"
+  },
+  {
+    "max": [
+      741.0,
+      145.0
+    ],
+    "min": [
+      539.0,
+      87.0
+    ],
+    "text": "VICTORY"
+  },
+  {
+    "max": [
+      689.0,
+      668.0
+    ],
+    "min": [
+      591.0,
+      646.0
+    ],
+    "text": "Main menu"
+  },
+  {
+    "max": [
+      781.0,
+      602.0
+    ],
+    "min": [
+      500.0,
+      580.0
+    ],
+    "text": "Watch replay | unavailable"
+  },
+  {
+    "max": [
+      819.0,
+      536.0
+    ],
+    "min": [
+      462.0,
+      514.0
+    ],
+    "text": "Play again | same setup, new seed"
+  },
+  {
+    "max": [
+      460.0,
+      539.0
+    ],
+    "min": [
+      446.0,
+      512.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      534.0,
+      434.0
+    ],
+    "min": [
+      293.0,
+      414.0
+    ],
+    "text": "unlocked: Spark, Champion"
+  },
+  {
+    "max": [
+      574.0,
+      405.0
+    ],
+    "min": [
+      293.0,
+      383.0
+    ],
+    "text": "Level 1 | 140 XP | 1 match"
+  },
+  {
+    "max": [
+      987.0,
+      374.0
+    ],
+    "min": [
+      293.0,
+      210.0
+    ],
+    "text": "Team 1 reached the summit\nEvery remaining loyal Observer on the winning team reached the summit.\nYou played Observer for Team 1; your team won.\nObservers: 4 loyal (0 jailed) | 0 corrupted.\nNo replay moments are available for this run.\nReplay is a room trace; cards, prison layouts and facility rewrites are not reconstructed."
+  }
+]

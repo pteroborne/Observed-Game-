@@ -1,0 +1,101 @@
+[
+  {
+    "max": [
+      962.0,
+      165.0
+    ],
+    "min": [
+      318.0,
+      145.0
+    ],
+    "text": "Architect Ascent | Rogue operator | Team race | 2 teams x 2 | local"
+  },
+  {
+    "max": [
+      741.0,
+      135.0
+    ],
+    "min": [
+      539.0,
+      77.0
+    ],
+    "text": "VICTORY"
+  },
+  {
+    "max": [
+      689.0,
+      678.0
+    ],
+    "min": [
+      591.0,
+      656.0
+    ],
+    "text": "Main menu"
+  },
+  {
+    "max": [
+      705.0,
+      612.0
+    ],
+    "min": [
+      575.0,
+      590.0
+    ],
+    "text": "Watch replay"
+  },
+  {
+    "max": [
+      819.0,
+      546.0
+    ],
+    "min": [
+      462.0,
+      524.0
+    ],
+    "text": "Play again | same setup, new seed"
+  },
+  {
+    "max": [
+      460.0,
+      549.0
+    ],
+    "min": [
+      446.0,
+      522.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      534.0,
+      444.0
+    ],
+    "min": [
+      293.0,
+      424.0
+    ],
+    "text": "unlocked: Spark, Champion"
+  },
+  {
+    "max": [
+      574.0,
+      415.0
+    ],
+    "min": [
+      293.0,
+      393.0
+    ],
+    "text": "Level 1 | 140 XP | 1 match"
+  },
+  {
+    "max": [
+      997.0,
+      384.0
+    ],
+    "min": [
+      293.0,
+      200.0
+    ],
+    "text": "Rogue victory | Darkness objective completed\nThe facility stayed unwitnessed long enough to complete the Darkness objective.\nYou joined the Rogue faction after falling into void; your faction won.\nObservers: 3 loyal (0 jailed) | 1 corrupted.\nRun 263960012067191 | 1 recorded moment.\nReplay is a room trace; cards, prison layouts and facility rewrites are not reconstructed."
+  }
+]

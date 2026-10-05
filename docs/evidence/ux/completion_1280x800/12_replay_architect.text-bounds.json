@@ -1,0 +1,255 @@
+[
+  {
+    "max": [
+      901.0,
+      673.0
+    ],
+    "min": [
+      380.0,
+      656.0
+    ],
+    "text": "Tab / arrows / D-pad move focus | Enter / A / pointer activate"
+  },
+  {
+    "max": [
+      985.0,
+      646.0
+    ],
+    "min": [
+      296.0,
+      629.0
+    ],
+    "text": "Map: numbered rooms | large marker = focus | small markers = other recorded actors"
+  },
+  {
+    "max": [
+      909.0,
+      209.0
+    ],
+    "min": [
+      371.0,
+      189.0
+    ],
+    "text": "Architect Ascent | Architect | Team 1 reached the summit"
+  },
+  {
+    "max": [
+      716.0,
+      179.0
+    ],
+    "min": [
+      564.0,
+      128.0
+    ],
+    "text": "REPLAY"
+  },
+  {
+    "max": [
+      1124.0,
+      585.0
+    ],
+    "min": [
+      1026.0,
+      563.0
+    ],
+    "text": "Main menu"
+  },
+  {
+    "max": [
+      925.0,
+      585.0
+    ],
+    "min": [
+      762.0,
+      563.0
+    ],
+    "text": "Back to results"
+  },
+  {
+    "max": [
+      1162.0,
+      531.0
+    ],
+    "min": [
+      989.0,
+      509.0
+    ],
+    "text": "Focus next actor"
+  },
+  {
+    "max": [
+      908.0,
+      531.0
+    ],
+    "min": [
+      778.0,
+      509.0
+    ],
+    "text": "Jump forward"
+  },
+  {
+    "max": [
+      1124.0,
+      477.0
+    ],
+    "min": [
+      1026.0,
+      455.0
+    ],
+    "text": "Jump back"
+  },
+  {
+    "max": [
+      908.0,
+      477.0
+    ],
+    "min": [
+      778.0,
+      455.0
+    ],
+    "text": "Step forward"
+  },
+  {
+    "max": [
+      1124.0,
+      423.0
+    ],
+    "min": [
+      1026.0,
+      401.0
+    ],
+    "text": "Step back"
+  },
+  {
+    "max": [
+      908.0,
+      423.0
+    ],
+    "min": [
+      778.0,
+      401.0
+    ],
+    "text": "Pause replay"
+  },
+  {
+    "max": [
+      761.0,
+      426.0
+    ],
+    "min": [
+      747.0,
+      399.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      123.0,
+      271.0
+    ],
+    "min": [
+      89.0,
+      237.0
+    ],
+    "text": "R0"
+  },
+  {
+    "max": [
+      675.0,
+      603.0
+    ],
+    "min": [
+      641.0,
+      569.0
+    ],
+    "text": "R1"
+  },
+  {
+    "max": [
+      391.0,
+      437.0
+    ],
+    "min": [
+      357.0,
+      403.0
+    ],
+    "text": "R2"
+  },
+  {
+    "max": [
+      195.0,
+      354.0
+    ],
+    "min": [
+      161.0,
+      320.0
+    ],
+    "text": "R3"
+  },
+  {
+    "max": [
+      455.0,
+      603.0
+    ],
+    "min": [
+      421.0,
+      569.0
+    ],
+    "text": "R4"
+  },
+  {
+    "max": [
+      544.0,
+      313.0
+    ],
+    "min": [
+      510.0,
+      279.0
+    ],
+    "text": "R5"
+  },
+  {
+    "max": [
+      276.0,
+      333.0
+    ],
+    "min": [
+      242.0,
+      299.0
+    ],
+    "text": "R6"
+  },
+  {
+    "max": [
+      497.0,
+      499.0
+    ],
+    "min": [
+      463.0,
+      465.0
+    ],
+    "text": "R7"
+  },
+  {
+    "max": [
+      672.0,
+      313.0
+    ],
+    "min": [
+      638.0,
+      279.0
+    ],
+    "text": "R8"
+  },
+  {
+    "max": [
+      1190.0,
+      373.0
+    ],
+    "min": [
+      728.0,
+      238.0
+    ],
+    "text": "seed 263960012067191 | playing | moment 1 / 1\ntick 0 | facility revision 0\nfocus: Team 1 Observer (bot) | Room 0 | loyal | ascend with the team\nRoom trace only: card plays, prison layouts\nand facility rewrites are not reconstructed.\nrecent physical events:\n  none"
+  }
+]

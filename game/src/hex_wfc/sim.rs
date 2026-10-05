@@ -290,7 +290,27 @@ pub(super) fn setup_runtime(
         &play_setup,
         lan,
     );
-    let replay = crate::sim::replay::ReplayTape::new_hex_wfc_for_player(&match_state, local_player);
+    let mut replay =
+        crate::sim::replay::ReplayTape::new_hex_wfc_for_player(&match_state, local_player);
+    if !networked {
+        commands.insert_resource(crate::play_setup::LaunchedPlaySetup(play_setup.clone()));
+    }
+    if let Some(rules) = &ascent {
+        let architect = if networked {
+            lan.flatten()
+                .is_some_and(|launch| launch.is_architect(local_player))
+        } else {
+            play_setup.seat == crate::play_setup::PlaySeat::Architect
+        };
+        replay.ascent_result = Some(super::ascent::completion_for(
+            rules,
+            &match_state,
+            local_player,
+            architect,
+            spectator,
+        ));
+        replay.record_ascent(&match_state, rules);
+    }
     let map_level = match_state.players[&local_player].cell.level;
     let presented_revisions = match_state.facility.cell_revisions.clone();
     commands.insert_resource(HexWfcRuntime {
@@ -328,6 +348,8 @@ pub(super) fn setup_runtime(
 }
 
 pub(super) fn finish_runtime(
+    desk: Option<Res<super::architect::ArchitectDesk>>,
+    spectator: Option<Res<crate::sim::state::SpectatorBot>>,
     mut runtime: ResMut<HexWfcRuntime>,
     mut career: ResMut<crate::flow::Career>,
     mut replay: Option<ResMut<crate::sim::replay::ReplayTape>>,
@@ -341,19 +363,40 @@ pub(super) fn finish_runtime(
         return;
     }
     let result = match &runtime.ascent {
-        Some(rules) => super::ascent::result_for(rules, &runtime.match_state, runtime.local_player),
+        Some(rules) => super::ascent::result_for(
+            rules,
+            &runtime.match_state,
+            runtime.local_player,
+            desk.as_ref().is_some_and(|desk| !desk.rogue),
+        ),
         None => crate::flow::resolve_hex_wfc_for_player(&runtime.match_state, runtime.local_player),
     };
+    let ascent_result = runtime.ascent.as_ref().map(|rules| {
+        super::ascent::completion_for(
+            rules,
+            &runtime.match_state,
+            runtime.local_player,
+            desk.as_ref().is_some_and(|desk| !desk.rogue),
+            spectator.is_some(),
+        )
+    });
     if let Some(replay) = replay.as_deref_mut() {
+        if let Some(rules) = &runtime.ascent {
+            replay.record_ascent(&runtime.match_state, rules);
+        }
         replay.result = Some(result.clone());
+        replay.ascent_result = ascent_result;
     }
     career.record(result);
+    career.last_ascent_result = ascent_result;
     next.set(crate::GameState::Results);
 }
 
 pub(super) fn cleanup_runtime(mut commands: Commands) {
     commands.remove_resource::<HexWfcRuntime>();
     commands.remove_resource::<HexWfcIntent>();
+    commands.remove_resource::<super::architect::ArchitectDesk>();
+    commands.remove_resource::<super::ask::AskTheArchitect>();
     commands.remove_resource::<crate::sim::state::SpectatorBot>();
 }
 
@@ -454,7 +497,11 @@ pub(super) fn step_runtime(
         runtime.match_state.step(&frame);
     }
     if let Some(replay) = replay.as_deref_mut() {
-        replay.record_hex_wfc(&runtime.match_state);
+        if let Some(rules) = &runtime.ascent {
+            replay.record_ascent(&runtime.match_state, rules);
+        } else {
+            replay.record_hex_wfc(&runtime.match_state);
+        }
     }
     record_generation_changes(&mut runtime, previous_generation);
     // Survivor-map knowledge is simulation-owned and player-local. Presentation

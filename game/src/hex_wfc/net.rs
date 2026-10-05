@@ -104,7 +104,11 @@ pub(super) fn step(
                 break 'replay;
             }
             if let Some(replay) = replay.as_deref_mut() {
-                replay.record_hex_wfc(&runtime.match_state);
+                if let Some(rules) = &runtime.ascent {
+                    replay.record_ascent(&runtime.match_state, rules);
+                } else {
+                    replay.record_hex_wfc(&runtime.match_state);
+                }
             }
             record_generation_changes(runtime, previous_generation);
         }

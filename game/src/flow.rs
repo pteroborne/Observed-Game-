@@ -83,6 +83,27 @@ pub struct MatchResult {
     pub local_won: bool,
 }
 
+/// Final Ascent facts retained independently of rendered text and race progression.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AscentResult {
+    pub outcome: observed_match::ascent::sim::MatchOutcome,
+    pub winner: Option<TeamId>,
+    pub local_team: TeamId,
+    pub role: AscentResultRole,
+    pub loyal: usize,
+    pub jailed: usize,
+    pub corrupted: usize,
+    pub rogue_by_capture: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AscentResultRole {
+    Observer,
+    Architect,
+    Rogue,
+    Spectator,
+}
+
 /// Read the local player's outcome from a finished match.
 pub fn resolve(facility: &CompetitiveFacility) -> MatchResult {
     MatchResult {
@@ -200,6 +221,7 @@ pub struct Career {
     pub profile: Profile,
     pub matches_completed: u32,
     pub last_result: Option<MatchResult>,
+    pub last_ascent_result: Option<AscentResult>,
     pub last_unlocks: Vec<u16>,
     awarded: bool,
     pub bot_rival_teams: bool,
@@ -213,6 +235,7 @@ impl Default for Career {
             profile: Profile::new(),
             matches_completed: 0,
             last_result: None,
+            last_ascent_result: None,
             last_unlocks: Vec::new(),
             awarded: false,
             bot_rival_teams: true,
@@ -226,12 +249,14 @@ impl Career {
     /// Begin a fresh match: clear the pending result so its reward can be granted.
     pub fn begin_match(&mut self) {
         self.last_result = None;
+        self.last_ascent_result = None;
         self.last_unlocks.clear();
         self.awarded = false;
     }
 
     pub fn record(&mut self, result: MatchResult) {
         self.last_result = Some(result);
+        self.last_ascent_result = None;
         self.awarded = false;
     }
 

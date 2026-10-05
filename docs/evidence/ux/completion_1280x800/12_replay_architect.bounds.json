@@ -1,0 +1,90 @@
+[
+  {
+    "max": [
+      1187.0,
+      597.0
+    ],
+    "min": [
+      963.0,
+      551.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.continue\", key: 0 }"
+  },
+  {
+    "max": [
+      955.0,
+      597.0
+    ],
+    "min": [
+      731.0,
+      551.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.back\", key: 0 }"
+  },
+  {
+    "max": [
+      1187.0,
+      543.0
+    ],
+    "min": [
+      963.0,
+      497.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.next_actor\", key: 0 }"
+  },
+  {
+    "max": [
+      955.0,
+      543.0
+    ],
+    "min": [
+      731.0,
+      497.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.jump_forward\", key: 0 }"
+  },
+  {
+    "max": [
+      1187.0,
+      489.0
+    ],
+    "min": [
+      963.0,
+      443.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.jump_back\", key: 0 }"
+  },
+  {
+    "max": [
+      955.0,
+      489.0
+    ],
+    "min": [
+      731.0,
+      443.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.step_forward\", key: 0 }"
+  },
+  {
+    "max": [
+      1187.0,
+      435.0
+    ],
+    "min": [
+      963.0,
+      389.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.step_back\", key: 0 }"
+  },
+  {
+    "max": [
+      955.0,
+      435.0
+    ],
+    "min": [
+      731.0,
+      389.0
+    ],
+    "widget": "WidgetId { namespace: \"replay.play_pause\", key: 0 }"
+  }
+]

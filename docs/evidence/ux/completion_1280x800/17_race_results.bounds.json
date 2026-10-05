@@ -1,0 +1,35 @@
+[
+  {
+    "max": [
+      850.0,
+      673.0
+    ],
+    "min": [
+      430.0,
+      621.0
+    ],
+    "widget": "WidgetId { namespace: \"results.return\", key: 0 }"
+  },
+  {
+    "max": [
+      850.0,
+      607.0
+    ],
+    "min": [
+      430.0,
+      555.0
+    ],
+    "widget": "WidgetId { namespace: \"results.watch_replay\", key: 0 }"
+  },
+  {
+    "max": [
+      850.0,
+      541.0
+    ],
+    "min": [
+      430.0,
+      489.0
+    ],
+    "widget": "WidgetId { namespace: \"results.rematch\", key: 0 }"
+  }
+]

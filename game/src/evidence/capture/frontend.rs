@@ -13,6 +13,8 @@
 
 use std::path::PathBuf;
 
+#[path = "completion.rs"]
+mod completion;
 #[path = "guidance.rs"]
 mod guidance;
 
@@ -49,6 +51,7 @@ struct Shot {
     help_action: Option<OnboardingAction>,
     production_launch: bool,
     guidance: Option<crate::hex_wfc::GuidanceCaptureCase>,
+    completion: Option<usize>,
 }
 
 const fn shot(label: &'static str, state: GameState) -> Shot {
@@ -62,6 +65,7 @@ const fn shot(label: &'static str, state: GameState) -> Shot {
         help_action: None,
         production_launch: false,
         guidance: None,
+        completion: None,
     }
 }
 
@@ -271,7 +275,9 @@ impl FrontendCaptureRequest {
     pub(super) fn new(dir: String) -> Self {
         Self {
             dir: PathBuf::from(dir),
-            shots: if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_GUIDANCE").is_some() {
+            shots: if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_COMPLETION").is_some() {
+                completion::sweep()
+            } else if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_GUIDANCE").is_some() {
                 guidance::sweep()
             } else if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_MENUS").is_some() {
                 menu_sweep()
@@ -389,6 +395,9 @@ pub(super) fn capture_frontend_progress(
                     commands.trigger(Activate { entity });
                 }
             } else {
+                if let Some(case) = request.shots[request.index].completion {
+                    commands.queue(move |world: &mut World| completion::stage(world, case));
+                }
                 // Entering the canonical match without going through Loading is the
                 // private harness path, and it requires a direct driver. It also gives
                 // the shot a body that walks, so the first frame is a real vantage
@@ -484,6 +493,9 @@ pub(super) fn capture_frontend_progress(
                 request.next_at = elapsed + 1.0;
                 request.phase = Phase::Done;
             } else {
+                if request.shots[request.index].completion.is_some() {
+                    next.set(GameState::MainMenu);
+                }
                 request.phase = Phase::Enter;
             }
         }

@@ -1,0 +1,25 @@
+Results/replay implementation checks - 2026-10-05
+Branch: codex/end-to-end-ux
+Source base: 994ee697; final Rust source hashes are in completion_manifest.json.
+Shared cache: CARGO_TARGET_DIR=/srv/build-cache/cargo; Cargo runs serialized.
+
+cargo fmt --all: PASS
+cargo dev-clippy: PASS, no warnings
+cargo dev-test: PASS, 2701 passed, 0 failed, 45 existing ignored
+observed_game: 570 passed, 0 failed, 6 ignored
+cargo test -p observed_game --features bevy/dynamic_linking --lib ux_completion:
+  PASS, 9 passed, 0 failed
+cargo build -p observed_game --features bevy/dynamic_linking: PASS
+Native capture process: exit 0, 18 screenshots
+All PNGs: physical 1280x800
+All widget bounds: within baseline with at least 4px margin
+All visible UI text bounds: within baseline, 0.5px rounding tolerance
+All 18 final screenshots: visually inspected by Codex for layout and wording
+
+Completion outcomes are synthetic screenshot fixtures over prepared hex rooms.
+App regressions use staged physical jail/void/summit positions and real Ascent outcomes.
+LAN screenshot and routing coverage use local UDP client objects without a handshake.
+These checks do not establish a completed human game or two connected game processes.
+Human and connected LAN acceptance remain open.
+The extended suite was not run for this presentation slice; its known ignored,
+asserting hex_full_match_soak failure is unresolved and it is not claimed green.

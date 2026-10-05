@@ -71,7 +71,7 @@ pub(crate) fn setup(
 
     let result = career.last_result.clone();
     let tape = tape.as_deref();
-    let replay_available = tape.is_some();
+    let replay_available = tape.is_some_and(|tape| !tape.is_empty());
     let unlocked = career
         .last_unlocks
         .iter()
@@ -92,7 +92,10 @@ pub(crate) fn setup(
         },
         |session| session.kind.into(),
     );
-    let story = build_results_story(result.as_ref(), tape, perspective);
+    let story = career.last_ascent_result.map_or_else(
+        || build_results_story(result.as_ref(), tape, perspective),
+        |facts| build_ascent_story(facts, tape),
+    );
     let returning_to_lobby = lan.client.is_some();
 
     commands
@@ -100,7 +103,17 @@ pub(crate) fn setup(
         .with_children(|root| {
             root.spawn(text(story.headline, 48.0, TITLE));
             if let Some(session) = active_session {
-                root.spawn(text(session.summary(), 16.0, DIM));
+                let context = career.last_ascent_result.map_or_else(
+                    || session.summary(),
+                    |facts| {
+                        format!(
+                            "Architect Ascent | {} | {}",
+                            ascent_role_label(facts.role),
+                            session.summary()
+                        )
+                    },
+                );
+                root.spawn(text(context, 16.0, DIM));
             }
             root.spawn(summary_panel()).with_children(|summary| {
                 summary.spawn((
@@ -111,10 +124,15 @@ pub(crate) fn setup(
                     ResultsSummaryText,
                     text(
                         format!(
-                            "Level {} | {} XP | {} matches",
+                            "Level {} | {} XP | {} match{}",
                             career.profile.level(),
                             career.profile.xp,
-                            career.profile.matches_played
+                            career.profile.matches_played,
+                            if career.profile.matches_played == 1 {
+                                ""
+                            } else {
+                                "es"
+                            }
                         ),
                         18.0,
                         ACCENT,
@@ -141,9 +159,9 @@ pub(crate) fn setup(
                         SCOPE,
                         0,
                         if returning_to_lobby {
-                            "Rematch | return to lobby"
+                            "Next match | return to lobby"
                         } else {
-                            "Rematch | new seed"
+                            "Play again | same setup, new seed"
                         },
                     ),
                     ResultsAction::Rematch,
@@ -182,7 +200,8 @@ pub(crate) fn activate(
     active_seed: Option<Res<crate::flow::ActiveMatchSeed>>,
     tape: Option<Res<ReplayTape>>,
     lan: Res<LanRuntime>,
-    setup: Res<PlaySetupDraft>,
+    mut setup: ResMut<PlaySetupDraft>,
+    launched: Option<Res<crate::play_setup::LaunchedPlaySetup>>,
     mut sequence: ResMut<HexLaunchRequestSequence>,
 ) {
     if !activation_enabled(&activation, &disabled) {
@@ -194,6 +213,9 @@ pub(crate) fn activate(
     match action {
         ResultsAction::Rematch if lan.client.is_some() => next.set(GameState::Lobby),
         ResultsAction::Rematch => {
+            if let Some(launched) = launched {
+                *setup = launched.0.clone();
+            }
             let Ok(validated) = setup.validate() else {
                 return;
             };
@@ -216,11 +238,115 @@ pub(crate) fn activate(
             ));
             next.set(GameState::Loading);
         }
-        ResultsAction::WatchReplay if tape.is_some() => next.set(GameState::Replay),
+        ResultsAction::WatchReplay if tape.is_some_and(|tape| !tape.is_empty()) => {
+            next.set(GameState::Replay)
+        }
         ResultsAction::WatchReplay => {}
         ResultsAction::Return if lan.client.is_some() => next.set(GameState::Lobby),
         ResultsAction::Return => next.set(GameState::MainMenu),
     }
+}
+
+pub(crate) fn ascent_role_label(role: crate::flow::AscentResultRole) -> &'static str {
+    use crate::flow::AscentResultRole::*;
+    match role {
+        Observer => "Observer",
+        Architect => "Architect",
+        Rogue => "Rogue operator",
+        Spectator => "Spectator",
+    }
+}
+
+pub(crate) fn ascent_outcome_label(facts: crate::flow::AscentResult) -> String {
+    use observed_match::ascent::sim::MatchOutcome;
+    match facts.outcome {
+        MatchOutcome::LoyalVictory => facts.winner.map_or_else(
+            || "Summit victory | winning team unavailable".to_string(),
+            |team| format!("{} reached the summit", team.label()),
+        ),
+        MatchOutcome::RogueVictory if facts.rogue_by_capture => {
+            "Rogue victory | no loyal Observer remains free".to_string()
+        }
+        MatchOutcome::RogueVictory => "Rogue victory | Darkness objective completed".to_string(),
+        MatchOutcome::Running => "No completed Ascent outcome was recorded".to_string(),
+    }
+}
+
+pub(crate) fn build_ascent_story(
+    facts: crate::flow::AscentResult,
+    tape: Option<&ReplayTape>,
+) -> ResultsStory {
+    use crate::flow::AscentResultRole;
+    use observed_match::ascent::sim::MatchOutcome;
+    let complete = facts.outcome != MatchOutcome::Running;
+    let won = if facts.role == AscentResultRole::Rogue {
+        facts.outcome == MatchOutcome::RogueVictory
+    } else {
+        facts.outcome == MatchOutcome::LoyalVictory && facts.winner == Some(facts.local_team)
+    };
+    let headline = if !complete {
+        "RESULTS"
+    } else if facts.role == AscentResultRole::Spectator {
+        "OBSERVATION COMPLETE"
+    } else if won {
+        "VICTORY"
+    } else {
+        "RUN ENDED"
+    };
+    let reason = match facts.outcome {
+        MatchOutcome::LoyalVictory => {
+            "Every remaining loyal Observer on the winning team reached the summit."
+        }
+        MatchOutcome::RogueVictory if facts.rogue_by_capture => {
+            "Every Observer was jailed or corrupted; no loyal Observer remained free."
+        }
+        MatchOutcome::RogueVictory => {
+            "The facility stayed unwitnessed long enough to complete the Darkness objective."
+        }
+        MatchOutcome::Running => "Completion facts are unavailable; no winner is inferred.",
+    };
+    let perspective = match facts.role {
+        AscentResultRole::Spectator => {
+            "You watched the bot teams; this is their outcome.".to_string()
+        }
+        AscentResultRole::Rogue => format!(
+            "You joined the Rogue faction after falling into void; {}.",
+            if won {
+                "your faction won"
+            } else {
+                "your faction lost"
+            }
+        ),
+        role => format!(
+            "You played {} for {}; {}.",
+            ascent_role_label(role),
+            facts.local_team.label(),
+            if won {
+                "your team won"
+            } else if complete {
+                "your team did not win"
+            } else {
+                "outcome unavailable"
+            }
+        ),
+    };
+    let run = tape.filter(|tape| !tape.is_empty()).map_or_else(
+        || "No replay moments are available for this run.".to_string(),
+        |tape| {
+            format!(
+                "Run {} | {} recorded moment{}.",
+                tape.seed,
+                tape.len(),
+                if tape.len() == 1 { "" } else { "s" }
+            )
+        },
+    );
+    ResultsStory { headline: headline.to_string(), lines: vec![
+        ascent_outcome_label(facts), reason.to_string(), perspective,
+        format!("Observers: {} loyal ({} jailed) | {} corrupted.", facts.loyal, facts.jailed, facts.corrupted),
+        run,
+        "Replay is a room trace; cards, prison layouts and facility rewrites are not reconstructed.".to_string(),
+    ] }
 }
 
 pub(crate) fn build_results_story(

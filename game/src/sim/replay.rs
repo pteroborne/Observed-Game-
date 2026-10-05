@@ -86,6 +86,7 @@ pub struct ReplayTape {
     pub samples: Vec<ReplaySample>,
     pub markers: Vec<ReplayMarker>,
     pub result: Option<MatchResult>,
+    pub ascent_result: Option<crate::flow::AscentResult>,
     /// Presentation-side story facts retained after Match-scoped resources are
     /// cleaned up. These are sampled from existing state and never drive gameplay.
     pub visited_rooms: Vec<RoomId>,
@@ -130,6 +131,7 @@ impl ReplayTape {
             samples: Vec::new(),
             markers: Vec::new(),
             result: None,
+            ascent_result: None,
             visited_rooms: Vec::new(),
             collapsed_rooms: Vec::new(),
             escape_order: Vec::new(),
@@ -160,6 +162,7 @@ impl ReplayTape {
             samples: Vec::new(),
             markers: Vec::new(),
             result: None,
+            ascent_result: None,
             visited_rooms: Vec::new(),
             collapsed_rooms: Vec::new(),
             escape_order: Vec::new(),
@@ -296,6 +299,7 @@ impl ReplayTape {
             samples: Vec::new(),
             markers: Vec::new(),
             result: None,
+            ascent_result: None,
             visited_rooms: Vec::new(),
             collapsed_rooms: Vec::new(),
             escape_order: Vec::new(),
@@ -309,10 +313,7 @@ impl ReplayTape {
         };
         tape.ensure_actor(ReplayActorId::LocalPlayer);
         for player in game.players.values().filter(|player| player.id != local) {
-            tape.ensure_actor(ReplayActorId::Member {
-                team: player.team,
-                member: (player.id.0 % 2) as u8,
-            });
+            tape.ensure_actor(hex_actor_id(game, local, player.id));
         }
         tape.sync_hex_rooms(game);
         tape
@@ -327,6 +328,7 @@ impl ReplayTape {
         self.sync_hex_rooms(game);
         let local = self.hex_local_player.unwrap_or(PlayerId(0));
         if let Some(player) = game.players.get(&local)
+            && player.place == observed_match::hex_wfc::HexBodyPlace::Facility
             && let Some(room) = hex_room_at(game, player.cell)
             && !self.visited_rooms.contains(&room)
         {
@@ -343,19 +345,19 @@ impl ReplayTape {
         }
         self.anchor_was_placed = anchor_is_placed;
 
-        if game.tick.is_multiple_of(6) || self.samples.is_empty() {
+        if game.tick.is_multiple_of(6)
+            || self.samples.is_empty()
+            || (game.status == observed_match::hex_wfc::HexMatchStatus::Finished
+                && self
+                    .samples
+                    .last()
+                    .is_none_or(|sample| u64::from(sample.live_round) != game.tick))
+        {
             let actors = game
                 .players
                 .values()
                 .map(|player| ReplayActorPose {
-                    actor: if player.id == local {
-                        ReplayActorId::LocalPlayer
-                    } else {
-                        ReplayActorId::Member {
-                            team: player.team,
-                            member: (player.id.0 % 2) as u8,
-                        }
-                    },
+                    actor: hex_actor_id(game, local, player.id),
                     room: hex_room_at(game, player.cell),
                     place: None,
                     status: if player.escaped {
@@ -378,6 +380,95 @@ impl ReplayTape {
                 game.facility.generation,
                 format!("t{} {:?}", game.tick, event.kind),
             );
+        }
+    }
+
+    /// Record physical rooms with Ascent-owned Observer states. This remains a
+    /// room trace, not a reconstruction of card plays or evolving geometry.
+    pub fn record_ascent(
+        &mut self,
+        game: &observed_match::hex_wfc::HexWfcMatch,
+        rules: &observed_match::ascent::facility::AscentRules,
+    ) {
+        use crate::flow::AscentResultRole;
+        use observed_match::ascent::sim::ObserverState;
+        let Some(mut facts) = self.ascent_result else {
+            return;
+        };
+        if self.seed != game.seed {
+            return;
+        }
+        let local = self.hex_local_player.unwrap_or(PlayerId(0));
+        facts.outcome = rules.rules().outcome;
+        facts.winner = rules.rules().summit_team.map(|team| TeamId(team.0));
+        facts.corrupted = rules
+            .rules()
+            .observers
+            .values()
+            .filter(|o| o.state == ObserverState::Corrupted)
+            .count();
+        facts.loyal = rules.rules().observers.len() - facts.corrupted;
+        facts.rogue_by_capture = !rules.rules().observers.is_empty()
+            && rules
+                .rules()
+                .observers
+                .values()
+                .all(|o| o.state != ObserverState::Active);
+        facts.jailed = rules
+            .rules()
+            .observers
+            .values()
+            .filter(|o| o.state == ObserverState::Jailed)
+            .count();
+        if facts.role == AscentResultRole::Observer
+            && rules
+                .observer_for(local)
+                .is_some_and(|id| rules.rules().observers[&id].state == ObserverState::Corrupted)
+        {
+            facts.role = AscentResultRole::Rogue;
+        }
+        self.ascent_result = Some(facts);
+        let previous = self.samples.len();
+        self.record_hex_wfc(game);
+        if self.samples.len() > previous {
+            let sample = self
+                .samples
+                .last_mut()
+                .expect("the recorder added a sample");
+            for player in game.players.values() {
+                let actor = hex_actor_id(game, local, player.id);
+                let Some(pose) = sample.actors.iter_mut().find(|pose| pose.actor == actor) else {
+                    continue;
+                };
+                if player.place != observed_match::hex_wfc::HexBodyPlace::Facility {
+                    pose.room = None;
+                }
+                let at_summit = rules.observer_for(player.id).is_some_and(|id| {
+                    rules.rules().observers[&id].cell == rules.rules().world.config.exit()
+                });
+                let state = rules
+                    .observer_for(player.id)
+                    .and_then(|id| rules.rules().observers.get(&id))
+                    .map(|o| o.state);
+                let (status, task) = match state {
+                    Some(ObserverState::Corrupted) => ("Rogue", "disrupt loyal teams"),
+                    Some(ObserverState::Jailed) => ("jailed", "escape prison or await rescue"),
+                    _ if at_summit => ("at summit", "summit reached"),
+                    _ => ("loyal", "ascend with the team"),
+                };
+                pose.status = status.to_string();
+                pose.task = task.to_string();
+            }
+        }
+        if matches!(
+            facts.role,
+            AscentResultRole::Architect | AscentResultRole::Spectator
+        ) && let Some(actor) = self
+            .actors
+            .iter_mut()
+            .find(|actor| actor.id == ReplayActorId::LocalPlayer)
+        {
+            actor.label = format!("{} Observer (bot)", facts.local_team.label());
         }
     }
 
@@ -634,6 +725,25 @@ fn task_label(task: TeamTask) -> &'static str {
         TeamTask::Escape(_) => "escape",
         TeamTask::EvadeGuardian(_) => "evade guardian",
     }
+}
+
+/// The ordinal is within the actual team's stable player roster, including the
+/// local seat. A fixed modulo would alias actors in three/four-seat teams.
+fn hex_actor_id(
+    game: &observed_match::hex_wfc::HexWfcMatch,
+    local: PlayerId,
+    player: PlayerId,
+) -> ReplayActorId {
+    if player == local {
+        return ReplayActorId::LocalPlayer;
+    }
+    let team = game.players[&player].team;
+    let member = game
+        .players
+        .values()
+        .filter(|peer| peer.team == team && peer.id < player)
+        .count() as u8;
+    ReplayActorId::Member { team, member }
 }
 
 /// The room (stamped blueprint) whose footprint contains `cell`, if any. Keyed by the

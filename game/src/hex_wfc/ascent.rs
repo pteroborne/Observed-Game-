@@ -273,7 +273,12 @@ fn corrupted(rules: &AscentRules, player: PlayerId) -> bool {
 
 /// The local player's result from the rules' outcome. A player who corrupted plays for the
 /// Rogue, and wins with it.
-pub(crate) fn result_for(rules: &AscentRules, game: &HexWfcMatch, local: PlayerId) -> MatchResult {
+pub(crate) fn result_for(
+    rules: &AscentRules,
+    game: &HexWfcMatch,
+    local: PlayerId,
+    architect: bool,
+) -> MatchResult {
     let local_team = game
         .players
         .get(&local)
@@ -282,17 +287,58 @@ pub(crate) fn result_for(rules: &AscentRules, game: &HexWfcMatch, local: PlayerI
         MatchOutcome::LoyalVictory => rules.rules().summit_team.map(|team| TeamId(team.0)),
         MatchOutcome::RogueVictory | MatchOutcome::Running => None,
     };
+    let local_won = if !architect && corrupted(rules, local) {
+        rules.rules().outcome == MatchOutcome::RogueVictory
+    } else {
+        winner == Some(local_team)
+    };
     MatchResult {
         local_team,
-        placement: (winner == Some(local_team)).then_some(1),
+        placement: local_won.then_some(1),
         escaped: usize::from(winner.is_some()),
         absorbed: game.teams.len() - usize::from(winner.is_some()),
         winner,
-        local_won: if corrupted(rules, local) {
-            rules.rules().outcome == MatchOutcome::RogueVictory
+        local_won,
+    }
+}
+
+/// Snapshot the rules before match resources are removed. The spectator follows a
+/// bot body; an Architect owns a desk rather than that body's faction.
+pub(crate) fn completion_for(
+    rules: &AscentRules,
+    game: &HexWfcMatch,
+    local: PlayerId,
+    architect: bool,
+    spectator: bool,
+) -> crate::flow::AscentResult {
+    use crate::flow::AscentResultRole;
+    use observed_match::ascent::sim::ObserverState;
+    let observers = &rules.rules().observers;
+    let corrupted_count = observers
+        .values()
+        .filter(|o| o.state == ObserverState::Corrupted)
+        .count();
+    crate::flow::AscentResult {
+        outcome: rules.rules().outcome,
+        winner: rules.rules().summit_team.map(|team| TeamId(team.0)),
+        local_team: game.players[&local].team,
+        role: if spectator {
+            AscentResultRole::Spectator
+        } else if architect {
+            AscentResultRole::Architect
+        } else if corrupted(rules, local) {
+            AscentResultRole::Rogue
         } else {
-            winner == Some(local_team)
+            AscentResultRole::Observer
         },
+        loyal: observers.len() - corrupted_count,
+        jailed: observers
+            .values()
+            .filter(|o| o.state == ObserverState::Jailed)
+            .count(),
+        corrupted: corrupted_count,
+        rogue_by_capture: !observers.is_empty()
+            && observers.values().all(|o| o.state != ObserverState::Active),
     }
 }
 
