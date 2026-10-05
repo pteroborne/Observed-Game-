@@ -118,6 +118,13 @@ pub fn sync_previews(
             // The lab's decks deal no stairs, directives or sensors: only the real
             // facility's decks do.
             CardKind::Stair
+            | CardKind::Cistern
+            | CardKind::Chargeworks
+            | CardKind::ArchiveWell
+            | CardKind::LastPromenade
+            | CardKind::JadeNave
+            | CardKind::SwitchingConcourse
+            | CardKind::RainCourt
             | CardKind::Station
             | CardKind::Directive
             | CardKind::Sensor
@@ -331,6 +338,13 @@ pub fn rebuild_board(
                 ),
                 CardKind::Door => door_parts(&models, models.ghost.clone(), session.rotation),
                 CardKind::Stair
+                | CardKind::Cistern
+                | CardKind::Chargeworks
+                | CardKind::ArchiveWell
+                | CardKind::LastPromenade
+                | CardKind::JadeNave
+                | CardKind::SwitchingConcourse
+                | CardKind::RainCourt
                 | CardKind::Station
                 | CardKind::Directive
                 | CardKind::Sensor

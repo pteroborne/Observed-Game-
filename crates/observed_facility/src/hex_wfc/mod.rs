@@ -43,7 +43,11 @@ pub use blueprint::{
     RoomBlueprint, StampedBlueprint, blueprint_cell_archetype, blueprint_for_role,
 };
 pub use context::{HexInfluenceField, PROFILE_MAX, PROFILE_MIN};
-pub use directed::{authored_climb, authored_climb_shaped, authored_hall};
+pub use directed::{
+    authored_archive_well, authored_chargeworks, authored_cistern_room, authored_climb,
+    authored_climb_shaped, authored_hall, authored_jade_nave, authored_last_promenade,
+    authored_rain_court, authored_switching_concourse, stair_rotation, stair_shape,
+};
 pub use neighborhood::{
     FaceDomain, NeighborCandidate, Neighborhood, NeighborhoodError, neighborhood,
 };
@@ -148,6 +152,17 @@ pub enum HexArchetype {
     /// volume rather than as a row of tiles — the vocabulary the solver was
     /// missing for a vast space.
     Expanse,
+    /// A manufacturing wonder sector, selected by role and exact lattice heading.
+    Chargeworks {
+        part: ChargeworksPart,
+        #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
+        heading: HexFace,
+    },
+    /// A reservoir sector with two full-height spans and an exact lattice heading.
+    Cistern {
+        #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
+        heading: HexFace,
+    },
     /// One cell of a climb composition: a flight that rises a storey across several
     /// cells rather than inside one (`docs/climb_compositions_plan.md`). `heading` is
     /// the lateral direction the flight climbs toward. The cells find each other
@@ -157,6 +172,42 @@ pub enum HexArchetype {
         #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
         heading: HexFace,
     },
+    /// A Library reading chamber sector with connected elevated galleries.
+    ArchiveWell {
+        #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
+        heading: HexFace,
+    },
+
+    /// A Zen rain garden sector, with opaque screens and a covered veranda.
+    RainCourt {
+        #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
+        heading: HexFace,
+    },
+    /// A Lumen transit hall sector, with fixed canopy lighting and three approaches.
+    SwitchingConcourse {
+        #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
+        heading: HexFace,
+    },
+    /// Monument piers, exposed upper crossings and sheltered watching landings.
+    JadeNave {
+        #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
+        heading: HexFace,
+    },
+    /// Sky bridges and sheltered landings around genuine open floor.
+    LastPromenade {
+        #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
+        heading: HexFace,
+    },
+}
+
+/// Three distinct spaces in the Chargeworks card composition.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum ChargeworksPart {
+    Fabricator,
+    Transfer,
+    Receiver,
 }
 
 /// One cell of a climb composition, in the order a body climbs through it.
@@ -307,6 +358,15 @@ impl HexArchetype {
     #[must_use]
     pub const fn span_mask(self) -> u8 {
         match self {
+            Self::LastPromenade { heading }
+            | Self::JadeNave { heading }
+            | Self::SwitchingConcourse { heading }
+            | Self::RainCourt { heading }
+            | Self::ArchiveWell { heading }
+            | Self::Cistern { heading }
+            | Self::Chargeworks { heading, .. } => {
+                lateral_bit(heading) | lateral_bit(HexFace::LATERAL[(heading.index() + 1) % 6])
+            }
             Self::Climb { part, heading } => match part {
                 ClimbPart::Foot => lateral_bit(heading),
                 ClimbPart::Mid { turn } => {

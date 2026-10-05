@@ -24,6 +24,12 @@ pub struct District(ArchitectureRegister);
 impl District {
     /// The ground floor's: the Backrooms, on a facility of any height.
     pub const GROUND: Self = Self(ArchitectureRegister::CLIMB[0]);
+    pub const LIBRARY: Self = Self(ArchitectureRegister::InfiniteGallery);
+    pub const LUMEN: Self = Self(ArchitectureRegister::OverlitGrid);
+    pub const MONUMENT: Self = Self(ArchitectureRegister::FacetMonument);
+    pub const ZEN: Self = Self(ArchitectureRegister::ShadowScreen);
+    pub const REACTOR: Self = Self(ArchitectureRegister::Megastructure);
+    pub const SKY: Self = Self(ArchitectureRegister::Thinning);
 
     /// The district of floor `level` of a facility `levels` tall.
     #[must_use]
@@ -140,12 +146,27 @@ pub enum CardKind {
     /// a landing above the last, turned to the direction of the climb. The only card that
     /// builds the way up.
     Stair,
+    /// A multi-tile liminal room: a vast 3-hex water basin and column hall placed
+    /// atomically by the Architect. Sibling faces are opened with `Expanse` geometry.
+    Cistern,
+    /// One Reactor card places the fabrication, transfer and receiving spaces.
+    Chargeworks,
     /// The Rogue's: send the major Guardians to the cell played on (`sim::directive`).
     Directive,
     /// The Rogue's: install a sensor on the cell played on (`sim::sensor`).
     Sensor,
     /// The Rogue's: raise floor disturbance and hasten a pending retraction (`sim::instability`).
     Surge,
+    /// One Library card places a reading well and its elevated gallery circuit.
+    ArchiveWell,
+    /// One Zen card places a sheltered veranda around an indoor rain garden.
+    RainCourt,
+    /// One Lumen card places a luminous three-bay transit hall.
+    SwitchingConcourse,
+    /// One Monument card places faceted piers and raised watching landings.
+    JadeNave,
+    /// Three Sky landings connected by exposed bridges; no new finish rule.
+    LastPromenade,
 }
 
 impl CardKind {
@@ -175,6 +196,28 @@ impl Card {
             (CardKind::Station, _) => "recharge station".to_string(),
             (CardKind::Stair, Some(district)) => format!("stair - {}", district.label()),
             (CardKind::Stair, None) => "stair".to_string(),
+            (CardKind::Cistern, Some(district)) => format!("cistern - {}", district.label()),
+            (CardKind::Cistern, None) => "cistern".to_string(),
+            (CardKind::Chargeworks, Some(district)) => {
+                format!("chargeworks - {}", district.label())
+            }
+            (CardKind::Chargeworks, None) => "chargeworks".to_string(),
+            (CardKind::ArchiveWell, Some(district)) => {
+                format!("archive well - {}", district.label())
+            }
+            (CardKind::ArchiveWell, None) => "archive well".to_string(),
+            (CardKind::RainCourt, Some(district)) => format!("rain court - {}", district.label()),
+            (CardKind::RainCourt, None) => "rain court".to_string(),
+            (CardKind::SwitchingConcourse, Some(district)) => {
+                format!("switching concourse - {}", district.label())
+            }
+            (CardKind::JadeNave, Some(district)) => format!("jade nave - {}", district.label()),
+            (CardKind::JadeNave, None) => "jade nave".to_string(),
+            (CardKind::LastPromenade, Some(district)) => {
+                format!("last promenade - {}", district.label())
+            }
+            (CardKind::LastPromenade, None) => "last promenade".to_string(),
+            (CardKind::SwitchingConcourse, None) => "switching concourse".to_string(),
             (CardKind::Tile(shape), None) => shape.label().to_string(),
             (CardKind::Directive, _) => "Guardian directive".to_string(),
             (CardKind::Sensor, _) => "sensor".to_string(),
@@ -213,26 +256,62 @@ impl Deck {
         Self::with_stairs(seed, levels, shapes, 0)
     }
 
-    /// A deck of `shapes` and `stairs` stair cards in each district, plus doors
-    /// and, for the first-person game, deployable recharge stations.
+    /// Two of each of `shapes` and `stairs` stair cards in each district, Library Archive Well, Backrooms Cistern and Reactor
+    /// Chargeworks cards, plus doors and deployable recharge stations.
     #[must_use]
-    pub fn with_stairs(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
+    pub fn with_stairs_and_wonders(
+        seed: u64,
+        levels: u8,
+        shapes: &[TileShape],
+        stairs: u8,
+        wonders: u8,
+    ) -> Self {
         Self::composed(
             seed,
             levels,
             shapes,
             stairs,
+            wonders,
             &Self::loyal_extras(stairs),
             usize::MAX,
         )
     }
 
-    /// A team's deck: [`Self::with_stairs`], dealing only the ground floor's district until
-    /// the team's bodies reach another ([`Self::open_through`]). Seven districts' tiles
-    /// dealt from the start would leave most of a hand for floors nobody can reach.
+    /// A deck of `shapes` and `stairs` stair cards in each district, plus doors
+    /// and, for the first-person game, deployable recharge stations.
+    #[must_use]
+    pub fn with_stairs(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
+        Self::with_stairs_and_wonders(seed, levels, shapes, stairs, 0)
+    }
+
+    /// A team's deck: [`Self::with_stairs_and_wonders`], dealing only the ground floor's district until
+    /// the team's bodies reach another ([`Self::open_through`]). Includes one multi-tile
+    /// Library Archive Well, Zen Rain Court, Backrooms Cistern, Reactor Chargeworks,
+    /// Lumen Concourse and Monument Jade Nave. Seven districts' tiles dealt from the start would leave most
+    /// of a hand for floors nobody can reach.
     #[must_use]
     pub fn for_team(seed: u64, levels: u8, shapes: &[TileShape], stairs: u8) -> Self {
-        Self::composed(seed, levels, shapes, stairs, &Self::loyal_extras(stairs), 1)
+        Self::for_team_with_wonders(seed, levels, shapes, stairs, 1)
+    }
+
+    /// A team's deck with an explicit number of each district's authored wonder cards.
+    #[must_use]
+    pub fn for_team_with_wonders(
+        seed: u64,
+        levels: u8,
+        shapes: &[TileShape],
+        stairs: u8,
+        wonders: u8,
+    ) -> Self {
+        Self::composed(
+            seed,
+            levels,
+            shapes,
+            stairs,
+            wonders,
+            &Self::loyal_extras(stairs),
+            1,
+        )
     }
 
     fn loyal_extras(stairs: u8) -> Vec<(CardKind, u8)> {
@@ -243,8 +322,9 @@ impl Deck {
         }
     }
 
-    /// The Rogue's deck (design section 7): two of each of `shapes` in each district, the
-    /// doors, and the machinery - Guardian directives, sensors and surges - but no way up.
+    /// The Rogue's deck (design section 7): two of each of `shapes` in each district,
+    /// one of each authored wonder where its district exists, the doors, and the machinery -
+    /// Guardian directives, sensors and surges - but no way up.
     #[must_use]
     pub fn rogue(seed: u64, levels: u8, shapes: &[TileShape]) -> Self {
         Self::composed(
@@ -252,6 +332,7 @@ impl Deck {
             levels,
             shapes,
             0,
+            1,
             &[
                 (CardKind::Door, 3),
                 (CardKind::Directive, ROGUE_DIRECTIVES),
@@ -262,13 +343,14 @@ impl Deck {
         )
     }
 
-    /// Two of each of `shapes` and `stairs` stairs in each district, and `extra` cards of
-    /// no district, shuffled and dealt from the first `reach` districts.
+    /// Two of each of `shapes` and `stairs` stairs in each district, district wonders,
+    /// and `extra` cards of no district, shuffled and dealt from the first `reach` districts.
     fn composed(
         seed: u64,
         levels: u8,
         shapes: &[TileShape],
         stairs: u8,
+        wonders: u8,
         extra: &[(CardKind, u8)],
         reach: usize,
     ) -> Self {
@@ -294,6 +376,24 @@ impl Deck {
                 });
                 next_id += 1;
             }
+            let wonder = if district == District::GROUND {
+                Some(CardKind::Cistern)
+            } else if district == District::REACTOR {
+                Some(CardKind::Chargeworks)
+            } else {
+                None
+            };
+            for kind in wonder
+                .into_iter()
+                .flat_map(|kind| std::iter::repeat_n(kind, usize::from(wonders)))
+            {
+                cards.push(Card {
+                    id: CardId(next_id),
+                    kind,
+                    district: Some(district),
+                });
+                next_id += 1;
+            }
         }
         for &(kind, count) in extra {
             for _ in 0..count {
@@ -301,6 +401,57 @@ impl Deck {
                     id: CardId(next_id),
                     kind,
                     district: None,
+                });
+                next_id += 1;
+            }
+        }
+        // Append new content so existing card identities retain their district and kind.
+        if climb.contains(&District::LIBRARY) {
+            for _ in 0..wonders {
+                cards.push(Card {
+                    id: CardId(next_id),
+                    kind: CardKind::ArchiveWell,
+                    district: Some(District::LIBRARY),
+                });
+                next_id += 1;
+            }
+        }
+        if climb.contains(&District::ZEN) {
+            for _ in 0..wonders {
+                cards.push(Card {
+                    id: CardId(next_id),
+                    kind: CardKind::RainCourt,
+                    district: Some(District::ZEN),
+                });
+                next_id += 1;
+            }
+        }
+        if climb.contains(&District::LUMEN) {
+            for _ in 0..wonders {
+                cards.push(Card {
+                    id: CardId(next_id),
+                    kind: CardKind::SwitchingConcourse,
+                    district: Some(District::LUMEN),
+                });
+                next_id += 1;
+            }
+        }
+        if climb.contains(&District::MONUMENT) {
+            for _ in 0..wonders {
+                cards.push(Card {
+                    id: CardId(next_id),
+                    kind: CardKind::JadeNave,
+                    district: Some(District::MONUMENT),
+                });
+                next_id += 1;
+            }
+        }
+        if climb.contains(&District::SKY) {
+            for _ in 0..wonders {
+                cards.push(Card {
+                    id: CardId(next_id),
+                    kind: CardKind::LastPromenade,
+                    district: Some(District::SKY),
                 });
                 next_id += 1;
             }
@@ -333,14 +484,25 @@ impl Deck {
     /// the hand now holds one. For evidence captures and tests, as the `stage_*` helpers
     /// are: play draws only by refill.
     pub fn stage_kind(&mut self, kind: CardKind) -> bool {
-        if self.hand.iter().any(|card| card.kind == kind) {
+        self.stage_matching(|card| card.kind == kind)
+    }
+
+    /// A fixture needing a local play must not depend on the shuffled hand's
+    /// district. Staging still exchanges a real card from the finite deck.
+    #[cfg(test)]
+    pub(crate) fn stage_in_district(&mut self, kind: CardKind, district: District) -> bool {
+        self.stage_matching(|card| card.kind == kind && card.district == Some(district))
+    }
+
+    fn stage_matching(&mut self, matches: impl Fn(&Card) -> bool) -> bool {
+        if self.hand.iter().any(&matches) {
             return true;
         }
         if self.hand.is_empty() {
             return false;
         }
         for pile in [&mut self.draw, &mut self.discard] {
-            if let Some(index) = pile.iter().position(|card| card.kind == kind) {
+            if let Some(index) = pile.iter().position(&matches) {
                 std::mem::swap(&mut self.hand[0], &mut pile[index]);
                 return true;
             }
@@ -576,6 +738,73 @@ mod tests {
         assert_eq!(District::climb(1), vec![District::GROUND]);
     }
 
+    #[test]
+    fn cistern_wonders_belong_only_to_the_backrooms() {
+        for deck in [
+            Deck::for_team(7, 8, &TileShape::AUTHORED, 3),
+            Deck::rogue(7, 8, &TileShape::AUTHORED),
+        ] {
+            let cisterns: Vec<_> = deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .filter(|card| card.kind == CardKind::Cistern)
+                .collect();
+            assert_eq!(cisterns.len(), 1);
+            assert_eq!(cisterns[0].district, Some(District::GROUND));
+        }
+    }
+
+    #[test]
+    fn chargeworks_is_a_single_reactor_wonder_in_both_finite_decks() {
+        for deck in [
+            Deck::for_team(7, 8, &TileShape::AUTHORED, 3),
+            Deck::rogue(7, 8, &TileShape::AUTHORED),
+        ] {
+            let cards: Vec<_> = deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .filter(|c| c.kind == CardKind::Chargeworks)
+                .collect();
+            assert_eq!(cards.len(), 1);
+            assert_eq!(cards[0].district, Some(District::REACTOR));
+        }
+        let deck = Deck::for_team(7, 1, &TileShape::AUTHORED, 3);
+        assert!(
+            !deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .any(|c| c.kind == CardKind::Chargeworks)
+        );
+    }
+
+    #[test]
+    fn archive_is_a_single_library_wonder_in_both_finite_decks() {
+        for deck in [
+            Deck::for_team(7, 8, &TileShape::AUTHORED, 3),
+            Deck::rogue(7, 8, &TileShape::AUTHORED),
+        ] {
+            let archive: Vec<_> = deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .filter(|c| c.kind == CardKind::ArchiveWell)
+                .collect();
+            assert_eq!(archive.len(), 1);
+            assert_eq!(archive[0].district, Some(District::LIBRARY));
+        }
+        let deck = Deck::for_team(7, 1, &TileShape::AUTHORED, 3);
+        assert!(
+            !deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .any(|c| c.kind == CardKind::ArchiveWell)
+        );
+    }
+
     /// A team's deck deals the ground floor's tiles and none of a floor its bodies have
     /// not reached, however often it is dealt; reaching a floor opens it and those below.
     #[test]
@@ -615,5 +844,149 @@ mod tests {
         // A Rogue deals every district from the start.
         let rogue = Deck::rogue(7, 8, &TileShape::AUTHORED);
         assert_eq!(rogue.reach, 7);
+    }
+    #[test]
+    fn rain_court_is_finite_zen_content_appended_after_existing_card_ids() {
+        for deck in [
+            Deck::for_team(7, 8, &TileShape::AUTHORED, 8),
+            Deck::rogue(7, 8, &TileShape::AUTHORED),
+        ] {
+            let all: Vec<_> = deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .chain(&deck.discard)
+                .collect();
+            let rain: Vec<_> = all
+                .iter()
+                .filter(|c| c.kind == CardKind::RainCourt)
+                .collect();
+            assert_eq!(rain.len(), 1);
+            assert_eq!(rain[0].district, Some(District::ZEN));
+            assert!(
+                all.iter()
+                    .filter(|c| !matches!(
+                        c.kind,
+                        CardKind::RainCourt
+                            | CardKind::SwitchingConcourse
+                            | CardKind::JadeNave
+                            | CardKind::LastPromenade
+                    ))
+                    .all(|c| c.id.0 < rain[0].id.0)
+            );
+        }
+        let deck = Deck::for_team(7, 1, &TileShape::AUTHORED, 1);
+        assert!(
+            !deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .any(|c| c.kind == CardKind::RainCourt)
+        );
+    }
+    #[test]
+    fn concourse_is_finite_lumen_content_appended_after_existing_card_ids() {
+        for deck in [
+            Deck::for_team(7, 8, &TileShape::AUTHORED, 8),
+            Deck::rogue(7, 8, &TileShape::AUTHORED),
+        ] {
+            let all: Vec<_> = deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .chain(&deck.discard)
+                .collect();
+            let concourse: Vec<_> = all
+                .iter()
+                .filter(|c| c.kind == CardKind::SwitchingConcourse)
+                .collect();
+            assert_eq!(concourse.len(), 1);
+            assert_eq!(concourse[0].district, Some(District::LUMEN));
+            assert!(
+                all.iter()
+                    .filter(|c| !matches!(
+                        c.kind,
+                        CardKind::SwitchingConcourse | CardKind::JadeNave | CardKind::LastPromenade
+                    ))
+                    .all(|c| c.id.0 < concourse[0].id.0)
+            );
+        }
+        let deck = Deck::for_team(7, 1, &TileShape::AUTHORED, 1);
+        assert!(
+            !deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .any(|c| c.kind == CardKind::SwitchingConcourse)
+        );
+    }
+    #[test]
+    fn jade_is_finite_monument_content_appended_after_existing_card_ids() {
+        for deck in [
+            Deck::for_team(7, 8, &TileShape::AUTHORED, 8),
+            Deck::rogue(7, 8, &TileShape::AUTHORED),
+        ] {
+            let all: Vec<_> = deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .chain(&deck.discard)
+                .collect();
+            let jade: Vec<_> = all
+                .iter()
+                .filter(|c| c.kind == CardKind::JadeNave)
+                .collect();
+            assert_eq!(jade.len(), 1);
+            assert_eq!(jade[0].district, Some(District::MONUMENT));
+            assert!(
+                all.iter()
+                    .filter(|c| !matches!(c.kind, CardKind::JadeNave | CardKind::LastPromenade))
+                    .all(|c| c.id.0 < jade[0].id.0)
+            );
+        }
+        assert_eq!(District::for_floor(4, 8), District::MONUMENT);
+        assert_eq!(District::for_floor(5, 8), District::MONUMENT);
+        let deck = Deck::for_team(7, 1, &TileShape::AUTHORED, 1);
+        assert!(
+            !deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .any(|c| c.kind == CardKind::JadeNave)
+        );
+    }
+    #[test]
+    fn promenade_is_finite_sky_content_appended_after_existing_card_ids() {
+        for deck in [
+            Deck::for_team(7, 8, &TileShape::AUTHORED, 8),
+            Deck::rogue(7, 8, &TileShape::AUTHORED),
+        ] {
+            let all: Vec<_> = deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .chain(&deck.discard)
+                .collect();
+            let promenade: Vec<_> = all
+                .iter()
+                .filter(|c| c.kind == CardKind::LastPromenade)
+                .collect();
+            assert_eq!(promenade.len(), 1);
+            assert_eq!(promenade[0].district, Some(District::SKY));
+            assert!(
+                all.iter()
+                    .filter(|c| c.kind != CardKind::LastPromenade)
+                    .all(|c| c.id.0 < promenade[0].id.0)
+            );
+        }
+        assert_eq!(District::for_floor(7, 8), District::SKY);
+        let deck = Deck::for_team(7, 1, &TileShape::AUTHORED, 1);
+        assert!(
+            !deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .any(|c| c.kind == CardKind::LastPromenade)
+        );
     }
 }

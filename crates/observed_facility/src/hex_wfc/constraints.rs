@@ -12,7 +12,7 @@ use crate::map_spec::RoomRole;
 
 use super::blueprint::{self, StampedBlueprint};
 use super::relayout::{DistrictSite, district_of};
-use super::{HexRoomQuotas, HexWfcConfig, lateral_bit};
+use super::{ClimbTurn, HexRoomQuotas, HexWfcConfig, lateral_bit};
 
 /// Every coordinate of the grid in index order.
 pub(super) fn all_coords(config: HexWfcConfig) -> impl Iterator<Item = HexCoord> {
@@ -439,7 +439,7 @@ pub(super) fn corridor_skeleton(
     // Climb compositions laid so far, and their cells: a later route may take one
     // whole, and pass through none.
     let mut reserved: BTreeSet<HexCoord> = BTreeSet::new();
-    let mut climbs: BTreeSet<[HexCoord; 4]> = BTreeSet::new();
+    let mut climbs: BTreeSet<super::routing::RoutedClimb> = BTreeSet::new();
     // Claiming a path is the same work whichever pass asks for it, and the two
     // passes below disagreeing about it is the kind of drift that shows up as a
     // corridor that stops one cell short of a door.
@@ -448,7 +448,7 @@ pub(super) fn corridor_skeleton(
                  up: &mut BTreeMap<HexCoord, PortClass>,
                  down: &mut BTreeMap<HexCoord, PortClass>,
                  reserved: &mut BTreeSet<HexCoord>,
-                 climbs: &mut BTreeSet<[HexCoord; 4]>| {
+                 climbs: &mut BTreeSet<super::routing::RoutedClimb>| {
         for window in path.windows(2) {
             let (here, next) = (window[0], window[1]);
             if here.level == next.level {
@@ -472,8 +472,8 @@ pub(super) fn corridor_skeleton(
             adjacency.entry(here).or_default();
             adjacency.entry(next).or_default();
         }
-        for climb in super::routing::climbs_in(path) {
-            reserved.extend(climb);
+        for climb in super::routing::routed_climbs_in(path) {
+            reserved.extend(climb.cells);
             climbs.insert(climb);
         }
     };
@@ -591,7 +591,7 @@ pub(super) fn corridor_skeleton(
 fn skeleton_path(
     config: HexWfcConfig,
     room_cells: &BTreeSet<HexCoord>,
-    (reserved, climbs): (&BTreeSet<HexCoord>, &BTreeSet<[HexCoord; 4]>),
+    (reserved, climbs): (&BTreeSet<HexCoord>, &BTreeSet<super::routing::RoutedClimb>),
     doorsteps: &BTreeSet<HexCoord>,
     skeleton: &BTreeMap<HexCoord, BTreeSet<HexCoord>>,
     start: HexCoord,
@@ -624,7 +624,7 @@ fn skeleton_path(
 fn skeleton_path_to_skeleton(
     config: HexWfcConfig,
     room_cells: &BTreeSet<HexCoord>,
-    (reserved, climbs): (&BTreeSet<HexCoord>, &BTreeSet<[HexCoord; 4]>),
+    (reserved, climbs): (&BTreeSet<HexCoord>, &BTreeSet<super::routing::RoutedClimb>),
     doorsteps: &BTreeSet<HexCoord>,
     skeleton: &BTreeMap<HexCoord, BTreeSet<HexCoord>>,
     start: HexCoord,
@@ -722,7 +722,14 @@ pub(super) fn forced_route_edges(
                 [HexFace::East, HexFace::SouthEast]
                     .into_iter()
                     .filter_map(|face| {
-                        let run = super::routing::climb_move(grid, current, face, true)?;
+                        let run = super::routing::climb_move(
+                            grid,
+                            current,
+                            face,
+                            ClimbTurn::Ahead,
+                            ClimbTurn::Ahead,
+                            true,
+                        )?;
                         let out = run[4];
                         let short_of_exit = out.q <= exit.q && out.r <= exit.r;
                         let clear = run[..4].iter().all(|cell| !blueprint_cells.contains(cell))

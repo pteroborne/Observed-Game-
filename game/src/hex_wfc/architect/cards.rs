@@ -36,6 +36,8 @@ const TILE_SCALE: f32 = 0.092;
 const DOOR_SCALE: f32 = 0.04;
 /// A stair stands two floors tall.
 const STAIR_SCALE: f32 = 0.13;
+/// A cistern spans three contiguous hexes.
+const WONDER_SCALE: f32 = 0.14;
 
 /// Every card layer, for the light that lights them.
 pub(super) fn layers() -> impl Iterator<Item = usize> {
@@ -155,6 +157,13 @@ pub(super) fn sync(
                 ortho.scale = match card.kind {
                     CardKind::Tile(_) => TILE_SCALE,
                     CardKind::Stair => STAIR_SCALE,
+                    CardKind::Cistern
+                    | CardKind::Chargeworks
+                    | CardKind::ArchiveWell
+                    | CardKind::LastPromenade
+                    | CardKind::JadeNave
+                    | CardKind::SwitchingConcourse
+                    | CardKind::RainCourt => WONDER_SCALE,
                     CardKind::Door
                     | CardKind::Station
                     | CardKind::Directive
@@ -176,7 +185,15 @@ pub(super) fn sync(
             ));
         };
         match card.kind {
-            CardKind::Tile(_) | CardKind::Stair => {
+            CardKind::Tile(_)
+            | CardKind::Stair
+            | CardKind::Cistern
+            | CardKind::Chargeworks
+            | CardKind::ArchiveWell
+            | CardKind::LastPromenade
+            | CardKind::JadeNave
+            | CardKind::SwitchingConcourse
+            | CardKind::RainCourt => {
                 let register = card
                     .district
                     .map_or(ArchitectureRegister::ALL[0], |district| district.register());
@@ -184,20 +201,32 @@ pub(super) fn sync(
                 // The tile as the corpus builds it in this district: projected at a cell
                 // of the district - with a floor above it, for a stair - and moved from
                 // there to the card.
-                let top = physical.facility.config.levels.saturating_sub(1);
-                let Some(cell) = physical
-                    .facility
-                    .architecture
-                    .iter()
-                    .find(|(cell, found)| {
-                        **found == register && (card.kind != CardKind::Stair || cell.level < top)
-                    })
-                    .map(|(&cell, _)| cell)
+                let Some((cell, pieces)) =
+                    building::preview_by(physical, card.kind, register, rotation)
                 else {
                     continue;
                 };
-                let Some(pieces) = building::built_by(physical, card.kind, cell, rotation) else {
-                    continue;
+                // Centre the entire wonder on its thumbnail, including doorway bars.
+                let center = if matches!(
+                    card.kind,
+                    CardKind::Cistern
+                        | CardKind::Chargeworks
+                        | CardKind::ArchiveWell
+                        | CardKind::LastPromenade
+                        | CardKind::JadeNave
+                        | CardKind::SwitchingConcourse
+                        | CardKind::RainCourt
+                ) {
+                    let cells: std::collections::BTreeSet<_> =
+                        pieces.iter().map(|p| p.source_cell).collect();
+                    cells
+                        .iter()
+                        .map(|&c| Vec3::from_array(hex_origin(c)))
+                        .sum::<Vec3>()
+                        / cells.len() as f32
+                        - Vec3::from_array(hex_origin(cell))
+                } else {
+                    Vec3::ZERO
                 };
                 // A stair sits half a floor low, so both of its floors are on the card.
                 let drop = if card.kind == CardKind::Stair {
@@ -205,8 +234,9 @@ pub(super) fn sync(
                 } else {
                     Vec3::ZERO
                 };
-                let moved =
-                    Transform::from_translation(at - Vec3::from_array(hex_origin(cell)) - drop);
+                let moved = Transform::from_translation(
+                    at - Vec3::from_array(hex_origin(cell)) - drop - center,
+                );
                 for floor in [true, false] {
                     if let Some(mesh) = building::cutaway_mesh(&pieces, floor, building::bearing())
                     {
@@ -226,23 +256,101 @@ pub(super) fn sync(
                     unlit: true,
                     ..default()
                 });
-                let bars: Vec<(HexFace, f32)> = match card.kind {
+                let bars: Vec<(HexFace, Vec3)> = match card.kind {
                     CardKind::Tile(shape) => HexFace::LATERAL
                         .into_iter()
                         .filter(|face| shape.doors(rotation) & (1 << face.index()) != 0)
-                        .map(|face| (face, 0.0))
+                        .map(|face| (face, Vec3::ZERO))
                         .collect(),
+                    CardKind::Cistern
+                    | CardKind::Chargeworks
+                    | CardKind::ArchiveWell
+                    | CardKind::LastPromenade
+                    | CardKind::JadeNave
+                    | CardKind::SwitchingConcourse
+                    | CardKind::RainCourt => {
+                        let mut bars = Vec::new();
+                        if let Some(placements) = if card.kind == CardKind::Cistern {
+                            observed_facility::hex_wfc::authored_cistern_room(
+                                physical.facility.config,
+                                cell,
+                                rotation,
+                            )
+                        } else if card.kind == CardKind::LastPromenade {
+                            observed_facility::hex_wfc::authored_last_promenade(
+                                physical.facility.config,
+                                cell,
+                                rotation,
+                            )
+                        } else if card.kind == CardKind::JadeNave {
+                            observed_facility::hex_wfc::authored_jade_nave(
+                                physical.facility.config,
+                                cell,
+                                rotation,
+                            )
+                        } else if card.kind == CardKind::SwitchingConcourse {
+                            observed_facility::hex_wfc::authored_switching_concourse(
+                                physical.facility.config,
+                                cell,
+                                rotation,
+                            )
+                        } else if card.kind == CardKind::RainCourt {
+                            observed_facility::hex_wfc::authored_rain_court(
+                                physical.facility.config,
+                                cell,
+                                rotation,
+                            )
+                        } else if card.kind == CardKind::ArchiveWell {
+                            observed_facility::hex_wfc::authored_archive_well(
+                                physical.facility.config,
+                                cell,
+                                rotation,
+                            )
+                        } else {
+                            observed_facility::hex_wfc::authored_chargeworks(
+                                physical.facility.config,
+                                cell,
+                                rotation,
+                            )
+                        } {
+                            for p in placements {
+                                let cell_offset = Vec3::from_array(hex_origin(p.coord))
+                                    - Vec3::from_array(hex_origin(cell));
+                                for face in HexFace::LATERAL {
+                                    if p.ports().port(face) == observed_hex::PortClass::Door {
+                                        bars.push((face, cell_offset));
+                                    }
+                                }
+                            }
+                        }
+                        bars
+                    }
                     _ => {
-                        let heading = HexFace::LATERAL[usize::from(rotation % 6)];
+                        let (heading, turn, exit) =
+                            observed_facility::hex_wfc::stair_shape(rotation);
+                        let exit_face = exit.apply(turn.apply(heading));
+                        let landing_offset = observed_facility::hex_wfc::authored_climb_shaped(
+                            physical.facility.config,
+                            cell,
+                            heading,
+                            turn,
+                            exit,
+                        )
+                        .map(|placements| {
+                            let landing = placements[3].coord;
+                            Vec3::from_array(hex_origin(landing))
+                                - Vec3::from_array(hex_origin(cell))
+                        })
+                        .unwrap_or(Vec3::Y * observed_hex::TILE_LEVEL_HEIGHT);
                         vec![
-                            (heading.opposite(), 0.0),
-                            (heading, observed_hex::TILE_LEVEL_HEIGHT),
+                            (heading.opposite(), Vec3::ZERO),
+                            (exit_face, landing_offset),
                         ]
                     }
                 };
-                for (face, rise) in bars {
+                for (face, offset) in bars {
                     let mut bar = threshold_bar(face);
-                    bar.translation += at - drop + Vec3::Y * rise;
+                    bar.translation += at - drop - center + offset;
                     spawn(Cuboid::new(1.0, 1.0, 1.0).into(), threshold.clone(), bar);
                 }
             }

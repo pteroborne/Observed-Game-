@@ -29,7 +29,14 @@ fn archetype_label(archetype: HexArchetype) -> &'static str {
         HexArchetype::Straight => "straight",
         HexArchetype::Corner => "corner",
         HexArchetype::Junction => "junction",
-        HexArchetype::Expanse => "expanse",
+        HexArchetype::Expanse
+        | HexArchetype::LastPromenade { .. }
+        | HexArchetype::JadeNave { .. }
+        | HexArchetype::SwitchingConcourse { .. }
+        | HexArchetype::RainCourt { .. }
+        | HexArchetype::ArchiveWell { .. }
+        | HexArchetype::Cistern { .. }
+        | HexArchetype::Chargeworks { .. } => "expanse",
         HexArchetype::Climb { .. } => "climb",
     }
 }

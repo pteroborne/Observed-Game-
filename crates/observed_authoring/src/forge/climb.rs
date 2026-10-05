@@ -315,7 +315,13 @@ impl Dressing {
         }
     }
 
-    /// Whether the cell keeps its ceiling slab and full side walls.
+    /// Whether the cell keeps a ceiling slab. Monument climbs are roofless, matching
+    /// the roofless district, and Sky is open to the air.
+    const fn has_ceiling(self) -> bool {
+        !matches!(self, Self::Sky | Self::Monument)
+    }
+
+    /// Whether the cell keeps its full side walls instead of parapets.
     const fn enclosed(self) -> bool {
         !matches!(self, Self::Sky)
     }
@@ -667,7 +673,7 @@ fn dress(dressing: Dressing, part: Part) -> (String, Option<String>) {
         Part::Landing(exit) if exit != Turn::Ahead => &[false],
         _ => &[true, false],
     };
-    let top = part.top(dressing.enclosed());
+    let top = part.top(dressing.has_ceiling());
     let light_x = part.light_x();
     let floor_at_light = part.height(light_x).unwrap_or(FLOOR_TOP);
     // A light or fixture this high above the floor, kept inside the cell.
@@ -800,7 +806,11 @@ fn dress(dressing: Dressing, part: Part) -> (String, Option<String>) {
 /// the two walls farthest round the outside of the turn, well clear of the climb
 /// line, and the Monument a sharp turn's newel as well.
 fn dress_bend(dressing: Dressing, bend: &Bend) -> (String, Option<String>) {
-    let top = if dressing.enclosed() { CEILING } else { LEVEL };
+    let top = if dressing.has_ceiling() {
+        CEILING
+    } else {
+        LEVEL
+    };
     let outer = bend.outer_faces();
     let walls = &outer[..2];
     // A band along a wall's inner face, from `near` to `far` in front of it, kept
@@ -1186,7 +1196,7 @@ fn cell(dressing: Dressing, part: Part) -> (String, String) {
         title,
     } = Skeleton::of(part);
     let mut brushes = skeleton;
-    if dressing.enclosed() && part != Part::High {
+    if dressing.has_ceiling() && part != Part::High {
         brushes.push_str(&hex_slab(CEILING, LEVEL, 0.0, 3.0));
     }
     brushes.push_str(&sides(dressing, part, door, &open));

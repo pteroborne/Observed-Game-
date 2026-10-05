@@ -77,7 +77,16 @@ pub(crate) fn compatibility_test_content() -> &'static std::sync::Arc<HexMatchCo
                 .cells
                 .iter()
                 // The authored climbs: the generated library has none.
-                .filter(|tile| tile.key.archetype.starts_with("climb_"))
+                .filter(|tile| {
+                    tile.key.archetype.starts_with("climb_")
+                        || tile.key.archetype == "cistern"
+                        || tile.key.archetype == "archive_well"
+                        || tile.key.archetype == "rain_court"
+                        || tile.key.archetype == "jade_nave"
+                        || tile.key.archetype == "last_promenade"
+                        || tile.key.archetype == "switching_concourse"
+                        || tile.key.archetype.starts_with("chargeworks_")
+                })
                 .cloned(),
         );
         std::sync::Arc::new(HexMatchContent::from_runtime_catalog(

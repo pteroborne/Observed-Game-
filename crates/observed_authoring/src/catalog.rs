@@ -1238,8 +1238,11 @@ mod tests {
         // 335 since the climb composition's four cells (`forge::climb`); 359 since every
         // district has its own four (seven dressings, 28 cells); 181 since the ramps
         // and the 171 stair towers retired; 230 since climbs turn (seven shapes of cell
-        // in seven dressings).
-        assert_eq!(built.catalog.modules.len(), 230);
+        // in seven dressings); 236 with the six grid-fitted Cistern orientations; 254 with the
+        // three Chargeworks roles at six orientations.
+        // Six Library Archive Well and six Zen Rain Court orientations bring the count to 266.
+        // Six Sky Last Promenade orientations complete the seven district wonders.
+        assert_eq!(built.catalog.modules.len(), 284);
         let registers = crate::tile_source::REGISTERS;
         for path in ignored {
             let text = std::fs::read_to_string(root.join(&path)).expect("retired source exists");

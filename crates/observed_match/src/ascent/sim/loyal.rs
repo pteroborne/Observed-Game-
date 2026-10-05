@@ -229,11 +229,26 @@ impl ArchitectLab {
             .collect();
         let mut out = Vec::new();
         for card in &self.deck.hand {
-            if !matches!(card.kind, CardKind::Tile(_) | CardKind::Stair) {
+            if !matches!(
+                card.kind,
+                CardKind::Tile(_)
+                    | CardKind::Stair
+                    | CardKind::Cistern
+                    | CardKind::Chargeworks
+                    | CardKind::ArchiveWell
+                    | CardKind::LastPromenade
+                    | CardKind::JadeNave
+                    | CardKind::SwitchingConcourse
+                    | CardKind::RainCourt
+            ) {
                 continue;
             }
+            let max_rotations = match card.kind {
+                CardKind::Stair => 120,
+                _ => 6,
+            };
             for &target in &near {
-                for rotation in 0..6 {
+                for rotation in 0..max_rotations {
                     let command = ArchitectCommand::Play {
                         card: card.id,
                         target,
@@ -245,6 +260,15 @@ impl ArchitectLab {
                     let changes = match card.kind {
                         CardKind::Tile(shape) => {
                             vec![self.played_placement(shape, target, rotation)]
+                        }
+                        CardKind::Cistern
+                        | CardKind::Chargeworks
+                        | CardKind::ArchiveWell
+                        | CardKind::LastPromenade
+                        | CardKind::JadeNave
+                        | CardKind::SwitchingConcourse
+                        | CardKind::RainCourt => {
+                            self.played_wonder(card.kind, target, rotation).to_vec()
                         }
                         _ => self.played_stair(target, rotation).to_vec(),
                     };

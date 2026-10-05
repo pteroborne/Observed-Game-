@@ -5,7 +5,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 
-use super::assets::{ContentScene, asset_present};
+use super::assets::asset_present;
 
 pub(crate) const SURFACE_UV_REPEAT_PER_METRE: f32 = 0.25;
 
@@ -28,22 +28,6 @@ pub(crate) fn load_repeating_texture(
             })
             .load(path)
     })
-}
-
-pub(crate) fn load_content_scene(
-    asset_server: &AssetServer,
-    manifest: &observed_content::ContentManifest,
-    id: &str,
-) -> Option<ContentScene> {
-    manifest
-        .assets
-        .iter()
-        .find(|asset| asset.id == id)
-        .filter(|asset| asset_present(&asset.path))
-        .map(|asset| ContentScene {
-            scene: asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset.path.clone())),
-            scale: asset.scale,
-        })
 }
 
 fn push_cuboid_face(

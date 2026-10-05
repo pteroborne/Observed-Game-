@@ -42,6 +42,14 @@ const MAPPING_TICKS: u64 = 1_200;
 const FALL_TICK: u64 = 150;
 const GIVE_UP_FRAMES: u16 = 12_000;
 
+mod archive;
+mod concourse;
+mod jade;
+mod promenade;
+mod rain;
+mod wonder;
+use wonder::WonderWalk;
+
 #[allow(clippy::too_many_arguments)]
 pub(in crate::hex_wfc) fn capture(
     mut commands: Commands,
@@ -52,11 +60,44 @@ pub(in crate::hex_wfc) fn capture(
     mut windows: Query<&mut Window>,
     building_in: Query<&BuildIn>,
     mut exit: MessageWriter<AppExit>,
+    mut reservoir: Local<Option<(observed_hex::HexCoord, u8)>>,
+    mut portrait_start: Local<Option<u16>>,
+    mut walk: Local<Option<WonderWalk>>,
+    mut factory_staged: Local<Option<wonder::FactoryStart>>,
 ) {
     let Some(mut request) = request else {
         return;
     };
     let rogue = request.mode == HexWfcCaptureMode::Rogue;
+    let factory = !rogue && std::env::var_os("OBSERVED2_CHARGEWORKS_PORTRAITS").is_some();
+    let promenade = !rogue && std::env::var_os("OBSERVED2_PROMENADE_PORTRAITS").is_some();
+    let jade = !rogue && std::env::var_os("OBSERVED2_JADE_PORTRAITS").is_some();
+    let concourse = !rogue && std::env::var_os("OBSERVED2_CONCOURSE_PORTRAITS").is_some();
+    let rain = !rogue && std::env::var_os("OBSERVED2_RAIN_PORTRAITS").is_some();
+    let archive = !rogue && std::env::var_os("OBSERVED2_ARCHIVE_PORTRAITS").is_some();
+    let portraits = !rogue
+        && (promenade
+            || jade
+            || concourse
+            || rain
+            || archive
+            || factory
+            || std::env::var_os("OBSERVED2_CISTERN_PORTRAITS").is_some());
+    let kind = if promenade {
+        CardKind::LastPromenade
+    } else if jade {
+        CardKind::JadeNave
+    } else if concourse {
+        CardKind::SwitchingConcourse
+    } else if rain {
+        CardKind::RainCourt
+    } else if archive {
+        CardKind::ArchiveWell
+    } else if factory {
+        CardKind::Chargeworks
+    } else {
+        CardKind::Cistern
+    };
     if request.mode != HexWfcCaptureMode::Architect && !rogue {
         return;
     }
@@ -81,16 +122,62 @@ pub(in crate::hex_wfc) fn capture(
         }
         return;
     }
-    // The board frames itself before anything is pointed at.
     let (Some(mut runtime), Some(mut desk), Some(_)) = (runtime, desk, board) else {
         return;
     };
+    if promenade || jade || concourse || rain || factory || archive {
+        if factory_staged.is_none() {
+            *factory_staged = wonder::stage_wonder(&mut runtime, &desk, kind);
+        }
+        if let Some(start) = factory_staged.as_mut() {
+            start.depart(&mut runtime);
+        } else {
+            return;
+        }
+    }
     let prefix = if rogue { "rogue" } else { "architect" };
-    let mapping = if rogue { FALL_TICK + 90 } else { MAPPING_TICKS };
+    let mapping = if rogue {
+        FALL_TICK + 90
+    } else if promenade {
+        // The last-floor bots can finish the match before the generic long tour.
+        // Allow physical discovery and departure, then capture a legal real play.
+        factory_staged
+            .as_ref()
+            .map_or(MAPPING_TICKS, |start| start.mapping_tick())
+    } else {
+        MAPPING_TICKS
+    };
+    let tick = runtime.match_state.tick;
+    if (request.stills == 0 || (portraits && request.stills == 1))
+        && tick >= mapping
+        && let Some(ascent) = runtime.ascent.as_mut()
+    {
+        let _ = ascent.stage_card(desk.seat, kind);
+    }
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
     };
-    let tick = runtime.match_state.tick;
+    // A live match can change again during the board's build-in animation. Hold
+    // this evidence fixture only after the real three-cell physical commit.
+    if (promenade || jade || concourse)
+        && request.stills == 3
+        && portrait_start.is_none()
+        && let Some((anchor, rotation)) = *reservoir
+        && ascent
+            .rules()
+            .played_wonder(kind, anchor, rotation)
+            .iter()
+            .all(|p| runtime.match_state.facility.placements.get(&p.coord) == Some(p))
+    {
+        commands.insert_resource(crate::hex_wfc::HexOnboardingGate { active: true });
+        commands.remove_resource::<crate::sim::state::SpectatorBot>();
+        *portrait_start = Some(request.frame);
+        info!(
+            "Wonder {:?} evidence holds the complete physical card commit",
+            kind
+        );
+    }
+
     let path = std::path::PathBuf::from(&request.path);
     let shoot = |commands: &mut Commands, name: &str| {
         let name = format!("{prefix}-{name}-1280x800.png");
@@ -104,9 +191,6 @@ pub(in crate::hex_wfc) fn capture(
             request.stills = 1;
         }
         1 => {
-            // Pick up the first card with a play the rules would take on a known cell,
-            // on any floor, and look at that floor: a tile if one can be played, so the
-            // still shows its ghost.
             let Some(knowledge) = desk.knowledge(ascent.rules()) else {
                 return;
             };
@@ -114,14 +198,25 @@ pub(in crate::hex_wfc) fn capture(
                 return;
             };
             let mut cards: Vec<_> = hand.deck.hand.iter().enumerate().collect();
-            // A stair when one is in hand, so the still shows the climb; a tile else.
+            // A reservoir inspection must not silently capture a different card.
+            if portraits {
+                cards.retain(|(_, card)| card.kind == kind);
+            }
+            // A cistern when one is in hand, so the still shows the multi-tile room; a stair else; a tile else.
             cards.sort_by_key(|(_, card)| match card.kind {
-                CardKind::Stair => 0,
-                CardKind::Tile(_) => 1,
-                CardKind::Door => 2,
-                CardKind::Station => 2,
+                CardKind::Cistern
+                | CardKind::Chargeworks
+                | CardKind::ArchiveWell
+                | CardKind::LastPromenade
+                | CardKind::JadeNave
+                | CardKind::SwitchingConcourse
+                | CardKind::RainCourt => 0,
+                CardKind::Stair => 1,
+                CardKind::Tile(_) => 2,
+                CardKind::Door => 3,
+                CardKind::Station => 3,
                 // The Rogue's orders build nothing to show.
-                CardKind::Directive | CardKind::Sensor | CardKind::Surge => 3,
+                CardKind::Directive | CardKind::Sensor | CardKind::Surge => 4,
             });
             let found = cards.into_iter().find_map(|(index, card)| {
                 knowledge.cells.keys().find_map(|&target| {
@@ -165,21 +260,43 @@ pub(in crate::hex_wfc) fn capture(
                     target,
                     rotation: desk.rotation,
                 };
+                if matches!(
+                    card.kind,
+                    CardKind::Cistern
+                        | CardKind::Chargeworks
+                        | CardKind::ArchiveWell
+                        | CardKind::LastPromenade
+                        | CardKind::JadeNave
+                        | CardKind::SwitchingConcourse
+                        | CardKind::RainCourt
+                ) {
+                    *reservoir = Some((target, desk.rotation));
+                }
                 let refusal = ascent.session().architect_refusal(desk.seat, play);
                 desk.settle(play, refusal);
+                if (promenade || jade || concourse) && refusal.is_some() {
+                    *reservoir = None;
+                    request.stills = 1;
+                    return;
+                }
             }
             request.last_shot_tick = tick;
             request.stills = 3;
         }
         // Caught while it builds in, however the ticks fall against the frames.
-        3 if building_in.iter().any(|room| room.age > 0.25)
-            || tick >= request.last_shot_tick + 120 =>
+        3 if (!(promenade || jade || concourse) || portrait_start.is_some())
+            && (building_in.iter().any(|room| room.age > 0.25)
+                || tick >= request.last_shot_tick + 120) =>
         {
             shoot(&mut commands, "building-in");
             request.last_shot_tick = tick;
             request.stills = 4;
         }
-        4 if tick >= request.last_shot_tick + 90 => {
+        4 if tick >= request.last_shot_tick + 90
+            || ((promenade || jade || concourse)
+                && portrait_start
+                    .is_some_and(|start| request.frame.saturating_sub(start) >= 120)) =>
+        {
             shoot(&mut commands, "built");
             let played = ascent.rules().command_log.len();
             info!("{prefix} capture: the rules have logged {played} plays");
@@ -187,7 +304,28 @@ pub(in crate::hex_wfc) fn capture(
             // once the still has had frames enough to be written.
             request.last_shot_tick = tick;
             request.stills = if rogue { 11 } else { 5 };
+            if portraits && reservoir.is_some() {
+                desk.eyes = super::eyes::eyes_for(&runtime, &desk).first().copied();
+                commands.insert_resource(crate::hex_wfc::HexOnboardingGate { active: true });
+                commands.remove_resource::<crate::sim::state::SpectatorBot>();
+                *portrait_start = Some(request.frame);
+                request.stills = 20;
+            }
         }
+        20 | 21 => wonder::inspect(
+            &mut commands,
+            &mut request,
+            &mut runtime,
+            &desk,
+            &mut exit,
+            wonder::Inspection {
+                reservoir: *reservoir,
+                portrait_start: *portrait_start,
+                walk: &mut walk,
+                factory,
+                kind,
+            },
+        ),
         // A teammate's request, as the desk shows it, and once it has been answered.
         5 => {
             let asked = super::requests::oldest_unanswered(ascent.session(), &desk);

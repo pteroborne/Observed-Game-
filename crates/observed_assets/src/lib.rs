@@ -79,13 +79,13 @@ pub const PROP: AssetSlot = AssetSlot {
     name: "prop",
     kind: AssetKind::Model,
     path: "models/prop.glb",
-    hint: "any CC0 glTF/GLB prop (Kenney, Quaternius, Poly Pizza)",
+    hint: "any CC0 glTF/GLB prop (Kenney deprecated, Quaternius, Poly Pizza)",
 };
 pub const CHIME: AssetSlot = AssetSlot {
     name: "chime",
     kind: AssetKind::Sound,
     path: "sounds/chime.ogg",
-    hint: "a CC0 UI/chime sound, OGG or WAV (Kenney, Freesound)",
+    hint: "a CC0 UI/chime sound, OGG or WAV (Freesound)",
 };
 pub const CEILING: AssetSlot = AssetSlot {
     name: "ceiling",

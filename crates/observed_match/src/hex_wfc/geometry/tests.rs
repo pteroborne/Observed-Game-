@@ -1824,3 +1824,157 @@ fn every_production_climb_composition_climbs_and_descends_end_to_end() {
     assert!(climbs >= 10, "production facilities place climbs: {climbs}");
     assert!(stalls.is_empty(), "climbs stalled: {stalls:?}");
 }
+
+/// The controller must cross every causeway and gallery in both directions.
+/// The reservoir's internal joins must also be open above the causeways.
+#[test]
+fn cistern_crossings_and_galleries_are_physical_for_every_rotation() {
+    let mut world = showcase();
+    world.blueprints.clear();
+    for p in world.placements.values_mut() {
+        p.space = HexSpace::Void;
+        p.archetype = HexArchetype::Void;
+        p.doors = 0;
+        p.up = PortClass::Sealed;
+        p.down = PortClass::Sealed;
+    }
+    let tiles = tiles();
+    let anchor = HexCoord {
+        q: 4,
+        r: 4,
+        level: 0,
+    };
+    for rotation in 0..6 {
+        let sectors =
+            observed_facility::hex_wfc::authored_cistern_room(world.config, anchor, rotation)
+                .unwrap();
+        let mut fixture = world.clone();
+        for sector in sectors {
+            fixture.placements.insert(sector.coord, sector);
+        }
+        let geometry =
+            HexWfcGeometrySnapshot::project(&fixture, &tiles).expect("bespoke reservoir projects");
+        let scene = RapierTraversalScene::from_arena_spec(&geometry.arena);
+        let centers = sectors.map(|p| Vec3::from_array(hex_origin(p.coord)) + Vec3::Y * 0.75);
+        let room_center = (centers[0] + centers[1] + centers[2]) / 3.0;
+        for reverse in [false, true] {
+            let mut route = centers.to_vec();
+            route.push(centers[0]);
+            if reverse {
+                route.reverse();
+            }
+            walk_room_route(&scene, &route)
+                .unwrap_or_else(|feet| panic!("rotation {rotation} crossing stalled at {feet:?}"));
+        }
+        for sector in sectors {
+            let HexArchetype::Cistern { heading } = sector.archetype else {
+                unreachable!()
+            };
+            let turn = glam::Quat::from_rotation_y(
+                -(heading.index() as f32) * std::f32::consts::TAU / 6.0,
+            );
+            let origin = Vec3::from_array(hex_origin(sector.coord));
+            let gallery: Vec<_> = [2, 3, 4, 5, 0]
+                .into_iter()
+                .map(|corner| {
+                    let (x, z) = observed_hex::CORNERS[corner];
+                    origin + turn * Vec3::new(x as f32 * 0.8, 0.75, z as f32 * 0.8)
+                })
+                .collect();
+            for reverse in [false, true] {
+                let mut route = gallery.clone();
+                if reverse {
+                    route.reverse();
+                }
+                walk_room_route(&scene, &route).unwrap_or_else(|feet| {
+                    panic!("rotation {rotation}, sector {heading:?} gallery stalled at {feet:?}")
+                });
+            }
+            for face in HexFace::LATERAL {
+                if sector.ports().port(face) != PortClass::Span {
+                    continue;
+                }
+                let [a, b] = observed_hex::face_edge(face);
+                let a = Vec3::new(a.0 as f32, 0.0, a.1 as f32);
+                let b = Vec3::new(b.0 as f32, 0.0, b.1 as f32);
+                let midpoint = Vec3::from_array(hex_origin(sector.coord)) + (a + b) * 0.5;
+                let tangent = (b - a).normalize();
+                let normal = ((a + b) * 0.5).normalize();
+                // Where an open span ends at the exterior, adjoining wall
+                // corners must seal. Exact rotations of a quantized hex left
+                // a narrow full-height slit here, visible in the first capture.
+                let origin = Vec3::from_array(hex_origin(sector.coord));
+                let corner = [origin + a, origin + b]
+                    .into_iter()
+                    .max_by(|a, b| {
+                        a.distance_squared(room_center)
+                            .total_cmp(&b.distance_squared(room_center))
+                    })
+                    .unwrap();
+                let outward = (corner - room_center).with_y(0.0).normalize();
+                let across = Vec3::new(-outward.z, 0.0, outward.x);
+                for offset in [-0.02, 0.0, 0.02] {
+                    let from = corner - outward * 0.2 + across * offset + Vec3::Y * 2.0;
+                    assert!(
+                        scene.ray_distance(from, outward, 0.6).is_some(),
+                        "exterior slit at rotation {rotation}, seam {face:?}, offset {offset}"
+                    );
+                }
+                for along in [-3.0, 0.0, 3.0] {
+                    for height in [1.8, 5.5] {
+                        let from = midpoint + tangent * along + Vec3::Y * height - normal * 0.4;
+                        assert_eq!(
+                            scene.ray_distance(from, normal, 0.8),
+                            None,
+                            "rotation {rotation}, seam {face:?}, height {height}, offset {along}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Walk real collision geometry, including the 25 cm gallery/deck steps.
+fn walk_room_route(scene: &RapierTraversalScene, route: &[Vec3]) -> Result<(), Vec3> {
+    let config = FpsConfig::default();
+    let mut body = FpsBody::spawned(route[0] + Vec3::Y * config.half_height, 0.0);
+    for target in &route[1..] {
+        let mut arrived = false;
+        for _ in 0..600 {
+            let feet = body.position - Vec3::Y * config.half_height;
+            let toward = (*target - feet).with_y(0.0);
+            if toward.length() < 0.25 && (feet.y - target.y).abs() < 0.35 {
+                arrived = true;
+                break;
+            }
+            body.yaw = toward.x.atan2(-toward.z);
+            step_character(
+                scene,
+                &mut body,
+                PlayerIntent {
+                    movement: Vec2::Y,
+                    ..PlayerIntent::default()
+                },
+                &config,
+                1.0 / 60.0,
+            );
+        }
+        if !arrived {
+            return Err(body.position - Vec3::Y * config.half_height);
+        }
+    }
+    Ok(())
+}
+
+mod chargeworks;
+
+mod archive;
+
+mod rain;
+
+#[cfg(test)]
+mod concourse;
+mod jade;
+
+mod promenade;

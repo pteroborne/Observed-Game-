@@ -15,8 +15,15 @@
 //! `style_lab` lab is the visual proof app for these rules; the rules and their
 //! tests live here.
 
+pub mod archive;
+pub mod chargeworks;
+pub mod cistern;
+pub mod concourse;
 pub mod iso;
+pub mod jade;
 pub mod kinetic;
+pub mod promenade;
+pub mod rain_court;
 
 pub mod architect;
 pub mod cosmetics;
@@ -24,6 +31,7 @@ pub mod equipment;
 pub mod guardian;
 pub mod observer;
 pub mod open_air;
+pub mod reactor;
 pub mod surfaces;
 
 use bevy::color::{Color, LinearRgba};
@@ -925,6 +933,8 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.key_shadows_enabled = true;
             palette.key_intensity = 55_000_000.0;
             palette.key_range = 42.0;
+            palette.light_color = rain_court::fixture_color();
+            palette.key_color = palette.light_color;
             // Hollow is a keyless district, so its cone angles are zero. A register that
             // switches the key back ON must state its own: a zero outer angle is a
             // zero-width cone that emits nothing, and it puts `1/tan(0)` into the shadow
@@ -1016,6 +1026,13 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.pools_rhythm = true;
         }
         Register::InfiniteGallery => {
+            // Babel's mineral shell needs the Archive's warm reading light.
+            // The inherited Spillway rig washed every surface in teal.
+            palette.ambient_color = Color::srgb(0.68, 0.64, 0.56);
+            palette.light_color = archive::fixture_color();
+            palette.key_color = palette.light_color;
+            palette.fog_color = Color::srgb(0.023, 0.020, 0.016);
+            palette.accent = LinearRgba::rgb(0.36, 0.27, 0.14);
             palette.fog_start = 12.0;
             palette.fog_end = 38.0;
             palette.pools_rhythm = true;
@@ -1064,13 +1081,13 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
     let (roughness, rhythm) = match register {
         // Poured concrete, chalky and absolute. The least specular thing here.
         Register::Monolith => (0.97, 0.62),
-        // Screens and dust. Matte, and the deepest dark between pools of any
+        // Cedar and paper. Matte, and the deepest dark between pools of any
         // district: the gaps are what the members are for.
-        Register::ShadowScreen => (0.95, 0.45),
-        // Nothing has been cleaned here in a very long time.
-        Register::Megastructure => (0.96, 0.34),
-        // Painted steel, wiped by hands for years. The only district with a
-        // sheen, and shallow gaps because people needed to see each other.
+        Register::ShadowScreen => (rain_court::ROUGHNESS, 0.45),
+        // Folded alien metal, with relief and a restrained specular sheen.
+        Register::Megastructure => (reactor::ROUGHNESS, 0.34),
+        // Painted steel, wiped by hands for years, with shallow gaps because
+        // people needed to see each other.
         Register::Wellshaft => (0.62, 0.80),
         // Sealed institutional floor: semi-gloss, and the source of that
         // particular squeak.
@@ -1080,9 +1097,8 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
         // Cut stone, honed rather than polished: monumental surfaces are matte
         // so the facets read as form rather than as glare.
         Register::FacetMonument => (0.88, 0.72),
-        // Old timber and cloth bindings. The most light-absorbent surface in
-        // the facility.
-        Register::InfiniteGallery => (0.93, 0.58),
+        // Honed mineral shell, shared with the Archive Well's reading galleries.
+        Register::InfiniteGallery => (archive::ROUGHNESS, 0.58),
         // Everything even, including the reflections. Flat by construction.
         Register::OverlitGrid => (0.90, 0.95),
         // Vinyl and gloss paint under fluorescent light: the specific sheen of
@@ -1282,6 +1298,24 @@ pub fn architecture_surface(
     role: ArchitectureSurfaceRole,
 ) -> Treatment {
     use observed_content::ArchitectureRegister as Register;
+    if register == Register::Megastructure && role != ArchitectureSurfaceRole::PracticalFixture {
+        let look = reactor::surface(role);
+        return Treatment {
+            base_color: look.base_color,
+            emissive: look.emissive,
+            signal: false,
+            edge: None,
+        };
+    }
+    if register == Register::InfiniteGallery && role != ArchitectureSurfaceRole::PracticalFixture {
+        let look = archive::surface(role);
+        return Treatment {
+            base_color: look.base_color,
+            emissive: look.emissive,
+            signal: false,
+            edge: None,
+        };
+    }
     if register == Register::OverlitGrid {
         let [floor, wall, ceiling] = architecture_material(register);
         return match role {
@@ -1322,46 +1356,20 @@ pub fn architecture_surface(
         };
     }
     if register == Register::ShadowScreen {
-        // Shadow Screen is not a dark district and had been modelled as one,
-        // which is how it ended up 2.7 dE from Megastructure - two registers
-        // whose only shared property is that neither of them reflects much.
-        //
-        // It is a *high-contrast* district. Near-black stained timber standing
-        // in front of paper with the sun behind it: the identity is the ratio,
-        // not the value, and no albedo tuning reaches a ratio.
-        //
-        // The wall's emissive here is roughly fourteen times the strongest
-        // structural glow anywhere else in the facility, and it is still legal.
-        // `SIGNAL_MIN_LUMINANCE` is 2.0 and the most recognisable district in
-        // the building authors a ceiling at 0.084, so the contract that says
-        // structure must not masquerade as a signal has about twenty-four times
-        // more headroom in it than anybody has ever spent. Nothing had to be
-        // overridden to light this; the values were simply timid.
-        return match role {
-            ArchitectureSurfaceRole::Floor => Treatment {
-                base_color: Color::srgb(0.055, 0.043, 0.036),
-                emissive: LinearRgba::rgb(0.002, 0.0015, 0.001),
-                signal: false,
-                edge: None,
-            },
-            ArchitectureSurfaceRole::Wall => Treatment {
-                base_color: Color::srgb(0.66, 0.60, 0.47),
-                emissive: LinearRgba::rgb(1.30, 1.15, 0.80),
-                signal: false,
-                edge: None,
-            },
-            ArchitectureSurfaceRole::Ceiling => Treatment {
-                base_color: Color::srgb(0.095, 0.078, 0.066),
-                emissive: LinearRgba::rgb(0.004, 0.003, 0.002),
-                signal: false,
-                edge: None,
-            },
-            ArchitectureSurfaceRole::PracticalFixture => Treatment {
-                base_color: Color::srgb(0.72, 0.64, 0.46),
+        if role == ArchitectureSurfaceRole::PracticalFixture {
+            return Treatment {
+                base_color: rain_court::colors()[1],
                 emissive: LinearRgba::rgb(1.05, 0.82, 0.44),
                 signal: false,
                 edge: None,
-            },
+            };
+        }
+        let look = rain_court::surface(role);
+        return Treatment {
+            base_color: look.base_color,
+            emissive: look.emissive,
+            signal: false,
+            edge: None,
         };
     }
     let [floor, wall, ceiling] = architecture_material(register);
@@ -1943,8 +1951,14 @@ pub fn hex_shell_surface(
     register: observed_content::ArchitectureRegister,
     role: ArchitectureSurfaceRole,
 ) -> HexSurfaceLook {
-    let treatment = architecture_surface(register, role);
     use observed_content::ArchitectureRegister as Register;
+    if register == Register::Megastructure && role != ArchitectureSurfaceRole::PracticalFixture {
+        return reactor::surface(role);
+    }
+    if register == Register::InfiniteGallery && role != ArchitectureSurfaceRole::PracticalFixture {
+        return archive::surface(role);
+    }
+    let treatment = architecture_surface(register, role);
     if matches!(register, Register::OverlitGrid | Register::ShadowScreen) {
         // These districts already own their albedo contrast. Generic palette
         // mixing dims the Noon's plaster and raises Shadow Screen's near-black
@@ -2003,9 +2017,16 @@ pub fn hex_practical_light(
     };
     let per_source = (source_count.max(1) as f32).sqrt().recip().clamp(0.55, 1.0);
     let noon = register == observed_content::ArchitectureRegister::OverlitGrid;
+    let source_intensity = if noon {
+        3_000_000.0
+    } else if register == observed_content::ArchitectureRegister::ShadowScreen {
+        rain_court::ORDINARY_FIXTURE_INTENSITY
+    } else {
+        720_000.0
+    };
     HexPracticalLight {
         color: palette.light_color,
-        intensity: (if noon { 3_000_000.0 } else { 720_000.0 }) * role_scale * rhythm * per_source,
+        intensity: source_intensity * role_scale * rhythm * per_source,
         range: 14.0,
         // A broad source softens the near-fixture specular response. Shadowless
         // fill is deliberate for the Noon's concealed, indirect fixtures.
@@ -3145,8 +3166,10 @@ mod tests {
         use observed_content::ArchitectureRegister as R;
         let floor = hex_shell_surface(R::ShadowScreen, ArchitectureSurfaceRole::Floor);
         let wall = hex_shell_surface(R::ShadowScreen, ArchitectureSurfaceRole::Wall);
-        assert!(wall.base_color.to_srgba().red / floor.base_color.to_srgba().red > 10.0);
-        assert!(wall.emissive.red > floor.emissive.red * 100.0);
+        assert!(wall.base_color.to_srgba().red / floor.base_color.to_srgba().red > 4.0);
+        assert_eq!(wall.base_color, rain_court::colors()[1]);
+        assert_eq!(floor.base_color, rain_court::colors()[0]);
+        assert_eq!(wall.emissive, LinearRgba::BLACK);
         assert!(wall.emissive.red < SIGNAL_MIN_LUMINANCE);
         assert!(floor.textured && wall.textured && !wall.unlit);
         let paper = surface_weave_rgba(architecture_weave(R::ShadowScreen)).expect("paper weave");

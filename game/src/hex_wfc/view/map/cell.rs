@@ -45,7 +45,14 @@ pub(in crate::hex_wfc::view) fn sketch_role(
             ClimbPart::High => HexSketchRole::ClimbHigh,
             ClimbPart::Landing { .. } => HexSketchRole::ClimbLanding,
         },
-        HexArchetype::Expanse => HexSketchRole::Expanse,
+        HexArchetype::Expanse
+        | HexArchetype::LastPromenade { .. }
+        | HexArchetype::JadeNave { .. }
+        | HexArchetype::SwitchingConcourse { .. }
+        | HexArchetype::RainCourt { .. }
+        | HexArchetype::ArchiveWell { .. }
+        | HexArchetype::Cistern { .. }
+        | HexArchetype::Chargeworks { .. } => HexSketchRole::Expanse,
         HexArchetype::Room => HexSketchRole::Room,
     }
 }

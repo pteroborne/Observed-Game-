@@ -25,7 +25,7 @@ pub const SURFACE_TEXTURE_SIZE: u32 = 512;
 /// repeats a texture once every four metres.
 pub const SURFACE_TILE_METRES: f32 = 4.0;
 
-/// A surface's images: the albedo multiplier as greyscale RGBA8 (sRGB), and a
+/// A surface's images: the albedo multiplier as RGBA8 (sRGB), and a
 /// tangent-space normal map as RGBA8 (linear).
 pub struct SurfaceImages {
     pub albedo: Vec<u8>,
@@ -46,6 +46,25 @@ pub fn surface_images(
     register: ArchitectureRegister,
     role: ArchitectureSurfaceRole,
 ) -> SurfaceImages {
+    if register == ArchitectureRegister::ShadowScreen
+        && role != ArchitectureSurfaceRole::PracticalFixture
+    {
+        return SurfaceImages {
+            albedo: crate::rain_court::albedo(if role == ArchitectureSurfaceRole::Wall {
+                1
+            } else {
+                0
+            }),
+            // Physical lattice and slats supply the relief, as in the Rain Court.
+            normal: [128, 128, 255, 255]
+                .repeat((SURFACE_TEXTURE_SIZE * SURFACE_TEXTURE_SIZE) as usize),
+        };
+    }
+    if register == ArchitectureRegister::Megastructure
+        && role != ArchitectureSurfaceRole::PracticalFixture
+    {
+        return crate::reactor::panel_images(role);
+    }
     let material = material(register, role);
     // A wall carries its district's weave too - the lattice, the dado, the shuttering
     // (`architecture_weave`) - struck into the material as joints.
@@ -95,6 +114,11 @@ pub fn surface_images(
             };
             normal.extend_from_slice(&[encode(nx), encode(ny), encode(nz), 255]);
         }
+    }
+    // Share the Archive Well's checker-cut floor, including the established
+    // relief beneath it. Walls and ceilings already use the same district images.
+    if register == ArchitectureRegister::InfiniteGallery && role == ArchitectureSurfaceRole::Floor {
+        albedo = crate::archive::floor_albedo();
     }
     SurfaceImages { albedo, normal }
 }

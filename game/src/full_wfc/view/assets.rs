@@ -6,7 +6,7 @@ use observed_style::{self as style, MarkerRole, SurfaceRole, ThresholdFrameState
 
 use crate::content::GameContent;
 use crate::view::assets::{ContentScene, neon_material, palette_tinted_neon_material};
-use crate::view::environment::{cuboid_mesh, load_content_scene, load_repeating_texture};
+use crate::view::environment::{cuboid_mesh, load_repeating_texture};
 
 #[derive(Clone)]
 pub(in crate::full_wfc) struct RegisterMaterials {
@@ -33,7 +33,7 @@ pub(in crate::full_wfc) struct FullWfcVisualAssets {
 impl FullWfcVisualAssets {
     pub fn load(
         asset_server: &AssetServer,
-        content: &GameContent,
+        _content: &GameContent,
         meshes: &mut Assets<Mesh>,
         materials: &mut Assets<StandardMaterial>,
     ) -> Self {
@@ -108,8 +108,9 @@ impl FullWfcVisualAssets {
                 unlit: true,
                 ..neon_material(&style::marker(MarkerRole::Exit))
             }),
-            threshold_gate: load_content_scene(asset_server, &content.manifest, "kenney_gate"),
-            cable_bundle: load_content_scene(asset_server, &content.manifest, "kenney_cables"),
+            // Kenney dressing assets are deprecated; fall back to procedural geometry.
+            threshold_gate: None,
+            cable_bundle: None,
             vertical_ring: meshes.add(Torus::new(1.52, 1.6)),
         }
     }

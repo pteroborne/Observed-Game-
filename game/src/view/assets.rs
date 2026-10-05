@@ -12,7 +12,7 @@ use observed_match::facility::TEAM_COUNT;
 use observed_style::{self as style, MarkerRole, SurfaceRole};
 
 use super::actor_metadata::SpriteMetadata;
-use super::environment::{load_content_scene, load_repeating_texture};
+use super::environment::load_repeating_texture;
 use crate::layout::{HALL_WIDTH, PLACE_TILE, WALL_HEIGHT};
 use crate::view::theme::TEAM_COLORS;
 
@@ -348,7 +348,7 @@ impl MatchAssets {
     /// present (absent slots stay `None` and fall back procedurally).
     pub(crate) fn load(
         asset_server: &AssetServer,
-        content_manifest: &observed_content::ContentManifest,
+        _content_manifest: &observed_content::ContentManifest,
         texture_atlases: &mut Assets<TextureAtlasLayout>,
         meshes: &mut Assets<Mesh>,
         materials: &mut Assets<StandardMaterial>,
@@ -608,8 +608,9 @@ impl MatchAssets {
             bot: load_scene(BOT_MODEL),
             equipment: load_scene(EQUIPMENT_MODEL),
             hazard: load_scene(HAZARD_MODEL),
-            threshold_gate: load_content_scene(asset_server, content_manifest, "kenney_gate"),
-            cable_bundle: load_content_scene(asset_server, content_manifest, "kenney_cables"),
+            // Kenney dressing assets are deprecated; fall back to procedural geometry.
+            threshold_gate: None,
+            cable_bundle: None,
             runner_stand: load_texture(RUNNER_STAND_SPRITE),
             runner_walk1: load_texture(RUNNER_WALK1_SPRITE),
             runner_walk2: load_texture(RUNNER_WALK2_SPRITE),

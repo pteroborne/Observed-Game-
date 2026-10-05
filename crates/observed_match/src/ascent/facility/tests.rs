@@ -228,7 +228,15 @@ fn assert_geometry_is_fresh(game: &AscentMatch) {
 #[test]
 fn a_card_play_is_built_into_the_facility_the_bodies_walk_in() {
     let mut game = game(7);
-    let command = explore_until_playable(&mut game, |_, _, _, _| true);
+    let command = explore_until_playable(&mut game, |game, target, rotation, index| {
+        let crate::ascent::sim::CardKind::Tile(shape) =
+            game.session().hands[&TEAM].deck.hand[index].kind
+        else {
+            return false;
+        };
+        game.rules().played_placement(shape, target, rotation)
+            != game.rules().world.placements[&target]
+    });
     let target = target_of(command);
     let before = game.physical().facility.placements[&target];
     let generation = game.physical().facility.generation;
@@ -381,13 +389,15 @@ fn rooms_and_stairs_are_refused_whole() {
     }
     let target = target.expect("the body has seen a room or a stair and looked away");
     let district = game.rules().district(target.level);
-    let card = game.session().hands[&TEAM]
-        .deck
+    let kind = crate::ascent::sim::CardKind::Tile(crate::ascent::sim::TileShape::Junction);
+    let deck = &mut game.ascent.session.hands.get_mut(&TEAM).unwrap().deck;
+    assert!(deck.stage_in_district(kind, district));
+    let card = deck
         .hand
         .iter()
-        .find(|card| card.district == Some(district))
+        .find(|card| card.kind == kind && card.district == Some(district))
         .copied()
-        .expect("a hand holds a card for each district it can reach");
+        .expect("a finite tile card for the protected floor");
     for rotation in 0..6 {
         assert_eq!(
             game.session().architect_refusal(
@@ -616,6 +626,10 @@ fn a_bot_architect_repairs_what_the_rogue_breaks_through_the_human_path() {
     }
     // The Rogue plays a contradiction near the body, somewhere it is not looking but its
     // team has mapped: an Architect can repair only what the team knows is there.
+    assert!(game.ascent.session.sim.deck.stage_in_district(
+        crate::ascent::sim::CardKind::Tile(crate::ascent::sim::TileShape::Junction),
+        game.rules().district(0),
+    ));
     let body = game.rules().observers[&ObserverId(BODY.0)].cell;
     let mapped = game.rules().team_knowledge[&TEAM].discovered_cells.clone();
     let sabotage = game
@@ -953,5 +967,362 @@ fn two_peers_stepping_the_same_frames_stay_in_step() {
     assert!(
         caught > 0,
         "a catch, so mazes carved on other threads were covered"
+    );
+}
+
+/// Playing a multi-tile Cistern wonder card updates the physical facility, geometry, and
+/// colliders atomically across all 3 cells of the room.
+#[test]
+fn cistern_card_play_updates_physical_geometry_and_colliders() {
+    use crate::ascent::sim::CardKind;
+    use observed_facility::hex_wfc::{HexArchetype, HexSpace};
+
+    let mut game = game(7);
+    assert!(
+        game.ascent
+            .session
+            .hands
+            .get_mut(&TEAM)
+            .unwrap()
+            .deck
+            .stage_kind(CardKind::Cistern)
+    );
+
+    let mut play = None;
+    for _ in 0..3_000 {
+        play = find_play(&game, |g, _target, _rotation, index| {
+            g.session().hands[&TEAM].deck.hand[index].kind == CardKind::Cistern
+        });
+        if play.is_some() {
+            break;
+        }
+        step(&mut game, Body::Explore, SeatCommand::None);
+    }
+    let play = play.expect("found a legal cistern site after exploration");
+    let ArchitectCommand::Play {
+        target, rotation, ..
+    } = play
+    else {
+        unreachable!()
+    };
+    let placements = game.rules().played_cistern(target, rotation);
+    let cells: Vec<HexCoord> = placements.iter().map(|p| p.coord).collect();
+
+    let refusals = step(&mut game, Body::Turn(0.0), SeatCommand::Architect(play));
+    assert!(refusals.is_empty(), "command accepted");
+
+    for cell in &cells {
+        let physical_p = game.physical().facility.placements[cell];
+        assert_eq!(physical_p.space, HexSpace::Hall);
+        assert!(matches!(physical_p.archetype, HexArchetype::Cistern { .. }));
+        let has_colliders = game
+            .physical()
+            .geometry
+            .pieces
+            .iter()
+            .any(|piece| piece.source_cell == *cell && piece.part.collides());
+        assert!(
+            has_colliders,
+            "physical match generated colliders for cistern cell {cell:?}"
+        );
+    }
+}
+
+#[test]
+fn chargeworks_card_is_reactor_only_and_commits_three_physical_cells_atomically() {
+    wonder_commits_atomically(
+        crate::ascent::sim::CardKind::Chargeworks,
+        crate::ascent::sim::District::REACTOR,
+    );
+}
+
+#[test]
+fn archive_card_is_library_only_and_commits_three_physical_cells_atomically() {
+    wonder_commits_atomically(
+        crate::ascent::sim::CardKind::ArchiveWell,
+        crate::ascent::sim::District::LIBRARY,
+    );
+}
+
+#[test]
+fn rain_card_is_zen_only_and_commits_three_physical_cells_atomically() {
+    wonder_commits_atomically(
+        crate::ascent::sim::CardKind::RainCourt,
+        crate::ascent::sim::District::ZEN,
+    );
+}
+
+#[test]
+fn concourse_card_is_lumen_only_and_commits_three_physical_cells_atomically() {
+    wonder_commits_atomically(
+        crate::ascent::sim::CardKind::SwitchingConcourse,
+        crate::ascent::sim::District::LUMEN,
+    );
+}
+
+#[test]
+fn jade_card_is_monument_only_and_commits_three_physical_cells_atomically() {
+    for level in [4, 5] {
+        wonder_commits_atomically_at(
+            crate::ascent::sim::CardKind::JadeNave,
+            crate::ascent::sim::District::MONUMENT,
+            Some(level),
+        );
+    }
+}
+
+#[test]
+fn promenade_card_is_sky_only_and_commits_three_physical_cells_atomically() {
+    wonder_commits_atomically_at(
+        crate::ascent::sim::CardKind::LastPromenade,
+        crate::ascent::sim::District::SKY,
+        Some(7),
+    );
+}
+
+fn wonder_commits_atomically(
+    kind: crate::ascent::sim::CardKind,
+    district: crate::ascent::sim::District,
+) {
+    wonder_commits_atomically_at(kind, district, None);
+}
+fn wonder_commits_atomically_at(
+    kind: crate::ascent::sim::CardKind,
+    district: crate::ascent::sim::District,
+    preferred_level: Option<u8>,
+) {
+    use crate::ascent::sim::District;
+    use observed_facility::hex_wfc::{HexArchetype, HexSpace};
+    let config = HexMatchConfig {
+        teams: 1,
+        members_per_team: 1,
+        guardian: false,
+        wfc: HexWfcConfig {
+            levels: 8,
+            ..HexWfcConfig::default()
+        },
+    };
+    let physical = HexWfcMatch::new_with_content(
+        7,
+        config,
+        crate::hex_wfc::compatibility_test_content().clone(),
+    )
+    .unwrap();
+    let cell = physical
+        .facility
+        .placements
+        .iter()
+        .find_map(|(&c, p)| {
+            (preferred_level.is_none_or(|level| c.level == level)
+                && District::for_floor(c.level, 8) == district
+                && matches!(
+                    p.archetype,
+                    HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
+                )
+                && !physical
+                    .facility
+                    .blueprints
+                    .iter()
+                    .any(|b| b.cells.contains(&c)))
+            .then_some(c)
+        })
+        .expect("a Reactor deck");
+    let mut game = AscentMatch::new(
+        physical,
+        7,
+        BTreeMap::from([(
+            ARCHITECT,
+            Seat {
+                role: Role::Architect(TEAM),
+                bot: false,
+            },
+        )]),
+    )
+    .unwrap();
+    game.ascent.stage_power(cell.level, true);
+    let card = game
+        .ascent
+        .stage_card(ARCHITECT, kind)
+        .expect("real card from deck");
+    let ground = *game
+        .physical
+        .facility
+        .placements
+        .keys()
+        .find(|c| {
+            c.level == 0
+                && !game.rules().observed.contains(c)
+                && !game.rules().prison_core.contains(c)
+                && !game.rules().anchored.contains(c)
+        })
+        .unwrap();
+    game.ascent
+        .session
+        .sim
+        .team_knowledge
+        .get_mut(&TEAM)
+        .unwrap()
+        .discovered_cells
+        .insert(ground);
+    assert_eq!(
+        game.session().architect_refusal(
+            ARCHITECT,
+            ArchitectCommand::Play {
+                card,
+                target: ground,
+                rotation: 0
+            }
+        ),
+        Some(Refusal::Architect(CommandRefusal::WrongDistrict))
+    );
+    // Pick a suitable starting hall, then discover it and leave through its real door.
+    let mut probe = game.rules().clone();
+    probe.deck = game.session().hands[&TEAM].deck.clone();
+    probe.known = probe.world.placements.keys().copied().collect();
+    probe.cooldown = 0;
+    let grid = probe.world.config.grid();
+    let (site, departure) = probe
+        .world
+        .placements
+        .iter()
+        .find_map(|(&at, p)| {
+            if !preferred_level.is_none_or(|level| at.level == level)
+                || !matches!(
+                    p.archetype,
+                    HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
+                )
+            {
+                return None;
+            }
+            (0..6).find_map(|rotation| {
+                if probe
+                    .refusal(ArchitectCommand::Play {
+                        card,
+                        target: at,
+                        rotation,
+                    })
+                    .is_some()
+                {
+                    return None;
+                }
+                let footprint = probe.played_wonder(kind, at, rotation);
+                observed_hex::HexFace::LATERAL.into_iter().find_map(|face| {
+                    let next = grid.neighbor(at, face)?;
+                    let other = probe.world.placements.get(&next)?;
+                    (p.is_open(face)
+                        && other.is_open(face.opposite())
+                        && other.space.built()
+                        && (preferred_level.is_none()
+                            || !footprint.iter().any(|p| p.coord == next)))
+                    .then_some((at, next))
+                })
+            })
+        })
+        .expect("a legal wonder site with an exit outside its footprint");
+    for (at, ticks) in [(site, 60), (departure, 240)] {
+        let player = game.physical.players.get_mut(&BODY).unwrap();
+        player.cell = at;
+        player.position =
+            glam::Vec3::from_array(observed_hex::hex_origin(at)) + glam::Vec3::Y * 1.4;
+        if preferred_level.is_some() && at == departure {
+            let away = glam::Vec3::from_array(observed_hex::hex_origin(departure))
+                - glam::Vec3::from_array(observed_hex::hex_origin(site));
+            player.yaw = away.x.atan2(-away.z);
+        }
+        for _ in 0..ticks {
+            step(
+                &mut game,
+                Body::Turn(if preferred_level.is_some() && at == departure {
+                    0.0
+                } else {
+                    0.6
+                }),
+                SeatCommand::None,
+            );
+        }
+    }
+    let play = find_play(&game, |g, target, _, index| {
+        preferred_level.is_none_or(|level| target.level == level)
+            && g.session().hands[&TEAM].deck.hand[index].kind == kind
+    })
+    .unwrap_or_else(|| {
+        let cards: Vec<_> = game.session().hands[&TEAM].deck.hand.iter().map(|c|(c.id,c.kind)).collect();
+        let refused: Vec<_> = (0..6).map(|rotation| game.session().architect_refusal(ARCHITECT, ArchitectCommand::Play { card, target:site, rotation })).collect();
+        panic!("wonder {kind:?} floor {preferred_level:?}, site {site:?}, departure {departure:?}, hand {cards:?}, refusals {refused:?}, known {:?}",game.rules().team_knowledge[&TEAM].discovered_cells);
+    });
+    let ArchitectCommand::Play {
+        target, rotation, ..
+    } = play
+    else {
+        unreachable!()
+    };
+    let placements = game.rules().played_wonder(kind, target, rotation);
+    let protected = placements[1].coord;
+    let before = game.physical.facility.placements.clone();
+    game.ascent.session.sim.anchored.insert(protected);
+    assert_eq!(
+        game.session().architect_refusal(ARCHITECT, play),
+        Some(Refusal::Architect(CommandRefusal::Anchored))
+    );
+    assert_eq!(
+        game.physical.facility.placements, before,
+        "refusal changes no physical cell"
+    );
+    game.ascent.session.sim.anchored.remove(&protected);
+    let generators = game.rules().economy.generators.clone();
+    let generation = game.physical.facility.generation;
+    let refusals = step(&mut game, Body::Turn(0.0), SeatCommand::Architect(play));
+    assert!(refusals.is_empty(), "{refusals:?}");
+    assert_eq!(game.physical.facility.generation, generation + 1);
+    assert_eq!(game.rules().economy.generators, generators);
+    for cell in generators.values() {
+        assert_eq!(game.physical.facility.placements[cell], before[cell]);
+    }
+    for p in placements {
+        assert_eq!(game.physical.facility.placements[&p.coord], p);
+        assert_eq!(p.space, HexSpace::Hall);
+        assert_eq!(
+            observed_facility::hex_wfc::placement_tile_archetype(&p),
+            Some(if kind == crate::ascent::sim::CardKind::LastPromenade {
+                "last_promenade"
+            } else if kind == crate::ascent::sim::CardKind::JadeNave {
+                "jade_nave"
+            } else if kind == crate::ascent::sim::CardKind::SwitchingConcourse {
+                "switching_concourse"
+            } else if kind == crate::ascent::sim::CardKind::RainCourt {
+                "rain_court"
+            } else if kind == crate::ascent::sim::CardKind::ArchiveWell {
+                "archive_well"
+            } else {
+                match p.archetype {
+                    HexArchetype::Chargeworks { part, .. } => match part {
+                        observed_facility::hex_wfc::ChargeworksPart::Fabricator => {
+                            "chargeworks_fabricator"
+                        }
+                        observed_facility::hex_wfc::ChargeworksPart::Transfer => {
+                            "chargeworks_transfer"
+                        }
+                        observed_facility::hex_wfc::ChargeworksPart::Receiver => {
+                            "chargeworks_receiver"
+                        }
+                    },
+                    _ => panic!("wrong wonder"),
+                }
+            })
+        );
+        assert!(
+            game.physical
+                .geometry
+                .pieces
+                .iter()
+                .any(|piece| piece.source_cell == p.coord && piece.part.collides())
+        );
+    }
+    assert!(
+        !game.session().hands[&TEAM]
+            .deck
+            .hand
+            .iter()
+            .any(|c| c.id == card)
     );
 }

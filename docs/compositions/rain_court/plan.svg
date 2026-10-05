@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">The Rain Court — proposed three-hex Zen composition</title>
+  <desc id="desc">A covered veranda surrounds a stone garden shared by three hexes. Three exterior doors connect to a covered loop and a shorter stone crossing. Staggered screens frame different views. This is a schematic proposal, not a collision plan.</desc>
+  <defs>
+    <pattern id="boards" width="18" height="18" patternUnits="userSpaceOnUse"><rect width="18" height="18" fill="#42392f"/><path d="M0 0H18 M0 17H18" stroke="#675642" stroke-width="1"/></pattern>
+    <pattern id="rain" width="23" height="28" patternUnits="userSpaceOnUse"><path d="M12 4l-3 8" stroke="#7895a0" stroke-width="1.2" opacity=".35"/></pattern>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#e0bf70" stroke-width="1.4"/></marker>
+  </defs>
+  <rect width="1200" height="900" fill="#181d1c"/>
+  <g font-family="DejaVu Sans, sans-serif" fill="#eee9d9">
+    <text x="65" y="63" font-size="32" letter-spacing="3">THE RAIN COURT</text>
+    <text x="65" y="95" font-size="16" fill="#aeb7af">Zen / Shadow Screen · floor 4 · one card · three hexes · design schematic</text>
+  </g>
+  <!-- Quantized hex grid, 20 px / metre; origin at (285,310). -->
+  <path d="M285 150L425 230L565 150L705 230L705 390L565 470L565 630L425 710L285 630L285 470L145 390L145 230Z" fill="url(#boards)" stroke="#d9ccae" stroke-width="4"/>
+  <g stroke="#aea78d" stroke-width="1.5" stroke-dasharray="7 8" opacity=".5">
+    <path d="M425 230V390M425 390L285 470M425 390L565 470"/>
+  </g>
+  <!-- Continuous garden floor, never a pit. -->
+  <path d="M365 290L485 290L545 390L485 510L365 510L305 390Z" fill="#c1c4b7" stroke="#e2e2d3" stroke-width="3"/>
+  <path d="M365 290L485 290L545 390L485 510L365 510L305 390Z" fill="url(#rain)"/>
+  <!-- Rock/moss islands occupy separate sectors. -->
+  <g fill="#596856" stroke="#879076" stroke-width="2">
+    <ellipse cx="355" cy="330" rx="26" ry="18"/>
+    <ellipse cx="505" cy="350" rx="25" ry="22"/>
+    <ellipse cx="425" cy="510" rx="30" ry="18"/>
+  </g>
+  <g fill="#777d74" stroke="#4b5350" stroke-width="2">
+    <path d="M343 324l14-8 12 10-7 14-18-2Z"/>
+    <path d="M494 341l15-7 11 15-9 13-17-7Z"/>
+    <path d="M408 506l19-8 17 14-7 11-25-2Z"/>
+  </g>
+  <!-- Broad, connected paving: no stepping-stone jump mechanic. -->
+  <path d="M185 310L285 310L385 390L445 450L525 570L495 670" fill="none" stroke="#e7e3d3" stroke-width="29" stroke-linejoin="round"/>
+  <path d="M185 310L285 310L385 390L445 450L525 570L495 670" fill="none" stroke="#788580" stroke-width="2" stroke-dasharray="2 17"/>
+  <!-- Covered loop is a route guide, not a wall or a raised edge. -->
+  <path d="M185 310L205 230L285 210L425 256L565 210L645 270L645 350L565 430L535 550L525 610L445 650L365 610L335 550L245 430L185 370Z" fill="none" stroke="#e0bf70" stroke-width="3" stroke-dasharray="10 7"/>
+  <!-- Static opaque paper panels, deliberately separated. -->
+  <g fill="none" stroke="#e5d5ac" stroke-width="11" stroke-linecap="square">
+    <path d="M269 332V380M385 254H445M565 310V366M345 550L397 584"/>
+  </g>
+  <g fill="#e0bf70" stroke="#302e26" stroke-width="2">
+    <circle cx="235" cy="292" r="8"/><circle cx="607" cy="400" r="8"/><circle cx="391" cy="617" r="8"/>
+  </g>
+  <!-- Three exterior approaches, mutually 120 degrees around the footprint. -->
+  <g fill="none" stroke="#181d1c" stroke-width="28">
+    <path d="M145 291V329M615 179L655 202M475 681L515 658"/>
+  </g>
+  <g fill="none" stroke="#e0bf70" stroke-width="3" marker-end="url(#arrow)">
+    <path d="M80 310H179M700 135L649 211M547 748L509 680"/>
+  </g>
+  <!-- Views are callouts, not changes to observation range. -->
+  <g font-family="DejaVu Sans, sans-serif" fill="#eee9d9">
+    <text x="184" y="198" font-size="21">A</text><text x="632" y="237" font-size="21">B</text><text x="425" y="683" font-size="21">C</text>
+    <text x="78" y="278" font-size="15">Arrival</text>
+    <text x="570" y="116" font-size="15">Viewing bay</text>
+    <text x="550" y="745" font-size="15">Screened recess</text>
+  </g>
+  <g fill="none" stroke="#aeb7af" stroke-width="1.3">
+    <path d="M520 304L760 230H800"/><path d="M454 425L760 362H800"/><path d="M605 432L760 494H800"/><path d="M394 566L760 626H800"/>
+  </g>
+  <g font-family="DejaVu Sans, sans-serif" fill="#eee9d9">
+    <text x="821" y="222" font-size="20">RAIN APERTURE</text>
+    <text x="821" y="249" font-size="15" fill="#b4bdb5">Recessed beneath a sealed roof.</text>
+    <text x="821" y="272" font-size="15" fill="#b4bdb5">Fine rain on a solid garden floor.</text>
+    <text x="821" y="353" font-size="20">EXPOSED CROSSING</text>
+    <text x="821" y="380" font-size="15" fill="#b4bdb5">Broad, continuous paving.</text>
+    <text x="821" y="403" font-size="15" fill="#b4bdb5">Low rock islands shape views.</text>
+    <text x="821" y="485" font-size="20">SHELTERED ENGAWA</text>
+    <text x="821" y="512" font-size="15" fill="#b4bdb5">A longer veranda circuit.</text>
+    <text x="821" y="535" font-size="15" fill="#b4bdb5">Clear width target: 2.4 m.</text>
+    <text x="821" y="617" font-size="20">FRAMED VIEWS</text>
+    <text x="821" y="644" font-size="15" fill="#b4bdb5">Opaque paper and staggered gaps.</text>
+    <text x="821" y="667" font-size="15" fill="#b4bdb5">Different bays cover different paths.</text>
+    <text x="65" y="806" font-size="15" fill="#b4bdb5">Dashed seams show the three source cells. The garden and routes continue across them.</text>
+    <text x="65" y="835" font-size="15" fill="#b4bdb5">Schematic only: dimensions, collision, navigation and six rotations require authoring validation.</text>
+  </g>
+  <path d="M65 869H165M65 863V875M165 863V875" stroke="#aeb7af" stroke-width="2"/>
+  <text x="178" y="875" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#b4bdb5">5 m grid reference</text>
+</svg>

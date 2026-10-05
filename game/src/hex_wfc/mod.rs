@@ -55,6 +55,12 @@ pub(crate) struct HexWfcPlugin;
 impl Plugin for HexWfcPlugin {
     fn build(&self, app: &mut App) {
         perf::configure(app);
+        view::cistern::install(app);
+        view::chargeworks::install(app);
+        view::rain::install(app);
+        view::concourse::install(app);
+        view::jade::install(app);
+        view::promenade::install(app);
         view::spectate::overview_props::schedule(app);
         // Evidence for the spectator overview needs it *up*, and a capture run
         // has no keyboard. `OBSERVED2_SPECTATE_OVERVIEW=<detent>` opens it at
@@ -64,6 +70,7 @@ impl Plugin for HexWfcPlugin {
             .ok()
             .map(|value| value.trim().parse::<usize>().unwrap_or(0));
         app.init_resource::<overlay::MatchOverlayState>()
+            .add_systems(Startup, view::configure_clusters)
             .insert_resource(view::spectate::SpectatorOverview {
                 active: overview_detent.is_some(),
                 detent: overview_detent.unwrap_or(0),

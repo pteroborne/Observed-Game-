@@ -714,12 +714,16 @@ impl ArchitectLab {
                     return Some(CommandRefusal::WrongDistrict);
                 }
                 // A stair is a climb composition (`docs/climb_compositions_plan.md`): three
-                // cells along the heading on this floor and a landing above the last. One
+                // cells along the flight on this floor and a landing above the last. One
                 // card, four cells, and every one of them has to be buildable.
-                let heading = lateral_face(rotation);
-                let Some(cells) =
-                    observed_facility::hex_wfc::authored_climb(self.world.config, target, heading)
-                else {
+                let (heading, turn, exit) = observed_facility::hex_wfc::stair_shape(rotation);
+                let Some(cells) = observed_facility::hex_wfc::authored_climb_shaped(
+                    self.world.config,
+                    target,
+                    heading,
+                    turn,
+                    exit,
+                ) else {
                     return Some(CommandRefusal::Unbuildable);
                 };
                 let cells = cells.map(|placement| placement.coord);
@@ -770,6 +774,79 @@ impl ArchitectLab {
                     .neighbor(target, entrance)
                     .and_then(|next| self.world.placements.get(&next))
                     .is_some_and(|next| next.space.built() && next.is_open(entrance.opposite()));
+                (!fits).then_some(CommandRefusal::NoLocalAttachment)
+            }
+            CardKind::Cistern
+            | CardKind::Chargeworks
+            | CardKind::ArchiveWell
+            | CardKind::LastPromenade
+            | CardKind::JadeNave
+            | CardKind::SwitchingConcourse
+            | CardKind::RainCourt => {
+                let district = match card.kind {
+                    CardKind::Cistern => District::GROUND,
+                    CardKind::Chargeworks => District::REACTOR,
+                    CardKind::RainCourt => District::ZEN,
+                    CardKind::JadeNave => District::MONUMENT,
+                    CardKind::LastPromenade => District::SKY,
+                    CardKind::SwitchingConcourse => District::LUMEN,
+                    _ => District::LIBRARY,
+                };
+                if self.district(target.level) != district {
+                    return Some(CommandRefusal::WrongDistrict);
+                }
+                if card.district.is_some() && card.district != Some(self.district(target.level)) {
+                    return Some(CommandRefusal::WrongDistrict);
+                }
+                let Some(placements) = self.wonder_placements(card.kind, target, rotation) else {
+                    return Some(CommandRefusal::Unbuildable);
+                };
+                let cells = placements.map(|p| p.coord);
+                if cells.iter().any(|&cell| self.fixed_structure(cell)) {
+                    return Some(CommandRefusal::FixedStructure);
+                }
+                if cells.iter().any(|cell| {
+                    !self.world.placements.contains_key(cell)
+                        || self.collapsed_floors.contains(&cell.level)
+                }) {
+                    return Some(CommandRefusal::CollapsedFloor);
+                }
+                if cells.iter().any(|cell| {
+                    self.world
+                        .placements
+                        .get(cell)
+                        .is_some_and(|p| p.space == HexSpace::Air)
+                }) {
+                    return Some(CommandRefusal::Unbuildable);
+                }
+                let rest = &cells[1..];
+                if rest.iter().any(|cell| self.observed.contains(cell)) {
+                    return Some(CommandRefusal::Observed);
+                }
+                let occupied = self.occupied();
+                if rest.iter().any(|cell| occupied.contains(cell)) {
+                    return Some(CommandRefusal::Occupied);
+                }
+                if rest
+                    .iter()
+                    .any(|cell| self.anchored.contains(cell) || self.prison_core.contains(cell))
+                {
+                    return Some(CommandRefusal::Anchored);
+                }
+                let fits = placements.iter().any(|placement| {
+                    HexFace::LATERAL.into_iter().any(|face| {
+                        placement.ports().port(face) == observed_hex::PortClass::Door
+                            && self
+                                .world
+                                .config
+                                .grid()
+                                .neighbor(placement.coord, face)
+                                .and_then(|next| self.world.placements.get(&next))
+                                .is_some_and(|next| {
+                                    next.space.built() && next.is_open(face.opposite())
+                                })
+                    })
+                });
                 (!fits).then_some(CommandRefusal::NoLocalAttachment)
             }
             CardKind::Directive | CardKind::Sensor => {
@@ -876,16 +953,74 @@ impl ArchitectLab {
     }
 
     /// The cells a stair play builds from `target`, turned by `rotation`: a climb
-    /// composition's foot, mid and high cells along the heading and the landing above
+    /// composition's foot, mid and high cells along the flight and the landing above
     /// the last. Legality has already refused one that leaves the facility.
     #[must_use]
     pub fn played_stair(&self, target: HexCoord, rotation: u8) -> [HexPlacement; 4] {
-        observed_facility::hex_wfc::authored_climb(
+        let (heading, turn, exit) = observed_facility::hex_wfc::stair_shape(rotation);
+        observed_facility::hex_wfc::authored_climb_shaped(
             self.world.config,
             target,
-            lateral_face(rotation),
+            heading,
+            turn,
+            exit,
         )
         .expect("legality proved the climb fits the facility")
+    }
+
+    /// The three cells one wonder card commits together.
+    #[must_use]
+    pub fn played_wonder(
+        &self,
+        kind: CardKind,
+        target: HexCoord,
+        rotation: u8,
+    ) -> [HexPlacement; 3] {
+        self.wonder_placements(kind, target, rotation)
+            .expect("legality proved the wonder fits")
+    }
+
+    fn wonder_placements(
+        &self,
+        kind: CardKind,
+        target: HexCoord,
+        rotation: u8,
+    ) -> Option<[HexPlacement; 3]> {
+        use observed_facility::hex_wfc::{authored_chargeworks, authored_cistern_room};
+        match kind {
+            CardKind::Cistern => authored_cistern_room(self.world.config, target, rotation),
+            CardKind::Chargeworks => authored_chargeworks(self.world.config, target, rotation),
+            CardKind::LastPromenade => observed_facility::hex_wfc::authored_last_promenade(
+                self.world.config,
+                target,
+                rotation,
+            ),
+            CardKind::JadeNave => {
+                observed_facility::hex_wfc::authored_jade_nave(self.world.config, target, rotation)
+            }
+            CardKind::SwitchingConcourse => {
+                observed_facility::hex_wfc::authored_switching_concourse(
+                    self.world.config,
+                    target,
+                    rotation,
+                )
+            }
+            CardKind::RainCourt => {
+                observed_facility::hex_wfc::authored_rain_court(self.world.config, target, rotation)
+            }
+            CardKind::ArchiveWell => observed_facility::hex_wfc::authored_archive_well(
+                self.world.config,
+                target,
+                rotation,
+            ),
+            _ => None,
+        }
+    }
+
+    /// The Cistern's three cells, retained for existing capture and tooling.
+    #[must_use]
+    pub fn played_cistern(&self, target: HexCoord, rotation: u8) -> [HexPlacement; 3] {
+        self.played_wonder(CardKind::Cistern, target, rotation)
     }
 
     pub fn submit(&mut self, command: ArchitectCommand) -> Result<(), CommandRefusal> {
@@ -973,6 +1108,21 @@ impl ArchitectLab {
                     }
                     CardKind::Stair => {
                         for placement in self.played_stair(target, rotation) {
+                            let cell = placement.coord;
+                            self.rewrite(placement);
+                            self.retracted.remove(&cell);
+                            self.doors
+                                .retain(|key, _| !threshold_touches(*key, cell, &self.world));
+                        }
+                    }
+                    CardKind::Cistern
+                    | CardKind::Chargeworks
+                    | CardKind::ArchiveWell
+                    | CardKind::LastPromenade
+                    | CardKind::JadeNave
+                    | CardKind::SwitchingConcourse
+                    | CardKind::RainCourt => {
+                        for placement in self.played_wonder(held.kind, target, rotation) {
                             let cell = placement.coord;
                             self.rewrite(placement);
                             self.retracted.remove(&cell);

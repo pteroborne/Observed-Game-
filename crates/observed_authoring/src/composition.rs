@@ -802,16 +802,15 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "fd46cb673167a43e4dd14c3df154b3a56fcd99900032b9c359efff66feea79dc";
+            "028080c8b31907c1cd0197dedc2e8f21d64b6862320cf78d6ee53a32e2538b87";
         // The open-air composition (void share 2,000), 2026-09-24, at profile
         // version 6 since the ramps and towers retired and its bias names `climb`.
         const PROFILE_HASH: &str =
             "7b57da365f6c4de7876cd76adfd985db582d6f1610999c29d89d116739b639d1";
-        // Folds the catalog and the profile. Both sides moved this time, which
-        // is the point: a peer on the old build now fails the handshake instead
-        // of joining and generating a different facility.
+        // Jade Nave changes the catalog while retaining the profile. Folding
+        // both keeps an old peer from joining with different authored geometry.
         const SIMULATION_HASH: &str =
-            "a9c6ce8fa512f4f9b0256433e23d60c533df9cb8c1ddcf9fb51e4f6da22ba901";
+            "efa5e5c931115aeed123e5aa701a22c49d64970d80a3d2e1138d0d1666a15fc5";
 
         let root = committed_tiles();
         let compiled_text =
@@ -823,7 +822,8 @@ mod tests {
         // climbed by a composition since, and none of either is compiled. 230 since
         // climbs turn: four turning mid cells and three turned landings, in seven
         // dressings.
-        assert_eq!(compiled.modules.len(), 230, "committed strict source count");
+        // Jade Nave adds six Monument-only orientations; the profile stays unchanged.
+        assert_eq!(compiled.modules.len(), 284, "committed strict source count");
         assert!(
             compiled
                 .modules

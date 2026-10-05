@@ -2,9 +2,8 @@
 //!
 //! Every structural surface is a district-tinted `observed_style` treatment, one set
 //! per [`ArchitectureRegister`], keyed at render time by each collider piece's role and
-//! its source cell's architecture. Authored tile hulls carry the geometric detail, so
-//! there is no separate procedural "register dressing" pass — the tiles *are* the
-//! dressing.
+//! its source cell's architecture. Authored hulls remain authoritative; shallow
+//! Library and Zen detail fits their actual convex supports.
 
 use std::collections::HashMap;
 
@@ -18,8 +17,16 @@ use observed_traversal::{ColliderShape, ConvexRenderMesh};
 
 pub(in crate::hex_wfc) use super::mesh_group::MeshGroupKey;
 use super::open_edge_materials::OpenEdgeMaterials;
-use crate::view::assets::ContentScene;
-use crate::view::environment::{cuboid_mesh, load_content_scene, load_repeating_texture};
+use crate::view::environment::{cuboid_mesh, load_repeating_texture};
+
+mod concourse;
+mod jade;
+mod promenade;
+mod rain;
+mod textures;
+mod wonder;
+use textures::surface_texture;
+use wonder::WonderMaterials;
 
 #[derive(Clone)]
 pub(in crate::hex_wfc) struct RegisterMaterials {
@@ -67,16 +74,21 @@ enum HorizontalSurface {
 #[derive(Resource)]
 pub(in crate::hex_wfc) struct HexWfcVisualAssets {
     registers: Vec<RegisterMaterials>,
+    reservoir: WonderMaterials,
+    chargeworks: WonderMaterials,
+    archive: WonderMaterials,
+    rain: rain::RainMaterials,
+    concourse: concourse::ConcourseMaterials,
+    jade: jade::JadeMaterials,
+    promenade: promenade::PromenadeMaterials,
+    archive_details: [Handle<StandardMaterial>; 8],
+    chargeworks_details: [Handle<StandardMaterial>; 4],
     hull_cache: HashMap<(String, usize), Handle<Mesh>>,
     cuboid_cache: HashMap<[u32; 3], Handle<Mesh>>,
     merged_hull_cache: HashMap<(String, MeshGroupKey), Handle<Mesh>>,
     /// Open-edge pieces are the same in every register: the lip is a signal, and the
     /// railing, walkway and truss belong to the connective structure, not a district.
     open_edge: OpenEdgeMaterials,
-    /// The doorway model stood in a named threshold. `None` when the asset is
-    /// absent, which is a missing frame rather than a missing facility - the
-    /// aperture is authored into the room's own geometry either way.
-    pub(in crate::hex_wfc) threshold_gate: Option<ContentScene>,
 }
 
 impl HexWfcVisualAssets {
@@ -84,10 +96,10 @@ impl HexWfcVisualAssets {
         asset_server: &AssetServer,
         materials: &mut Assets<StandardMaterial>,
         images: &mut Assets<Image>,
-        content: &observed_content::ContentManifest,
+        _content: &observed_content::ContentManifest,
     ) -> Self {
         let wall_texture = load_repeating_texture(asset_server, observed_assets::WALL.path);
-        let registers = ArchitectureRegister::ALL
+        let registers: Vec<RegisterMaterials> = ArchitectureRegister::ALL
             .into_iter()
             .map(|register| {
                 let palette = style::architecture(register);
@@ -121,15 +133,16 @@ impl HexWfcVisualAssets {
                             base_color_texture: Some(albedo),
                             normal_map_texture: Some(normal),
                             perceptual_roughness: palette.surface_roughness,
+                            metallic: if register == ArchitectureRegister::Megastructure {
+                                style::reactor::METALLIC
+                            } else {
+                                0.0
+                            },
                             ..default()
                         })
                     };
                 let floor = surface(ArchitectureSurfaceRole::Floor, false, materials);
-                let wall = surface(
-                    ArchitectureSurfaceRole::Wall,
-                    register == ArchitectureRegister::ShadowScreen,
-                    materials,
-                );
+                let wall = surface(ArchitectureSurfaceRole::Wall, false, materials);
                 let ceiling = surface(ArchitectureSurfaceRole::Ceiling, false, materials);
                 let mut tinted = |look: style::HexSurfaceLook, texture: Option<Handle<Image>>| {
                     materials.add(StandardMaterial {
@@ -159,13 +172,33 @@ impl HexWfcVisualAssets {
                 }
             })
             .collect();
+        let reservoir = WonderMaterials::load_cistern(materials, images);
+        // The wonder uses the district's exact cached handles, so the finishes stay together.
+        let chargeworks = WonderMaterials::from_register(
+            &registers[ArchitectureRegister::Megastructure.stable_id() as usize],
+        );
+        let archive = WonderMaterials::from_register(
+            &registers[ArchitectureRegister::InfiniteGallery.stable_id() as usize],
+        );
         Self {
+            concourse: concourse::ConcourseMaterials::load(materials, images),
+            jade: jade::JadeMaterials::load(materials, images),
+            promenade: promenade::PromenadeMaterials::load(materials, images),
+            reservoir,
+            archive,
+            rain: rain::RainMaterials::load(
+                materials,
+                images,
+                &registers[ArchitectureRegister::ShadowScreen.stable_id() as usize],
+            ),
+            archive_details: wonder::archive_details(materials),
+            chargeworks,
+            chargeworks_details: wonder::details(materials),
             registers,
             hull_cache: HashMap::new(),
             cuboid_cache: HashMap::new(),
             merged_hull_cache: HashMap::new(),
             open_edge: OpenEdgeMaterials::new(materials),
-            threshold_gate: load_content_scene(asset_server, content, "kenney_gate"),
         }
     }
 
@@ -183,13 +216,60 @@ impl HexWfcVisualAssets {
             })
             .collect();
         Self {
+            concourse: concourse::ConcourseMaterials::for_test(&dummy),
+            jade: jade::JadeMaterials::for_test(&dummy),
+            promenade: promenade::PromenadeMaterials::for_test(&dummy),
+            reservoir: WonderMaterials::for_test(&dummy),
+            archive: WonderMaterials::for_test(&dummy),
+            rain: rain::RainMaterials::for_test(&dummy),
+            archive_details: std::array::from_fn(|_| dummy.clone()),
+            chargeworks: WonderMaterials::for_test(&dummy),
+            chargeworks_details: std::array::from_fn(|_| dummy.clone()),
             registers,
             hull_cache: HashMap::new(),
             cuboid_cache: HashMap::new(),
             merged_hull_cache: HashMap::new(),
             open_edge: OpenEdgeMaterials::new(materials),
-            threshold_gate: None,
         }
+    }
+
+    pub(super) fn rain_material(&self, index: usize) -> Handle<StandardMaterial> {
+        self.rain.0[index].clone()
+    }
+
+    pub(super) fn archive_detail(&self, index: usize) -> Handle<StandardMaterial> {
+        self.archive_details[index].clone()
+    }
+    pub(in crate::hex_wfc) fn archive_material(
+        &self,
+        group: MeshGroupKey,
+    ) -> Handle<StandardMaterial> {
+        self.archive.for_group(group)
+    }
+
+    pub(super) fn chargeworks_detail(&self, index: usize) -> Handle<StandardMaterial> {
+        self.chargeworks_details[index].clone()
+    }
+    pub(super) fn detail_box(&mut self, meshes: &mut Assets<Mesh>, size: Vec3) -> Handle<Mesh> {
+        let key = [size.x.to_bits(), size.y.to_bits(), size.z.to_bits()];
+        self.cuboid_cache
+            .entry(key)
+            .or_insert_with(|| meshes.add(cuboid_mesh(size)))
+            .clone()
+    }
+
+    pub(in crate::hex_wfc) fn chargeworks_material(
+        &self,
+        group: MeshGroupKey,
+    ) -> Handle<StandardMaterial> {
+        self.chargeworks.for_group(group)
+    }
+
+    pub(in crate::hex_wfc) fn reservoir_material(
+        &self,
+        group: MeshGroupKey,
+    ) -> Handle<StandardMaterial> {
+        self.reservoir.for_group(group)
     }
 
     pub(in crate::hex_wfc) fn register(
@@ -413,85 +493,6 @@ pub(super) fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
     .with_inserted_indices(Indices::U32(data.indices))
     .with_generated_tangents()
     .ok()
-}
-
-/// Upload a surface image ([`style::surfaces`]) as a repeating texture with its whole
-/// mip chain, box-filtered here.
-///
-/// Without mips a fine pattern - a weave, a joint, tread plate - shimmers into moiré
-/// at a few metres. `srgb` for an albedo; a normal map is linear, and its texels are
-/// renormalised at every level so a distant surface keeps unit normals.
-fn surface_texture(images: &mut Assets<Image>, data: Vec<u8>, srgb: bool) -> Handle<Image> {
-    use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
-    use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-
-    let size = style::surfaces::SURFACE_TEXTURE_SIZE as usize;
-    let mut chain = data.clone();
-    let mut level = data;
-    let mut side = size;
-    let mut levels = 1u32;
-    while side > 1 {
-        let half = side / 2;
-        let mut next = Vec::with_capacity(half * half * 4);
-        for y in 0..half {
-            for x in 0..half {
-                let texel = |dx: usize, dy: usize, c: usize| {
-                    f32::from(level[((y * 2 + dy) * side + x * 2 + dx) * 4 + c])
-                };
-                let mut rgba = [0.0f32; 4];
-                for (c, channel) in rgba.iter_mut().enumerate() {
-                    *channel =
-                        (texel(0, 0, c) + texel(1, 0, c) + texel(0, 1, c) + texel(1, 1, c)) * 0.25;
-                }
-                if !srgb {
-                    let v = |c: f32| c / 127.5 - 1.0;
-                    let (nx, ny, nz) = (v(rgba[0]), v(rgba[1]), v(rgba[2]));
-                    let length = (nx * nx + ny * ny + nz * nz).sqrt().max(1e-4);
-                    for (channel, n) in rgba.iter_mut().zip([nx, ny, nz]) {
-                        *channel = (n / length + 1.0) * 127.5;
-                    }
-                }
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                next.extend(rgba.map(|c| c.round().clamp(0.0, 255.0) as u8));
-            }
-        }
-        chain.extend_from_slice(&next);
-        level = next;
-        side = half;
-        levels += 1;
-    }
-    #[allow(clippy::cast_possible_truncation)]
-    let extent = Extent3d {
-        width: size as u32,
-        height: size as u32,
-        depth_or_array_layers: 1,
-    };
-    let base = chain[..size * size * 4].to_vec();
-    let mut image = Image::new(
-        extent,
-        TextureDimension::D2,
-        base,
-        if srgb {
-            TextureFormat::Rgba8UnormSrgb
-        } else {
-            TextureFormat::Rgba8Unorm
-        },
-        bevy::asset::RenderAssetUsages::RENDER_WORLD,
-    );
-    // `Image::new` checks the data against the base level alone; the chain goes in
-    // after, every level in order, which is how a mip-mapped image is laid out.
-    image.data = Some(chain);
-    image.texture_descriptor.mip_level_count = levels;
-    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-        address_mode_u: ImageAddressMode::Repeat,
-        address_mode_v: ImageAddressMode::Repeat,
-        mag_filter: ImageFilterMode::Linear,
-        min_filter: ImageFilterMode::Linear,
-        mipmap_filter: ImageFilterMode::Linear,
-        anisotropy_clamp: 8,
-        ..default()
-    });
-    images.add(image)
 }
 
 fn horizontal_surface(piece: &HexStructurePiece) -> HorizontalSurface {

@@ -321,10 +321,58 @@ pub(super) fn built_by(
             )?]
         }
         CardKind::Stair => {
-            let heading = observed_hex::HexFace::LATERAL[usize::from(rotation % 6)];
-            observed_facility::hex_wfc::authored_climb(physical.facility.config, cell, heading)?
-                .to_vec()
+            let (heading, turn, exit) = observed_facility::hex_wfc::stair_shape(rotation);
+            observed_facility::hex_wfc::authored_climb_shaped(
+                physical.facility.config,
+                cell,
+                heading,
+                turn,
+                exit,
+            )?
+            .to_vec()
         }
+        CardKind::Cistern => observed_facility::hex_wfc::authored_cistern_room(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
+        CardKind::LastPromenade => observed_facility::hex_wfc::authored_last_promenade(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
+        CardKind::JadeNave => observed_facility::hex_wfc::authored_jade_nave(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
+        CardKind::SwitchingConcourse => observed_facility::hex_wfc::authored_switching_concourse(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
+        CardKind::RainCourt => observed_facility::hex_wfc::authored_rain_court(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
+        CardKind::ArchiveWell => observed_facility::hex_wfc::authored_archive_well(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
+        CardKind::Chargeworks => observed_facility::hex_wfc::authored_chargeworks(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
         CardKind::Door
         | CardKind::Station
         | CardKind::Directive
@@ -337,6 +385,28 @@ pub(super) fn built_by(
         physical.content().cells(),
     )
     .ok()
+}
+
+/// Find a district-matching anchor whose complete composition fits the preview.
+/// Boundary-facing wonders and stairs must not inherit the district's first edge cell.
+pub(super) fn preview_by(
+    physical: &observed_match::hex_wfc::HexWfcMatch,
+    kind: observed_match::ascent::sim::CardKind,
+    register: ArchitectureRegister,
+    rotation: u8,
+) -> Option<(HexCoord, Vec<HexStructurePiece>)> {
+    use observed_match::ascent::sim::CardKind;
+    let top = physical.facility.config.levels.saturating_sub(1);
+    physical
+        .facility
+        .architecture
+        .iter()
+        .filter(|(cell, found)| {
+            **found == register && (kind != CardKind::Stair || cell.level < top)
+        })
+        .find_map(|(&cell, _)| {
+            built_by(physical, kind, cell, rotation).map(|pieces| (cell, pieces))
+        })
 }
 
 /// A tile's floors (`floor`) or walls in `register`'s concrete, lit, as a room in view.
@@ -396,7 +466,25 @@ pub(super) fn cutaway_mesh(
         let min_y = world.iter().map(|p| p.y).fold(f32::INFINITY, f32::min) - base;
         let max_y = world.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max) - base;
         let local = centroid - origin;
-        let region = hull_region(min_y, max_y, local);
+        // Raised wonder slabs are walking routes. Keep their real elevations in
+        // cards and ghosts while removing overhead roof and canopy masses.
+        let jade_route = piece
+            .tile
+            .as_ref()
+            .is_some_and(|key| key.archetype == "jade_nave")
+            && max_y > 0.51
+            && max_y <= 3.9;
+        let promenade_route = piece
+            .tile
+            .as_ref()
+            .is_some_and(|key| key.archetype == "last_promenade")
+            && max_y > 0.51
+            && max_y <= 2.51;
+        let region = if jade_route || promenade_route {
+            HullRegion::Interior
+        } else {
+            hull_region(min_y, max_y, local)
+        };
         let is_floor = matches!(region, HullRegion::Floor);
         if is_floor != floor || matches!(region, HullRegion::Ceiling) {
             continue;
@@ -409,7 +497,7 @@ pub(super) fn cutaway_mesh(
         let capped: Vec<Vec3> = world
             .iter()
             .map(|p| {
-                if is_floor {
+                if is_floor || jade_route || promenade_route {
                     *p
                 } else {
                     Vec3::new(p.x, p.y.min(cap), p.z)
@@ -466,3 +554,6 @@ fn world_points(piece: &HexStructurePiece) -> Vec<Vec3> {
         .map(|p| piece.center + rotation * p)
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

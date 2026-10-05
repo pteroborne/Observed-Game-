@@ -52,6 +52,39 @@ pub fn authored_climb(
     authored_climb_shaped(config, foot, heading, ClimbTurn::Ahead, ClimbTurn::Ahead)
 }
 
+/// Decompose a stair rotation (0..120) into its lateral heading, flight turn at mid,
+/// and exit at landing (`docs/climb_compositions_plan.md`).
+///
+/// Rotations 0..6 encode the six lateral headings with straight flight (Ahead, Ahead),
+/// ensuring full backwards compatibility with legacy callers.
+#[must_use]
+pub fn stair_shape(rotation: u8) -> (HexFace, ClimbTurn, ClimbTurn) {
+    let heading = HexFace::LATERAL[(rotation % 6) as usize];
+    let shape_index = ((rotation / 6) % 20) as usize;
+    let turn = ClimbTurn::BENDS[shape_index % 5];
+    let exit = ClimbTurn::EXITS[shape_index / 5];
+    (heading, turn, exit)
+}
+
+/// Compose a lateral heading, mid turn and landing exit into a stair rotation (0..120).
+#[must_use]
+pub fn stair_rotation(heading: HexFace, turn: ClimbTurn, exit: ClimbTurn) -> u8 {
+    let heading_index = HexFace::LATERAL
+        .iter()
+        .position(|&f| f == heading)
+        .unwrap_or(0);
+    let bend_index = ClimbTurn::BENDS
+        .iter()
+        .position(|&b| b == turn)
+        .unwrap_or(0);
+    let exit_index = ClimbTurn::EXITS
+        .iter()
+        .position(|&e| e == exit)
+        .unwrap_or(0);
+    let shape_index = exit_index * 5 + bend_index;
+    (shape_index * 6 + heading_index) as u8
+}
+
 /// The climb composition with its foot at `foot`, entered climbing toward `heading`,
 /// its flight turned by `turn` in the mid cell and its landing left by `exit`, both
 /// from the heading the flight has there. `None` where it would leave the lattice,
@@ -120,6 +153,125 @@ pub fn authored_climb_shaped(
             PortClass::RampOpen,
         ),
     ])
+}
+
+/// Three sectors of one reservoir. Internal seams are full-height spans, while
+/// the three external thresholds face out at 120-degree intervals. The geometry
+/// selects the exact authored orientation for each sector's span signature.
+#[must_use]
+pub fn authored_cistern_room(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    authored_triad(config, anchor, rotation, |_, heading| {
+        HexArchetype::Cistern { heading }
+    })
+}
+
+/// One card places a fabrication bay, transfer floor and receiving vault.
+#[must_use]
+pub fn authored_chargeworks(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    use super::ChargeworksPart::{Fabricator, Receiver, Transfer};
+    authored_triad(config, anchor, rotation, |offset, heading| {
+        HexArchetype::Chargeworks {
+            part: [Fabricator, Transfer, Receiver][offset / 2],
+            heading,
+        }
+    })
+}
+
+/// One Library card places the three sectors of a continuous reading well.
+#[must_use]
+pub fn authored_archive_well(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    authored_triad(config, anchor, rotation, |_, heading| {
+        HexArchetype::ArchiveWell { heading }
+    })
+}
+
+/// One Zen card places three sheltered sectors around a continuous rain garden.
+#[must_use]
+pub fn authored_rain_court(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    authored_triad(config, anchor, rotation, |_, heading| {
+        HexArchetype::RainCourt { heading }
+    })
+}
+
+/// One Lumen card places a continuous three-bay transit hall.
+#[must_use]
+pub fn authored_switching_concourse(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    authored_triad(config, anchor, rotation, |_, heading| {
+        HexArchetype::SwitchingConcourse { heading }
+    })
+}
+
+/// One Monument card places three joined bays with a raised crossing circuit.
+#[must_use]
+pub fn authored_jade_nave(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    authored_triad(config, anchor, rotation, |_, heading| {
+        HexArchetype::JadeNave { heading }
+    })
+}
+
+/// One Sky card builds a thin bridge circuit with three sheltered arrivals.
+#[must_use]
+pub fn authored_last_promenade(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    authored_triad(config, anchor, rotation, |_, heading| {
+        HexArchetype::LastPromenade { heading }
+    })
+}
+
+fn authored_triad(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+    archetype: impl Fn(usize, HexFace) -> HexArchetype,
+) -> Option<[HexPlacement; 3]> {
+    let turn = usize::from(rotation % 6);
+    let face = |offset| HexFace::LATERAL[(turn + offset) % 6];
+    let grid = config.grid();
+    if !grid.contains(anchor) {
+        return None;
+    }
+    let cell_b = grid.neighbor(anchor, face(0))?;
+    let cell_c = grid.neighbor(anchor, face(1))?;
+    let cell = |coord, offset| {
+        let heading = face(offset);
+        let archetype = archetype(offset, heading);
+        HexPlacement {
+            coord,
+            space: HexSpace::Hall,
+            archetype,
+            doors: archetype.span_mask() | (1 << face(offset + 4).index()),
+            up: PortClass::Sealed,
+            down: PortClass::Sealed,
+        }
+    };
+    Some([cell(anchor, 0), cell(cell_b, 2), cell(cell_c, 4)])
 }
 
 impl HexWfcWorld {
@@ -479,5 +631,90 @@ mod tests {
         );
         assert_eq!(world.placements, before.placements);
         assert_eq!(world.generation, before.generation);
+    }
+
+    #[test]
+    fn stair_rotations_roundtrip_all_headings_bends_and_exits() {
+        for rotation in 0..120 {
+            let (heading, turn, exit) = stair_shape(rotation);
+            assert!(heading.is_lateral());
+            assert!(ClimbTurn::BENDS.contains(&turn));
+            assert!(ClimbTurn::EXITS.contains(&exit));
+            let encoded = stair_rotation(heading, turn, exit);
+            assert_eq!(encoded, rotation);
+        }
+        for (idx, &heading) in HexFace::LATERAL.iter().enumerate() {
+            let (h, turn, exit) = stair_shape(idx as u8);
+            assert_eq!(h, heading);
+            assert_eq!(turn, ClimbTurn::Ahead);
+            assert_eq!(exit, ClimbTurn::Ahead);
+        }
+    }
+
+    #[test]
+    fn authored_cistern_room_forms_open_triad_with_perimeter_doors() {
+        let config = HexWfcConfig {
+            cols: 8,
+            rows: 8,
+            levels: 2,
+            ..HexWfcConfig::default()
+        };
+        let anchor = HexCoord {
+            q: 3,
+            r: 3,
+            level: 0,
+        };
+        for rotation in 0..6 {
+            let placements = authored_cistern_room(config, anchor, rotation)
+                .expect("within central grid bounds");
+            assert_eq!(placements.len(), 3);
+            let [p0, p1, p2] = placements;
+
+            // Bespoke sectors retain the ordinary hall topology.
+            for p in &placements {
+                assert_eq!(p.space, HexSpace::Hall);
+                assert!(matches!(p.archetype, HexArchetype::Cistern { .. }));
+                assert_eq!(p.archetype.span_mask().count_ones(), 2);
+                assert_eq!(p.doors.count_ones(), 3); // 2 internal + 1 external
+            }
+
+            // Internal faces are open symmetrically
+            let grid = config.grid();
+            let face_01 = HexFace::LATERAL
+                .into_iter()
+                .find(|&f| grid.neighbor(p0.coord, f) == Some(p1.coord))
+                .unwrap();
+            let face_02 = HexFace::LATERAL
+                .into_iter()
+                .find(|&f| grid.neighbor(p0.coord, f) == Some(p2.coord))
+                .unwrap();
+            let face_12 = HexFace::LATERAL
+                .into_iter()
+                .find(|&f| grid.neighbor(p1.coord, f) == Some(p2.coord))
+                .unwrap();
+
+            assert_eq!(p0.ports().port(face_01), PortClass::Span);
+            assert_eq!(p0.ports().port(face_02), PortClass::Span);
+            assert_eq!(p1.ports().port(face_12), PortClass::Span);
+            let external: Vec<_> = placements
+                .iter()
+                .flat_map(|p| {
+                    HexFace::LATERAL
+                        .into_iter()
+                        .filter(|&f| p.ports().port(f) == PortClass::Door)
+                })
+                .map(HexFace::index)
+                .collect();
+            assert_eq!(external.len(), 3);
+            assert!(external.iter().all(|i| i % 2 == external[0] % 2));
+            assert!(p0.is_open(face_01));
+            assert!(p1.is_open(face_01.opposite()));
+
+            assert!(p0.is_open(face_02));
+            assert!(p2.is_open(face_02.opposite()));
+
+            assert!(p1.is_open(face_12));
+            assert!(p2.is_open(face_12.opposite()));
+        }
     }
 }

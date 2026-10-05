@@ -7,23 +7,34 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
+pub(in crate::hex_wfc) mod archive;
 mod assets;
 pub(in crate::hex_wfc) mod camera;
+pub(in crate::hex_wfc) mod chargeworks;
+pub(in crate::hex_wfc) mod cistern;
+pub(in crate::hex_wfc) mod concourse;
 pub(in crate::hex_wfc) mod exterior;
+mod fixtures;
+pub(in crate::hex_wfc) mod jade;
+pub(in crate::hex_wfc) mod promenade;
 pub(in crate::hex_wfc) use camera::{sync_camera, sync_projection};
+mod library;
 mod lighting;
 /// The full-screen isometric survivor map, wired by `hex_wfc::mod`.
 pub(crate) mod map;
 mod mesh_group;
 mod open_edge_materials;
 mod prison;
+pub(in crate::hex_wfc) mod rain;
 mod residency;
 mod shell;
 pub(in crate::hex_wfc) mod sky;
 pub(in crate::hex_wfc) mod spectate;
 #[cfg(test)]
 mod spectate_tests;
+mod support;
 pub(in crate::hex_wfc) mod thresholds;
+mod zen;
 
 use bevy::anti_alias::fxaa::Fxaa;
 use bevy::camera::Hdr;
@@ -151,6 +162,7 @@ pub(super) fn setup_view(
         camera::prime_camera(&mut transform, runtime.local());
         commands.entity(camera).insert((
             Hdr,
+            bevy::camera::visibility::RenderLayers::from_layers(&[0, 29]),
             Bloom {
                 intensity: 0.08,
                 ..Bloom::NATURAL
@@ -232,7 +244,6 @@ pub(super) fn setup_view(
     sky::spawn_moonlight(&mut commands, &mood);
     let skin = exterior::spawn_all(&mut commands, &mut meshes, &assets, facility);
     commands.insert_resource(skin);
-    thresholds::spawn_thresholds(&mut commands, &mut assets, &mut meshes, &runtime);
     let capture_unbounded = capture_requests_deterministic_residency();
     let initial_budget = if capture_unbounded {
         usize::MAX
@@ -283,7 +294,8 @@ pub(super) fn setup_view(
 }
 
 pub(super) use lighting::{
-    sync_lighting_and_atmosphere, sync_practical_shadow_budget, sync_storey_shadow_casters,
+    configure_clusters, sync_lighting_and_atmosphere, sync_practical_shadow_budget,
+    sync_storey_shadow_casters,
 };
 pub(super) use prison::{PrisonView, sync_prison_view};
 use residency::{initial_spawn_batch, presentation_readiness};

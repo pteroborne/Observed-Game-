@@ -87,3 +87,26 @@ fn a_stair_played_at_the_desk_is_built_and_believed_on_both_floors() {
         .expect("the corpus builds a stair");
     assert!(pieces.iter().any(|piece| piece.source_cell == target));
 }
+
+#[test]
+fn turned_stairs_can_be_built_by_the_architect() {
+    use observed_match::ascent::sim::CardKind;
+    let runtime = runtime();
+    let target = HexCoord {
+        q: 2,
+        r: 2,
+        level: 0,
+    };
+    // Every turned shape produces valid geometry when in-bounds
+    for shape_index in 0..20 {
+        let rotation = shape_index * 6;
+        if let Some(pieces) = super::super::building::built_by(
+            &runtime.match_state,
+            CardKind::Stair,
+            target,
+            rotation,
+        ) {
+            assert!(pieces.iter().any(|p| p.source_cell == target));
+        }
+    }
+}

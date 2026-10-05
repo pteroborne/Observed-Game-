@@ -804,3 +804,54 @@ fn rival_observation_does_not_refresh_a_teams_stale_map_or_actors() {
     assert_eq!(refreshed.cells[&target].seen_at, sim.tick);
     assert!(refreshed.known_observers.contains_key(&rival));
 }
+
+#[test]
+fn cistern_card_places_cohesive_multi_tile_room() {
+    use observed_facility::hex_wfc::HexArchetype;
+
+    let mut sim = ArchitectLab::generate(ArchitectMode::Pocket, 1).expect("generates");
+    sim.cooldown = 0;
+    let card_id = CardId(999);
+    let card = Card {
+        id: card_id,
+        kind: CardKind::Cistern,
+        district: Some(sim.district(0)),
+    };
+    sim.deck.hand.push(card);
+
+    let mut chosen = None;
+    for &cell in &sim.known {
+        if cell.level != 0 {
+            continue;
+        }
+        for rotation in 0..6 {
+            let cmd = ArchitectCommand::Play {
+                card: card_id,
+                target: cell,
+                rotation,
+            };
+            if sim.refusal(cmd).is_none() {
+                chosen = Some((cell, rotation, cmd));
+                break;
+            }
+        }
+        if chosen.is_some() {
+            break;
+        }
+    }
+    let (target, rotation, cmd) =
+        chosen.expect("at least one legal cistern site in generated floor");
+    let placements = sim.played_cistern(target, rotation);
+    assert_eq!(placements.len(), 3);
+
+    sim.submit(cmd).expect("legal play commits");
+
+    for p in placements {
+        let world_p = sim.world.placements[&p.coord];
+        assert_eq!(world_p.space, HexSpace::Hall);
+        assert!(matches!(world_p.archetype, HexArchetype::Cistern { .. }));
+        assert_eq!(world_p.doors, p.doors);
+    }
+    assert_eq!(sim.cooldown, ARCHITECT_COOLDOWN_TICKS);
+    assert!(!sim.deck.hand.iter().any(|c| c.id == card_id));
+}
