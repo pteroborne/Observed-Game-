@@ -173,6 +173,28 @@ pub(super) fn apply(
     true
 }
 
+/// Record the launch perspective without giving a non-embodied desk a body identity.
+pub(super) fn begin_replay(
+    game: &HexWfcMatch,
+    local: PlayerId,
+    rules: Option<&AscentRules>,
+    architect: bool,
+    spectator: bool,
+) -> crate::sim::replay::ReplayTape {
+    let mut tape = if architect {
+        crate::sim::replay::ReplayTape::new_hex_wfc_for_architect(game, local)
+    } else {
+        crate::sim::replay::ReplayTape::new_hex_wfc_for_player(game, local)
+    };
+    if let Some(rules) = rules {
+        tape.ascent_result = Some(completion_for(rules, game, local, architect, spectator));
+        tape.record_ascent(game, rules);
+    } else {
+        tape.record_hex_wfc(game);
+    }
+    tape
+}
+
 /// The rules for a LAN match that plays Architect Ascent (`launch`): an Architect for
 /// every team, a human's where the launch names one at the desk and a bot's everywhere
 /// else, and nobody's requests voiced, since which bodies bots drive changes with who is
@@ -181,14 +203,8 @@ pub(super) fn lan_rules(
     match_state: &mut HexWfcMatch,
     launch: &observed_net::lan::LanLaunch,
 ) -> Option<AscentRules> {
-    let at_desk: Vec<TeamId> = match_state
-        .players
-        .iter()
-        .filter(|(player, _)| launch.is_architect(**player))
-        .map(|(_, state)| state.team)
-        .collect();
     let seats = observed_match::ascent::facility::architect_seats_where(match_state, |team| {
-        at_desk.contains(&team)
+        launch.human_architect(team)
     });
     let seed = match_state.seed;
     AscentRules::new(match_state, seed, seats)
@@ -215,7 +231,7 @@ pub(super) fn seat(
     let (rules, human) = match lan {
         Some(launch) => {
             let launch = launch.filter(|launch| launch.ascent)?;
-            let human = launch.is_architect(local).then_some(team);
+            let human = (play_setup.seat == crate::play_setup::PlaySeat::Architect).then_some(team);
             (lan_rules(match_state, &launch)?, human)
         }
         None => {

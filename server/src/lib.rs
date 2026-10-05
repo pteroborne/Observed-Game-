@@ -10,7 +10,11 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use observed_content::ArchitectureRegister;
-use observed_core::{PlayerId, TeamId, cosmetics::CosmeticLook};
+use observed_core::{
+    PlayerId, TeamId,
+    cosmetics::CosmeticLook,
+    lan::{LanRole, LanSeatId},
+};
 use observed_facility::hex_wfc::HexWfcConfig;
 use observed_match::ascent::facility::AscentRules;
 use observed_match::ascent::session::{ASCENT_INPUT_VERSION, InputFrame};
@@ -19,8 +23,9 @@ use observed_match::hex_wfc::{
     HexMatchStatus, HexPlayerCommand, HexWfcMatch,
 };
 use observed_net::lan::{
-    LanPacket, LobbyAction, MAX_DATAGRAM, WireFrame, WireHexCommand, WirePhase, WireSeat,
-    WireSeatCommand, WireSeatOccupant, frames_per_bundle,
+    LanPacket, LobbyAction, MAX_DATAGRAM, WireArchitectSeat, WireFrame, WireHexCommand, WirePhase,
+    WireSeat, WireSeatCommand, WireSeatOccupant, frames_per_bundle,
+    frames_per_bundle_with_architects,
 };
 use observed_progression::session::lan::{
     LAN_DEFAULT_ROSTER, LAN_MAX_SEATS, LAN_RECONNECT_GRACE_TICKS, LanRoster,
@@ -92,10 +97,10 @@ impl ServerConfig {
                 "--min-humans" => {
                     config.min_humans = args
                         .next()
-                        .ok_or("--min-humans requires 1..16")?
+                        .ok_or("--min-humans requires 1..32")?
                         .parse::<u8>()
-                        .map_err(|_| "--min-humans requires 1..16")?
-                        .clamp(1, LAN_MAX_SEATS as u8);
+                        .map_err(|_| "--min-humans requires 1..32")?
+                        .clamp(1, (LAN_MAX_SEATS * 2) as u8);
                 }
                 "--teams" => {
                     config.roster.teams = args
@@ -141,7 +146,7 @@ impl ServerConfig {
 }
 
 pub fn help_text() -> &'static str {
-    "observed_server [--bind 0.0.0.0:47624] [--name TEXT] [--ascent (1..3 Observers per team)] [--min-humans 1..16] [--teams 1..16] [--team-size 1..16] [--require-full-roster] [--seed INTEGER] [--tiles PATH] [--no-discovery]"
+    "observed_server [--bind 0.0.0.0:47624] [--name TEXT] [--ascent (1..3 Observers per team)] [--min-humans 1..32] [--teams 1..16] [--team-size 1..16] [--require-full-roster] [--seed INTEGER] [--tiles PATH] [--no-discovery]"
 }
 
 fn parse_seed(value: &str) -> Result<u64, String> {
@@ -166,7 +171,8 @@ struct ClientConnection {
     account: AccountId,
     appearance: CosmeticLook,
     token: u64,
-    player: PlayerId,
+    assignment: LanSeatId,
+    assignment_revision: u32,
     address: SocketAddr,
     last_seen: Instant,
     ack_through: u64,
@@ -180,7 +186,7 @@ pub struct AuthoritativeServer {
     content: Arc<HexMatchContent>,
     pub session: LanSession,
     clients: BTreeMap<u64, ClientConnection>,
-    inputs: BTreeMap<(PlayerId, u64), WireHexCommand>,
+    inputs: BTreeMap<(LanSeatId, u64), WireHexCommand>,
     match_state: Option<HexWfcMatch>,
     /// The Architect Ascent rules riding beside the match, when it plays them.
     ascent: Option<AscentRules>,
@@ -239,11 +245,21 @@ impl AuthoritativeServer {
         let min_humans = if config.fill_empty_seats {
             config.min_humans
         } else {
-            roster.seats() as u8
+            (roster.seats()
+                + if config.ascent {
+                    usize::from(roster.teams)
+                } else {
+                    0
+                }) as u8
+        };
+        let session = if config.ascent {
+            LanSession::with_architects(session_id, min_humans, roster)
+        } else {
+            LanSession::with_roster(session_id, min_humans, roster)
         };
         Ok(Self {
             socket,
-            session: LanSession::with_roster(session_id, min_humans, roster),
+            session,
             config,
             content,
             clients: BTreeMap::new(),
@@ -293,6 +309,8 @@ impl AuthoritativeServer {
         self.server_tick = self.server_tick.wrapping_add(1);
         self.disconnect_timed_out_clients();
         self.session.expire_reservations(self.server_tick);
+        self.clients
+            .retain(|_, client| self.session.assignment(client.account) == Some(client.assignment));
         let previous_phase = self.session.phase;
         let seed = self
             .config
@@ -360,9 +378,10 @@ impl AuthoritativeServer {
                 input_version,
                 simulation_content_hash,
                 appearance,
+                role,
             } => self.handle_hello(
                 address,
-                (AccountId(account), appearance),
+                (AccountId(account), appearance, role),
                 requested_team,
                 resume_token,
                 input_version,
@@ -375,19 +394,33 @@ impl AuthoritativeServer {
                             self.session.set_ready(account, ready);
                         }
                         LobbyAction::ClaimArchitect(claim) => {
-                            self.session.claim_architect(account, claim);
-                        }
-                        LobbyAction::RequestTeam(team) => {
-                            if let Some(player) = self.session.request_team(account, team) {
-                                if let Some(client) = self.clients.get_mut(&token) {
-                                    client.player = player;
-                                }
-                                let phase = wire_phase(self.session.phase);
-                                let live_tick =
-                                    self.match_state.as_ref().map_or(0, |game| game.tick);
-                                self.welcome(address, token, player, phase, live_tick);
+                            if !self.session.claim_architect(account, claim) {
+                                self.reject(address, "role change unavailable: the target slot is occupied or the match has started");
                             }
                         }
+                        LobbyAction::RequestTeam(team) => {
+                            if self
+                                .session
+                                .request_assignment_team(account, team)
+                                .is_none()
+                            {
+                                self.reject(address, "team change unavailable for your role");
+                            }
+                        }
+                    }
+                    if let Some(assignment) = self.session.assignment(account) {
+                        if let Some(client) = self.clients.get_mut(&token)
+                            && client.assignment != assignment
+                        {
+                            self.inputs
+                                .retain(|(seat, _), _| *seat != client.assignment);
+                            client.assignment_revision =
+                                client.assignment_revision.wrapping_add(1).max(1);
+                            client.assignment = assignment;
+                        }
+                        let phase = wire_phase(self.session.phase);
+                        let live_tick = self.match_state.as_ref().map_or(0, |game| game.tick);
+                        self.welcome(address, token, assignment, phase, live_tick);
                     }
                     self.broadcast_lobby();
                 }
@@ -460,13 +493,17 @@ impl AuthoritativeServer {
     fn handle_hello(
         &mut self,
         address: SocketAddr,
-        identity: (AccountId, CosmeticLook),
+        identity: (AccountId, CosmeticLook, LanRole),
         requested_team: Option<TeamId>,
         resume_token: Option<u64>,
         input_version: u16,
         simulation_content_hash: [u8; 32],
     ) {
-        let (account, appearance) = identity;
+        let (account, appearance, role) = identity;
+        if role == LanRole::Architect && !self.config.ascent {
+            self.reject(address, "Architect requires an Ascent host");
+            return;
+        }
         if input_version != HEX_INPUT_VERSION {
             self.reject(address, "hex input version mismatch");
             return;
@@ -481,9 +518,9 @@ impl AuthoritativeServer {
             && (self.session.reconnect(account, self.server_tick).is_some()
                 || self
                     .session
-                    .seats
-                    .get(existing.player.index())
-                    .is_some_and(|seat| seat.connected_human() == Some(account)))
+                    .occupant(existing.assignment)
+                    .and_then(LanSeatOccupant::connected_human)
+                    == Some(account))
         {
             let phase = wire_phase(self.session.phase);
             let live_tick = self.match_state.as_ref().map_or(0, |game| game.tick);
@@ -495,7 +532,7 @@ impl AuthoritativeServer {
                 client.ack_through = 0;
                 client.launch_ready_for = None;
             }
-            self.welcome(address, token, existing.player, phase, live_tick);
+            self.welcome(address, token, existing.assignment, phase, live_tick);
             self.send_launch_to(token);
             self.broadcast_lobby();
             return;
@@ -506,7 +543,11 @@ impl AuthoritativeServer {
         if let Some(existing) = self
             .clients
             .values()
-            .find(|client| client.account == account && client.address == address)
+            .find(|client| {
+                client.account == account
+                    && client.address == address
+                    && self.session.assignment(account) == Some(client.assignment)
+            })
             .cloned()
         {
             if let Some(client) = self.clients.get_mut(&existing.token) {
@@ -514,18 +555,31 @@ impl AuthoritativeServer {
             }
             let phase = wire_phase(self.session.phase);
             let live_tick = self.match_state.as_ref().map_or(0, |game| game.tick);
-            self.welcome(address, existing.token, existing.player, phase, live_tick);
+            self.welcome(
+                address,
+                existing.token,
+                existing.assignment,
+                phase,
+                live_tick,
+            );
             self.send_launch_to(existing.token);
             return;
         }
-        let player = match self.session.join(account, requested_team) {
-            Ok(player) => player,
+        let assignment = match role {
+            LanRole::Observer => self
+                .session
+                .join(account, requested_team)
+                .map(LanSeatId::Observer),
+            LanRole::Architect => self.session.join_architect(account, requested_team),
+        };
+        let assignment = match assignment {
+            Ok(assignment) => assignment,
             Err(error) => {
                 self.reject(address, &format!("join rejected: {error:?}"));
                 return;
             }
         };
-        let token = self.allocate_token(account, player);
+        let token = self.allocate_token(account, assignment);
         let phase = wire_phase(self.session.phase);
         let live_tick = self.match_state.as_ref().map_or(0, |game| game.tick);
         self.clients.insert(
@@ -534,7 +588,8 @@ impl AuthoritativeServer {
                 account,
                 appearance,
                 token,
-                player,
+                assignment,
+                assignment_revision: 1,
                 address,
                 last_seen: Instant::now(),
                 ack_through: 0,
@@ -542,7 +597,7 @@ impl AuthoritativeServer {
                 launch_ready_for: None,
             },
         );
-        self.welcome(address, token, player, phase, live_tick);
+        self.welcome(address, token, assignment, phase, live_tick);
         self.send_launch_to(token);
         self.broadcast_lobby();
     }
@@ -578,20 +633,15 @@ impl AuthoritativeServer {
             .collect();
         self.launch_architects = if self.config.ascent {
             self.session
-                .seats
+                .architects
                 .iter()
-                .filter(|seat| seat.architect && seat.connected_human().is_some())
-                .filter(|seat| seat.player.0 < 16)
-                .fold(0, |mask, seat| mask | (1 << seat.player.0))
+                .filter(|seat| seat.occupant.connected_human().is_some())
+                .fold(0, |mask, seat| mask | (1 << seat.team.0))
         } else {
             0
         };
         let architects = self.launch_architects;
-        let at_desk = |team: TeamId| {
-            self.session.seats.iter().any(|seat| {
-                seat.team == team && seat.player.0 < 16 && architects & (1 << seat.player.0) != 0
-            })
-        };
+        let at_desk = |team: TeamId| architects & (1 << team.0) != 0;
         self.ascent = if self.config.ascent {
             let seats = observed_match::ascent::facility::architect_seats_where(&game, at_desk);
             Some(
@@ -608,23 +658,18 @@ impl AuthoritativeServer {
         self.frames.clear();
         self.inputs.clear();
         for client in self.clients.values_mut().filter(|client| {
-            self.session.seats[client.player.index()]
-                .connected_human()
+            self.session
+                .occupant(client.assignment)
+                .and_then(LanSeatOccupant::connected_human)
                 .is_some()
         }) {
             client.ack_through = 0;
             client.synchronizing = true;
             client.launch_ready_for = None;
         }
-        self.broadcast(&LanPacket::Launch {
-            seed: selected_seed,
-            match_number: self.session.match_number,
-            config,
-            simulation_content_hash: self.content.simulation_content_hash(),
-            ascent: self.ascent.is_some(),
-            architects: self.launch_architects,
-            appearances: self.launch_appearances.clone(),
-        });
+        for token in self.clients.keys() {
+            self.send_launch_to(*token);
+        }
         Ok(())
     }
 
@@ -634,9 +679,8 @@ impl AuthoritativeServer {
     fn launch_barrier_ready(&self) -> bool {
         let generation = self.session.match_number;
         self.session
-            .seats
-            .iter()
-            .filter_map(|seat| seat.connected_human())
+            .participants()
+            .filter_map(|(_, occupant, _)| occupant.connected_human())
             .all(|account| {
                 self.clients.values().any(|client| {
                     client.account == account && client.launch_ready_for == Some(generation)
@@ -662,7 +706,14 @@ impl AuthoritativeServer {
 
     fn step_match(&mut self) {
         let human_controls = (0..self.session.seats.len())
-            .map(|index| self.human_controls(PlayerId(index as u16)))
+            .map(|index| self.human_controls(LanSeatId::Observer(PlayerId(index as u16))))
+            .collect::<Vec<_>>();
+        let human_architects = self
+            .session
+            .architects
+            .iter()
+            .filter(|seat| self.human_controls(LanSeatId::Architect(seat.team)))
+            .map(|seat| seat.team)
             .collect::<Vec<_>>();
         let Some(game) = self.match_state.as_mut() else {
             return;
@@ -674,15 +725,15 @@ impl AuthoritativeServer {
         let mut wire = vec![WireHexCommand::default(); self.session.seats.len()];
         let mut commands = BTreeMap::new();
         let mut seat_commands = BTreeMap::new();
-        let architects = self.launch_architects;
         for seat in &self.session.seats {
-            let at_desk = seat.player.0 < 16 && architects & (1 << seat.player.0) != 0;
             let input = human_controls[seat.player.index()]
-                .then(|| self.inputs.remove(&(seat.player, tick)))
+                .then(|| {
+                    self.inputs
+                        .remove(&(LanSeatId::Observer(seat.player), tick))
+                })
                 .flatten();
-            // A human at the Architect's desk has no hand on the body: the bot walks it,
-            // and what they send is the desk's.
-            let body = if human_controls[seat.player.index()] && !at_desk {
+            // Only an Observer connection owns body movement.
+            let body = if human_controls[seat.player.index()] {
                 self.bot_driver.clear_player(seat.player);
                 input.map_or_else(HexPlayerCommand::default, WireHexCommand::to_command)
             } else {
@@ -701,10 +752,28 @@ impl AuthoritativeServer {
             wire[seat.player.index()] = wired;
             commands.insert(seat.player, wired.to_command());
             if let Some(command) = said.to_seat() {
-                let rules_seat =
-                    observed_match::ascent::facility::seat_for(game, seat.player, at_desk);
+                let rules_seat = seat.player;
                 seat_commands.insert(rules_seat, command);
             }
+        }
+        let architects: Vec<_> = human_architects
+            .iter()
+            .map(|&team| {
+                let said = self
+                    .inputs
+                    .remove(&(LanSeatId::Architect(team), tick))
+                    .map_or(WireSeatCommand::None, |input| input.seat);
+                if let Some(command) = said.to_seat() {
+                    seat_commands.insert(
+                        observed_match::ascent::facility::architect_seat(team),
+                        command,
+                    );
+                }
+                (team, said)
+            })
+            .collect();
+        if let Some(rules) = self.ascent.as_mut() {
+            rules.set_human_architects(&human_architects);
         }
         let frame = HexInputFrame {
             version: HEX_INPUT_VERSION,
@@ -729,6 +798,7 @@ impl AuthoritativeServer {
         self.frames.push(WireFrame {
             tick: game.tick,
             commands: wire,
+            architects,
             digest,
         });
         self.inputs.retain(|(_, frame), _| *frame > game.tick);
@@ -740,15 +810,16 @@ impl AuthoritativeServer {
         }
     }
 
-    fn human_controls(&self, player: PlayerId) -> bool {
-        let Some(seat) = self.session.seats.get(player.index()) else {
-            return false;
-        };
-        let Some(account) = seat.connected_human() else {
+    fn human_controls(&self, assignment: LanSeatId) -> bool {
+        let Some(account) = self
+            .session
+            .occupant(assignment)
+            .and_then(LanSeatOccupant::connected_human)
+        else {
             return false;
         };
         self.clients.values().any(|client| {
-            client.account == account && client.player == player && !client.synchronizing
+            client.account == account && client.assignment == assignment && !client.synchronizing
         })
     }
 
@@ -770,6 +841,8 @@ impl AuthoritativeServer {
                 ascent: self.ascent.is_some(),
                 architects: self.launch_architects,
                 appearances: self.launch_appearances.clone(),
+                assignment: client.assignment,
+                assignment_revision: client.assignment_revision,
             },
         );
     }
@@ -816,7 +889,14 @@ impl AuthoritativeServer {
                 self.send_launch_start_to(client.token);
             }
             let start = client.ack_through.saturating_add(1);
-            let per_bundle = frames_per_bundle(self.session.seats.len());
+            let per_bundle = if self.session.architects.is_empty() {
+                frames_per_bundle(self.session.seats.len())
+            } else {
+                frames_per_bundle_with_architects(
+                    self.session.seats.len(),
+                    self.session.architects.len(),
+                )
+            };
             // A client in step needs one bundle a tick. One behind - joining late,
             // reconnecting, resyncing - gets several, consecutive from what it has applied,
             // so it catches up at the rate it can replay rather than a datagram's worth a
@@ -861,7 +941,6 @@ impl AuthoritativeServer {
             .map(|seat| WireSeat {
                 player: seat.player,
                 team: seat.team,
-                architect: seat.architect,
                 occupant: match seat.occupant {
                     LanSeatOccupant::Bot if self.config.fill_empty_seats => WireSeatOccupant::Bot,
                     LanSeatOccupant::Bot => WireSeatOccupant::Empty,
@@ -887,6 +966,26 @@ impl AuthoritativeServer {
                 ready: seat.ready,
             })
             .collect();
+        let architect_seats = self
+            .session
+            .architects
+            .iter()
+            .map(|seat| WireArchitectSeat {
+                team: seat.team,
+                occupant: self.wire_occupant(seat.occupant),
+                ready: seat.ready,
+            })
+            .collect();
+        // Retry personal assignment acknowledgement so a dropped Welcome cannot strand a role switch.
+        for client in self.clients.values() {
+            self.welcome(
+                client.address,
+                client.token,
+                client.assignment,
+                wire_phase(self.session.phase),
+                self.match_state.as_ref().map_or(0, |game| game.tick),
+            );
+        }
         self.broadcast(&LanPacket::LobbySnapshot {
             session: self.session.id.0,
             match_number: self.session.match_number,
@@ -896,6 +995,7 @@ impl AuthoritativeServer {
             ascent: self.config.ascent,
             fill_empty_seats: self.config.fill_empty_seats,
             seats,
+            architect_seats,
         });
     }
 
@@ -907,8 +1007,11 @@ impl AuthoritativeServer {
             .filter(|client| client.last_seen.elapsed() > CLIENT_TIMEOUT)
             .map(|client| (client.token, client.account))
             .collect::<Vec<_>>();
+        let had_timeout = !timed_out.is_empty();
         for (token, account) in timed_out {
-            self.session.disconnect(account, self.server_tick);
+            if let Some(assignment) = self.session.disconnect(account, self.server_tick) {
+                self.inputs.retain(|(seat, _), _| *seat != assignment);
+            }
             if awaiting_launch && !self.config.fill_empty_seats {
                 self.clients.remove(&token);
                 self.release_account_seat(account);
@@ -919,7 +1022,7 @@ impl AuthoritativeServer {
                     Instant::now() + Duration::from_secs(LAN_RECONNECT_GRACE_TICKS / SERVER_HZ);
             }
         }
-        if awaiting_launch && !self.config.fill_empty_seats {
+        if had_timeout && awaiting_launch && !self.config.fill_empty_seats {
             self.abort_pending_launch();
         }
     }
@@ -932,6 +1035,8 @@ impl AuthoritativeServer {
             .is_some_and(|client| client.address == address)
             && let Some(client) = self.clients.remove(&token)
         {
+            self.inputs
+                .retain(|(seat, _), _| *seat != client.assignment);
             self.session.disconnect(client.account, self.server_tick);
             self.release_account_seat(client.account);
             if awaiting_launch && !self.config.fill_empty_seats {
@@ -947,19 +1052,28 @@ impl AuthoritativeServer {
             && self.launch_started != Some(self.session.match_number)
     }
 
-    fn release_account_seat(&mut self, account: AccountId) {
-        if let Some(seat) = self.session.seats.iter_mut().find(|seat| {
-            matches!(
-                seat.occupant,
-                LanSeatOccupant::Human {
-                    account: found,
-                    ..
-                } if found == account
-            )
-        }) {
-            seat.occupant = LanSeatOccupant::Bot;
-            seat.ready = false;
+    fn wire_occupant(&self, occupant: LanSeatOccupant) -> WireSeatOccupant {
+        match occupant {
+            LanSeatOccupant::Bot if self.config.fill_empty_seats => WireSeatOccupant::Bot,
+            LanSeatOccupant::Bot => WireSeatOccupant::Empty,
+            LanSeatOccupant::Human {
+                connected: false, ..
+            } => WireSeatOccupant::ReservedHuman,
+            LanSeatOccupant::Human { account, .. } => {
+                if self
+                    .clients
+                    .values()
+                    .any(|c| c.account == account && c.synchronizing)
+                {
+                    WireSeatOccupant::SynchronizingHuman
+                } else {
+                    WireSeatOccupant::Human
+                }
+            }
         }
+    }
+    fn release_account_seat(&mut self, account: AccountId) {
+        self.session.release(account);
     }
 
     fn abort_pending_launch(&mut self) {
@@ -967,9 +1081,7 @@ impl AuthoritativeServer {
             return;
         }
         self.session.phase = LanPhase::Lobby;
-        for seat in &mut self.session.seats {
-            seat.ready = false;
-        }
+        self.session.clear_ready();
         for client in self.clients.values_mut() {
             client.ack_through = 0;
             client.synchronizing = false;
@@ -989,14 +1101,16 @@ impl AuthoritativeServer {
         &mut self,
         address: SocketAddr,
         token: u64,
-    ) -> Option<(AccountId, PlayerId)> {
+    ) -> Option<(AccountId, LanSeatId)> {
         let (account, player) = {
             let client = self.clients.get_mut(&token)?;
-            if client.address != address {
+            if client.address != address
+                || self.session.assignment(client.account) != Some(client.assignment)
+            {
                 return None;
             }
             client.last_seen = Instant::now();
-            (client.account, client.player)
+            (client.account, client.assignment)
         };
         if self.session.reconnect(account, self.server_tick).is_some()
             && let Some(client) = self.clients.get_mut(&token)
@@ -1008,13 +1122,13 @@ impl AuthoritativeServer {
         Some((account, player))
     }
 
-    fn allocate_token(&mut self, account: AccountId, player: PlayerId) -> u64 {
+    fn allocate_token(&mut self, account: AccountId, assignment: LanSeatId) -> u64 {
         self.token_cursor = self
             .token_cursor
             .wrapping_mul(0x9E37_79B9_7F4A_7C15)
             .rotate_left(17)
             ^ u64::from(account.0)
-            ^ u64::from(player.0);
+            ^ assignment.token_key();
         self.token_cursor | 1
     }
 
@@ -1022,17 +1136,23 @@ impl AuthoritativeServer {
         &self,
         address: SocketAddr,
         token: u64,
-        player: PlayerId,
+        assignment: LanSeatId,
         phase: WirePhase,
         server_tick: u64,
     ) {
-        let team = self.session.seats[player.index()].team;
+        let Some(team) = self.session.team_for(assignment) else {
+            return;
+        };
         let _ = self.send_to(
             address,
             &LanPacket::Welcome {
                 session: self.session.id.0,
                 resume_token: token,
-                player,
+                assignment,
+                assignment_revision: self
+                    .clients
+                    .get(&token)
+                    .map_or(1, |client| client.assignment_revision),
                 team,
                 phase,
                 server_tick,
@@ -1493,7 +1613,6 @@ mod tests {
         drive_pair_until(&mut server, &mut first, &mut second, |a, b| {
             a.token.is_some() && b.token.is_some()
         });
-        first.claim_architect(true).unwrap();
         first.set_ready(true).unwrap();
         second.set_ready(true).unwrap();
         drive_pair_until(&mut server, &mut first, &mut second, |a, b| {
@@ -1505,7 +1624,7 @@ mod tests {
         assert_eq!(first.appearances[b.index()], cobalt);
         assert_eq!(first.appearances, second.appearances);
         assert_eq!(first.appearances.len(), 3);
-        assert!(first.launch.unwrap().is_architect(a));
+        assert!(!first.is_architect());
         assert_eq!(
             server.match_state().unwrap().players.len(),
             3,
@@ -1543,6 +1662,174 @@ mod tests {
             a.launch_has_started(a.launch.unwrap().match_number)
                 && b.launch_has_started(b.launch.unwrap().match_number)
         });
+    }
+
+    #[test]
+    fn independent_architect_and_three_observers_launch_reconnect_and_keep_separate_inputs() {
+        let config = ServerConfig {
+            bind: "127.0.0.1:0".parse().unwrap(),
+            discovery: false,
+            ascent: true,
+            roster: LanRoster::co_op(3),
+            min_humans: 4,
+            fill_empty_seats: false,
+            base_seed: 0xF011_FAC1_1177,
+            ..ServerConfig::default()
+        };
+        let mut server = AuthoritativeServer::bind(config).unwrap();
+        let address = server.local_addr().unwrap();
+        let hash = server.content.simulation_content_hash();
+        let mut peers = vec![
+            LanClient::connect_with_role(
+                address,
+                920,
+                None,
+                None,
+                hash,
+                CosmeticLook::default(),
+                LanRole::Architect,
+            )
+            .unwrap(),
+        ];
+        for account in 921..924 {
+            peers.push(LanClient::connect(address, account, None, None, hash).unwrap());
+        }
+        drive_group_until(&mut server, &mut peers, |peers| {
+            peers.iter().all(|c| c.token.is_some() && c.lobby.is_some())
+        });
+        assert!(peers[0].is_architect());
+        assert_eq!(peers[0].player, None);
+        let bodies: std::collections::BTreeSet<_> =
+            peers[1..].iter().map(|c| c.player.unwrap()).collect();
+        assert_eq!(
+            bodies,
+            [PlayerId(0), PlayerId(1), PlayerId(2)]
+                .into_iter()
+                .collect()
+        );
+        assert_eq!(
+            (server.session.human_count(), server.session.capacity()),
+            (4, 4)
+        );
+        assert_eq!(peers[0].lobby.as_ref().unwrap().architect_seats.len(), 1);
+        for peer in &peers {
+            peer.set_ready(true).unwrap();
+        }
+        drive_group_until(&mut server, &mut peers, |peers| {
+            peers.iter().all(|c| c.launch.is_some())
+        });
+        let launch = peers[0].launch.unwrap();
+        assert!(launch.human_architect(TeamId(0)));
+        assert_eq!(server.match_state().unwrap().players.len(), 3);
+        for peer in &mut peers[1..] {
+            peer.mark_launch_ready(launch.match_number).unwrap();
+        }
+        for _ in 0..30 {
+            server.fixed_tick().unwrap();
+            for peer in &mut peers {
+                peer.poll();
+            }
+        }
+        assert_eq!(
+            server.match_state().unwrap().tick,
+            0,
+            "desk preparation participates in the barrier"
+        );
+        peers[0].mark_launch_ready(launch.match_number).unwrap();
+        drive_group_until(&mut server, &mut peers, |peers| {
+            peers
+                .iter()
+                .all(|c| c.launch_has_started(launch.match_number))
+        });
+        let tick = server.match_state().unwrap().tick + 1;
+        let mut moving = HexPlayerCommand::default();
+        moving.intent.movement.x = 1.0;
+        peers[0]
+            .queue_input(tick, moving, WireSeatCommand::Requisition)
+            .unwrap();
+        for peer in &mut peers[1..] {
+            peer.queue_input(tick, HexPlayerCommand::default(), WireSeatCommand::None)
+                .unwrap();
+        }
+        server.poll_network();
+        server.fixed_tick().unwrap();
+        let frame = server.frames.last().unwrap();
+        assert_eq!(frame.commands.len(), 3);
+        assert!(
+            frame
+                .commands
+                .iter()
+                .all(|c| c.intent.movement_x == 0 && c.intent.movement_y == 0),
+            "desk movement cannot hijack an Observer"
+        );
+        assert_eq!(
+            frame.architects,
+            vec![(TeamId(0), WireSeatCommand::Requisition)]
+        );
+        let token = peers[0].token.unwrap();
+        drop(peers.remove(0));
+        server.clients.get_mut(&token).unwrap().last_seen = Instant::now() - Duration::from_secs(3);
+        server.disconnect_timed_out_clients();
+        server.fixed_tick().unwrap();
+        assert!(server.frames.last().unwrap().architects.is_empty());
+        let rules_seat = observed_match::ascent::facility::architect_seat(TeamId(0));
+        assert!(server.ascent.as_ref().unwrap().session().seats()[&rules_seat].bot);
+        let mut resumed = LanClient::connect_with_role(
+            address,
+            920,
+            None,
+            Some(token),
+            hash,
+            CosmeticLook::default(),
+            LanRole::Architect,
+        )
+        .unwrap();
+        for _ in 0..1000 {
+            server.poll_network();
+            server.broadcast_frame_windows();
+            resumed.poll();
+            if resumed.launch.is_some() {
+                resumed.mark_launch_ready(launch.match_number).unwrap();
+                resumed.take_ready_frames(observed_net::lan::FRAME_WINDOW);
+            }
+            server.poll_network();
+            if server.human_controls(LanSeatId::Architect(TeamId(0))) {
+                break;
+            }
+        }
+        assert_eq!(resumed.assignment, Some(LanSeatId::Architect(TeamId(0))));
+        assert_eq!(resumed.player, None);
+        assert_eq!(resumed.launch, Some(launch));
+        assert!(server.human_controls(LanSeatId::Architect(TeamId(0))));
+        server.fixed_tick().unwrap();
+        assert!(!server.ascent.as_ref().unwrap().session().seats()[&rules_seat].bot);
+        assert_eq!(server.match_state().unwrap().players.len(), 3);
+        server.clients.get_mut(&token).unwrap().last_seen = Instant::now() - Duration::from_secs(3);
+        server.disconnect_timed_out_clients();
+        server.server_tick += LAN_RECONNECT_GRACE_TICKS + 1;
+        server.fixed_tick().unwrap();
+        assert!(
+            !server.clients.contains_key(&token),
+            "expired ownership retires its token"
+        );
+    }
+
+    fn drive_group_until(
+        server: &mut AuthoritativeServer,
+        peers: &mut [LanClient],
+        ready: impl Fn(&[LanClient]) -> bool,
+    ) {
+        for _ in 0..20_000 {
+            server.fixed_tick().unwrap();
+            for peer in peers.iter_mut() {
+                peer.poll();
+            }
+            if ready(peers) {
+                return;
+            }
+            thread::yield_now();
+        }
+        panic!("group transport condition was not reached");
     }
 
     fn drive_until(

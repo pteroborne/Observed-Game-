@@ -298,28 +298,16 @@ pub(super) fn setup_runtime(
         play_setup,
         lan,
     );
-    let mut replay =
-        crate::sim::replay::ReplayTape::new_hex_wfc_for_player(&match_state, local_player);
+    let architect = ascent.is_some() && play_setup.seat == crate::play_setup::PlaySeat::Architect;
+    let replay = super::ascent::begin_replay(
+        &match_state,
+        local_player,
+        ascent.as_ref(),
+        architect,
+        spectator,
+    );
     if !networked {
         commands.insert_resource(crate::play_setup::LaunchedPlaySetup(play_setup.clone()));
-    }
-    if let Some(rules) = &ascent {
-        let architect = if networked {
-            lan.flatten()
-                .is_some_and(|launch| launch.is_architect(local_player))
-        } else {
-            play_setup.seat == crate::play_setup::PlaySeat::Architect
-        };
-        replay.ascent_result = Some(super::ascent::completion_for(
-            rules,
-            &match_state,
-            local_player,
-            architect,
-            spectator,
-        ));
-        replay.record_ascent(&match_state, rules);
-    } else {
-        replay.record_hex_wfc(&match_state);
     }
     let map_level = match_state.players[&local_player].cell.level;
     let presented_revisions = match_state.facility.cell_revisions.clone();
@@ -458,8 +446,12 @@ pub(super) fn step_runtime(
         runtime.bot_driver.clear_player(local_player);
         HexPlayerCommand::default()
     } else if control.desk.is_some() {
-        // A spectator watches a bot, and an Architect has no body: the team's is a bot.
-        runtime.bot_command(local_player)
+        // A network desk owns no movement input. Local desk play still drives bot bodies.
+        if runtime.networked {
+            HexPlayerCommand::default()
+        } else {
+            runtime.bot_command(local_player)
+        }
     } else {
         runtime.bot_driver.clear_player(local_player);
         HexPlayerCommand {

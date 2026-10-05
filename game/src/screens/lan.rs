@@ -20,11 +20,12 @@ use super::widgets::{
 use crate::GameState;
 use crate::hex_wfc::launch::{HexLaunchSpec, HexSeedPolicy};
 use crate::hex_wfc::loading::HexLaunchRequestSequence;
-use crate::play_setup::{LaunchContext, PlaySetupDraft};
+use crate::play_setup::{LaunchContext, PlayRules, PlaySetupDraft};
 use crate::view::theme::{ACCENT, BORDER, DIM, PANEL, TITLE, screen_root, text};
 
 const SCOPE: FocusScopeId = FocusScopeId("lan_browser");
 const DIRECT_ADDRESS: WidgetId = WidgetId::named("lan.direct_address");
+const ROLE: WidgetId = WidgetId::named("lan.role");
 const HOST: WidgetId = WidgetId::named("lan.host");
 const JOIN_SELECTED: WidgetId = WidgetId::named("lan.join_selected");
 const JOIN_DIRECT: WidgetId = WidgetId::named("lan.join_direct");
@@ -72,6 +73,12 @@ pub(crate) struct ServerOption(SocketAddr);
 pub(crate) struct JoinSelectedWidget;
 
 #[derive(Component)]
+pub(crate) struct JoinRoleWidget;
+
+#[derive(Component)]
+pub(crate) struct HostWidget;
+
+#[derive(Component)]
 pub(crate) struct JoinDirectWidget;
 
 #[derive(Component)]
@@ -84,6 +91,7 @@ pub(crate) struct NextPageWidget;
 pub(crate) enum LanBrowserAction {
     EditDirectAddress,
     SelectServer(SocketAddr),
+    ToggleRole,
     Host,
     JoinSelected,
     JoinDirect,
@@ -196,9 +204,15 @@ pub(crate) fn setup_browser(mut commands: Commands, lan: Res<crate::lan::LanRunt
                 body.spawn(lan_panel(382.0)).with_children(|actions| {
                     widgets::spawn_button(
                         actions,
+                        WidgetSpec::enabled(ROLE, SCOPE, 29, join_role_label(lan.requested_role))
+                            .with_size(342.0, 44.0),
+                        (LanBrowserAction::ToggleRole, JoinRoleWidget),
+                    );
+                    widgets::spawn_button(
+                        actions,
                         WidgetSpec::enabled(HOST, SCOPE, HOST_ORDER, "Host this setup")
                             .with_size(342.0, 44.0),
-                        LanBrowserAction::Host,
+                        (LanBrowserAction::Host, HostWidget),
                     );
                     widgets::spawn_button(
                         actions,
@@ -275,7 +289,7 @@ pub(crate) fn poll_lan(
     let launch = lan.client.as_ref().and_then(|client| {
         client
             .launch
-            .zip(client.player)
+            .and_then(|launch| client.view_player(&launch).map(|player| (launch, player)))
             .filter(|(launch, _)| lan.consumed_match != Some(launch.match_number))
     });
     if *state.get() == GameState::Lobby
@@ -299,7 +313,11 @@ pub(crate) fn poll_lan(
                 } else {
                     crate::play_setup::PlayRules::Race
                 },
-                if launch.is_architect(local_player) {
+                if lan
+                    .client
+                    .as_ref()
+                    .is_some_and(|client| client.is_architect())
+                {
                     crate::play_setup::PlaySeat::Architect
                 } else {
                     crate::play_setup::PlaySeat::Observer
@@ -367,6 +385,9 @@ pub(crate) fn refresh_browser_text(
     list_panels: Query<Entity, With<ServerListPanel>>,
     server_widgets: Query<(Entity, &ServerOption)>,
     address_widgets: Query<Entity, With<DirectAddressWidget>>,
+    role_widgets: Query<Entity, With<JoinRoleWidget>>,
+    host_widgets: Query<Entity, With<HostWidget>>,
+    setup: Res<PlaySetupDraft>,
     join_selected: Query<Entity, With<JoinSelectedWidget>>,
     join_direct: Query<Entity, With<JoinDirectWidget>>,
     previous_page: Query<Entity, With<PreviousPageWidget>>,
@@ -378,6 +399,26 @@ pub(crate) fn refresh_browser_text(
     let Ok(mut draft) = drafts.single_mut() else {
         return;
     };
+    let host_allowed = setup.rules == PlayRules::Ascent
+        || lan.requested_role == observed_core::lan::LanRole::Observer;
+    for entity in &host_widgets {
+        set_widget_availability(
+            &mut commands,
+            entity,
+            HOST_ORDER,
+            host_allowed,
+            if host_allowed {
+                "Host this setup".into()
+            } else {
+                "Host race | choose Observer".into()
+            },
+        );
+    }
+    for entity in &role_widgets {
+        commands
+            .entity(entity)
+            .insert(WidgetLabel(join_role_label(lan.requested_role).to_string()));
+    }
     let servers = discovered_servers(&lan);
     let old_selection = draft.selected_server;
     if draft
@@ -548,6 +589,12 @@ pub(crate) fn activate_browser(
     };
     match *action {
         LanBrowserAction::EditDirectAddress => {}
+        LanBrowserAction::ToggleRole => {
+            lan.requested_role = match lan.requested_role {
+                observed_core::lan::LanRole::Observer => observed_core::lan::LanRole::Architect,
+                observed_core::lan::LanRole::Architect => observed_core::lan::LanRole::Observer,
+            };
+        }
         LanBrowserAction::SelectServer(address) => {
             if let Ok(mut draft) = drafts.single_mut() {
                 draft.selected_server = Some(address);
@@ -604,12 +651,12 @@ pub(crate) fn activate_browser(
 /// roster refresh registration entirely beside the lobby's local observer.
 pub(crate) fn refresh_lobby_text(
     lan: Res<crate::lan::LanRuntime>,
-    mut roster: Query<&mut Text, With<LanLobbyRosterText>>,
+    mut roster: Query<(&mut Text, &super::lobby::RosterPage), With<LanLobbyRosterText>>,
 ) {
-    let Ok(mut roster) = roster.single_mut() else {
+    let Ok((mut roster, page)) = roster.single_mut() else {
         return;
     };
-    **roster = super::lobby::lobby_roster_text(&lan);
+    **roster = super::lobby::roster_page_text(&super::lobby::lobby_roster_text(&lan), page.index);
 }
 
 fn discovered_servers(lan: &crate::lan::LanRuntime) -> Vec<DiscoveredServer> {
@@ -660,6 +707,13 @@ fn lan_panel(width: f32) -> impl Bundle {
         BackgroundColor(PANEL),
         BorderColor::all(BORDER),
     )
+}
+
+fn join_role_label(role: observed_core::lan::LanRole) -> &'static str {
+    match role {
+        observed_core::lan::LanRole::Observer => "Join as: Observer",
+        observed_core::lan::LanRole::Architect => "Join as: Architect (Ascent)",
+    }
 }
 
 fn direct_address_label(address: &str) -> String {

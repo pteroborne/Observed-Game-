@@ -249,6 +249,16 @@ impl AscentSession {
         }
     }
 
+    /// Apply authoritative per-tick desk ownership before advancing the shared rules.
+    /// Hands, knowledge, cooldowns and seat IDs survive bot/human takeover unchanged.
+    pub fn set_human_architects(&mut self, human: impl Fn(TeamId) -> bool) {
+        for seat in self.seats.values_mut() {
+            if let Role::Architect(team) = seat.role {
+                seat.bot = !human(team);
+            }
+        }
+    }
+
     /// An entire mismatched or repeated frame is refused before any command mutates
     /// state. Individual refusals do not stop other seats from acting this tick.
     pub fn advance(&mut self, frame: &InputFrame) -> Result<BTreeMap<PlayerId, Refusal>, Refusal> {

@@ -1,0 +1,15 @@
+{
+  "architect_slots": 1,
+  "assignment": "Architect(TeamId(0))",
+  "case": 2,
+  "embodied_player": null,
+  "fixture": "real graphical Join/Ready and Loading; two neutral-input transport peers; Guardian off; returning-player help state",
+  "observer_slots": 3,
+  "peer": "architect",
+  "rendered_body_count": 3,
+  "replay_has_owned_body": false,
+  "resync_attempts": 0,
+  "saw_real_loading": true,
+  "simulation_digest": "28de805cc88a5db1",
+  "simulation_tick": 397
+}

@@ -260,3 +260,15 @@ enforces one-to-three Ascent Observer bodies while retaining Facility race capac
 The existing LAN desk-to-bot-body connection model remains explicit; an independent
 Architect connection, human/controller acceptance and two graphical LAN clients
 remain separate work.
+
+
+## Independent LAN desks and paired graphical entry
+
+[Implementation and native evidence](independent_lan_architect_implementation.md)
+complete the independently connectable Architect follow-up. Three human Observers
+and their human Architect now occupy four connections over three bodies. Protocol
+17 carries typed/revisioned ownership, independent desk commands and deterministic
+bot takeover. The browser, lobby and real Loading path were exercised by two
+simultaneous graphical processes; the maximum lobby's roster/team pages also fit
+1280x800. Human/controller and physical-machine/firewall acceptance remain open,
+as does the known ignored asserting extended soak.

@@ -158,16 +158,7 @@ pub(crate) fn poll_peer(mut peer: Option<ResMut<Peer>>) {
         return;
     };
     peer.0.poll();
-    let claimed = peer
-        .0
-        .player
-        .zip(peer.0.lobby.as_ref())
-        .is_some_and(|(player, lobby)| {
-            lobby
-                .seats
-                .iter()
-                .any(|s| s.player == player && s.architect)
-        });
+    let claimed = peer.0.is_architect();
     if peer.0.token.is_some() && !claimed {
         peer.0.claim_architect(true).expect("claim fixture desk");
     }

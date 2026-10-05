@@ -1,12 +1,12 @@
 # LAN integration
 
 Observed 2 LAN play is server authoritative and deterministic. Dedicated and listen
-hosts configure teams and Observer/body seats, with up to sixteen connection seats.
+hosts configure teams and Observer/body seats, with up to sixteen Observer bodies.
 Facility race defaults to two teams of two and retains four-body co-op. Architect
 Ascent supports one-to-three Observer bodies per team plus a non-embodied rules
 Architect. Humans may request teams with free seats; unoccupied seats are bot-filled
-unless the host requires a full human roster. Teammates share one survivor-map
-ledger while rival knowledge remains private.
+unless the host requires a full human roster, including the independent Architect
+desks in Ascent. Teammates share one survivor-map ledger while rival knowledge remains private.
 
 ## Run
 
@@ -25,25 +25,24 @@ The Host LAN button launches the same server library in a stoppable background t
 ## Architect Ascent on LAN
 
 `--ascent` on the dedicated server - or *Architect Ascent* in the Play Hub before Host LAN -
-plays the Ascent rules. The launch says so, and names the seats whose humans sit at their
-team's Architect desk. The server and every client build the same rules beside the match
+plays the Ascent rules. The launch names its initial human Architect teams and
+each client's independent body or desk assignment. The server and every client build the same rules beside the match
 from the launch alone (`observed_match::ascent::facility::architect_seats_where`,
 `game/src/hex_wfc/ascent.rs` `lan_rules`): a human Architect where one claimed the desk, a
 bot everywhere else.
 
-**The desk.** In the lobby, *Architect: ON* claims your team's Architect desk (one a team;
-the roster marks it ARCHITECT + BOT BODY). At launch you sit at the desk and a bot
-walks your body. A teammate's claim disables a competing claim. Facility race has no
-Architect claim. The connection quota remains the body quota: claiming the desk
-does not add an independently connectable human Architect. A three-body team with
-a human Architect has room for two human Observers and one bot Observer.
+**The desk.** Choose Join as Architect in the browser, or switch roles in the lobby.
+Ascent offers one independently connectable desk per team, in addition to its one-to-three
+Observer bodies. A three-body co-op team can have three human Observers and one human
+Architect. Switching roles never displaces an occupied or reserved slot; the lobby
+shows why an unavailable target is disabled. Facility race offers only body connections.
 
-**Seat commands** (introduced in protocol 5; current LAN protocol 16, `observed_net::lan::WireSeatCommand`). Every body
-command carries its seat's say in the rules this tick, nothing on most: a card played, a
+**Seat commands** (introduced in protocol 5; current LAN protocol 17, `observed_net::lan::WireSeatCommand`). Body commands carry Observer/Rogue requests; a separate sorted desk list carries
+Architect commands and per-tick human/bot ownership. A command is nothing on most ticks: a card played, a
 requisition, an ask for help (T), an answer to one, and from a corrupted player at the
 Rogue board a card play, including its directive and sensor cards. The server puts each into the frame,
-and every peer maps it to a rules seat the same way (`seat_for`: the team's Architect seat
-for a human at the desk, the player's own otherwise) and applies it on the same tick, so
+and every peer maps it to the same existing rules seat: the team's Architect seat
+for a desk connection, the body's own for an Observer/Rogue. They apply it on the same tick, so
 the digest keeps them honest exactly as it does movement. A resync rebuilds the rules from
 the launch with the match. Frames are budgeted for the largest seat command on every seat,
 so a bundle never outgrows a datagram.
@@ -53,27 +52,30 @@ connected, and every peer must agree.
 
 ## Cosmetics and version compatibility
 
-Protocol 16 carries equipped color/trail/badge IDs in Hello and freezes a validated
+Protocol 17 retains equipped color/trail/badge IDs in Hello and freezes a validated
 look per body in Launch. Gimbals, badges and trails use those choices; team/role
 irises remain readable. Every client and reconnect sees the same launch metadata;
 late joiners receive their chosen look on the next match. These are presentation
 facts and never affect input frames or simulation digests. Lobby snapshots also name
 the host's rules and bot-fill policy. Update hosts and clients together; protocol
-15 packets fail the version check. See the [implementation and evidence](ux/canonical_cosmetics_roster_implementation.md).
+16 packets fail the version check. See the [cosmetic implementation](ux/canonical_cosmetics_roster_implementation.md) and
+[independent desk implementation/evidence](ux/independent_lan_architect_implementation.md).
 
 ## Session lifecycle
 
 1. The handshake checks the LAN protocol, hex input version, and canonical simulation
-   content hash before assigning a stable `PlayerId` and `TeamId`.
+   content hash before assigning a stable Observer/body or Architect/team slot.
 2. All connected humans must be ready. The server runs a three-second countdown and
-   fills the remaining seats with bots.
+   fills the remaining role slots with bots when enabled; full-roster mode requires
+   a human in every configured body and desk.
 3. Clients send redundant future input bundles. The server selects one command per
-   player at 60 Hz, simulates the canonical match, and broadcasts retained command
+   body and desk at 60 Hz, simulates the canonical match, and broadcasts retained command
    frames with deterministic state digests. The command it simulates is the one it puts
    on the wire, decoded: encoding rounds a command, and every client steps the decoded
    frame, so a server stepping its own unrounded commands parted from every client by
    tick 2 (`server` test `replays_in_step`).
-4. Missing/disconnected human commands immediately fall back to bot control. A seat is
+4. Connected humans with missing input receive a neutral command. Disconnected or
+   synchronizing bodies and desks use bot control. A seat is
    reserved for 30 seconds; reconnecting and late-joining clients replay history from
    tick one before control transfers back. A client behind the live tick is streamed up
    to twelve bundles a tick, consecutive from what it has applied, and replays frames

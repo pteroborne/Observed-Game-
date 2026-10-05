@@ -1,0 +1,68 @@
+[
+  {
+    "max": [
+      431.0,
+      386.0
+    ],
+    "min": [
+      201.0,
+      340.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.roster_previous\", key: 0 }"
+  },
+  {
+    "max": [
+      667.0,
+      386.0
+    ],
+    "min": [
+      437.0,
+      340.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.roster_next\", key: 0 }"
+  },
+  {
+    "max": [
+      1067.0,
+      400.0
+    ],
+    "min": [
+      747.0,
+      332.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.architect\", key: 0 }"
+  },
+  {
+    "max": [
+      987.0,
+      528.0
+    ],
+    "min": [
+      827.0,
+      482.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.team\", key: 0 }"
+  },
+  {
+    "max": [
+      1067.0,
+      656.0
+    ],
+    "min": [
+      747.0,
+      610.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.leave\", key: 0 }"
+  },
+  {
+    "max": [
+      1067.0,
+      250.0
+    ],
+    "min": [
+      747.0,
+      204.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.ready\", key: 0 }"
+  }
+]

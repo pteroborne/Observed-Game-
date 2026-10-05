@@ -133,7 +133,7 @@ pub(crate) fn setup(mut commands: Commands, career: Res<Career>) {
                 });
             });
             root.spawn(text(
-                "Your design applies at match start | Iris shows team role",
+                "Observer designs apply at match start | Iris shows team role",
                 14.0,
                 DIM,
             ));

@@ -5,7 +5,11 @@ use std::io;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
-use observed_core::{PlayerId, TeamId, cosmetics::CosmeticLook};
+use observed_core::{
+    PlayerId, TeamId,
+    cosmetics::CosmeticLook,
+    lan::{LanRole, LanSeatId},
+};
 use observed_facility::hex_wfc::HexWfcConfig;
 use observed_match::hex_wfc::{
     HEX_INPUT_VERSION, HexActionButtons, HexInputFrame, HexMatchConfig, HexPlayerCommand,
@@ -42,7 +46,8 @@ use crate::protocol::WireIntent;
 /// Version 15 carries a plumb and its aim after a body's action bits, and every body now
 /// wards and knows by its real sight, so the same frames make a different match.
 /// Version 16 carries frozen cosmetic looks and enforces canonical Ascent rosters.
-pub const LAN_PROTOCOL_VERSION: u16 = 16;
+/// Version 17 separates Architect connections and authoritative desk commands from bodies.
+pub const LAN_PROTOCOL_VERSION: u16 = 17;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;
@@ -214,8 +219,13 @@ pub struct WireSeat {
     pub team: TeamId,
     pub occupant: WireSeatOccupant,
     pub ready: bool,
-    /// The seat's human has claimed the team's Architect desk.
-    pub architect: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WireArchitectSeat {
+    pub team: TeamId,
+    pub occupant: WireSeatOccupant,
+    pub ready: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -225,6 +235,8 @@ pub struct WireFrame {
     /// capped at [`MAX_SEATS`]; it was a fixed `[WireHexCommand; 4]`, which is
     /// what pinned the whole stack to 2v2.
     pub commands: Vec<WireHexCommand>,
+    /// Connected, synchronized human desks, in team order. Missing teams use bot control.
+    pub architects: Vec<(TeamId, WireSeatCommand)>,
     pub digest: u64,
 }
 
@@ -257,7 +269,11 @@ impl WireFrame {
     #[must_use]
     pub fn wire_len(&self) -> usize {
         // tick + seat count + commands + digest.
-        8 + 1 + self.commands.len() * WIRE_COMMAND_BYTES + 8
+        8 + 1
+            + self.commands.len() * WIRE_COMMAND_BYTES
+            + 1
+            + self.architects.len() * (1 + WireSeatCommand::MAX_BYTES)
+            + 8
     }
 }
 
@@ -276,9 +292,19 @@ const WIRE_COMMAND_BYTES: usize = 5 + 1 + 3 + WireSeatCommand::MAX_BYTES;
 /// failing.
 #[must_use]
 pub fn frames_per_bundle(seats: usize) -> usize {
+    frames_per_bundle_with_architects(seats, 0)
+}
+
+#[must_use]
+pub fn frames_per_bundle_with_architects(seats: usize, architects: usize) -> usize {
     // Envelope, packet tag, and the bundle's own frame count.
     const OVERHEAD: usize = 12 + 1 + 1;
-    let per_frame = 8 + 1 + seats.max(1) * WIRE_COMMAND_BYTES + 8;
+    let per_frame = 8
+        + 1
+        + seats.max(1) * WIRE_COMMAND_BYTES
+        + 1
+        + architects * (1 + WireSeatCommand::MAX_BYTES)
+        + 8;
     ((MAX_DATAGRAM - OVERHEAD) / per_frame).clamp(1, FRAME_WINDOW)
 }
 
@@ -306,11 +332,13 @@ pub enum LanPacket {
         input_version: u16,
         simulation_content_hash: [u8; 32],
         appearance: CosmeticLook,
+        role: LanRole,
     },
     Welcome {
         session: u32,
         resume_token: u64,
-        player: PlayerId,
+        assignment: LanSeatId,
+        assignment_revision: u32,
         team: TeamId,
         phase: WirePhase,
         server_tick: u64,
@@ -331,6 +359,7 @@ pub enum LanPacket {
         ascent: bool,
         fill_empty_seats: bool,
         seats: Vec<WireSeat>,
+        architect_seats: Vec<WireArchitectSeat>,
     },
     Launch {
         seed: u64,
@@ -338,9 +367,11 @@ pub enum LanPacket {
         config: HexMatchConfig,
         simulation_content_hash: [u8; 32],
         ascent: bool,
-        /// The seats whose humans sit at their team's Architect desk, one bit a seat.
+        /// Human Architect teams at launch, one bit per team.
         architects: u16,
         appearances: Vec<CosmeticLook>,
+        assignment: LanSeatId,
+        assignment_revision: u32,
     },
     InputBundle {
         token: u64,
@@ -453,6 +484,7 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             input_version,
             simulation_content_hash,
             appearance,
+            role,
         } => {
             put_u16(&mut out, *account);
             out.push(requested_team.map_or(u8::MAX, |team| team.0));
@@ -460,19 +492,22 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             put_u16(&mut out, *input_version);
             out.extend_from_slice(simulation_content_hash);
             encode_look(&mut out, *appearance)?;
+            out.push(u8::from(*role == LanRole::Architect));
             2
         }
         LanPacket::Welcome {
             session,
             resume_token,
-            player,
+            assignment,
+            assignment_revision,
             team,
             phase,
             server_tick,
         } => {
             put_u32(&mut out, *session);
             put_u64(&mut out, *resume_token);
-            put_u16(&mut out, player.0);
+            encode_assignment(&mut out, *assignment)?;
+            put_u32(&mut out, *assignment_revision);
             out.push(team.0);
             out.push(phase.encode());
             put_u64(&mut out, *server_tick);
@@ -509,6 +544,7 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             ascent,
             fill_empty_seats,
             seats,
+            architect_seats,
         } => {
             put_u32(&mut out, *session);
             put_u32(&mut out, *match_number);
@@ -517,13 +553,24 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             put_u16(&mut out, *countdown_ticks);
             out.push(u8::from(*ascent));
             out.push(u8::from(*fill_empty_seats));
+            if seats.len() > MAX_SEATS || architect_seats.len() > MAX_SEATS {
+                return Err(LanCodecError::InvalidValue);
+            }
             out.push(seats.len() as u8);
             for seat in seats {
                 put_u16(&mut out, seat.player.0);
                 out.push(seat.team.0);
                 out.push(seat.occupant.encode());
                 out.push(u8::from(seat.ready));
-                out.push(u8::from(seat.architect));
+            }
+            out.push(architect_seats.len() as u8);
+            for seat in architect_seats {
+                if usize::from(seat.team.0) >= MAX_SEATS {
+                    return Err(LanCodecError::InvalidValue);
+                }
+                out.push(seat.team.0);
+                out.push(seat.occupant.encode());
+                out.push(u8::from(seat.ready));
             }
             6
         }
@@ -535,8 +582,11 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             ascent,
             architects,
             appearances,
+            assignment,
+            assignment_revision,
         } => {
             validate_looks(*config, *ascent, appearances)?;
+            validate_launch_assignment(*config, *ascent, *architects, *assignment)?;
             put_u64(&mut out, *seed);
             put_u32(&mut out, *match_number);
             encode_config(&mut out, *config);
@@ -547,6 +597,8 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             for look in appearances {
                 encode_look(&mut out, *look)?;
             }
+            encode_assignment(&mut out, *assignment)?;
+            put_u32(&mut out, *assignment_revision);
             7
         }
         LanPacket::InputBundle { token, commands } => {
@@ -561,10 +613,19 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
         LanPacket::FrameBundle { frames } => {
             out.push(frames.len() as u8);
             for frame in frames {
+                if frame.commands.len() > MAX_SEATS {
+                    return Err(LanCodecError::InvalidValue);
+                }
+                validate_architect_commands(&frame.architects)?;
                 put_u64(&mut out, frame.tick);
                 out.push(frame.commands.len() as u8);
                 for command in &frame.commands {
                     encode_command(&mut out, *command);
+                }
+                out.push(frame.architects.len() as u8);
+                for (team, command) in &frame.architects {
+                    out.push(team.0);
+                    command.encode(&mut out);
                 }
                 put_u64(&mut out, frame.digest);
             }
@@ -628,12 +689,18 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
                 input_version: cursor.u16()?,
                 simulation_content_hash: cursor.array32()?,
                 appearance: decode_look(&mut cursor)?,
+                role: if cursor.bool()? {
+                    LanRole::Architect
+                } else {
+                    LanRole::Observer
+                },
             }
         }
         3 => LanPacket::Welcome {
             session: cursor.u32()?,
             resume_token: cursor.u64()?,
-            player: PlayerId(cursor.u16()?),
+            assignment: decode_assignment(&mut cursor)?,
+            assignment_revision: cursor.u32()?,
             team: TeamId(cursor.u8()?),
             phase: WirePhase::decode(cursor.u8()?)?,
             server_tick: cursor.u64()?,
@@ -660,6 +727,9 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
             let ascent = cursor.bool()?;
             let fill_empty_seats = cursor.bool()?;
             let count = usize::from(cursor.u8()?);
+            if count > MAX_SEATS {
+                return Err(LanCodecError::InvalidValue);
+            }
             let mut seats = Vec::with_capacity(count);
             for _ in 0..count {
                 seats.push(WireSeat {
@@ -667,7 +737,22 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
                     team: TeamId(cursor.u8()?),
                     occupant: WireSeatOccupant::decode(cursor.u8()?)?,
                     ready: cursor.bool()?,
-                    architect: cursor.bool()?,
+                });
+            }
+            let count = usize::from(cursor.u8()?);
+            if count > MAX_SEATS {
+                return Err(LanCodecError::InvalidValue);
+            }
+            let mut architect_seats = Vec::with_capacity(count);
+            for _ in 0..count {
+                let team = TeamId(cursor.u8()?);
+                if usize::from(team.0) >= MAX_SEATS {
+                    return Err(LanCodecError::InvalidValue);
+                }
+                architect_seats.push(WireArchitectSeat {
+                    team,
+                    occupant: WireSeatOccupant::decode(cursor.u8()?)?,
+                    ready: cursor.bool()?,
                 });
             }
             LanPacket::LobbySnapshot {
@@ -679,6 +764,7 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
                 ascent,
                 fill_empty_seats,
                 seats,
+                architect_seats,
             }
         }
         7 => LanPacket::Launch {
@@ -689,6 +775,8 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
             ascent: cursor.u8()? != 0,
             architects: cursor.u16()?,
             appearances: decode_looks(&mut cursor)?,
+            assignment: decode_assignment(&mut cursor)?,
+            assignment_revision: cursor.u32()?,
         },
         8 => {
             let token = cursor.u64()?;
@@ -714,9 +802,19 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
                 for _ in 0..seats {
                     commands.push(decode_command(&mut cursor)?);
                 }
+                let count = usize::from(cursor.u8()?);
+                if count > MAX_SEATS {
+                    return Err(LanCodecError::InvalidValue);
+                }
+                let mut architects = Vec::with_capacity(count);
+                for _ in 0..count {
+                    architects.push((TeamId(cursor.u8()?), WireSeatCommand::decode(&mut cursor)?));
+                }
+                validate_architect_commands(&architects)?;
                 frames.push(WireFrame {
                     tick,
                     commands,
+                    architects,
                     digest: cursor.u64()?,
                 });
             }
@@ -756,12 +854,84 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
         config,
         ascent,
         appearances,
+        architects,
+        assignment,
         ..
     } = &packet
     {
         validate_looks(*config, *ascent, appearances)?;
+        validate_launch_assignment(*config, *ascent, *architects, *assignment)?;
     }
     Ok(packet)
+}
+
+fn validate_launch_assignment(
+    config: HexMatchConfig,
+    ascent: bool,
+    architects: u16,
+    assignment: LanSeatId,
+) -> Result<(), LanCodecError> {
+    let mask = ((1u32 << config.teams) - 1) as u16;
+    if architects & !mask != 0 || (!ascent && architects != 0) {
+        return Err(LanCodecError::InvalidValue);
+    }
+    match assignment {
+        LanSeatId::Observer(player)
+            if player.index()
+                < usize::from(config.teams) * usize::from(config.members_per_team) =>
+        {
+            Ok(())
+        }
+        LanSeatId::Architect(team) if ascent && team.0 < config.teams => Ok(()),
+        _ => Err(LanCodecError::InvalidValue),
+    }
+}
+
+fn encode_assignment(out: &mut Vec<u8>, assignment: LanSeatId) -> Result<(), LanCodecError> {
+    match assignment {
+        LanSeatId::Observer(player) if player.index() < MAX_SEATS => {
+            out.push(0);
+            put_u16(out, player.0);
+        }
+        LanSeatId::Architect(team) if usize::from(team.0) < MAX_SEATS => {
+            out.push(1);
+            out.push(team.0);
+        }
+        _ => return Err(LanCodecError::InvalidValue),
+    }
+    Ok(())
+}
+fn decode_assignment(cursor: &mut Cursor<'_>) -> Result<LanSeatId, LanCodecError> {
+    match cursor.u8()? {
+        0 => {
+            let player = PlayerId(cursor.u16()?);
+            if player.index() >= MAX_SEATS {
+                return Err(LanCodecError::InvalidValue);
+            }
+            Ok(LanSeatId::Observer(player))
+        }
+        1 => {
+            let team = TeamId(cursor.u8()?);
+            if usize::from(team.0) >= MAX_SEATS {
+                return Err(LanCodecError::InvalidValue);
+            }
+            Ok(LanSeatId::Architect(team))
+        }
+        _ => Err(LanCodecError::InvalidValue),
+    }
+}
+fn validate_architect_commands(
+    commands: &[(TeamId, WireSeatCommand)],
+) -> Result<(), LanCodecError> {
+    if commands.len() > MAX_SEATS
+        || commands
+            .iter()
+            .any(|(team, _)| usize::from(team.0) >= MAX_SEATS)
+        || commands.windows(2).any(|pair| pair[0].0 >= pair[1].0)
+    {
+        return Err(LanCodecError::InvalidValue);
+    }
+    Ok(())
 }
 
 fn encode_command(out: &mut Vec<u8>, command: WireHexCommand) {
@@ -1010,15 +1180,15 @@ pub struct LanLaunch {
     /// The match plays the Architect Ascent rules, with a bot Architect for every team
     /// but those of `architects`.
     pub ascent: bool,
-    /// The seats whose humans sit at their team's Architect desk, one bit a seat.
+    /// Human Architect teams at launch, one bit per team.
     pub architects: u16,
 }
 
 impl LanLaunch {
-    /// Whether `player`'s human sits at their team's Architect desk.
+    /// Whether a team launches with a human Architect.
     #[must_use]
-    pub fn is_architect(&self, player: PlayerId) -> bool {
-        player.0 < 16 && self.architects & (1 << player.0) != 0
+    pub fn human_architect(&self, team: TeamId) -> bool {
+        team.0 < 16 && self.architects & (1 << team.0) != 0
     }
 }
 
@@ -1034,6 +1204,7 @@ pub struct LanLobby {
     pub ascent: bool,
     pub fill_empty_seats: bool,
     pub seats: Vec<WireSeat>,
+    pub architect_seats: Vec<WireArchitectSeat>,
 }
 
 /// Nonblocking client endpoint. The game owns simulation construction and applies
@@ -1046,6 +1217,9 @@ pub struct LanClient {
     resume_token: Option<u64>,
     simulation_content_hash: [u8; 32],
     appearance: CosmeticLook,
+    role: LanRole,
+    pub assignment: Option<LanSeatId>,
+    assignment_revision: u32,
     pub appearances: Vec<CosmeticLook>,
     pub token: Option<u64>,
     pub player: Option<PlayerId>,
@@ -1090,6 +1264,26 @@ impl LanClient {
         simulation_content_hash: [u8; 32],
         appearance: CosmeticLook,
     ) -> io::Result<Self> {
+        Self::connect_with_role(
+            server,
+            account,
+            requested_team,
+            resume_token,
+            simulation_content_hash,
+            appearance,
+            LanRole::Observer,
+        )
+    }
+
+    pub fn connect_with_role(
+        server: SocketAddr,
+        account: u16,
+        requested_team: Option<TeamId>,
+        resume_token: Option<u64>,
+        simulation_content_hash: [u8; 32],
+        appearance: CosmeticLook,
+        role: LanRole,
+    ) -> io::Result<Self> {
         if !appearance.is_valid() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -1106,6 +1300,9 @@ impl LanClient {
             resume_token,
             simulation_content_hash,
             appearance,
+            role,
+            assignment: None,
+            assignment_revision: 0,
             appearances: Vec::new(),
             token: None,
             player: None,
@@ -1129,6 +1326,7 @@ impl LanClient {
             input_version: HEX_INPUT_VERSION,
             simulation_content_hash,
             appearance,
+            role,
         })?;
         Ok(client)
     }
@@ -1176,6 +1374,7 @@ impl LanClient {
                     input_version: HEX_INPUT_VERSION,
                     simulation_content_hash: self.simulation_content_hash,
                     appearance: self.appearance,
+                    role: self.role,
                 });
             }
             self.last_heartbeat = Instant::now();
@@ -1186,18 +1385,21 @@ impl LanClient {
         match packet {
             LanPacket::Welcome {
                 resume_token,
-                player,
+                assignment,
+                assignment_revision,
                 team,
                 phase,
-                server_tick,
                 ..
             } => {
+                if !self.receive_assignment(assignment, assignment_revision, team) {
+                    return;
+                }
                 self.token = Some(resume_token);
                 self.resume_token = Some(resume_token);
-                self.player = Some(player);
-                self.team = Some(team);
-                self.phase = Some(phase);
-                self.next_frame = server_tick.saturating_add(1).min(self.next_frame);
+                // Welcome only acknowledges ownership; launch/resync alone own frame progress.
+                if self.lobby.is_none() && self.launch.is_none() {
+                    self.phase = Some(phase);
+                }
             }
             LanPacket::Reject { reason } => self.rejection = Some(reason),
             LanPacket::LobbySnapshot {
@@ -1209,6 +1411,7 @@ impl LanClient {
                 ascent,
                 fill_empty_seats,
                 seats,
+                architect_seats,
             } => {
                 self.receive_lobby(LanLobby {
                     session,
@@ -1219,6 +1422,7 @@ impl LanClient {
                     ascent,
                     fill_empty_seats,
                     seats,
+                    architect_seats,
                 });
             }
             LanPacket::Launch {
@@ -1229,6 +1433,8 @@ impl LanClient {
                 ascent,
                 architects,
                 appearances,
+                assignment,
+                assignment_revision,
             } => {
                 let incoming = LanLaunch {
                     seed,
@@ -1247,7 +1453,15 @@ impl LanClient {
                 }
                 self.receive_launch(incoming);
                 if self.launch == Some(incoming) && !self.lobby_withdrew(match_number) {
-                    self.appearances = appearances;
+                    let team = match assignment {
+                        LanSeatId::Observer(player) => {
+                            TeamId((player.0 / u16::from(config.members_per_team)) as u8)
+                        }
+                        LanSeatId::Architect(team) => team,
+                    };
+                    if self.receive_assignment(assignment, assignment_revision, team) {
+                        self.appearances = appearances;
+                    }
                 }
             }
             LanPacket::LaunchStart { match_number } => {
@@ -1261,6 +1475,32 @@ impl LanClient {
             LanPacket::MatchEnded { .. } => self.phase = Some(WirePhase::PostMatch),
             _ => {}
         }
+    }
+
+    fn receive_assignment(&mut self, assignment: LanSeatId, revision: u32, team: TeamId) -> bool {
+        if revision < self.assignment_revision {
+            return false;
+        }
+        if revision == self.assignment_revision
+            && self.assignment.is_some_and(|current| current != assignment)
+        {
+            self.rejection = Some("conflicting connection assignment".into());
+            return false;
+        }
+        if self.assignment != Some(assignment) {
+            self.input_outbox.clear();
+            self.rejection = None;
+        }
+        self.assignment_revision = revision;
+        self.assignment = Some(assignment);
+        self.player = assignment.observer();
+        self.role = if assignment.architect().is_some() {
+            LanRole::Architect
+        } else {
+            LanRole::Observer
+        };
+        self.team = Some(team);
+        true
     }
 
     fn receive_lobby(&mut self, incoming: LanLobby) {
@@ -1392,6 +1632,18 @@ impl LanClient {
         self.last_server_packet = Instant::now()
             .checked_sub(silence)
             .unwrap_or(self.last_server_packet);
+    }
+
+    pub fn is_architect(&self) -> bool {
+        self.assignment.is_some_and(|s| s.architect().is_some())
+    }
+    pub fn view_player(&self, launch: &LanLaunch) -> Option<PlayerId> {
+        match self.assignment? {
+            LanSeatId::Observer(player) => Some(player),
+            LanSeatId::Architect(team) => (team.0 < launch.config.teams).then_some(PlayerId(
+                u16::from(team.0) * u16::from(launch.config.members_per_team),
+            )),
+        }
     }
 
     pub fn set_ready(&self, ready: bool) -> io::Result<()> {
@@ -1534,6 +1786,7 @@ mod tests {
                 resume_token: Some(9),
                 input_version: HEX_INPUT_VERSION,
                 simulation_content_hash: [3; 32],
+                role: LanRole::Observer,
                 appearance: CosmeticLook {
                     color: 2,
                     trail: 6,
@@ -1543,7 +1796,8 @@ mod tests {
             LanPacket::Welcome {
                 session: 4,
                 resume_token: 9,
-                player: PlayerId(2),
+                assignment: LanSeatId::Observer(PlayerId(2)),
+                assignment_revision: 1,
                 team: TeamId(1),
                 phase: WirePhase::InMatch,
                 server_tick: 44,
@@ -1560,20 +1814,19 @@ mod tests {
                 countdown_ticks: 0,
                 ascent: false,
                 fill_empty_seats: true,
+                architect_seats: Vec::new(),
                 seats: vec![
                     WireSeat {
                         player: PlayerId(0),
                         team: TeamId(0),
                         occupant: WireSeatOccupant::Human,
                         ready: true,
-                        architect: true,
                     },
                     WireSeat {
                         player: PlayerId(1),
                         team: TeamId(0),
                         occupant: WireSeatOccupant::Empty,
                         ready: false,
-                        architect: false,
                     },
                 ],
             },
@@ -1583,8 +1836,10 @@ mod tests {
                 config: HexMatchConfig::default(),
                 simulation_content_hash: [4; 32],
                 ascent: true,
-                architects: 0b1010_0000_0000_0101,
+                architects: 0b11,
                 appearances: vec![CosmeticLook::default(); 4],
+                assignment: LanSeatId::Observer(PlayerId(0)),
+                assignment_revision: 1,
             },
             LanPacket::InputBundle {
                 token: 9,
@@ -1594,6 +1849,7 @@ mod tests {
                 frames: vec![WireFrame {
                     tick: 4,
                     commands: vec![command; 4],
+                    architects: Vec::new(),
                     digest: 88,
                 }],
             },
@@ -1612,6 +1868,142 @@ mod tests {
             },
             LanPacket::LaunchStart { match_number: 3 },
         ]
+    }
+
+    #[test]
+    fn delayed_assignment_acknowledgements_cannot_move_a_desk_back_into_a_body() {
+        let mut client = test_client();
+        let welcome = |assignment, assignment_revision| LanPacket::Welcome {
+            session: 1,
+            resume_token: 9,
+            assignment,
+            assignment_revision,
+            team: TeamId(0),
+            phase: WirePhase::Lobby,
+            server_tick: 0,
+        };
+        client.receive(welcome(LanSeatId::Architect(TeamId(0)), 2));
+        client
+            .input_outbox
+            .push_back((3, WireHexCommand::default()));
+        client.next_frame = 500;
+        let frame = WireFrame {
+            tick: 500,
+            commands: vec![WireHexCommand::default(); 3],
+            architects: Vec::new(),
+            digest: 7,
+        };
+        client.frames.insert(500, frame.clone());
+        client.receive(welcome(LanSeatId::Architect(TeamId(0)), 2));
+        assert_eq!(
+            client.next_frame, 500,
+            "a delayed ownership ACK cannot rewind authoritative history"
+        );
+        assert_eq!(client.frames.get(&500), Some(&frame));
+        client.receive(welcome(LanSeatId::Observer(PlayerId(0)), 1));
+        assert!(client.is_architect());
+        assert_eq!(client.player, None);
+        assert_eq!(client.input_outbox.len(), 1);
+        client.receive(welcome(LanSeatId::Observer(PlayerId(0)), 2));
+        assert!(client.is_architect());
+        assert!(client.rejection.as_deref().unwrap().contains("conflicting"));
+        client.receive(welcome(LanSeatId::Observer(PlayerId(0)), 3));
+        assert_eq!(client.player, Some(PlayerId(0)));
+        assert!(client.input_outbox.is_empty());
+    }
+
+    #[test]
+    fn launch_repeats_personal_assignment_when_the_role_change_welcome_was_lost() {
+        let mut client = test_client();
+        client.receive(LanPacket::Welcome {
+            session: 1,
+            resume_token: 9,
+            assignment: LanSeatId::Observer(PlayerId(0)),
+            assignment_revision: 1,
+            team: TeamId(0),
+            phase: WirePhase::Lobby,
+            server_tick: 0,
+        });
+        let mut descriptor = launch(2, 55);
+        descriptor.ascent = true;
+        descriptor.architects = 1;
+        let mut packet = launch_packet(descriptor);
+        if let LanPacket::Launch {
+            assignment,
+            assignment_revision,
+            ..
+        } = &mut packet
+        {
+            *assignment = LanSeatId::Architect(TeamId(0));
+            *assignment_revision = 2;
+        }
+        let bytes = packet.encode().unwrap();
+        client.receive(LanPacket::decode(&bytes).unwrap());
+        assert_eq!(client.assignment, Some(LanSeatId::Architect(TeamId(0))));
+        assert_eq!(client.player, None);
+        assert_eq!(
+            client.view_player(&descriptor),
+            Some(PlayerId(0)),
+            "a view anchor is not movement ownership"
+        );
+        client.receive(launch_packet(launch(1, 54)));
+        assert!(
+            client.is_architect(),
+            "stale launch cannot rewrite ownership"
+        );
+    }
+
+    #[test]
+    fn sixteen_bodies_and_desks_fit_the_budget_and_reject_duplicate_desk_commands() {
+        let play = WireSeatCommand::Play {
+            card: u32::MAX,
+            target: observed_facility::hex_wfc::HexCoord {
+                q: u16::MAX,
+                r: u16::MAX,
+                level: u8::MAX,
+            },
+            rotation: 5,
+        };
+        let frame = WireFrame {
+            tick: 1,
+            digest: u64::MAX,
+            commands: vec![
+                WireHexCommand {
+                    plumb: Some(HexPlumbAim {
+                        pitch: 90,
+                        yaw: -180
+                    }),
+                    actions: WireHexCommand::PLUMB,
+                    seat: play,
+                    ..Default::default()
+                };
+                16
+            ],
+            architects: (0..16).map(|team| (TeamId(team), play)).collect(),
+        };
+        let count = frames_per_bundle_with_architects(16, 16);
+        let packet = LanPacket::FrameBundle {
+            frames: vec![frame.clone(); count],
+        };
+        let bytes = packet.encode().unwrap();
+        assert!(bytes.len() <= MAX_DATAGRAM);
+        assert_eq!(LanPacket::decode(&bytes).unwrap(), packet);
+        assert!(
+            LanPacket::FrameBundle {
+                frames: vec![frame.clone(); count + 1]
+            }
+            .encode()
+            .is_err()
+        );
+        let mut invalid = frame;
+        invalid.architects[1].0 = TeamId(0);
+        assert_eq!(
+            LanPacket::FrameBundle {
+                frames: vec![invalid]
+            }
+            .encode(),
+            Err(LanCodecError::InvalidValue)
+        );
     }
 
     #[test]
@@ -1746,6 +2138,7 @@ mod tests {
                 };
                 seats
             ],
+            architects: Vec::new(),
             digest: u64::MAX,
         };
         let frames: Vec<_> = (0..per_bundle as u64).map(frame).collect();
@@ -1803,6 +2196,7 @@ mod tests {
             frames: vec![WireFrame {
                 tick: 1,
                 commands: vec![WireHexCommand::default(); 2],
+                architects: Vec::new(),
                 digest: 7,
             }],
         }
@@ -1838,6 +2232,8 @@ mod tests {
             simulation_content_hash: launch.simulation_content_hash,
             ascent: launch.ascent,
             architects: launch.architects,
+            assignment: LanSeatId::Observer(PlayerId(0)),
+            assignment_revision: 1,
             appearances: vec![
                 CosmeticLook::default();
                 usize::from(launch.config.teams)
@@ -1906,6 +2302,7 @@ mod tests {
         let frame = WireFrame {
             tick: next_frame,
             commands: vec![WireHexCommand::default(); 4],
+            architects: Vec::new(),
             digest: 88,
         };
         client.frames.insert(next_frame, frame.clone());
@@ -2052,6 +2449,7 @@ mod tests {
             ascent: false,
             fill_empty_seats: true,
             seats: Vec::new(),
+            architect_seats: Vec::new(),
         };
         client.receive(snapshot(20, WirePhase::Lobby));
         assert_eq!(client.phase, Some(WirePhase::Lobby));

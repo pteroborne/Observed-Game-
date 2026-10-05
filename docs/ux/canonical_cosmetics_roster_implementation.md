@@ -1,5 +1,9 @@
 # Canonical cosmetics and Ascent roster compatibility
 
+**Follow-up:** [Independent LAN Architects](independent_lan_architect_implementation.md)
+now replace the one-connection-per-body transport model described in this slice.
+Its captures and protocol-16 notes remain historical evidence.
+
 Saved cosmetics now dress the canonical floating Observer and survive recorded-world
 replay. Architect Ascent permits one-to-three Observer bodies per team across the
 Play Hub, advanced setup, saved-setup migration, dedicated/listen hosts and LAN launch

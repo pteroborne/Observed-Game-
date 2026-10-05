@@ -121,6 +121,9 @@ pub(super) fn configure_captures(app: &mut App) {
     } else if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE_FRONTEND") {
         app.insert_resource(frontend::FrontendCaptureRequest::new(dir.clone()))
             .add_systems(Update, frontend::capture_frontend_progress);
+        if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_DESKS").is_some() {
+            app.add_systems(Update, frontend::poll_desks);
+        }
         if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_FINISH").is_some() {
             app.add_systems(Update, frontend::poll_peer).add_systems(
                 PostUpdate,

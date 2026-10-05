@@ -105,6 +105,7 @@ pub struct ReplayTape {
     seen_markers: BTreeSet<String>,
     anchor_was_placed: bool,
     hex_local_player: Option<PlayerId>,
+    hex_view_player: Option<PlayerId>,
 }
 
 impl ReplayTape {
@@ -150,6 +151,7 @@ impl ReplayTape {
             seen_markers: BTreeSet::new(),
             anchor_was_placed: false,
             hex_local_player: None,
+            hex_view_player: None,
         };
         tape.ensure_actor(ReplayActorId::LocalPlayer);
         for team in 0..TEAM_COUNT as u8 {
@@ -183,6 +185,7 @@ impl ReplayTape {
             seen_markers: BTreeSet::new(),
             anchor_was_placed: false,
             hex_local_player: None,
+            hex_view_player: None,
         };
         tape.ensure_actor(ReplayActorId::LocalPlayer);
         for player in game.players.values().filter(|player| player.id.0 != 0) {
@@ -322,12 +325,28 @@ impl ReplayTape {
             seen_markers: BTreeSet::new(),
             anchor_was_placed: false,
             hex_local_player: Some(local),
+            hex_view_player: Some(local),
         };
         tape.ensure_actor(ReplayActorId::LocalPlayer);
         for player in game.players.values().filter(|player| player.id != local) {
-            tape.ensure_actor(hex_actor_id(game, local, player.id));
+            tape.ensure_actor(hex_actor_id(game, Some(local), player.id));
         }
         tape.sync_hex_rooms(game);
+        tape
+    }
+
+    /// A desk watches its team without owning or fabricating an embodied player.
+    pub fn new_hex_wfc_for_architect(
+        game: &observed_match::hex_wfc::HexWfcMatch,
+        anchor: PlayerId,
+    ) -> Self {
+        let mut tape = Self::new_hex_wfc_for_player(game, anchor);
+        tape.hex_local_player = None;
+        tape.actors.clear();
+        tape.seen_actors.clear();
+        for player in game.players.values() {
+            tape.ensure_actor(hex_actor_id(game, None, player.id));
+        }
         tape
     }
 
@@ -342,8 +361,9 @@ impl ReplayTape {
             return;
         }
         self.sync_hex_rooms(game);
-        let local = self.hex_local_player.unwrap_or(PlayerId(0));
-        if let Some(player) = game.players.get(&local)
+        if let Some(player) = self
+            .hex_local_player
+            .and_then(|player| game.players.get(&player))
             && player.place == observed_match::hex_wfc::HexBodyPlace::Facility
             && let Some(room) = hex_room_at(game, player.cell)
             && !self.visited_rooms.contains(&room)
@@ -355,7 +375,7 @@ impl ReplayTape {
             .lanterns
             .deployed
             .values()
-            .any(|lantern| lantern.owner == local);
+            .any(|lantern| Some(lantern.owner) == self.hex_local_player);
         if anchor_is_placed && !self.anchor_was_placed {
             self.anchor_uses += 1;
         }
@@ -386,7 +406,7 @@ impl ReplayTape {
                 .players
                 .values()
                 .map(|player| ReplayActorPose {
-                    actor: hex_actor_id(game, local, player.id),
+                    actor: hex_actor_id(game, self.hex_local_player, player.id),
                     room: hex_room_at(game, player.cell),
                     place: None,
                     status: if player.escaped {
@@ -404,7 +424,7 @@ impl ReplayTape {
             );
             self.scene_frames.push(scene::ReplaySceneFrame::capture(
                 game,
-                local,
+                self.hex_local_player,
                 self.samples.len() - 1,
                 self.scene_frames.last(),
             ));
@@ -445,7 +465,7 @@ impl ReplayTape {
         if self.seed != game.seed {
             return;
         }
-        let local = self.hex_local_player.unwrap_or(PlayerId(0));
+        let local = self.hex_view_player.unwrap_or(PlayerId(0));
         facts.outcome = rules.rules().outcome;
         facts.winner = rules.rules().summit_team.map(|team| TeamId(team.0));
         facts.corrupted = rules
@@ -488,7 +508,7 @@ impl ReplayTape {
                 .last_mut()
                 .expect("the recorder added a sample");
             for player in game.players.values() {
-                let actor = hex_actor_id(game, local, player.id);
+                let actor = hex_actor_id(game, self.hex_local_player, player.id);
                 let Some(pose) = sample.actors.iter_mut().find(|pose| pose.actor == actor) else {
                     continue;
                 };
@@ -657,6 +677,10 @@ impl ReplayTape {
     }
 
     pub fn default_focus(&self) -> ReplayActorId {
+        if self.hex_local_player.is_none() && self.hex_view_player.is_some() {
+            let team = self.ascent_result.map(|facts| facts.local_team);
+            return self.actors.iter().find(|actor| matches!(actor.id, ReplayActorId::Member { team: found, .. } if Some(found) == team)).or_else(|| self.actors.first()).map_or(ReplayActorId::LocalPlayer, |actor| actor.id);
+        }
         self.result
             .as_ref()
             .and_then(|result| result.winner)
@@ -842,10 +866,10 @@ fn task_label(task: TeamTask) -> &'static str {
 /// local seat. A fixed modulo would alias actors in three/four-seat teams.
 fn hex_actor_id(
     game: &observed_match::hex_wfc::HexWfcMatch,
-    local: PlayerId,
+    local: Option<PlayerId>,
     player: PlayerId,
 ) -> ReplayActorId {
-    if player == local {
+    if Some(player) == local {
         return ReplayActorId::LocalPlayer;
     }
     let team = game.players[&player].team;

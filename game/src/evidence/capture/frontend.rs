@@ -15,8 +15,11 @@ use std::path::PathBuf;
 
 #[path = "completion.rs"]
 mod completion;
+#[path = "desks.rs"]
+mod desks;
 #[path = "finish.rs"]
 mod finish;
+pub(super) use desks::poll as poll_desks;
 #[path = "guidance.rs"]
 mod guidance;
 #[path = "polish.rs"]
@@ -62,6 +65,7 @@ pub(super) struct Shot {
     pub(super) completion: Option<usize>,
     pub(super) polish: Option<usize>,
     pub(super) finish: Option<usize>,
+    pub(super) desks: Option<usize>,
 }
 
 pub(super) const fn shot(label: &'static str, state: GameState) -> Shot {
@@ -78,6 +82,7 @@ pub(super) const fn shot(label: &'static str, state: GameState) -> Shot {
         completion: None,
         polish: None,
         finish: None,
+        desks: None,
     }
 }
 
@@ -289,6 +294,8 @@ impl FrontendCaptureRequest {
             dir: PathBuf::from(dir),
             shots: if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_REPLAY").is_some() {
                 replay::sweep()
+            } else if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_DESKS").is_some() {
+                desks::sweep()
             } else if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_FINISH").is_some() {
                 finish::sweep()
             } else if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_POLISH").is_some() {
@@ -372,6 +379,8 @@ pub(super) fn capture_frontend_progress(
     mut next: ResMut<NextState<GameState>>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
+    lan: Res<crate::lan::LanRuntime>,
+    runtime: Option<Res<crate::hex_wfc::sim::HexWfcRuntime>>,
 ) {
     hold_baseline(&mut request, &mut window);
     let elapsed = time.elapsed_secs();
@@ -380,6 +389,11 @@ pub(super) fn capture_frontend_progress(
         // Nothing is photographed until the surface actually reports the baseline,
         // so a shot can never silently record some other viewport.
         Phase::Stage if request.resized => {
+            if request.shots[0].desks.is_some() {
+                commands.queue(desks::stage);
+                request.phase = Phase::Enter;
+                return;
+            }
             let (_, result, solo, tape) = super::scenarios::staged_results_case(0);
             *career = crate::flow::Career::default();
             career.bot_rival_teams = !solo;
@@ -401,7 +415,16 @@ pub(super) fn capture_frontend_progress(
             }
             let target = request.shots[request.index].state;
             if *state.get() == target {
+                if let Some(case) = request.shots[request.index].desks
+                    && !desks::ready(case, &lan, runtime.as_deref())
+                {
+                    return;
+                }
                 request.phase = Phase::Act;
+            } else if request.shots[request.index].desks.is_some()
+                && target != GameState::LanBrowser
+            {
+                // Join, Ready and the real LAN Loading worker own every later transition.
             } else if request.shots[request.index].production_launch {
                 // The entry proof uses the same semantic Start and prepared handoff
                 // as the player. Leave Loading in charge until it admits the match.
@@ -442,6 +465,9 @@ pub(super) fn capture_frontend_progress(
         }
         Phase::Act => {
             let shot = &request.shots[request.index];
+            if let Some(case) = shot.desks {
+                commands.queue(move |world: &mut World| desks::pose(world, case));
+            }
             if let Some(case) = shot.finish {
                 commands.queue(move |world: &mut World| finish::pose(world, case));
             }
@@ -486,6 +512,9 @@ pub(super) fn capture_frontend_progress(
         }
         Phase::Shoot => {
             let shot = &request.shots[request.index];
+            if let Some(case) = shot.desks {
+                commands.queue(move |world: &mut World| desks::evidence(world, case));
+            }
             let path = request.dir.join(format!("{}.png", shot.label));
             info!(
                 "FRONTEND_CAPTURE shot={} state={:?} viewport={}x{}",
@@ -527,6 +556,9 @@ pub(super) fn capture_frontend_progress(
             request.phase = Phase::Capturing;
         }
         Phase::Capturing if request.captured => {
+            if let Some(case) = request.shots[request.index].desks {
+                commands.queue(move |world: &mut World| desks::after_shot(world, case));
+            }
             request.index += 1;
             if request.index >= request.shots.len() {
                 request.next_at = elapsed + 1.0;
@@ -542,6 +574,9 @@ pub(super) fn capture_frontend_progress(
             }
         }
         Phase::Done if elapsed >= request.next_at => {
+            if request.shots[0].desks.is_some() && !desks::can_exit() {
+                return;
+            }
             exit.write(AppExit::Success);
         }
         _ => {}

@@ -60,6 +60,7 @@ pub(super) fn setup(
     mut commands: Commands,
     runtime: Res<HexWfcRuntime>,
     cosmetics: Res<super::cosmetics::MatchCosmetics>,
+    desk: Option<Res<super::architect::ArchitectDesk>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -87,7 +88,7 @@ pub(super) fn setup(
     // so `sync` hides it there rather than this leaving it out here.
     for player in runtime.match_state.players.values() {
         let local_team = runtime.local().team;
-        let role = if player.id == runtime.local_player {
+        let role = if player.id == runtime.local_player && desk.is_none() {
             MarkerRole::You
         } else if player.team == local_team {
             MarkerRole::Teammate

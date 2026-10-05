@@ -476,8 +476,7 @@ fn help_kind(
             launch.ascent,
             lan.client
                 .as_ref()
-                .and_then(|client| client.player)
-                .is_some_and(|player| launch.is_architect(player)),
+                .is_some_and(|client| client.is_architect()),
         )
     } else {
         (

@@ -63,7 +63,7 @@ pub struct ReplaySceneFrame {
 impl ReplaySceneFrame {
     pub(super) fn capture(
         game: &HexWfcMatch,
-        local: PlayerId,
+        local: Option<PlayerId>,
         sample: usize,
         previous: Option<&Self>,
     ) -> Self {

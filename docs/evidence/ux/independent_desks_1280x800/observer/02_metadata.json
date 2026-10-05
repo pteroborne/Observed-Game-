@@ -1,0 +1,15 @@
+{
+  "architect_slots": 1,
+  "assignment": "Observer(PlayerId(2))",
+  "case": 2,
+  "embodied_player": 2,
+  "fixture": "real graphical Join/Ready and Loading; two neutral-input transport peers; Guardian off; returning-player help state",
+  "observer_slots": 3,
+  "peer": "observer",
+  "rendered_body_count": 3,
+  "replay_has_owned_body": true,
+  "resync_attempts": 0,
+  "saw_real_loading": true,
+  "simulation_digest": "65d507e2da2ad283",
+  "simulation_tick": 375
+}

@@ -1,0 +1,145 @@
+[
+  {
+    "max": [
+      1067.0,
+      250.0
+    ],
+    "min": [
+      747.0,
+      204.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.ready\", key: 0 }"
+  },
+  {
+    "max": [
+      1067.0,
+      346.0
+    ],
+    "min": [
+      747.0,
+      278.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.architect\", key: 0 }"
+  },
+  {
+    "max": [
+      667.0,
+      602.0
+    ],
+    "min": [
+      437.0,
+      556.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.roster_next\", key: 0 }"
+  },
+  {
+    "max": [
+      905.0,
+      420.0
+    ],
+    "min": [
+      745.0,
+      374.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.team\", key: 0 }"
+  },
+  {
+    "max": [
+      1067.0,
+      656.0
+    ],
+    "min": [
+      747.0,
+      610.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.leave\", key: 0 }"
+  },
+  {
+    "max": [
+      431.0,
+      602.0
+    ],
+    "min": [
+      201.0,
+      556.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.roster_previous\", key: 0 }"
+  },
+  {
+    "max": [
+      1069.0,
+      420.0
+    ],
+    "min": [
+      909.0,
+      374.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.team\", key: 1 }"
+  },
+  {
+    "max": [
+      905.0,
+      474.0
+    ],
+    "min": [
+      745.0,
+      428.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.team\", key: 2 }"
+  },
+  {
+    "max": [
+      1069.0,
+      474.0
+    ],
+    "min": [
+      909.0,
+      428.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.team\", key: 3 }"
+  },
+  {
+    "max": [
+      905.0,
+      528.0
+    ],
+    "min": [
+      745.0,
+      482.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.team\", key: 4 }"
+  },
+  {
+    "max": [
+      1069.0,
+      528.0
+    ],
+    "min": [
+      909.0,
+      482.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.team\", key: 5 }"
+  },
+  {
+    "max": [
+      905.0,
+      582.0
+    ],
+    "min": [
+      745.0,
+      536.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.team\", key: 6 }"
+  },
+  {
+    "max": [
+      1069.0,
+      582.0
+    ],
+    "min": [
+      909.0,
+      536.0
+    ],
+    "widget": "WidgetId { namespace: \"lobby.team\", key: 7 }"
+  }
+]

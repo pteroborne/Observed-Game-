@@ -1,0 +1,101 @@
+[
+  {
+    "max": [
+      1180.0,
+      321.0
+    ],
+    "min": [
+      838.0,
+      275.0
+    ],
+    "widget": "WidgetId { namespace: \"lan.role\", key: 0 }"
+  },
+  {
+    "max": [
+      434.0,
+      641.0
+    ],
+    "min": [
+      108.0,
+      573.0
+    ],
+    "widget": "WidgetId { namespace: \"lan.previous_page\", key: 0 }"
+  },
+  {
+    "max": [
+      772.0,
+      641.0
+    ],
+    "min": [
+      446.0,
+      573.0
+    ],
+    "widget": "WidgetId { namespace: \"lan.next_page\", key: 0 }"
+  },
+  {
+    "max": [
+      1180.0,
+      377.0
+    ],
+    "min": [
+      838.0,
+      331.0
+    ],
+    "widget": "WidgetId { namespace: \"lan.host\", key: 0 }"
+  },
+  {
+    "max": [
+      1180.0,
+      511.0
+    ],
+    "min": [
+      838.0,
+      465.0
+    ],
+    "widget": "WidgetId { namespace: \"lan.join_direct\", key: 0 }"
+  },
+  {
+    "max": [
+      780.0,
+      321.0
+    ],
+    "min": [
+      100.0,
+      275.0
+    ],
+    "widget": "WidgetId { namespace: \"lan.direct_address\", key: 0 }"
+  },
+  {
+    "max": [
+      1180.0,
+      455.0
+    ],
+    "min": [
+      838.0,
+      387.0
+    ],
+    "widget": "WidgetId { namespace: \"lan.join_selected\", key: 0 }"
+  },
+  {
+    "max": [
+      1180.0,
+      623.0
+    ],
+    "min": [
+      838.0,
+      577.0
+    ],
+    "widget": "WidgetId { namespace: \"lan.back\", key: 0 }"
+  },
+  {
+    "max": [
+      1180.0,
+      567.0
+    ],
+    "min": [
+      838.0,
+      521.0
+    ],
+    "widget": "WidgetId { namespace: \"lan.refresh\", key: 0 }"
+  }
+]

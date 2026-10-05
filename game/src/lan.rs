@@ -4,7 +4,11 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bevy::prelude::Resource;
-use observed_core::{TeamId, cosmetics::CosmeticLook};
+use observed_core::{
+    TeamId,
+    cosmetics::CosmeticLook,
+    lan::{LanRole, LanSeatId},
+};
 use observed_net::lan::{DEFAULT_LAN_PORT, DiscoveryBrowser, LanClient};
 use observed_server::{ServerConfig, ServerHandle};
 
@@ -18,6 +22,7 @@ pub(crate) struct LanRuntime {
     pub direct_address: String,
     pub status: String,
     pub appearance: CosmeticLook,
+    pub requested_role: LanRole,
     pub ready: bool,
     /// The local seat holds its team's Architect desk, as the server's roster says.
     pub architect: bool,
@@ -38,6 +43,7 @@ impl LanRuntime {
             direct_address,
             status: "Search the LAN or enter an address.".to_string(),
             appearance: CosmeticLook::default(),
+            requested_role: LanRole::Observer,
             ready: false,
             architect: false,
             consumed_match: None,
@@ -57,16 +63,36 @@ impl LanRuntime {
         }
         if let Some(client) = self.client.as_mut() {
             client.poll();
-            if let (Some(player), Some(lobby)) = (client.player, client.lobby.as_ref())
-                && let Some(seat) = lobby.seats.iter().find(|seat| seat.player == player)
-            {
-                self.ready = seat.ready;
-                self.architect = seat.architect;
+            self.architect = client.is_architect();
+            if client.assignment.is_some() {
+                self.requested_role = if self.architect {
+                    LanRole::Architect
+                } else {
+                    LanRole::Observer
+                };
+            }
+            if let (Some(assignment), Some(lobby)) = (client.assignment, client.lobby.as_ref()) {
+                self.ready = match assignment {
+                    LanSeatId::Observer(player) => lobby
+                        .seats
+                        .iter()
+                        .find(|s| s.player == player)
+                        .is_some_and(|s| s.ready),
+                    LanSeatId::Architect(team) => lobby
+                        .architect_seats
+                        .iter()
+                        .find(|s| s.team == team)
+                        .is_some_and(|s| s.ready),
+                };
             }
             if let Some(reason) = client.rejection.clone() {
                 self.status = reason;
-            } else if let (Some(player), Some(team)) = (client.player, client.team) {
-                self.status = format!("Connected as {} / {}", player.label(), team.label());
+            } else if let (Some(assignment), Some(team)) = (client.assignment, client.team) {
+                let role = match assignment {
+                    LanSeatId::Observer(player) => format!("Observer {}", player.label()),
+                    LanSeatId::Architect(_) => "Architect desk".into(),
+                };
+                self.status = format!("Connected as {role} / {}", team.label());
             }
         }
     }
@@ -91,13 +117,14 @@ impl LanRuntime {
     pub fn join_server(&mut self, address: SocketAddr) -> Result<(), String> {
         let resume = self.client.as_ref().and_then(|client| client.token);
         self.client = Some(
-            LanClient::connect_with_appearance(
+            LanClient::connect_with_role(
                 address,
                 self.account,
                 self.requested_team,
                 resume,
                 crate::hex_wfc::sim::simulation_content_hash(),
                 self.appearance,
+                self.requested_role,
             )
             .map_err(|error| format!("connect {address}: {error}"))?,
         );
@@ -149,6 +176,13 @@ impl LanRuntime {
 }
 
 fn local_account() -> u16 {
+    if std::env::var_os("OBSERVED2_CAPTURE_FRONTEND_DESKS").is_some()
+        && let Some(account) = std::env::var("OBSERVED2_CAPTURE_DESK_ACCOUNT")
+            .ok()
+            .and_then(|value| value.parse().ok())
+    {
+        return account;
+    }
     let time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.subsec_nanos());
@@ -169,7 +203,7 @@ fn listen_server_config(setup: ValidatedPlaySetup) -> Result<ServerConfig, Strin
     if !setup.fill_empty_seats {
         arguments.push("--require-full-roster".to_string());
     }
-    // Architect Ascent on LAN: a bot Architect for every team, every human a body.
+    // The host configures body slots; Ascent adds one independent desk per team.
     if setup.rules == crate::play_setup::PlayRules::Ascent {
         arguments.push("--ascent".to_string());
     }

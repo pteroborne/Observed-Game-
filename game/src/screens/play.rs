@@ -216,7 +216,19 @@ pub(crate) fn activate_hub(
         }
         PlayAction::Advanced => next.set(GameState::PlayAdvanced),
         PlayAction::Launch => launch_local(&mut commands, &mut sequence, &setup, &mut next),
-        PlayAction::Lan => next.set(GameState::LanBrowser),
+        PlayAction::Lan => {
+            let role = if setup.rules == PlayRules::Ascent && setup.seat == PlaySeat::Architect {
+                observed_core::lan::LanRole::Architect
+            } else {
+                observed_core::lan::LanRole::Observer
+            };
+            commands.queue(move |world: &mut World| {
+                world
+                    .resource_mut::<crate::lan::LanRuntime>()
+                    .requested_role = role;
+            });
+            next.set(GameState::LanBrowser);
+        }
         PlayAction::Back => next.set(GameState::MainMenu),
     }
 }

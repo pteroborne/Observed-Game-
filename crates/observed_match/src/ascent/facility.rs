@@ -369,6 +369,12 @@ impl AscentRules {
         self.session.sim.refresh_observation();
     }
 
+    /// Deterministic connection ownership supplied by the authoritative frame.
+    pub fn set_human_architects(&mut self, teams: &[observed_core::TeamId]) {
+        self.session
+            .set_human_architects(|team| teams.iter().any(|human| human.0 == team.0));
+    }
+
     /// The seats and their rules.
     #[must_use]
     pub const fn session(&self) -> &AscentSession {

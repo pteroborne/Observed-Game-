@@ -1,0 +1,167 @@
+[
+  {
+    "max": [
+      972.0,
+      690.0
+    ],
+    "min": [
+      308.0,
+      673.0
+    ],
+    "text": "Typing edits only while the direct address field is focused | Enter / A selects"
+  },
+  {
+    "max": [
+      1000.0,
+      189.0
+    ],
+    "min": [
+      280.0,
+      171.0
+    ],
+    "text": "Choose a discovered host, or focus the direct address field and type an IP:port."
+  },
+  {
+    "max": [
+      741.0,
+      161.0
+    ],
+    "min": [
+      539.0,
+      110.0
+    ],
+    "text": "LAN PLAY"
+  },
+  {
+    "max": [
+      674.0,
+      346.0
+    ],
+    "min": [
+      206.0,
+      328.0
+    ],
+    "text": "No broadcasts yet. Direct address remains available."
+  },
+  {
+    "max": [
+      414.0,
+      230.0
+    ],
+    "min": [
+      99.0,
+      212.0
+    ],
+    "text": "Search the LAN or enter an address."
+  },
+  {
+    "max": [
+      414.0,
+      629.0
+    ],
+    "min": [
+      128.0,
+      585.0
+    ],
+    "text": "Previous servers | first page"
+  },
+  {
+    "max": [
+      130.0,
+      312.0
+    ],
+    "min": [
+      116.0,
+      285.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      1074.0,
+      611.0
+    ],
+    "min": [
+      944.0,
+      589.0
+    ],
+    "text": "Back to Play"
+  },
+  {
+    "max": [
+      1069.0,
+      555.0
+    ],
+    "min": [
+      950.0,
+      533.0
+    ],
+    "text": "Refresh now"
+  },
+  {
+    "max": [
+      1112.0,
+      499.0
+    ],
+    "min": [
+      906.0,
+      477.0
+    ],
+    "text": "Join direct address"
+  },
+  {
+    "max": [
+      1160.0,
+      443.0
+    ],
+    "min": [
+      858.0,
+      399.0
+    ],
+    "text": "Join selected | choose an available server"
+  },
+  {
+    "max": [
+      1091.0,
+      365.0
+    ],
+    "min": [
+      928.0,
+      343.0
+    ],
+    "text": "Host this setup"
+  },
+  {
+    "max": [
+      1101.0,
+      309.0
+    ],
+    "min": [
+      917.0,
+      287.0
+    ],
+    "text": "Join as: Observer"
+  },
+  {
+    "max": [
+      739.0,
+      618.0
+    ],
+    "min": [
+      479.0,
+      596.0
+    ],
+    "text": "Next servers | last page"
+  },
+  {
+    "max": [
+      613.0,
+      309.0
+    ],
+    "min": [
+      267.0,
+      287.0
+    ],
+    "text": "Direct address: 127.0.0.1:45623_"
+  }
+]

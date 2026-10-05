@@ -1,0 +1,134 @@
+[
+  {
+    "max": [
+      888.0,
+      707.0
+    ],
+    "min": [
+      392.0,
+      690.0
+    ],
+    "text": "Choose your team and role | Ready together | Esc / B leaves"
+  },
+  {
+    "max": [
+      748.0,
+      142.0
+    ],
+    "min": [
+      532.0,
+      94.0
+    ],
+    "text": "LAN LOBBY"
+  },
+  {
+    "max": [
+      1009.0,
+      170.0
+    ],
+    "min": [
+      271.0,
+      152.0
+    ],
+    "text": "The server owns this roster. Every visible seat enters the same authoritative run."
+  },
+  {
+    "max": [
+      398.0,
+      374.0
+    ],
+    "min": [
+      235.0,
+      352.0
+    ],
+    "text": "Previous roster"
+  },
+  {
+    "max": [
+      612.0,
+      374.0
+    ],
+    "min": [
+      493.0,
+      352.0
+    ],
+    "text": "Next roster"
+  },
+  {
+    "max": [
+      961.0,
+      238.0
+    ],
+    "min": [
+      853.0,
+      216.0
+    ],
+    "text": "Ready: OFF"
+  },
+  {
+    "max": [
+      1047.0,
+      388.0
+    ],
+    "min": [
+      767.0,
+      344.0
+    ],
+    "text": "Architect | teammate claimed"
+  },
+  {
+    "max": [
+      967.0,
+      516.0
+    ],
+    "min": [
+      848.0,
+      494.0
+    ],
+    "text": "Your Team 1"
+  },
+  {
+    "max": [
+      967.0,
+      644.0
+    ],
+    "min": [
+      848.0,
+      622.0
+    ],
+    "text": "Leave lobby"
+  },
+  {
+    "max": [
+      504.0,
+      428.0
+    ],
+    "min": [
+      201.0,
+      399.0
+    ],
+    "text": "HUMAN | BOT | RESERVED | PREPARING | EMPTY\nARCHITECT: separate desk, no Observer body"
+  },
+  {
+    "max": [
+      777.0,
+      647.0
+    ],
+    "min": [
+      763.0,
+      620.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      715.0,
+      327.0
+    ],
+    "min": [
+      201.0,
+      201.0
+    ],
+    "text": "Architect Ascent | 3 Observer bodies + separate desks\nLobby | empty seats: bots\nRoster and teams page 1 / 1\nTEAM 1 | Architect: HUMAN\nTEAM 1 | P1: HUMAN | READY\nTEAM 1 | P2: HUMAN | READY\nTEAM 1 | P3 (YOU): HUMAN"
+  }
+]

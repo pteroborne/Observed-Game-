@@ -79,9 +79,13 @@ pub(super) fn draw(
                 .clone();
             use observed_observer::form::Look;
             use observed_style::observer::Part;
-            let role = if actor.player == body.player {
+            let role = if actor.actor == crate::sim::replay::ReplayActorId::LocalPlayer {
                 observed_style::MarkerRole::You
-            } else if actor.team == body.team {
+            } else if actor.team
+                == tape
+                    .ascent_result
+                    .map_or(body.team, |facts| facts.local_team)
+            {
                 observed_style::MarkerRole::Teammate
             } else {
                 observed_style::MarkerRole::Rival

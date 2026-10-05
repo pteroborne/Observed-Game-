@@ -312,6 +312,45 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_non_embodied_architect_has_teammate_irises_and_no_owned_replay_body() {
+        let mut app = crate::tests::test_app();
+        let mut setup = crate::play_setup::PlaySetupDraft::default();
+        setup.select_preset(crate::play_setup::PlayPreset::CoOp);
+        setup.seat = crate::play_setup::PlaySeat::Architect;
+        app.insert_resource(setup);
+        crate::tests::go(&mut app, crate::GameState::HexWfc);
+        let world = app.world_mut();
+        let mut eyes = world.query::<&EyeMaterials>();
+        let assets = world.resource::<Assets<StandardMaterial>>();
+        for materials in eyes.iter(world) {
+            assert_eq!(
+                assets
+                    .get(&materials.solid[form::IRIS_PART])
+                    .unwrap()
+                    .base_color,
+                style::finish(Part::Iris(MarkerRole::Teammate)).base_color
+            );
+        }
+        let tape = world.resource::<crate::sim::replay::ReplayTape>();
+        assert!(
+            tape.actors
+                .iter()
+                .all(|actor| actor.id != crate::sim::replay::ReplayActorId::LocalPlayer)
+        );
+        assert!(
+            tape.scene_frames
+                .iter()
+                .flat_map(|frame| &frame.bodies)
+                .all(|body| body.actor != crate::sim::replay::ReplayActorId::LocalPlayer)
+        );
+        assert!(
+            tape.actors
+                .iter()
+                .any(|actor| actor.id == tape.default_focus())
+        );
+    }
+
     /// The drawn eye must sit where the camera puts the body's own eye, or looking
     /// through a body and looking at it disagree about where it sees from.
     #[test]

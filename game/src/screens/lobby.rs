@@ -11,8 +11,7 @@ use bevy::prelude::*;
 use bevy::ui::InteractionDisabled;
 use bevy::ui_widgets::Activate;
 use observed_core::TeamId;
-use observed_net::lan::{WirePhase, WireSeat, WireSeatOccupant};
-use player_input::PlayerId;
+use observed_net::lan::WireSeatOccupant;
 
 use super::lan::LanLobbyRosterText;
 use super::widgets::{
@@ -20,6 +19,10 @@ use super::widgets::{
 };
 use crate::GameState;
 use crate::view::theme::{ACCENT, BORDER, DIM, PANEL, TITLE, screen_root, text};
+
+mod roster;
+use roster::{ROSTER_ROWS, roster_page_count, roster_page_teams};
+pub(crate) use roster::{lobby_roster_text, roster_page_text};
 
 const SCOPE: FocusScopeId = FocusScopeId("lan_lobby");
 const READY: WidgetId = WidgetId::named("lobby.ready");
@@ -36,6 +39,8 @@ const TEAM_BUTTON_HEIGHT: f32 = 36.0;
 
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum LobbyAction {
+    PreviousRoster,
+    NextRoster,
     ToggleReady,
     /// Claim or give up the team's Architect desk (Architect Ascent).
     ToggleArchitect,
@@ -52,6 +57,12 @@ pub(crate) struct ArchitectWidget;
 #[derive(Component, Default)]
 pub(crate) struct TeamActionsPanel {
     spawned: BTreeSet<TeamId>,
+}
+
+#[derive(Component, Default)]
+pub(crate) struct RosterPage {
+    pub(crate) index: usize,
+    assignment: Option<observed_core::lan::LanSeatId>,
 }
 
 pub(crate) fn setup_lobby(mut commands: Commands) {
@@ -81,12 +92,17 @@ pub(crate) fn setup_lobby(mut commands: Commands) {
                 .with_children(|roster| {
                     roster.spawn((
                         LanLobbyRosterText,
+                        RosterPage::default(),
                         text("Waiting for server roster...", 15.0, DIM),
                         Node { width: percent(100), ..default() },
                     ));
+                    roster.spawn(Node { width: percent(100), column_gap: px(6), ..default() }).with_children(|pager| {
+                        widgets::spawn_button(pager, WidgetSpec::disabled(WidgetId::named("lobby.roster_previous"), SCOPE, 48_000, "Previous roster").with_size(230.0, 36.0), LobbyAction::PreviousRoster);
+                        widgets::spawn_button(pager, WidgetSpec::disabled(WidgetId::named("lobby.roster_next"), SCOPE, 48_001, "Next roster").with_size(230.0, 36.0), LobbyAction::NextRoster);
+                    });
                     roster.spawn(text(
                         "HUMAN | BOT | RESERVED | PREPARING | EMPTY
-ARCHITECT: your Observer body is bot-driven",
+ARCHITECT: separate desk, no Observer body",
                         12.0,
                         ACCENT,
                     ));
@@ -173,6 +189,7 @@ pub(crate) fn activate(
     mut commands: Commands,
     mut lan: ResMut<crate::lan::LanRuntime>,
     mut next: ResMut<NextState<GameState>>,
+    mut pages: Query<&mut RosterPage>,
 ) {
     if !activation_enabled(&activation, &disabled) {
         return;
@@ -181,6 +198,18 @@ pub(crate) fn activate(
         return;
     };
     let result = match *action {
+        LobbyAction::PreviousRoster => {
+            for mut page in &mut pages {
+                page.index = page.index.saturating_sub(1);
+            }
+            return;
+        }
+        LobbyAction::NextRoster => {
+            for mut page in &mut pages {
+                page.index += 1;
+            }
+            return;
+        }
         LobbyAction::ToggleReady => lan.toggle_ready(),
         LobbyAction::ToggleArchitect => lan.toggle_architect(),
         LobbyAction::RequestTeam(team) => lan.request_team(team),
@@ -196,9 +225,7 @@ pub(crate) fn activate(
     }
 }
 
-/// Refreshes action labels and adds one stable team-selection widget for every
-/// team the authoritative roster exposes. Server rosters are immutable within a
-/// lobby generation, so widgets only need to be added, never churned by index.
+/// Team controls follow the visible roster page, retaining stable domain widget IDs.
 pub(crate) fn lobby_update_labels(
     mut commands: Commands,
     lan: Res<crate::lan::LanRuntime>,
@@ -208,7 +235,18 @@ pub(crate) fn lobby_update_labels(
     ),
     mut team_panels: Query<(Entity, &mut TeamActionsPanel)>,
     action_widgets: Query<(Entity, &LobbyAction)>,
+    mut pages: Query<&mut RosterPage>,
 ) {
+    let editable = lan
+        .client
+        .as_ref()
+        .and_then(|client| client.lobby.as_ref())
+        .is_some_and(|lobby| {
+            matches!(
+                lobby.phase,
+                observed_net::lan::WirePhase::Lobby | observed_net::lan::WirePhase::Countdown
+            )
+        });
     let connected = lan
         .client
         .as_ref()
@@ -219,7 +257,7 @@ pub(crate) fn lobby_update_labels(
         } else {
             "Ready | waiting for roster".to_string()
         };
-        set_widget_availability(&mut commands, entity, 0, connected, label);
+        set_widget_availability(&mut commands, entity, 0, connected && editable, label);
     }
     if let Ok(entity) = architect_widgets.single() {
         let ascent = lan
@@ -227,52 +265,119 @@ pub(crate) fn lobby_update_labels(
             .as_ref()
             .and_then(|c| c.lobby.as_ref())
             .is_some_and(|l| l.ascent);
-        let claimed_elsewhere = lan
+        let unavailable = lan
             .client
             .as_ref()
-            .and_then(|c| c.lobby.as_ref().map(|l| (c, l)))
+            .and_then(|client| client.lobby.as_ref().map(|lobby| (client, lobby)))
             .is_some_and(|(client, lobby)| {
-                lobby.seats.iter().any(|seat| {
-                    Some(seat.team) == client.team
-                        && seat.architect
-                        && Some(seat.player) != client.player
-                })
+                if client.is_architect() {
+                    !lobby.seats.iter().any(|seat| {
+                        Some(seat.team) == client.team
+                            && matches!(
+                                seat.occupant,
+                                WireSeatOccupant::Bot | WireSeatOccupant::Empty
+                            )
+                    })
+                } else {
+                    lobby.architect_seats.iter().any(|seat| {
+                        Some(seat.team) == client.team
+                            && !matches!(
+                                seat.occupant,
+                                WireSeatOccupant::Bot | WireSeatOccupant::Empty
+                            )
+                    })
+                }
             });
-        let label = if connected && ascent && claimed_elsewhere {
-            "Architect | teammate claimed".into()
-        } else if connected && !ascent {
+        let label = if connected && !editable {
+            "Role locked for this match".into()
+        } else if !connected {
+            "Role | waiting for roster".into()
+        } else if !ascent {
             "Architect | Ascent only".into()
-        } else if connected {
-            format!(
-                "Architect: {} (Ascent)",
-                if lan.architect { "ON" } else { "OFF" }
-            )
+        } else if unavailable && lan.architect {
+            "Observer | team bodies full".into()
+        } else if unavailable {
+            "Architect | teammate claimed".into()
+        } else if lan.architect {
+            "Switch to Observer".into()
         } else {
-            "Architect | waiting for roster".to_string()
+            "Switch to Architect".into()
         };
         set_widget_availability(
             &mut commands,
             entity,
             ARCHITECT_ORDER,
-            connected && ascent && !claimed_elsewhere,
+            connected && editable && ascent && !unavailable,
             label,
         );
     }
 
-    let teams = lobby_teams(&lan);
+    let mut page_index = 0;
+    let full_roster = lobby_roster_text(&lan);
+    let count = roster_page_count(&full_roster);
+    for mut page in &mut pages {
+        let assignment = lan.client.as_ref().and_then(|client| client.assignment);
+        if page.assignment != assignment
+            && assignment.is_some()
+            && let Some(line) = full_roster
+                .lines()
+                .skip(2)
+                .position(|line| line.contains("(YOU)"))
+        {
+            page.index = line / ROSTER_ROWS;
+            page.assignment = assignment;
+        }
+        page.index = page.index.min(count - 1);
+        page_index = page.index;
+        for (entity, action) in &action_widgets {
+            match action {
+                LobbyAction::PreviousRoster => set_widget_availability(
+                    &mut commands,
+                    entity,
+                    48_000,
+                    page.index > 0,
+                    "Previous roster".into(),
+                ),
+                LobbyAction::NextRoster => set_widget_availability(
+                    &mut commands,
+                    entity,
+                    48_001,
+                    page.index + 1 < count,
+                    "Next roster".into(),
+                ),
+                _ => {}
+            }
+        }
+    }
+    let teams = roster_page_teams(&lan, page_index);
     let current_team = lan.client.as_ref().and_then(|client| client.team);
     for (entity, action) in &action_widgets {
         let LobbyAction::RequestTeam(team) = *action else {
             continue;
         };
-        commands
-            .entity(entity)
-            .insert(WidgetLabel(team_action_label(team, current_team)));
+        if !teams.contains(&team) {
+            commands.entity(entity).despawn();
+            continue;
+        }
+        let available = role_team_available(&lan, team);
+        let label = if available {
+            team_action_label(team, current_team)
+        } else {
+            format!("Full {}", team.label())
+        };
+        set_widget_availability(
+            &mut commands,
+            entity,
+            1 + u16::from(team.0),
+            editable && available,
+            label,
+        );
     }
 
     let Ok((panel, mut known)) = team_panels.single_mut() else {
         return;
     };
+    known.spawned.retain(|team| teams.contains(team));
     for team in teams {
         if !known.spawned.insert(team) {
             continue;
@@ -294,105 +399,40 @@ pub(crate) fn lobby_update_labels(
     }
 }
 
-pub(crate) fn lobby_roster_text(lan: &crate::lan::LanRuntime) -> String {
+fn role_team_available(lan: &crate::lan::LanRuntime, team: TeamId) -> bool {
     let Some(client) = lan.client.as_ref() else {
-        return format!("{}\nWaiting for roster...", lan.status);
+        return false;
     };
-    let Some(lobby) = client.lobby.as_ref() else {
-        return format!("{}\nWaiting for roster...", lan.status);
-    };
-    format_roster(
-        lobby.phase,
-        lobby.countdown_ticks,
-        &lobby.seats,
-        client.player,
-        lobby.ascent,
-        lobby.fill_empty_seats,
-    )
-}
-
-fn format_roster(
-    phase: WirePhase,
-    countdown: u16,
-    seats: &[WireSeat],
-    local_player: Option<PlayerId>,
-    ascent: bool,
-    fill_empty_seats: bool,
-) -> String {
-    let countdown = if countdown > 0 {
-        format!(" | launch in {:.1}s", f32::from(countdown) / 60.0)
-    } else {
-        String::new()
-    };
-    let teams = seats.iter().map(|seat| seat.team).collect::<BTreeSet<_>>();
-    let mut lines = vec![
-        format!(
-            "{} | {} {}",
-            if ascent {
-                "Architect Ascent"
-            } else {
-                "Facility race"
-            },
-            seats.len(),
-            if ascent { "Observer bodies" } else { "seats" }
-        ),
-        format!(
-            "{phase:?}{countdown} | {}",
-            if fill_empty_seats {
-                "empty seats: bots"
-            } else {
-                "all connection seats need humans"
-            }
-        ),
-    ];
-    for team in teams {
-        let team_seats = seats
-            .iter()
-            .filter(|seat| seat.team == team)
-            .collect::<Vec<_>>();
-        for seat in team_seats {
-            let occupant = match seat.occupant {
-                WireSeatOccupant::Bot => "BOT",
-                WireSeatOccupant::Human => "HUMAN",
-                WireSeatOccupant::ReservedHuman => "RESERVED",
-                WireSeatOccupant::SynchronizingHuman => "PREPARING",
-                WireSeatOccupant::Empty => "EMPTY",
-            };
-            let you = if local_player == Some(seat.player) {
-                " (YOU)"
-            } else {
-                ""
-            };
-            let ready = if seat.ready { " | READY" } else { "" };
-            let desk = if seat.architect {
-                " | ARCHITECT + BOT BODY"
-            } else {
-                ""
-            };
-            lines.push(format!(
-                "{} | {}{you}: {occupant}{ready}{desk}",
-                team.label().to_uppercase(),
-                seat.player.label()
-            ));
-        }
+    if client.team == Some(team) {
+        return true;
     }
-    lines.join("\n")
-}
-
-fn lobby_teams(lan: &crate::lan::LanRuntime) -> BTreeSet<TeamId> {
-    lan.client
-        .as_ref()
-        .and_then(|client| client.lobby.as_ref())
-        .map_or_else(BTreeSet::new, |lobby| {
-            lobby.seats.iter().map(|seat| seat.team).collect()
+    let Some(lobby) = client.lobby.as_ref() else {
+        return false;
+    };
+    if client.is_architect() {
+        lobby.architect_seats.iter().any(|seat| {
+            seat.team == team
+                && matches!(
+                    seat.occupant,
+                    WireSeatOccupant::Bot | WireSeatOccupant::Empty
+                )
         })
+    } else {
+        lobby.seats.iter().any(|seat| {
+            seat.team == team
+                && matches!(
+                    seat.occupant,
+                    WireSeatOccupant::Bot | WireSeatOccupant::Empty
+                )
+        })
+    }
 }
 
 fn team_action_label(team: TeamId, current: Option<TeamId>) -> String {
     if current == Some(team) {
-        format!("> {} | current", team.label())
+        format!("Your {}", team.label())
     } else {
-        format!("Request {}", team.label())
+        format!("Join {}", team.label())
     }
 }
 
@@ -416,7 +456,10 @@ fn set_widget_availability(
 
 #[cfg(test)]
 mod tests {
+    use super::roster::format_roster;
     use super::*;
+    use observed_core::PlayerId;
+    use observed_net::lan::{WirePhase, WireSeat};
 
     fn four_by_four() -> Vec<WireSeat> {
         (0..16)
@@ -429,7 +472,6 @@ mod tests {
                     WireSeatOccupant::Bot
                 },
                 ready: index % 4 == 0,
-                architect: false,
             })
             .collect()
     }
@@ -440,9 +482,10 @@ mod tests {
             WirePhase::Lobby,
             0,
             &four_by_four(),
-            Some(PlayerId(0)),
+            (Some(PlayerId(0)), None),
             false,
             true,
+            &[],
         );
         for team in 1..=4 {
             assert_eq!(
@@ -467,17 +510,23 @@ mod tests {
                 team: TeamId(3),
                 occupant: WireSeatOccupant::Bot,
                 ready: false,
-                architect: false,
             },
             WireSeat {
                 player: PlayerId(1),
                 team: TeamId(1),
                 occupant: WireSeatOccupant::Human,
                 ready: true,
-                architect: false,
             },
         ];
-        let text = format_roster(WirePhase::Countdown, 120, &seats, None, false, true);
+        let text = format_roster(
+            WirePhase::Countdown,
+            120,
+            &seats,
+            (None, None),
+            false,
+            true,
+            &[],
+        );
         assert!(text.find("TEAM 2").expect("team 2") < text.find("TEAM 4").expect("team 4"));
         assert!(text.contains("launch in 2.0s"));
     }
@@ -489,9 +538,8 @@ mod tests {
             team: TeamId(0),
             occupant: WireSeatOccupant::Empty,
             ready: false,
-            architect: false,
         }];
-        let text = format_roster(WirePhase::Lobby, 0, &seats, None, false, false);
+        let text = format_roster(WirePhase::Lobby, 0, &seats, (None, None), false, false, &[]);
         assert!(text.contains(": EMPTY"));
         assert!(!text.contains(": BOT"));
     }

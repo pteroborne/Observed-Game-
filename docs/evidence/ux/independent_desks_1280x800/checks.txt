@@ -1,0 +1,15 @@
+cargo fmt --all: PASS
+cargo dev-clippy: PASS; no warnings
+cargo dev-test: PASS; 2725 passed, 0 failed, 45 existing ignored
+observed_game: 583 passed, 0 failed, 6 existing ignored
+native dynamic build: PASS
+nine native 1280x800 screenshots: PASS; manually reviewed
+text viewport bounds with half-pixel tolerance; semantic-widget bounds and non-overlap: PASS
+two simultaneous graphical clients: real Join/Ready, Loading, authoritative frames, zero resyncs, three bodies
+Architect has no embodied player or owned replay body: PASS
+maximum live lobby: sixteen body slots plus sixteen desks; both roster/team pages and Leave visible
+real UDP regression: full-roster four connections / three bodies, desk preparation barrier, input separation, bot takeover, reconnect, expired token retirement
+delayed ownership ACK preserves frame progress; full-roster startup cancels only on real timeout
+four game replicas: Architect card and Observer ask stay in step
+human/controller and physical-machine/firewall acceptance: OPEN
+known ignored asserting hex_full_match_soak: unresolved; dev-test-all not rerun/claimed green

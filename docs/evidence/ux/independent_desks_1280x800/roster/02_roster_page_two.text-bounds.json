@@ -1,0 +1,211 @@
+[
+  {
+    "max": [
+      888.0,
+      707.0
+    ],
+    "min": [
+      392.0,
+      690.0
+    ],
+    "text": "Choose your team and role | Ready together | Esc / B leaves"
+  },
+  {
+    "max": [
+      748.0,
+      142.0
+    ],
+    "min": [
+      532.0,
+      94.0
+    ],
+    "text": "LAN LOBBY"
+  },
+  {
+    "max": [
+      1009.0,
+      170.0
+    ],
+    "min": [
+      271.0,
+      152.0
+    ],
+    "text": "The server owns this roster. Every visible seat enters the same authoritative run."
+  },
+  {
+    "max": [
+      777.0,
+      649.0
+    ],
+    "min": [
+      763.0,
+      622.0
+    ],
+    "text": ">"
+  },
+  {
+    "max": [
+      398.0,
+      590.0
+    ],
+    "min": [
+      235.0,
+      568.0
+    ],
+    "text": "Previous roster"
+  },
+  {
+    "max": [
+      612.0,
+      590.0
+    ],
+    "min": [
+      493.0,
+      568.0
+    ],
+    "text": "Next roster"
+  },
+  {
+    "max": [
+      961.0,
+      236.0
+    ],
+    "min": [
+      853.0,
+      214.0
+    ],
+    "text": "Ready: OFF"
+  },
+  {
+    "max": [
+      1047.0,
+      301.0
+    ],
+    "min": [
+      767.0,
+      257.0
+    ],
+    "text": "Architect | teammate claimed"
+  },
+  {
+    "max": [
+      967.0,
+      646.0
+    ],
+    "min": [
+      848.0,
+      624.0
+    ],
+    "text": "Leave lobby"
+  },
+  {
+    "max": [
+      885.0,
+      357.0
+    ],
+    "min": [
+      766.0,
+      335.0
+    ],
+    "text": "Full Team 9"
+  },
+  {
+    "max": [
+      1049.0,
+      368.0
+    ],
+    "min": [
+      929.0,
+      324.0
+    ],
+    "text": "Full Team 10"
+  },
+  {
+    "max": [
+      885.0,
+      444.0
+    ],
+    "min": [
+      765.0,
+      400.0
+    ],
+    "text": "Full Team 11"
+  },
+  {
+    "max": [
+      1049.0,
+      444.0
+    ],
+    "min": [
+      929.0,
+      400.0
+    ],
+    "text": "Full Team 12"
+  },
+  {
+    "max": [
+      885.0,
+      520.0
+    ],
+    "min": [
+      765.0,
+      476.0
+    ],
+    "text": "Full Team 13"
+  },
+  {
+    "max": [
+      1049.0,
+      520.0
+    ],
+    "min": [
+      929.0,
+      476.0
+    ],
+    "text": "Full Team 14"
+  },
+  {
+    "max": [
+      885.0,
+      596.0
+    ],
+    "min": [
+      765.0,
+      552.0
+    ],
+    "text": "Full Team 15"
+  },
+  {
+    "max": [
+      1049.0,
+      596.0
+    ],
+    "min": [
+      929.0,
+      552.0
+    ],
+    "text": "Full Team 16"
+  },
+  {
+    "max": [
+      504.0,
+      644.0
+    ],
+    "min": [
+      201.0,
+      615.0
+    ],
+    "text": "HUMAN | BOT | RESERVED | PREPARING | EMPTY\nARCHITECT: separate desk, no Observer body"
+  },
+  {
+    "max": [
+      715.0,
+      543.0
+    ],
+    "min": [
+      201.0,
+      201.0
+    ],
+    "text": "Architect Ascent | 16 Observer bodies + separate desks\nLobby | empty seats: bots\nRoster and teams page 2 / 2\nTEAM 9 | Architect: HUMAN\nTEAM 9 | P9: HUMAN\nTEAM 10 | Architect: HUMAN\nTEAM 10 | P10: HUMAN\nTEAM 11 | Architect: HUMAN\nTEAM 11 | P11: HUMAN\nTEAM 12 | Architect: HUMAN\nTEAM 12 | P12: HUMAN\nTEAM 13 | Architect: HUMAN\nTEAM 13 | P13: HUMAN\nTEAM 14 | Architect: HUMAN\nTEAM 14 | P14: HUMAN\nTEAM 15 | Architect: HUMAN\nTEAM 15 | P15: HUMAN\nTEAM 16 | Architect: HUMAN\nTEAM 16 | P16: HUMAN"
+  }
+]

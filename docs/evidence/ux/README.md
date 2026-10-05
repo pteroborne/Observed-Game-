@@ -163,3 +163,8 @@ these do not establish human or connected graphical LAN acceptance.
 retained Facility race roster, a real loopback lobby, cosmetic portraits and replay.
 The lobby has one graphical client and a second UDP client. Portrait poses and replay
 look metadata are staged; this does not establish human or two-client graphical acceptance.
+
+
+[Independent LAN Architects](independent_desks_1280x800/README.md): nine native
+screens from two connected graphical clients and a separate maximum-size live
+lobby, with real Loading, ownership metadata, bounds, checks and provenance.

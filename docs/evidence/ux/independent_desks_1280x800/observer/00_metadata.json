@@ -1,0 +1,15 @@
+{
+  "architect_slots": null,
+  "assignment": null,
+  "case": 0,
+  "embodied_player": null,
+  "fixture": "real graphical Join/Ready and Loading; two neutral-input transport peers; Guardian off; returning-player help state",
+  "observer_slots": null,
+  "peer": "observer",
+  "rendered_body_count": null,
+  "replay_has_owned_body": null,
+  "resync_attempts": null,
+  "saw_real_loading": false,
+  "simulation_digest": null,
+  "simulation_tick": null
+}
