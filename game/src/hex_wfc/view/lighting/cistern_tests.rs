@@ -24,6 +24,11 @@ fn rain_lights_are_fixed_and_follow_generator_power() {
     fixed_wonder_lighting(WonderLighting::Rain);
 }
 
+#[test]
+fn concourse_lights_stay_fixed_and_follow_floor_power() {
+    fixed_wonder_lighting(WonderLighting::Concourse);
+}
+
 fn fixed_wonder_lighting(theme: WonderLighting) {
     let mut game = HexWfcMatch::new(
         44,
@@ -49,6 +54,9 @@ fn fixed_wonder_lighting(theme: WonderLighting) {
                 heading: HexFace::East,
             },
             WonderLighting::Cistern => HexArchetype::Cistern {
+                heading: HexFace::East,
+            },
+            WonderLighting::Concourse => HexArchetype::SwitchingConcourse {
                 heading: HexFace::East,
             },
             WonderLighting::Rain => HexArchetype::RainCourt {
@@ -196,6 +204,7 @@ fn fixed_wonder_lighting(theme: WonderLighting) {
                 match theme {
                     WonderLighting::Chargeworks => observed_style::chargeworks::FIXTURE_INTENSITY,
                     WonderLighting::Cistern => observed_style::cistern::FIXTURE_INTENSITY,
+                    WonderLighting::Concourse => observed_style::concourse::FIXTURE_INTENSITY,
                     WonderLighting::Rain => observed_style::rain_court::FIXTURE_INTENSITY,
                     WonderLighting::Archive => observed_style::archive::FIXTURE_INTENSITY,
                 } * scale
@@ -213,6 +222,8 @@ fn fixed_wonder_lighting(theme: WonderLighting) {
                     WonderLighting::Chargeworks =>
                         observed_style::chargeworks::FIXTURE_BOUNCE_INTENSITY,
                     WonderLighting::Cistern => observed_style::cistern::FIXTURE_BOUNCE_INTENSITY,
+                    WonderLighting::Concourse =>
+                        observed_style::concourse::FIXTURE_BOUNCE_INTENSITY,
                     WonderLighting::Rain => observed_style::rain_court::FIXTURE_BOUNCE_INTENSITY,
                     WonderLighting::Archive => observed_style::archive::FIXTURE_BOUNCE_INTENSITY,
                 } * scale

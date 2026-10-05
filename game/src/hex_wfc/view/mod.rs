@@ -12,6 +12,7 @@ mod assets;
 pub(in crate::hex_wfc) mod camera;
 pub(in crate::hex_wfc) mod chargeworks;
 pub(in crate::hex_wfc) mod cistern;
+pub(in crate::hex_wfc) mod concourse;
 pub(in crate::hex_wfc) mod exterior;
 mod fixtures;
 pub(in crate::hex_wfc) use camera::{sync_camera, sync_projection};

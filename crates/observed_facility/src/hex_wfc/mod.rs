@@ -45,7 +45,8 @@ pub use blueprint::{
 pub use context::{HexInfluenceField, PROFILE_MAX, PROFILE_MIN};
 pub use directed::{
     authored_archive_well, authored_chargeworks, authored_cistern_room, authored_climb,
-    authored_climb_shaped, authored_hall, authored_rain_court, stair_rotation, stair_shape,
+    authored_climb_shaped, authored_hall, authored_rain_court, authored_switching_concourse,
+    stair_rotation, stair_shape,
 };
 pub use neighborhood::{
     FaceDomain, NeighborCandidate, Neighborhood, NeighborhoodError, neighborhood,
@@ -179,6 +180,11 @@ pub enum HexArchetype {
 
     /// A Zen rain garden sector, with opaque screens and a covered veranda.
     RainCourt {
+        #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
+        heading: HexFace,
+    },
+    /// A Lumen transit hall sector, with fixed canopy lighting and three approaches.
+    SwitchingConcourse {
         #[cfg_attr(feature = "serde", serde(with = "serde_face"))]
         heading: HexFace,
     },
@@ -342,7 +348,8 @@ impl HexArchetype {
     #[must_use]
     pub const fn span_mask(self) -> u8 {
         match self {
-            Self::RainCourt { heading }
+            Self::SwitchingConcourse { heading }
+            | Self::RainCourt { heading }
             | Self::ArchiveWell { heading }
             | Self::Cistern { heading }
             | Self::Chargeworks { heading, .. } => {

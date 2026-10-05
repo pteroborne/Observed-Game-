@@ -1050,6 +1050,14 @@ fn rain_card_is_zen_only_and_commits_three_physical_cells_atomically() {
     );
 }
 
+#[test]
+fn concourse_card_is_lumen_only_and_commits_three_physical_cells_atomically() {
+    wonder_commits_atomically(
+        crate::ascent::sim::CardKind::SwitchingConcourse,
+        crate::ascent::sim::District::LUMEN,
+    );
+}
+
 fn wonder_commits_atomically(
     kind: crate::ascent::sim::CardKind,
     district: crate::ascent::sim::District,
@@ -1205,35 +1213,44 @@ fn wonder_commits_atomically(
         "refusal changes no physical cell"
     );
     game.ascent.session.sim.anchored.remove(&protected);
+    let generators = game.rules().economy.generators.clone();
     let generation = game.physical.facility.generation;
     let refusals = step(&mut game, Body::Turn(0.0), SeatCommand::Architect(play));
     assert!(refusals.is_empty(), "{refusals:?}");
     assert_eq!(game.physical.facility.generation, generation + 1);
+    assert_eq!(game.rules().economy.generators, generators);
+    for cell in generators.values() {
+        assert_eq!(game.physical.facility.placements[cell], before[cell]);
+    }
     for p in placements {
         assert_eq!(game.physical.facility.placements[&p.coord], p);
         assert_eq!(p.space, HexSpace::Hall);
         assert_eq!(
             observed_facility::hex_wfc::placement_tile_archetype(&p),
-            Some(if kind == crate::ascent::sim::CardKind::RainCourt {
-                "rain_court"
-            } else if kind == crate::ascent::sim::CardKind::ArchiveWell {
-                "archive_well"
-            } else {
-                match p.archetype {
-                    HexArchetype::Chargeworks { part, .. } => match part {
-                        observed_facility::hex_wfc::ChargeworksPart::Fabricator => {
-                            "chargeworks_fabricator"
-                        }
-                        observed_facility::hex_wfc::ChargeworksPart::Transfer => {
-                            "chargeworks_transfer"
-                        }
-                        observed_facility::hex_wfc::ChargeworksPart::Receiver => {
-                            "chargeworks_receiver"
-                        }
-                    },
-                    _ => panic!("wrong wonder"),
+            Some(
+                if kind == crate::ascent::sim::CardKind::SwitchingConcourse {
+                    "switching_concourse"
+                } else if kind == crate::ascent::sim::CardKind::RainCourt {
+                    "rain_court"
+                } else if kind == crate::ascent::sim::CardKind::ArchiveWell {
+                    "archive_well"
+                } else {
+                    match p.archetype {
+                        HexArchetype::Chargeworks { part, .. } => match part {
+                            observed_facility::hex_wfc::ChargeworksPart::Fabricator => {
+                                "chargeworks_fabricator"
+                            }
+                            observed_facility::hex_wfc::ChargeworksPart::Transfer => {
+                                "chargeworks_transfer"
+                            }
+                            observed_facility::hex_wfc::ChargeworksPart::Receiver => {
+                                "chargeworks_receiver"
+                            }
+                        },
+                        _ => panic!("wrong wonder"),
+                    }
                 }
-            })
+            )
         );
         assert!(
             game.physical

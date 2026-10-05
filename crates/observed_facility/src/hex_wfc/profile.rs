@@ -573,6 +573,7 @@ impl ArchetypeBias {
             HexArchetype::Junction => self.junction,
             HexArchetype::Climb { .. } => self.climb,
             HexArchetype::Expanse
+            | HexArchetype::SwitchingConcourse { .. }
             | HexArchetype::RainCourt { .. }
             | HexArchetype::ArchiveWell { .. }
             | HexArchetype::Cistern { .. }
@@ -591,6 +592,7 @@ impl ArchetypeBias {
             HexArchetype::Junction => self.junction = factor,
             HexArchetype::Climb { .. } => self.climb = factor,
             HexArchetype::Expanse
+            | HexArchetype::SwitchingConcourse { .. }
             | HexArchetype::RainCourt { .. }
             | HexArchetype::ArchiveWell { .. }
             | HexArchetype::Cistern { .. }

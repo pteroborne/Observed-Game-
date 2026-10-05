@@ -75,7 +75,7 @@ pub(super) fn inspect(
             }
             let elapsed = request.frame.saturating_sub(start);
             let slot = elapsed / 180;
-            if kind == CardKind::RainCourt {
+            if kind == CardKind::RainCourt || kind == CardKind::SwitchingConcourse {
                 runtime
                     .ascent
                     .as_mut()
@@ -94,7 +94,11 @@ pub(super) fn inspect(
                     .map(|cell| Vec3::from_array(observed_hex::hex_origin(cell)) + Vec3::Y * 0.75);
                 let turn =
                     Quat::from_rotation_y(-f32::from(rotation % 6) * std::f32::consts::TAU / 6.0);
-                let entry = centers[0] + turn * Vec3::new(-3.0, 0.0, -4.4);
+                let entry = if kind == CardKind::SwitchingConcourse {
+                    super::concourse::route(cells, rotation)[0]
+                } else {
+                    centers[0] + turn * Vec3::new(-3.0, 0.0, -4.4)
+                };
                 let config = observed_traversal::FpsConfig::default();
                 *walk = Some(WonderWalk {
                     scene: runtime.match_state.geometry.rapier_scene(),
@@ -102,7 +106,9 @@ pub(super) fn inspect(
                         entry + Vec3::Y * config.half_height,
                         0.0,
                     ),
-                    route: if kind == CardKind::RainCourt {
+                    route: if kind == CardKind::SwitchingConcourse {
+                        super::concourse::route(cells, rotation)
+                    } else if kind == CardKind::RainCourt {
                         super::rain::route(cells, rotation)
                     } else if kind == CardKind::ArchiveWell {
                         super::archive::route(cells, rotation)
@@ -163,7 +169,11 @@ pub(super) fn inspect(
                     "cistern-colonnade",
                 ),
             };
-            let (feet, target, name) = if kind == CardKind::RainCourt {
+            let (feet, target, name) = if kind == CardKind::SwitchingConcourse {
+                let (feet, target, name, _) =
+                    super::concourse::portrait(slot, expected.map(|p| p.coord), rotation);
+                (feet, target, name)
+            } else if kind == CardKind::RainCourt {
                 let (feet, target, name, _) =
                     super::rain::portrait(slot, expected.map(|p| p.coord), rotation);
                 (feet, target, name)
@@ -227,7 +237,9 @@ pub(super) fn inspect(
                 )
                 .filter(|_| slot == 0 || slot == 3)
                 .unwrap_or(anchor);
-            let cell = if kind == CardKind::RainCourt {
+            let cell = if kind == CardKind::SwitchingConcourse {
+                super::concourse::portrait(slot, expected.map(|p| p.coord), rotation).3
+            } else if kind == CardKind::RainCourt {
                 super::rain::portrait(slot, expected.map(|p| p.coord), rotation).3
             } else if kind == CardKind::ArchiveWell {
                 super::archive::portrait(slot, expected.map(|p| p.coord), rotation).3
@@ -331,7 +343,9 @@ pub(super) fn inspect(
             }
             let name = format!(
                 "{}-walk-{:03}.png",
-                if kind == CardKind::RainCourt {
+                if kind == CardKind::SwitchingConcourse {
+                    "concourse"
+                } else if kind == CardKind::RainCourt {
                     "rain"
                 } else if kind == CardKind::ArchiveWell {
                     "archive"

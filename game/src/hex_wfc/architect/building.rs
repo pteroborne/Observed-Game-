@@ -337,6 +337,12 @@ pub(super) fn built_by(
             rotation,
         )?
         .to_vec(),
+        CardKind::SwitchingConcourse => observed_facility::hex_wfc::authored_switching_concourse(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
         CardKind::RainCourt => observed_facility::hex_wfc::authored_rain_court(
             physical.facility.config,
             cell,
@@ -540,6 +546,7 @@ mod preview_tests {
         for (kind, district) in [
             (CardKind::ArchiveWell, District::LIBRARY),
             (CardKind::RainCourt, District::ZEN),
+            (CardKind::SwitchingConcourse, District::LUMEN),
         ] {
             let register = district.register();
             let first = *game
@@ -557,6 +564,13 @@ mod preview_tests {
                 let (cell, pieces) =
                     preview_by(&game, kind, register, rotation).expect("complete thumbnail");
                 let expected = match kind {
+                    CardKind::SwitchingConcourse => {
+                        observed_facility::hex_wfc::authored_switching_concourse(
+                            game.facility.config,
+                            cell,
+                            rotation,
+                        )
+                    }
                     CardKind::RainCourt => observed_facility::hex_wfc::authored_rain_court(
                         game.facility.config,
                         cell,

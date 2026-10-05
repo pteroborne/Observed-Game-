@@ -236,6 +236,7 @@ impl ArchitectLab {
                     | CardKind::Cistern
                     | CardKind::Chargeworks
                     | CardKind::ArchiveWell
+                    | CardKind::SwitchingConcourse
                     | CardKind::RainCourt
             ) {
                 continue;
@@ -261,6 +262,7 @@ impl ArchitectLab {
                         CardKind::Cistern
                         | CardKind::Chargeworks
                         | CardKind::ArchiveWell
+                        | CardKind::SwitchingConcourse
                         | CardKind::RainCourt => {
                             self.played_wonder(card.kind, target, rotation).to_vec()
                         }

@@ -1147,6 +1147,7 @@ fn archetype_code(archetype: HexArchetype) -> u64 {
         HexArchetype::Junction => 4,
         // 5 to 7 were the ramps and towers; codes stay put, so a digest does not move.
         HexArchetype::Expanse
+        | HexArchetype::SwitchingConcourse { .. }
         | HexArchetype::RainCourt { .. }
         | HexArchetype::ArchiveWell { .. }
         | HexArchetype::Cistern { .. }

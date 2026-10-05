@@ -209,6 +209,18 @@ pub fn authored_rain_court(
     })
 }
 
+/// One Lumen card places a continuous three-bay transit hall.
+#[must_use]
+pub fn authored_switching_concourse(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    authored_triad(config, anchor, rotation, |_, heading| {
+        HexArchetype::SwitchingConcourse { heading }
+    })
+}
+
 fn authored_triad(
     config: super::HexWfcConfig,
     anchor: HexCoord,

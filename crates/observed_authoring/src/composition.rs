@@ -802,15 +802,15 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "3f889a409f7de9b777ceec3723ead39f73184f35bcd2a7664c8a046a03cd93d9";
+            "92170e3ff9897a94a64a13c9755ec5f5ba87eb8e44a9f2c478d74c2fc71243cd";
         // The open-air composition (void share 2,000), 2026-09-24, at profile
         // version 6 since the ramps and towers retired and its bias names `climb`.
         const PROFILE_HASH: &str =
             "7b57da365f6c4de7876cd76adfd985db582d6f1610999c29d89d116739b639d1";
-        // Rain Court changes the catalog while retaining the profile. Folding
+        // Switching Concourse changes the catalog while retaining the profile. Folding
         // both keeps an old peer from joining with different authored geometry.
         const SIMULATION_HASH: &str =
-            "b4c366d4f872be71355b40367a462fcf844fd2744ec8ed9a172dc3603ce87fb0";
+            "26cb2214cad7f482dccdf9080cb764a692ef07791cd0247a054fd622ce07d61c";
 
         let root = committed_tiles();
         let compiled_text =
@@ -822,8 +822,8 @@ mod tests {
         // climbed by a composition since, and none of either is compiled. 230 since
         // climbs turn: four turning mid cells and three turned landings, in seven
         // dressings.
-        // Rain Court adds six Zen-only orientations; the profile stays unchanged.
-        assert_eq!(compiled.modules.len(), 266, "committed strict source count");
+        // Switching Concourse adds six Lumen-only orientations; the profile stays unchanged.
+        assert_eq!(compiled.modules.len(), 272, "committed strict source count");
         assert!(
             compiled
                 .modules

@@ -19,6 +19,7 @@ pub(in crate::hex_wfc) use super::mesh_group::MeshGroupKey;
 use super::open_edge_materials::OpenEdgeMaterials;
 use crate::view::environment::{cuboid_mesh, load_repeating_texture};
 
+mod concourse;
 mod rain;
 mod textures;
 mod wonder;
@@ -75,6 +76,7 @@ pub(in crate::hex_wfc) struct HexWfcVisualAssets {
     chargeworks: WonderMaterials,
     archive: WonderMaterials,
     rain: rain::RainMaterials,
+    concourse: concourse::ConcourseMaterials,
     archive_details: [Handle<StandardMaterial>; 8],
     chargeworks_details: [Handle<StandardMaterial>; 4],
     hull_cache: HashMap<(String, usize), Handle<Mesh>>,
@@ -175,6 +177,7 @@ impl HexWfcVisualAssets {
             &registers[ArchitectureRegister::InfiniteGallery.stable_id() as usize],
         );
         Self {
+            concourse: concourse::ConcourseMaterials::load(materials, images),
             reservoir,
             archive,
             rain: rain::RainMaterials::load(
@@ -207,6 +210,7 @@ impl HexWfcVisualAssets {
             })
             .collect();
         Self {
+            concourse: concourse::ConcourseMaterials::for_test(&dummy),
             reservoir: WonderMaterials::for_test(&dummy),
             archive: WonderMaterials::for_test(&dummy),
             rain: rain::RainMaterials::for_test(&dummy),

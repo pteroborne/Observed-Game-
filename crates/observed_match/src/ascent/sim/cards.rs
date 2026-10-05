@@ -25,6 +25,7 @@ impl District {
     /// The ground floor's: the Backrooms, on a facility of any height.
     pub const GROUND: Self = Self(ArchitectureRegister::CLIMB[0]);
     pub const LIBRARY: Self = Self(ArchitectureRegister::InfiniteGallery);
+    pub const LUMEN: Self = Self(ArchitectureRegister::OverlitGrid);
     pub const ZEN: Self = Self(ArchitectureRegister::ShadowScreen);
     pub const REACTOR: Self = Self(ArchitectureRegister::Megastructure);
 
@@ -158,6 +159,8 @@ pub enum CardKind {
     ArchiveWell,
     /// One Zen card places a sheltered veranda around an indoor rain garden.
     RainCourt,
+    /// One Lumen card places a luminous three-bay transit hall.
+    SwitchingConcourse,
 }
 
 impl CardKind {
@@ -199,6 +202,10 @@ impl Card {
             (CardKind::ArchiveWell, None) => "archive well".to_string(),
             (CardKind::RainCourt, Some(district)) => format!("rain court - {}", district.label()),
             (CardKind::RainCourt, None) => "rain court".to_string(),
+            (CardKind::SwitchingConcourse, Some(district)) => {
+                format!("switching concourse - {}", district.label())
+            }
+            (CardKind::SwitchingConcourse, None) => "switching concourse".to_string(),
             (CardKind::Tile(shape), None) => shape.label().to_string(),
             (CardKind::Directive, _) => "Guardian directive".to_string(),
             (CardKind::Sensor, _) => "sensor".to_string(),
@@ -402,6 +409,16 @@ impl Deck {
                     id: CardId(next_id),
                     kind: CardKind::RainCourt,
                     district: Some(District::ZEN),
+                });
+                next_id += 1;
+            }
+        }
+        if climb.contains(&District::LUMEN) {
+            for _ in 0..wonders {
+                cards.push(Card {
+                    id: CardId(next_id),
+                    kind: CardKind::SwitchingConcourse,
+                    district: Some(District::LUMEN),
                 });
                 next_id += 1;
             }
@@ -815,7 +832,10 @@ mod tests {
             assert_eq!(rain[0].district, Some(District::ZEN));
             assert!(
                 all.iter()
-                    .filter(|c| c.kind != CardKind::RainCourt)
+                    .filter(|c| !matches!(
+                        c.kind,
+                        CardKind::RainCourt | CardKind::SwitchingConcourse
+                    ))
                     .all(|c| c.id.0 < rain[0].id.0)
             );
         }
@@ -826,6 +846,39 @@ mod tests {
                 .iter()
                 .chain(&deck.draw)
                 .any(|c| c.kind == CardKind::RainCourt)
+        );
+    }
+    #[test]
+    fn concourse_is_finite_lumen_content_appended_after_existing_card_ids() {
+        for deck in [
+            Deck::for_team(7, 8, &TileShape::AUTHORED, 8),
+            Deck::rogue(7, 8, &TileShape::AUTHORED),
+        ] {
+            let all: Vec<_> = deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .chain(&deck.discard)
+                .collect();
+            let concourse: Vec<_> = all
+                .iter()
+                .filter(|c| c.kind == CardKind::SwitchingConcourse)
+                .collect();
+            assert_eq!(concourse.len(), 1);
+            assert_eq!(concourse[0].district, Some(District::LUMEN));
+            assert!(
+                all.iter()
+                    .filter(|c| c.kind != CardKind::SwitchingConcourse)
+                    .all(|c| c.id.0 < concourse[0].id.0)
+            );
+        }
+        let deck = Deck::for_team(7, 1, &TileShape::AUTHORED, 1);
+        assert!(
+            !deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .any(|c| c.kind == CardKind::SwitchingConcourse)
         );
     }
 }

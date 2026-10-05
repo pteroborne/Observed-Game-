@@ -43,6 +43,7 @@ const FALL_TICK: u64 = 150;
 const GIVE_UP_FRAMES: u16 = 12_000;
 
 mod archive;
+mod concourse;
 mod rain;
 mod wonder;
 use wonder::WonderWalk;
@@ -67,14 +68,18 @@ pub(in crate::hex_wfc) fn capture(
     };
     let rogue = request.mode == HexWfcCaptureMode::Rogue;
     let factory = !rogue && std::env::var_os("OBSERVED2_CHARGEWORKS_PORTRAITS").is_some();
+    let concourse = !rogue && std::env::var_os("OBSERVED2_CONCOURSE_PORTRAITS").is_some();
     let rain = !rogue && std::env::var_os("OBSERVED2_RAIN_PORTRAITS").is_some();
     let archive = !rogue && std::env::var_os("OBSERVED2_ARCHIVE_PORTRAITS").is_some();
     let portraits = !rogue
-        && (rain
+        && (concourse
+            || rain
             || archive
             || factory
             || std::env::var_os("OBSERVED2_CISTERN_PORTRAITS").is_some());
-    let kind = if rain {
+    let kind = if concourse {
+        CardKind::SwitchingConcourse
+    } else if rain {
         CardKind::RainCourt
     } else if archive {
         CardKind::ArchiveWell
@@ -110,7 +115,7 @@ pub(in crate::hex_wfc) fn capture(
     let (Some(mut runtime), Some(mut desk), Some(_)) = (runtime, desk, board) else {
         return;
     };
-    if rain || factory || archive {
+    if concourse || rain || factory || archive {
         if factory_staged.is_none() {
             *factory_staged = wonder::stage_wonder(&mut runtime, &desk, kind);
         }
@@ -132,6 +137,24 @@ pub(in crate::hex_wfc) fn capture(
     let Some(ascent) = runtime.ascent.as_ref() else {
         return;
     };
+    // A live match can change again during the board's build-in animation. Hold
+    // this evidence fixture only after the real three-cell physical commit.
+    if concourse
+        && request.stills == 3
+        && portrait_start.is_none()
+        && let Some((anchor, rotation)) = *reservoir
+        && ascent
+            .rules()
+            .played_wonder(kind, anchor, rotation)
+            .iter()
+            .all(|p| runtime.match_state.facility.placements.get(&p.coord) == Some(p))
+    {
+        commands.insert_resource(crate::hex_wfc::HexOnboardingGate { active: true });
+        commands.remove_resource::<crate::sim::state::SpectatorBot>();
+        *portrait_start = Some(request.frame);
+        info!("Concourse evidence holds the complete physical card commit");
+    }
+
     let path = std::path::PathBuf::from(&request.path);
     let shoot = |commands: &mut Commands, name: &str| {
         let name = format!("{prefix}-{name}-1280x800.png");
@@ -161,6 +184,7 @@ pub(in crate::hex_wfc) fn capture(
                 CardKind::Cistern
                 | CardKind::Chargeworks
                 | CardKind::ArchiveWell
+                | CardKind::SwitchingConcourse
                 | CardKind::RainCourt => 0,
                 CardKind::Stair => 1,
                 CardKind::Tile(_) => 2,
@@ -216,25 +240,36 @@ pub(in crate::hex_wfc) fn capture(
                     CardKind::Cistern
                         | CardKind::Chargeworks
                         | CardKind::ArchiveWell
+                        | CardKind::SwitchingConcourse
                         | CardKind::RainCourt
                 ) {
                     *reservoir = Some((target, desk.rotation));
                 }
                 let refusal = ascent.session().architect_refusal(desk.seat, play);
                 desk.settle(play, refusal);
+                if concourse && refusal.is_some() {
+                    *reservoir = None;
+                    request.stills = 1;
+                    return;
+                }
             }
             request.last_shot_tick = tick;
             request.stills = 3;
         }
         // Caught while it builds in, however the ticks fall against the frames.
-        3 if building_in.iter().any(|room| room.age > 0.25)
-            || tick >= request.last_shot_tick + 120 =>
+        3 if (!concourse || portrait_start.is_some())
+            && (building_in.iter().any(|room| room.age > 0.25)
+                || tick >= request.last_shot_tick + 120) =>
         {
             shoot(&mut commands, "building-in");
             request.last_shot_tick = tick;
             request.stills = 4;
         }
-        4 if tick >= request.last_shot_tick + 90 => {
+        4 if tick >= request.last_shot_tick + 90
+            || (concourse
+                && portrait_start
+                    .is_some_and(|start| request.frame.saturating_sub(start) >= 120)) =>
+        {
             shoot(&mut commands, "built");
             let played = ascent.rules().command_log.len();
             info!("{prefix} capture: the rules have logged {played} plays");

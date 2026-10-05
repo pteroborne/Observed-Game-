@@ -17,6 +17,7 @@ pub(in crate::hex_wfc) enum WonderLighting {
     Chargeworks,
     Archive,
     Rain,
+    Concourse,
 }
 
 pub(in crate::hex_wfc::view) fn spawn_practical(
@@ -44,6 +45,11 @@ pub(in crate::hex_wfc::view) fn spawn_practical(
                 observed_style::chargeworks::fixture_color(),
                 observed_style::chargeworks::FIXTURE_INTENSITY,
                 observed_style::chargeworks::FIXTURE_BOUNCE_INTENSITY,
+            ),
+            WonderLighting::Concourse => (
+                observed_style::concourse::fixture_color(),
+                observed_style::concourse::FIXTURE_INTENSITY,
+                observed_style::concourse::FIXTURE_BOUNCE_INTENSITY,
             ),
             WonderLighting::Rain => (
                 observed_style::rain_court::fixture_color(),

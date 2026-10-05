@@ -1241,7 +1241,8 @@ mod tests {
         // in seven dressings); 236 with the six grid-fitted Cistern orientations; 254 with the
         // three Chargeworks roles at six orientations.
         // Six Library Archive Well and six Zen Rain Court orientations bring the count to 266.
-        assert_eq!(built.catalog.modules.len(), 266);
+        // Six Lumen Switching Concourse orientations bring it to 272.
+        assert_eq!(built.catalog.modules.len(), 272);
         let registers = crate::tile_source::REGISTERS;
         for path in ignored {
             let text = std::fs::read_to_string(root.join(&path)).expect("retired source exists");
