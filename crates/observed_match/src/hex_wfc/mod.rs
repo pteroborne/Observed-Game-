@@ -83,6 +83,7 @@ pub(crate) fn compatibility_test_content() -> &'static std::sync::Arc<HexMatchCo
                         || tile.key.archetype == "archive_well"
                         || tile.key.archetype == "rain_court"
                         || tile.key.archetype == "jade_nave"
+                        || tile.key.archetype == "last_promenade"
                         || tile.key.archetype == "switching_concourse"
                         || tile.key.archetype.starts_with("chargeworks_")
                 })

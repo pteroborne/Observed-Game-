@@ -19,6 +19,7 @@ pub(in crate::hex_wfc) enum WonderLighting {
     Rain,
     Concourse,
     Jade,
+    Promenade,
 }
 
 pub(in crate::hex_wfc::view) fn spawn_practical(
@@ -51,6 +52,11 @@ pub(in crate::hex_wfc::view) fn spawn_practical(
                 observed_style::jade::fixture_color(),
                 observed_style::jade::FIXTURE_INTENSITY,
                 observed_style::jade::FIXTURE_BOUNCE_INTENSITY,
+            ),
+            WonderLighting::Promenade => (
+                observed_style::promenade::fixture_color(),
+                observed_style::promenade::FIXTURE_INTENSITY,
+                observed_style::promenade::FIXTURE_BOUNCE_INTENSITY,
             ),
             WonderLighting::Concourse => (
                 observed_style::concourse::fixture_color(),

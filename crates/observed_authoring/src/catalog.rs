@@ -1241,8 +1241,8 @@ mod tests {
         // in seven dressings); 236 with the six grid-fitted Cistern orientations; 254 with the
         // three Chargeworks roles at six orientations.
         // Six Library Archive Well and six Zen Rain Court orientations bring the count to 266.
-        // Six Lumen Concourse and six Monument Jade Nave orientations bring it to 278.
-        assert_eq!(built.catalog.modules.len(), 278);
+        // Six Sky Last Promenade orientations complete the seven district wonders.
+        assert_eq!(built.catalog.modules.len(), 284);
         let registers = crate::tile_source::REGISTERS;
         for path in ignored {
             let text = std::fs::read_to_string(root.join(&path)).expect("retired source exists");

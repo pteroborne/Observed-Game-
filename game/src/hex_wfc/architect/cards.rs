@@ -160,6 +160,7 @@ pub(super) fn sync(
                     CardKind::Cistern
                     | CardKind::Chargeworks
                     | CardKind::ArchiveWell
+                    | CardKind::LastPromenade
                     | CardKind::JadeNave
                     | CardKind::SwitchingConcourse
                     | CardKind::RainCourt => WONDER_SCALE,
@@ -189,6 +190,7 @@ pub(super) fn sync(
             | CardKind::Cistern
             | CardKind::Chargeworks
             | CardKind::ArchiveWell
+            | CardKind::LastPromenade
             | CardKind::JadeNave
             | CardKind::SwitchingConcourse
             | CardKind::RainCourt => {
@@ -210,6 +212,7 @@ pub(super) fn sync(
                     CardKind::Cistern
                         | CardKind::Chargeworks
                         | CardKind::ArchiveWell
+                        | CardKind::LastPromenade
                         | CardKind::JadeNave
                         | CardKind::SwitchingConcourse
                         | CardKind::RainCourt
@@ -262,12 +265,19 @@ pub(super) fn sync(
                     CardKind::Cistern
                     | CardKind::Chargeworks
                     | CardKind::ArchiveWell
+                    | CardKind::LastPromenade
                     | CardKind::JadeNave
                     | CardKind::SwitchingConcourse
                     | CardKind::RainCourt => {
                         let mut bars = Vec::new();
                         if let Some(placements) = if card.kind == CardKind::Cistern {
                             observed_facility::hex_wfc::authored_cistern_room(
+                                physical.facility.config,
+                                cell,
+                                rotation,
+                            )
+                        } else if card.kind == CardKind::LastPromenade {
+                            observed_facility::hex_wfc::authored_last_promenade(
                                 physical.facility.config,
                                 cell,
                                 rotation,

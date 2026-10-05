@@ -22,6 +22,7 @@ pub mod concourse;
 pub mod iso;
 pub mod jade;
 pub mod kinetic;
+pub mod promenade;
 pub mod rain_court;
 
 pub mod architect;

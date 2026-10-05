@@ -45,6 +45,7 @@ const GIVE_UP_FRAMES: u16 = 12_000;
 mod archive;
 mod concourse;
 mod jade;
+mod promenade;
 mod rain;
 mod wonder;
 use wonder::WonderWalk;
@@ -69,18 +70,22 @@ pub(in crate::hex_wfc) fn capture(
     };
     let rogue = request.mode == HexWfcCaptureMode::Rogue;
     let factory = !rogue && std::env::var_os("OBSERVED2_CHARGEWORKS_PORTRAITS").is_some();
+    let promenade = !rogue && std::env::var_os("OBSERVED2_PROMENADE_PORTRAITS").is_some();
     let jade = !rogue && std::env::var_os("OBSERVED2_JADE_PORTRAITS").is_some();
     let concourse = !rogue && std::env::var_os("OBSERVED2_CONCOURSE_PORTRAITS").is_some();
     let rain = !rogue && std::env::var_os("OBSERVED2_RAIN_PORTRAITS").is_some();
     let archive = !rogue && std::env::var_os("OBSERVED2_ARCHIVE_PORTRAITS").is_some();
     let portraits = !rogue
-        && (jade
+        && (promenade
+            || jade
             || concourse
             || rain
             || archive
             || factory
             || std::env::var_os("OBSERVED2_CISTERN_PORTRAITS").is_some());
-    let kind = if jade {
+    let kind = if promenade {
+        CardKind::LastPromenade
+    } else if jade {
         CardKind::JadeNave
     } else if concourse {
         CardKind::SwitchingConcourse
@@ -120,7 +125,7 @@ pub(in crate::hex_wfc) fn capture(
     let (Some(mut runtime), Some(mut desk), Some(_)) = (runtime, desk, board) else {
         return;
     };
-    if jade || concourse || rain || factory || archive {
+    if promenade || jade || concourse || rain || factory || archive {
         if factory_staged.is_none() {
             *factory_staged = wonder::stage_wonder(&mut runtime, &desk, kind);
         }
@@ -131,7 +136,17 @@ pub(in crate::hex_wfc) fn capture(
         }
     }
     let prefix = if rogue { "rogue" } else { "architect" };
-    let mapping = if rogue { FALL_TICK + 90 } else { MAPPING_TICKS };
+    let mapping = if rogue {
+        FALL_TICK + 90
+    } else if promenade {
+        // The last-floor bots can finish the match before the generic long tour.
+        // Allow physical discovery and departure, then capture a legal real play.
+        factory_staged
+            .as_ref()
+            .map_or(MAPPING_TICKS, |start| start.mapping_tick())
+    } else {
+        MAPPING_TICKS
+    };
     let tick = runtime.match_state.tick;
     if (request.stills == 0 || (portraits && request.stills == 1))
         && tick >= mapping
@@ -144,7 +159,7 @@ pub(in crate::hex_wfc) fn capture(
     };
     // A live match can change again during the board's build-in animation. Hold
     // this evidence fixture only after the real three-cell physical commit.
-    if (jade || concourse)
+    if (promenade || jade || concourse)
         && request.stills == 3
         && portrait_start.is_none()
         && let Some((anchor, rotation)) = *reservoir
@@ -192,6 +207,7 @@ pub(in crate::hex_wfc) fn capture(
                 CardKind::Cistern
                 | CardKind::Chargeworks
                 | CardKind::ArchiveWell
+                | CardKind::LastPromenade
                 | CardKind::JadeNave
                 | CardKind::SwitchingConcourse
                 | CardKind::RainCourt => 0,
@@ -249,6 +265,7 @@ pub(in crate::hex_wfc) fn capture(
                     CardKind::Cistern
                         | CardKind::Chargeworks
                         | CardKind::ArchiveWell
+                        | CardKind::LastPromenade
                         | CardKind::JadeNave
                         | CardKind::SwitchingConcourse
                         | CardKind::RainCourt
@@ -257,7 +274,7 @@ pub(in crate::hex_wfc) fn capture(
                 }
                 let refusal = ascent.session().architect_refusal(desk.seat, play);
                 desk.settle(play, refusal);
-                if (jade || concourse) && refusal.is_some() {
+                if (promenade || jade || concourse) && refusal.is_some() {
                     *reservoir = None;
                     request.stills = 1;
                     return;
@@ -267,7 +284,7 @@ pub(in crate::hex_wfc) fn capture(
             request.stills = 3;
         }
         // Caught while it builds in, however the ticks fall against the frames.
-        3 if (!(jade || concourse) || portrait_start.is_some())
+        3 if (!(promenade || jade || concourse) || portrait_start.is_some())
             && (building_in.iter().any(|room| room.age > 0.25)
                 || tick >= request.last_shot_tick + 120) =>
         {
@@ -276,7 +293,7 @@ pub(in crate::hex_wfc) fn capture(
             request.stills = 4;
         }
         4 if tick >= request.last_shot_tick + 90
-            || ((jade || concourse)
+            || ((promenade || jade || concourse)
                 && portrait_start
                     .is_some_and(|start| request.frame.saturating_sub(start) >= 120)) =>
         {

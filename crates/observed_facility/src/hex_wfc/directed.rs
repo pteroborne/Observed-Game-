@@ -233,6 +233,18 @@ pub fn authored_jade_nave(
     })
 }
 
+/// One Sky card builds a thin bridge circuit with three sheltered arrivals.
+#[must_use]
+pub fn authored_last_promenade(
+    config: super::HexWfcConfig,
+    anchor: HexCoord,
+    rotation: u8,
+) -> Option<[HexPlacement; 3]> {
+    authored_triad(config, anchor, rotation, |_, heading| {
+        HexArchetype::LastPromenade { heading }
+    })
+}
+
 fn authored_triad(
     config: super::HexWfcConfig,
     anchor: HexCoord,

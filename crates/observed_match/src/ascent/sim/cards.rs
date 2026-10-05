@@ -29,6 +29,7 @@ impl District {
     pub const MONUMENT: Self = Self(ArchitectureRegister::FacetMonument);
     pub const ZEN: Self = Self(ArchitectureRegister::ShadowScreen);
     pub const REACTOR: Self = Self(ArchitectureRegister::Megastructure);
+    pub const SKY: Self = Self(ArchitectureRegister::Thinning);
 
     /// The district of floor `level` of a facility `levels` tall.
     #[must_use]
@@ -164,6 +165,8 @@ pub enum CardKind {
     SwitchingConcourse,
     /// One Monument card places faceted piers and raised watching landings.
     JadeNave,
+    /// Three Sky landings connected by exposed bridges; no new finish rule.
+    LastPromenade,
 }
 
 impl CardKind {
@@ -210,6 +213,10 @@ impl Card {
             }
             (CardKind::JadeNave, Some(district)) => format!("jade nave - {}", district.label()),
             (CardKind::JadeNave, None) => "jade nave".to_string(),
+            (CardKind::LastPromenade, Some(district)) => {
+                format!("last promenade - {}", district.label())
+            }
+            (CardKind::LastPromenade, None) => "last promenade".to_string(),
             (CardKind::SwitchingConcourse, None) => "switching concourse".to_string(),
             (CardKind::Tile(shape), None) => shape.label().to_string(),
             (CardKind::Directive, _) => "Guardian directive".to_string(),
@@ -435,6 +442,16 @@ impl Deck {
                     id: CardId(next_id),
                     kind: CardKind::JadeNave,
                     district: Some(District::MONUMENT),
+                });
+                next_id += 1;
+            }
+        }
+        if climb.contains(&District::SKY) {
+            for _ in 0..wonders {
+                cards.push(Card {
+                    id: CardId(next_id),
+                    kind: CardKind::LastPromenade,
+                    district: Some(District::SKY),
                 });
                 next_id += 1;
             }
@@ -850,7 +867,10 @@ mod tests {
                 all.iter()
                     .filter(|c| !matches!(
                         c.kind,
-                        CardKind::RainCourt | CardKind::SwitchingConcourse | CardKind::JadeNave
+                        CardKind::RainCourt
+                            | CardKind::SwitchingConcourse
+                            | CardKind::JadeNave
+                            | CardKind::LastPromenade
                     ))
                     .all(|c| c.id.0 < rain[0].id.0)
             );
@@ -886,7 +906,7 @@ mod tests {
                 all.iter()
                     .filter(|c| !matches!(
                         c.kind,
-                        CardKind::SwitchingConcourse | CardKind::JadeNave
+                        CardKind::SwitchingConcourse | CardKind::JadeNave | CardKind::LastPromenade
                     ))
                     .all(|c| c.id.0 < concourse[0].id.0)
             );
@@ -920,7 +940,7 @@ mod tests {
             assert_eq!(jade[0].district, Some(District::MONUMENT));
             assert!(
                 all.iter()
-                    .filter(|c| c.kind != CardKind::JadeNave)
+                    .filter(|c| !matches!(c.kind, CardKind::JadeNave | CardKind::LastPromenade))
                     .all(|c| c.id.0 < jade[0].id.0)
             );
         }
@@ -933,6 +953,40 @@ mod tests {
                 .iter()
                 .chain(&deck.draw)
                 .any(|c| c.kind == CardKind::JadeNave)
+        );
+    }
+    #[test]
+    fn promenade_is_finite_sky_content_appended_after_existing_card_ids() {
+        for deck in [
+            Deck::for_team(7, 8, &TileShape::AUTHORED, 8),
+            Deck::rogue(7, 8, &TileShape::AUTHORED),
+        ] {
+            let all: Vec<_> = deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .chain(&deck.discard)
+                .collect();
+            let promenade: Vec<_> = all
+                .iter()
+                .filter(|c| c.kind == CardKind::LastPromenade)
+                .collect();
+            assert_eq!(promenade.len(), 1);
+            assert_eq!(promenade[0].district, Some(District::SKY));
+            assert!(
+                all.iter()
+                    .filter(|c| c.kind != CardKind::LastPromenade)
+                    .all(|c| c.id.0 < promenade[0].id.0)
+            );
+        }
+        assert_eq!(District::for_floor(7, 8), District::SKY);
+        let deck = Deck::for_team(7, 1, &TileShape::AUTHORED, 1);
+        assert!(
+            !deck
+                .hand
+                .iter()
+                .chain(&deck.draw)
+                .any(|c| c.kind == CardKind::LastPromenade)
         );
     }
 }

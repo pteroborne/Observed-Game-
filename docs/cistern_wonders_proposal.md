@@ -79,7 +79,7 @@ The central playtest question is whether the timer produces a worthwhile choice 
 
 ## One wonder for each district
 
-Each wonder should make that district's existing play memorable. These are a shortlist for later discussion, not seven approved implementations or seven new objective systems.
+Each wonder should make that district's existing play memorable. The seven location compositions have now been approved and implemented in succession. Their future objective ideas remain proposals; this is not approval for seven new victory systems.
 
 | District | Wonder composition | Connection to active goals |
 | --- | --- | --- |
@@ -89,7 +89,7 @@ Each wonder should make that district's existing play memorable. These are a sho
 | Zen / Shadow Screen | [**The Rain Court**](rain_court_wonder_proposal.md) — sheltered engawa around a rain-washed stone garden; three hexes | Framed views and offset paths reward coordinated observation during crossing and rescue; [implemented with game evidence](evidence/rain-court/README.md). |
 | Monument / Facet Monument | [**The Jade Nave**](jade_nave_wonder_proposal.md) — opaque jade piers and connected elevated landings | One Observer watches a Guardian while another crosses toward an ascent connection; [implementation and evidence](evidence/jade-nave/README.md). |
 | Reactor / Megastructure | [**The Chargeworks**](chargeworks_wonder_proposal.md) — charge factory, conveyor transfer floor and receiving vault; three hexes | Ground crossing and gantry observation now; a proposed factory-to-receiver Rogue delivery quota later. |
-| Sky / Thinning | **The Last Promenade** — thin bridges approaching the summit | The existing loyal-team finish becomes a visible act of regrouping and covering the last teammate. |
+| Sky / Thinning | [**The Last Promenade**](last_promenade_wonder_proposal.md) — open sky and thin bridges around a real well | A gathering place for the existing loyal-team summit finish; [implementation and evidence](evidence/last-promenade/README.md). |
 
 The requested planning model is seven districts with one wonder per district floor. The branch currently defines an eight-floor climb with Monument repeated: see `ArchitectureRegister::CLIMB` in [observed_content](../crates/observed_content/src/lib.rs). This proposal does not change that progression. The seven-wonder set could serve a future seven-floor climb, or use two placements/variations of the Jade Nave on the current repeated district.
 

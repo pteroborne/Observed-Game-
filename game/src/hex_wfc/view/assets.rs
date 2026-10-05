@@ -21,6 +21,7 @@ use crate::view::environment::{cuboid_mesh, load_repeating_texture};
 
 mod concourse;
 mod jade;
+mod promenade;
 mod rain;
 mod textures;
 mod wonder;
@@ -79,6 +80,7 @@ pub(in crate::hex_wfc) struct HexWfcVisualAssets {
     rain: rain::RainMaterials,
     concourse: concourse::ConcourseMaterials,
     jade: jade::JadeMaterials,
+    promenade: promenade::PromenadeMaterials,
     archive_details: [Handle<StandardMaterial>; 8],
     chargeworks_details: [Handle<StandardMaterial>; 4],
     hull_cache: HashMap<(String, usize), Handle<Mesh>>,
@@ -181,6 +183,7 @@ impl HexWfcVisualAssets {
         Self {
             concourse: concourse::ConcourseMaterials::load(materials, images),
             jade: jade::JadeMaterials::load(materials, images),
+            promenade: promenade::PromenadeMaterials::load(materials, images),
             reservoir,
             archive,
             rain: rain::RainMaterials::load(
@@ -215,6 +218,7 @@ impl HexWfcVisualAssets {
         Self {
             concourse: concourse::ConcourseMaterials::for_test(&dummy),
             jade: jade::JadeMaterials::for_test(&dummy),
+            promenade: promenade::PromenadeMaterials::for_test(&dummy),
             reservoir: WonderMaterials::for_test(&dummy),
             archive: WonderMaterials::for_test(&dummy),
             rain: rain::RainMaterials::for_test(&dummy),

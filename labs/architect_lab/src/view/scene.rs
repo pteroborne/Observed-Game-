@@ -121,6 +121,7 @@ pub fn sync_previews(
             | CardKind::Cistern
             | CardKind::Chargeworks
             | CardKind::ArchiveWell
+            | CardKind::LastPromenade
             | CardKind::JadeNave
             | CardKind::SwitchingConcourse
             | CardKind::RainCourt
@@ -340,6 +341,7 @@ pub fn rebuild_board(
                 | CardKind::Cistern
                 | CardKind::Chargeworks
                 | CardKind::ArchiveWell
+                | CardKind::LastPromenade
                 | CardKind::JadeNave
                 | CardKind::SwitchingConcourse
                 | CardKind::RainCourt

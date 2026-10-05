@@ -802,7 +802,7 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "62daab1d51af86fccb86550ddc6ca628deabd3332e950e7c20b584d3d1031bf9";
+            "028080c8b31907c1cd0197dedc2e8f21d64b6862320cf78d6ee53a32e2538b87";
         // The open-air composition (void share 2,000), 2026-09-24, at profile
         // version 6 since the ramps and towers retired and its bias names `climb`.
         const PROFILE_HASH: &str =
@@ -810,7 +810,7 @@ mod tests {
         // Jade Nave changes the catalog while retaining the profile. Folding
         // both keeps an old peer from joining with different authored geometry.
         const SIMULATION_HASH: &str =
-            "f2b38ab22b0f0767c81422cfa9c354c1d1837dabcdba4009b099f60ea9894294";
+            "efa5e5c931115aeed123e5aa701a22c49d64970d80a3d2e1138d0d1666a15fc5";
 
         let root = committed_tiles();
         let compiled_text =
@@ -823,7 +823,7 @@ mod tests {
         // climbs turn: four turning mid cells and three turned landings, in seven
         // dressings.
         // Jade Nave adds six Monument-only orientations; the profile stays unchanged.
-        assert_eq!(compiled.modules.len(), 278, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 284, "committed strict source count");
         assert!(
             compiled
                 .modules

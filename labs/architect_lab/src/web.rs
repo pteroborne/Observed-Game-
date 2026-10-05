@@ -230,6 +230,7 @@ impl RogueGame {
                     CardKind::ArchiveWell => ("archive well", 0, "3-hex reading well with elevated galleries"),
                     CardKind::RainCourt => ("rain court", 0, "3-hex rain garden with sheltered veranda"),
                     CardKind::JadeNave => ("jade nave", 0, "3-hex monument with raised watching landings"),
+                    CardKind::LastPromenade => ("last promenade", 0, "3-hex sky bridge circuit with sheltered landings"),
                     CardKind::SwitchingConcourse => ("concourse", 0, "3-hex transit hall with luminous canopy"),
                     CardKind::Directive => ("directive", 0, "Send major Guardians"),
                     CardKind::Sensor => ("sensor", 0, "Watch a floor"),

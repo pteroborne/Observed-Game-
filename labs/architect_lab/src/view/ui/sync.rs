@@ -546,6 +546,7 @@ fn card_title(card: Card) -> String {
         CardKind::ArchiveWell => "ARCHIVE WELL",
         CardKind::RainCourt => "RAIN COURT",
         CardKind::JadeNave => "JADE NAVE",
+        CardKind::LastPromenade => "LAST PROMENADE",
         CardKind::SwitchingConcourse => "CONCOURSE",
         CardKind::Directive => "DIRECTIVE",
         CardKind::Sensor => "SENSOR",

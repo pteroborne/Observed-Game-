@@ -77,7 +77,10 @@ pub(super) fn inspect(
             let slot = elapsed / 180;
             if matches!(
                 kind,
-                CardKind::RainCourt | CardKind::SwitchingConcourse | CardKind::JadeNave
+                CardKind::RainCourt
+                    | CardKind::SwitchingConcourse
+                    | CardKind::JadeNave
+                    | CardKind::LastPromenade
             ) {
                 runtime
                     .ascent
@@ -97,7 +100,9 @@ pub(super) fn inspect(
                     .map(|cell| Vec3::from_array(observed_hex::hex_origin(cell)) + Vec3::Y * 0.75);
                 let turn =
                     Quat::from_rotation_y(-f32::from(rotation % 6) * std::f32::consts::TAU / 6.0);
-                let entry = if kind == CardKind::JadeNave {
+                let entry = if kind == CardKind::LastPromenade {
+                    super::promenade::route(cells, rotation)[0]
+                } else if kind == CardKind::JadeNave {
                     super::jade::route(cells, rotation)[0]
                 } else if kind == CardKind::SwitchingConcourse {
                     super::concourse::route(cells, rotation)[0]
@@ -111,7 +116,9 @@ pub(super) fn inspect(
                         entry + Vec3::Y * config.half_height,
                         0.0,
                     ),
-                    route: if kind == CardKind::JadeNave {
+                    route: if kind == CardKind::LastPromenade {
+                        super::promenade::route(cells, rotation)
+                    } else if kind == CardKind::JadeNave {
                         super::jade::route(cells, rotation)
                     } else if kind == CardKind::SwitchingConcourse {
                         super::concourse::route(cells, rotation)
@@ -176,7 +183,11 @@ pub(super) fn inspect(
                     "cistern-colonnade",
                 ),
             };
-            let (feet, target, name) = if kind == CardKind::JadeNave {
+            let (feet, target, name) = if kind == CardKind::LastPromenade {
+                let (feet, target, name, _) =
+                    super::promenade::portrait(slot, expected.map(|p| p.coord), rotation);
+                (feet, target, name)
+            } else if kind == CardKind::JadeNave {
                 let (feet, target, name, _) =
                     super::jade::portrait(slot, expected.map(|p| p.coord), rotation);
                 (feet, target, name)
@@ -248,7 +259,9 @@ pub(super) fn inspect(
                 )
                 .filter(|_| slot == 0 || slot == 3)
                 .unwrap_or(anchor);
-            let cell = if kind == CardKind::JadeNave {
+            let cell = if kind == CardKind::LastPromenade {
+                super::promenade::portrait(slot, expected.map(|p| p.coord), rotation).3
+            } else if kind == CardKind::JadeNave {
                 super::jade::portrait(slot, expected.map(|p| p.coord), rotation).3
             } else if kind == CardKind::SwitchingConcourse {
                 super::concourse::portrait(slot, expected.map(|p| p.coord), rotation).3
@@ -356,7 +369,9 @@ pub(super) fn inspect(
             }
             let name = format!(
                 "{}-walk-{:03}.png",
-                if kind == CardKind::JadeNave {
+                if kind == CardKind::LastPromenade {
+                    "promenade"
+                } else if kind == CardKind::JadeNave {
                     "jade"
                 } else if kind == CardKind::SwitchingConcourse {
                     "concourse"
@@ -389,6 +404,9 @@ pub(in crate::hex_wfc) struct FactoryStart {
     departed: bool,
 }
 impl FactoryStart {
+    pub(super) fn mapping_tick(&self) -> u64 {
+        self.release_tick + 60
+    }
     pub(super) fn depart(&mut self, runtime: &mut HexWfcRuntime) {
         if self.departed || runtime.match_state.tick < self.release_tick {
             return;

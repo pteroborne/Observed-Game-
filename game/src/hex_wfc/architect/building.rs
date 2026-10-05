@@ -337,6 +337,12 @@ pub(super) fn built_by(
             rotation,
         )?
         .to_vec(),
+        CardKind::LastPromenade => observed_facility::hex_wfc::authored_last_promenade(
+            physical.facility.config,
+            cell,
+            rotation,
+        )?
+        .to_vec(),
         CardKind::JadeNave => observed_facility::hex_wfc::authored_jade_nave(
             physical.facility.config,
             cell,
@@ -460,15 +466,21 @@ pub(super) fn cutaway_mesh(
         let min_y = world.iter().map(|p| p.y).fold(f32::INFINITY, f32::min) - base;
         let max_y = world.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max) - base;
         let local = centroid - origin;
-        // The Nave's raised walking slabs are routes, not ceiling. Preserve their
-        // real height in cards and ghosts while cutting away the sealed roof.
+        // Raised wonder slabs are walking routes. Keep their real elevations in
+        // cards and ghosts while removing overhead roof and canopy masses.
         let jade_route = piece
             .tile
             .as_ref()
             .is_some_and(|key| key.archetype == "jade_nave")
             && max_y > 0.51
             && max_y <= 3.9;
-        let region = if jade_route {
+        let promenade_route = piece
+            .tile
+            .as_ref()
+            .is_some_and(|key| key.archetype == "last_promenade")
+            && max_y > 0.51
+            && max_y <= 2.51;
+        let region = if jade_route || promenade_route {
             HullRegion::Interior
         } else {
             hull_region(min_y, max_y, local)
@@ -485,7 +497,7 @@ pub(super) fn cutaway_mesh(
         let capped: Vec<Vec3> = world
             .iter()
             .map(|p| {
-                if is_floor || jade_route {
+                if is_floor || jade_route || promenade_route {
                     *p
                 } else {
                     Vec3::new(p.x, p.y.min(cap), p.z)

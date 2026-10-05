@@ -1928,3 +1928,5 @@ fn interaction_read_matches_keystone_range_and_completion() {
     game.players.get_mut(&id).unwrap().escaped = true;
     assert!(game.interaction(id).is_none());
 }
+
+mod promenade;

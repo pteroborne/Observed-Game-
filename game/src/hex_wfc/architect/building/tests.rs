@@ -19,6 +19,7 @@ fn wonder_thumbnails_find_the_whole_room_even_when_facing_off_the_first_edge() {
         (CardKind::RainCourt, District::ZEN),
         (CardKind::SwitchingConcourse, District::LUMEN),
         (CardKind::JadeNave, District::MONUMENT),
+        (CardKind::LastPromenade, District::SKY),
     ] {
         let register = district.register();
         let first = *game
@@ -36,6 +37,11 @@ fn wonder_thumbnails_find_the_whole_room_even_when_facing_off_the_first_edge() {
             let (cell, pieces) =
                 preview_by(&game, kind, register, rotation).expect("complete thumbnail");
             let expected = match kind {
+                CardKind::LastPromenade => observed_facility::hex_wfc::authored_last_promenade(
+                    game.facility.config,
+                    cell,
+                    rotation,
+                ),
                 CardKind::JadeNave => observed_facility::hex_wfc::authored_jade_nave(
                     game.facility.config,
                     cell,
@@ -64,6 +70,42 @@ fn wonder_thumbnails_find_the_whole_room_even_when_facing_off_the_first_edge() {
             assert_eq!(actual, expected.map(|p| p.coord).into_iter().collect());
             assert!(cutaway_mesh(&pieces, true, bearing()).is_some());
             assert!(cutaway_mesh(&pieces, false, bearing()).is_some());
+            if kind == CardKind::LastPromenade {
+                let base = f32::from(cell.level) * TILE_LEVEL_HEIGHT;
+                let bridge_pieces: Vec<_> = pieces
+                    .iter()
+                    .filter(|p| {
+                        let points = world_points(p);
+                        let min = points
+                            .iter()
+                            .map(|p| p.y - base)
+                            .fold(f32::INFINITY, f32::min);
+                        let max = points
+                            .iter()
+                            .map(|p| p.y - base)
+                            .fold(f32::NEG_INFINITY, f32::max);
+                        min >= 1.9 && max <= 2.51
+                    })
+                    .cloned()
+                    .collect();
+                for piece in &bridge_pieces {
+                    assert!(
+                        cutaway_mesh(std::slice::from_ref(piece), false, bearing()).is_some(),
+                        "every raised walking hull survives individually"
+                    );
+                }
+                let mesh = cutaway_mesh(&bridge_pieces, false, bearing())
+                    .expect("thin elevated bridges retained");
+                let Some(bevy::mesh::VertexAttributeValues::Float32x3(positions)) =
+                    mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+                else {
+                    panic!("bridge positions")
+                };
+                assert!(
+                    positions.iter().any(|p| (p[1] - base - 2.5).abs() < 0.01),
+                    "preview preserves bridge height"
+                );
+            }
             if kind == CardKind::JadeNave {
                 let base = f32::from(cell.level) * TILE_LEVEL_HEIGHT;
                 let upper_and_roof: Vec<_> = pieces

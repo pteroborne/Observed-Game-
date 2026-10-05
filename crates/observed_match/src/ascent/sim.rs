@@ -779,6 +779,7 @@ impl ArchitectLab {
             CardKind::Cistern
             | CardKind::Chargeworks
             | CardKind::ArchiveWell
+            | CardKind::LastPromenade
             | CardKind::JadeNave
             | CardKind::SwitchingConcourse
             | CardKind::RainCourt => {
@@ -787,6 +788,7 @@ impl ArchitectLab {
                     CardKind::Chargeworks => District::REACTOR,
                     CardKind::RainCourt => District::ZEN,
                     CardKind::JadeNave => District::MONUMENT,
+                    CardKind::LastPromenade => District::SKY,
                     CardKind::SwitchingConcourse => District::LUMEN,
                     _ => District::LIBRARY,
                 };
@@ -988,6 +990,11 @@ impl ArchitectLab {
         match kind {
             CardKind::Cistern => authored_cistern_room(self.world.config, target, rotation),
             CardKind::Chargeworks => authored_chargeworks(self.world.config, target, rotation),
+            CardKind::LastPromenade => observed_facility::hex_wfc::authored_last_promenade(
+                self.world.config,
+                target,
+                rotation,
+            ),
             CardKind::JadeNave => {
                 observed_facility::hex_wfc::authored_jade_nave(self.world.config, target, rotation)
             }
@@ -1106,6 +1113,7 @@ impl ArchitectLab {
                     CardKind::Cistern
                     | CardKind::Chargeworks
                     | CardKind::ArchiveWell
+                    | CardKind::LastPromenade
                     | CardKind::JadeNave
                     | CardKind::SwitchingConcourse
                     | CardKind::RainCourt => {

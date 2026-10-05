@@ -389,13 +389,15 @@ fn rooms_and_stairs_are_refused_whole() {
     }
     let target = target.expect("the body has seen a room or a stair and looked away");
     let district = game.rules().district(target.level);
-    let card = game.session().hands[&TEAM]
-        .deck
+    let kind = crate::ascent::sim::CardKind::Tile(crate::ascent::sim::TileShape::Junction);
+    let deck = &mut game.ascent.session.hands.get_mut(&TEAM).unwrap().deck;
+    assert!(deck.stage_in_district(kind, district));
+    let card = deck
         .hand
         .iter()
-        .find(|card| card.district == Some(district))
+        .find(|card| card.kind == kind && card.district == Some(district))
         .copied()
-        .expect("a hand holds a card for each district it can reach");
+        .expect("a finite tile card for the protected floor");
     for rotation in 0..6 {
         assert_eq!(
             game.session().architect_refusal(
@@ -1069,6 +1071,15 @@ fn jade_card_is_monument_only_and_commits_three_physical_cells_atomically() {
     }
 }
 
+#[test]
+fn promenade_card_is_sky_only_and_commits_three_physical_cells_atomically() {
+    wonder_commits_atomically_at(
+        crate::ascent::sim::CardKind::LastPromenade,
+        crate::ascent::sim::District::SKY,
+        Some(7),
+    );
+}
+
 fn wonder_commits_atomically(
     kind: crate::ascent::sim::CardKind,
     district: crate::ascent::sim::District,
@@ -1272,7 +1283,9 @@ fn wonder_commits_atomically_at(
         assert_eq!(p.space, HexSpace::Hall);
         assert_eq!(
             observed_facility::hex_wfc::placement_tile_archetype(&p),
-            Some(if kind == crate::ascent::sim::CardKind::JadeNave {
+            Some(if kind == crate::ascent::sim::CardKind::LastPromenade {
+                "last_promenade"
+            } else if kind == crate::ascent::sim::CardKind::JadeNave {
                 "jade_nave"
             } else if kind == crate::ascent::sim::CardKind::SwitchingConcourse {
                 "switching_concourse"

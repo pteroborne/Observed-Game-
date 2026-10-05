@@ -312,7 +312,8 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
                 .get(&current)
                 .map(|p| p.archetype),
             Some(
-                observed_facility::hex_wfc::HexArchetype::JadeNave { .. }
+                observed_facility::hex_wfc::HexArchetype::LastPromenade { .. }
+                    | observed_facility::hex_wfc::HexArchetype::JadeNave { .. }
                     | observed_facility::hex_wfc::HexArchetype::SwitchingConcourse { .. }
                     | observed_facility::hex_wfc::HexArchetype::RainCourt { .. }
                     | observed_facility::hex_wfc::HexArchetype::ArchiveWell { .. }
@@ -386,6 +387,7 @@ pub(super) fn composition_at(
         Some(
             HexArchetype::Room
             | HexArchetype::Expanse
+            | HexArchetype::LastPromenade { .. }
             | HexArchetype::JadeNave { .. }
             | HexArchetype::SwitchingConcourse { .. }
             | HexArchetype::RainCourt { .. }

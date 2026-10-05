@@ -31,32 +31,18 @@ fn a_legal_stair(game: &AscentMatch) -> Option<ArchitectCommand> {
 #[test]
 fn an_architect_deals_stairs_and_a_stair_play_builds_the_climb() {
     let mut game = game(7);
-    let deck_has_stairs = game.session().hands[&TEAM]
-        .deck
-        .hand
-        .iter()
-        .any(|card| card.kind == CardKind::Stair);
+    game.ascent
+        .stage_card(ARCHITECT, CardKind::Stair)
+        .expect("the finite deck deals stairs");
     let mut play = None;
     for _ in 0..3_000 {
         play = a_legal_stair(&game);
         if play.is_some() {
             break;
         }
-        // Play a requisition now and then, so a hand with no stair draws again.
-        let requisition = game.rules().tick % 600 == 599;
-        step(
-            &mut game,
-            Body::Explore,
-            if requisition {
-                SeatCommand::Architect(ArchitectCommand::Requisition)
-            } else {
-                SeatCommand::None
-            },
-        );
+        step(&mut game, Body::Explore, SeatCommand::None);
     }
-    let play = play.unwrap_or_else(|| {
-        panic!("a stair was never legal (dealt one at the start: {deck_has_stairs})")
-    });
+    let play = play.expect("the body discovers a legal stair footprint");
     let ArchitectCommand::Play {
         target, rotation, ..
     } = play

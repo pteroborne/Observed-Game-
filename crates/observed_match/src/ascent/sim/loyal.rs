@@ -236,6 +236,7 @@ impl ArchitectLab {
                     | CardKind::Cistern
                     | CardKind::Chargeworks
                     | CardKind::ArchiveWell
+                    | CardKind::LastPromenade
                     | CardKind::JadeNave
                     | CardKind::SwitchingConcourse
                     | CardKind::RainCourt
@@ -263,6 +264,7 @@ impl ArchitectLab {
                         CardKind::Cistern
                         | CardKind::Chargeworks
                         | CardKind::ArchiveWell
+                        | CardKind::LastPromenade
                         | CardKind::JadeNave
                         | CardKind::SwitchingConcourse
                         | CardKind::RainCourt => {
