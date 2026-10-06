@@ -15,8 +15,8 @@
 //!   own push colour, under a ring in the powered colour. Dead, both go the unpowered grey,
 //!   still self-lit enough to be found.
 //! - **A dark floor's practicals** fall to a fraction of their light, and their diffusers
-//!   go out. The district key over the runner stays: darkness costs observation range in
-//!   the rules, never legibility here.
+//!   go out. Residual fixture light, ambient fill and self-lit critical signals keep
+//!   paths and threats readable: darkness costs observation range, never legibility.
 //! - **Sounds and notices**: the power going on or off is heard at the generator, and said
 //!   when it is the local body's floor; charge ticks in as the station fills the tool.
 //! - **The prompt**: at the generator, what interact would do; at the station, the fill.

@@ -118,10 +118,7 @@ pub(crate) struct HexPresentationReadiness {
     pub stream_window_ready: bool,
 }
 
-#[derive(Component)]
-pub(super) struct HexWfcKeyLight;
-
-/// A per-tile downlight fixture (tier 2 of the rig). Carries its cell so the shadow
+/// A per-tile downlight fixture. Carries its cell so the shadow
 /// budget can pick the fixtures nearest the runner to cast; the rest stay shadowless
 /// fill. Every non-boundary cell gets one, so no tile is left without a light source.
 #[derive(Component)]
@@ -202,16 +199,9 @@ pub(super) fn setup_view(
         ..default()
     });
     commands.insert_resource(ClearColor(palette.fog_color));
-    lighting::spawn_rig(
-        &mut commands,
-        architecture,
-        composition,
-        current,
-        runtime.local(),
-    );
 
     // Geometry is deliberately enqueued only after the camera, atmosphere, menu sun,
-    // and both semantic lights have their exact initial values. Entry projects only a
+    // and ambient light have their exact initial values. Entry projects only a
     // safe local neighborhood; the production-sized logical snapshot remains resident
     // in simulation without synchronously creating its ~100k presentation pieces.
     let mut assets = HexWfcVisualAssets::load(

@@ -126,17 +126,6 @@ fn fixed_wonder_lighting(theme: WonderLighting) {
             },
         ))
         .id();
-    let key = app
-        .world_mut()
-        .spawn((
-            HexWfcKeyLight,
-            SpotLight {
-                intensity: 1_000_000.0,
-                ..default()
-            },
-            Transform::default(),
-        ))
-        .id();
     for cell in &cells {
         let parent = app.world_mut().spawn_empty().id();
         for x in [-3.0, 0.0, 3.0] {
@@ -158,7 +147,7 @@ fn fixed_wonder_lighting(theme: WonderLighting) {
     let fixed: Vec<_> = {
         let world = app.world_mut();
         world
-            .query_filtered::<(Entity, &Transform), (With<SpotLight>, Without<HexWfcKeyLight>)>()
+            .query_filtered::<(Entity, &Transform), With<SpotLight>>()
             .iter(world)
             .map(|(e, t)| (e, *t))
             .collect()
@@ -194,15 +183,6 @@ fn fixed_wonder_lighting(theme: WonderLighting) {
             let light = app.world().get::<PointLight>(*entity).unwrap();
             assert!(light.intensity > 0.0 && !light.shadow_maps_enabled);
             assert_eq!(app.world().get::<Transform>(*entity).unwrap(), pose);
-        }
-        if current != outside {
-            assert_eq!(app.world().get::<SpotLight>(key).unwrap().intensity, 0.0);
-            assert!(
-                !app.world()
-                    .get::<SpotLight>(key)
-                    .unwrap()
-                    .shadow_maps_enabled
-            );
         }
     }
     for powered in [false, true, false, true] {

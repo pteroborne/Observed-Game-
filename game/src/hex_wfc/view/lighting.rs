@@ -1,19 +1,9 @@
-//! Lighting-lab register rig for the hex facility (Arc I "Light & Line" language).
+//! Fixed fixture lighting for the hex facility (Arc I "Light & Line" language).
 //!
-//! Three staged tiers, all driven by the per-register `observed_style` palette — the
-//! artifact into which the lighting lab's findings were transferred as parameters:
-//!   1. a shadow-casting **district key** spotlight over the runner's current cell,
-//!      giving each register its dramatic directional read (overlit-grid alone runs it
-//!      flat, `key_shadows_enabled = false`);
-//!      the Cistern instead keeps shadowed downlights fixed to all nine fixtures;
-//!   2. per-cell **practical pools** (see [`super::shell`]) tinted by the cell's
-//!      `light_color`, staged as pools-in-dark on `pools_rhythm` registers (places lit,
-//!      connective halls dark) or as an even fill elsewhere;
-//!   3. district **ambient + distance fog** for depth.
-//!
-//! There is deliberately no eye-follow headlamp: a flat player-locked fill washed out
-//! the very shadows this rig exists to cast. The caged lantern remains the only
-//! discretionary player-following light, so spending the last one still has a cost.
+//! Per-cell practical pools and authored wonder downlights illuminate the building.
+//! District ambient and distance fog give depth, all from `observed_style`.
+//! Fixtures stay in place as the Observer walks; the caged lantern is the only
+//! discretionary player-following light.
 
 use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
@@ -21,9 +11,8 @@ use observed_content::ArchitectureRegister;
 use observed_hex::hex_origin;
 use observed_style::{self as style, HexComposition};
 
+use super::HexPractical;
 use super::spectate::Cutaway;
-use super::{HexPractical, HexWfcKeyLight};
-use crate::GameState;
 use crate::hex_wfc::sim::HexWfcRuntime;
 use crate::view::components::GameCam;
 
@@ -32,8 +21,8 @@ pub(super) use practicals::{WonderLighting, spawn_practical};
 #[cfg(test)]
 mod cistern_tests;
 
-/// Per-tile fill fixtures allowed to cast shadows at once (the district key casts on top
-/// of this). Bounded because point-light shadows are six-face cubemaps; kept small to
+/// Per-tile fill fixtures allowed to cast shadows at once. Bounded because
+/// point-light shadows are six-face cubemaps; kept small to
 /// hold GPU margin while still giving real cast-shadow contrast around the runner.
 ///
 /// Three since the climb compositions. Measured on the Phase 101 arc gate (2026-10-02):
@@ -62,62 +51,15 @@ pub(in crate::hex_wfc) fn configure_clusters(
 }
 
 const BLEND_RATE: f32 = 2.5;
-/// The key trim, which now lives in `observed_style` beside the palette it
-/// trims: a preview that reproduces this rig needs the same number or it is
-/// previewing a different building. The per-cell practicals in [`super::shell`]
-/// carry the interior read the deleted eye headlamp used to fake.
-use observed_style::HEX_KEY_INTENSITY_SCALE;
-
-/// Spawn the complete semantic rig at its final treatment for the initial cell.
-///
-/// Phase 95 spawned a default-white, zero-intensity key and eased it toward the
-/// current register. That made the first visible seconds desaturated. Initial state is
-/// not a transition: every light starts at the exact `observed_style` target, while
-/// [`sync_lighting_and_atmosphere`] retains easing for later cell changes.
-pub(super) fn spawn_rig(
-    commands: &mut Commands,
-    architecture: ArchitectureRegister,
-    composition: HexComposition,
-    current: observed_facility::hex_wfc::HexCoord,
-    player: &observed_match::hex_wfc::HexPlayerState,
-) {
-    let _ = player;
-    let (key_translation, key_rotation) = key_pose(current);
-    commands.spawn((
-        HexWfcKeyLight,
-        DespawnOnExit(GameState::HexWfc),
-        primed_key_light(architecture, composition),
-        Transform::from_translation(key_translation).with_rotation(key_rotation),
-        Name::new("budgeted hex key light"),
-    ));
-}
-
-fn primed_key_light(architecture: ArchitectureRegister, composition: HexComposition) -> SpotLight {
-    let palette = style::architecture_for_composition(architecture, composition);
-    SpotLight {
-        color: palette.key_color,
-        intensity: palette.key_intensity * HEX_KEY_INTENSITY_SCALE,
-        range: palette.key_range,
-        radius: palette.key_radius,
-        inner_angle: palette.key_inner_angle,
-        outer_angle: palette.key_outer_angle,
-        shadow_maps_enabled: palette.key_shadows_enabled,
-        ..default()
-    }
-}
-
 /// A drawn mesh that has just streamed in.
 type JustStreamed = (With<Mesh3d>, Added<Cutaway>);
 
 /// Only geometry on the viewed body's storey and above casts shadows.
 ///
-/// Every light that casts sits in or above that storey: the district key hangs 6.4 m up
-/// in the body's own cell, and the moon is overhead. A cell below can shadow only itself
-/// and what is lower still, which the storey's own floor hides from the key and which a
-/// body standing on it does not see; but it was rendered into every shadow map anyway,
-/// and since the climb compositions a storey has about half as many cells again within
-/// reach. Cells above keep casting: an overhang shading a moonlit loggia is a shadow
-/// a body sees.
+/// Fixtures in or above the viewed storey and the overhead moon light the visible
+/// geometry. Lower cells can shadow only themselves and what is lower still, hidden
+/// by the viewed storey's floor. Cells above keep casting: an overhang shading a
+/// moonlit loggia is a shadow a body sees.
 ///
 /// Re-tagged whole when the storey changes, and otherwise only what has just streamed in.
 pub(in crate::hex_wfc) fn sync_storey_shadow_casters(
@@ -241,7 +183,6 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
     mut ambient: ResMut<GlobalAmbientLight>,
     mut clear: ResMut<ClearColor>,
     mut camera: Query<&mut DistanceFog, With<GameCam>>,
-    mut key: Query<(&mut SpotLight, &mut Transform), With<HexWfcKeyLight>>,
 ) {
     let current = runtime.viewed().cell;
     let architecture = runtime
@@ -302,52 +243,6 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
             }
         }
     }
-
-    if let Ok((mut light, mut transform)) = key.single_mut() {
-        let fixed_wonder = matches!(
-            runtime
-                .match_state
-                .facility
-                .placements
-                .get(&current)
-                .map(|p| p.archetype),
-            Some(
-                observed_facility::hex_wfc::HexArchetype::LastPromenade { .. }
-                    | observed_facility::hex_wfc::HexArchetype::JadeNave { .. }
-                    | observed_facility::hex_wfc::HexArchetype::SwitchingConcourse { .. }
-                    | observed_facility::hex_wfc::HexArchetype::RainCourt { .. }
-                    | observed_facility::hex_wfc::HexArchetype::ArchiveWell { .. }
-                    | observed_facility::hex_wfc::HexArchetype::Cistern { .. }
-                    | observed_facility::hex_wfc::HexArchetype::Chargeworks { .. }
-            )
-        );
-        let (target_translation, target_rotation) = key_pose(current);
-        if transform.translation == Vec3::ZERO {
-            transform.translation = target_translation;
-            transform.rotation = target_rotation;
-        } else {
-            transform.translation = transform.translation.lerp(target_translation, t);
-            transform.rotation = transform.rotation.slerp(target_rotation, t);
-        }
-        let target_color = lerp_color(light.color, palette.key_color, t);
-        light.color = target_color;
-        // Authored wonders have fixed downlights. A key that migrates between
-        // their hexes makes whole bays brighten on arrival.
-        light.intensity = if fixed_wonder {
-            0.0
-        } else {
-            lerp_f(
-                light.intensity,
-                palette.key_intensity * HEX_KEY_INTENSITY_SCALE,
-                t,
-            )
-        };
-        light.range = lerp_f(light.range, palette.key_range, t);
-        light.radius = lerp_f(light.radius, palette.key_radius, t);
-        light.inner_angle = lerp_f(light.inner_angle, palette.key_inner_angle, t);
-        light.outer_angle = lerp_f(light.outer_angle, palette.key_outer_angle, t);
-        light.shadow_maps_enabled = palette.key_shadows_enabled && !fixed_wonder;
-    }
 }
 
 /// A hall that opens onto the outside is outdoors: its fog reaches across the air and
@@ -402,15 +297,6 @@ pub(super) fn composition_at(
     }
 }
 
-fn key_pose(current: observed_facility::hex_wfc::HexCoord) -> (Vec3, Quat) {
-    let origin = Vec3::from_array(hex_origin(current));
-    let translation = origin + Vec3::new(2.6, 6.4, 2.6);
-    let rotation = Transform::from_translation(translation)
-        .looking_at(origin + Vec3::new(-1.0, 0.2, -1.0), Vec3::Y)
-        .rotation;
-    (translation, rotation)
-}
-
 fn lerp_f(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
@@ -428,7 +314,6 @@ fn lerp_color(a: Color, b: Color, t: f32) -> Color {
 mod tests {
     use super::*;
     use observed_content::ArchitectureRegister;
-    use observed_style::{self as style, HexComposition};
 
     #[test]
     fn nearby_shadow_budget_does_not_enable_noon_practical_shadows() {
@@ -552,25 +437,6 @@ mod tests {
                 "the fixture {} m out",
                 step + 1
             );
-        }
-    }
-
-    #[test]
-    fn initial_key_values_are_style_owned_targets() {
-        for architecture in ArchitectureRegister::ALL {
-            let palette = style::architecture_for_composition(architecture, HexComposition::Hall);
-            let key = primed_key_light(architecture, HexComposition::Hall);
-
-            assert_eq!(key.color, palette.key_color);
-            assert_eq!(
-                key.intensity,
-                palette.key_intensity * HEX_KEY_INTENSITY_SCALE
-            );
-            assert_eq!(key.range, palette.key_range);
-            assert_eq!(key.radius, palette.key_radius);
-            assert_eq!(key.inner_angle, palette.key_inner_angle);
-            assert_eq!(key.outer_angle, palette.key_outer_angle);
-            assert_eq!(key.shadow_maps_enabled, palette.key_shadows_enabled);
         }
     }
 }

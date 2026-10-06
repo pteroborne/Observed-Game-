@@ -286,8 +286,8 @@ pub(in crate::hex_wfc) fn sync_detail_window(
 ///
 /// Spawned and despawned with the overview, and re-aimed when the detent turns,
 /// so contrast is equivalent at all six stops rather than one stop happening to
-/// look flat. Play's rig is left entirely alone: it is still there underneath,
-/// lighting the body's cell, and this is added over it.
+/// look flat. This studio light belongs only to the cutaway overview; first-person
+/// play uses the building's fixed fixtures.
 pub(in crate::hex_wfc) fn sync_key_light(
     mut commands: Commands,
     runtime: Res<HexWfcRuntime>,

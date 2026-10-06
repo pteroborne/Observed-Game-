@@ -1974,18 +1974,11 @@ pub fn hex_shell_surface(
     hex_shell_look(&treatment, register)
 }
 
-/// How far the hex facility trims the district key spotlight.
+/// Legacy district key trim used by tile and kinetic lab previews.
 ///
-/// Hex cells are tighter than the teleport-era rooms the palette's absolute
-/// lumen values were established in, so the shadow-casting key is pulled back
-/// to keep a nearby wall in material contrast without blowing out. The value
-/// sits inside the proven `full_wfc` key range of `0.16..=0.68`.
-///
-/// **Here rather than in the game** because it is the difference between what
-/// the palette says and what the facility actually shows, and anything trying
-/// to reproduce the facility's lighting - a lab preview, an evidence capture -
-/// needs the same number or it is previewing a different building. It lived in
-/// `game/src/hex_wfc/view/lighting.rs` while the game was its only reader.
+/// The production hex facility uses fixed fixtures and no longer spawns the
+/// player-following district key. These isolated previews retain their inspection
+/// light; this scale is not part of the first-person game's lighting rig.
 pub const HEX_KEY_INTENSITY_SCALE: f32 = 0.62;
 
 /// One authored practical's presentation budget, shared by the game and lab.

@@ -554,7 +554,7 @@ fn write_report(metrics: &mut HexPerfMetrics, runtime: &HexWfcRuntime) {
 
 /// The architecture register the runner currently stands in — the same lookup the view's
 /// [`crate::hex_wfc::view::sync_lighting_and_atmosphere`] uses to pick the palette, so a
-/// frame is attributed to exactly the register whose key light was staged for it.
+/// frame is attributed to exactly the register whose atmosphere was staged for it.
 fn current_register(runtime: &HexWfcRuntime) -> Option<ArchitectureRegister> {
     runtime
         .match_state
