@@ -123,14 +123,21 @@ pub(super) fn map_input(context: HexInputContext) {
         interact_held: keyboard.pressed(bindings.interact) || gamepad_intent.interact_held,
         ..Default::default()
     };
+    let pending = intent.actions;
     intent.actions = HexActionButtons {
-        interact: keyboard.just_pressed(bindings.interact) || gamepad_intent.interact_pressed,
-        deploy_lantern: keyboard.just_pressed(bindings.torch) || gamepad_deploy,
-        recover_lantern: keyboard.just_pressed(bindings.recover_lantern) || gamepad_recover,
-        deploy_pad: keyboard.just_pressed(bindings.pad) || gamepad_pad,
+        interact: pending.interact
+            || keyboard.just_pressed(bindings.interact)
+            || gamepad_intent.interact_pressed,
+        deploy_lantern: pending.deploy_lantern
+            || keyboard.just_pressed(bindings.torch)
+            || gamepad_deploy,
+        recover_lantern: pending.recover_lantern
+            || keyboard.just_pressed(bindings.recover_lantern)
+            || gamepad_recover,
+        deploy_pad: pending.deploy_pad || keyboard.just_pressed(bindings.pad) || gamepad_pad,
         // The kinetic tool: left pushes, right pulls, as `wfc_kinetic_lab` fires it.
-        kinetic_push: clicked(MouseButton::Left) || gamepad_push,
-        kinetic_pull: clicked(MouseButton::Right) || gamepad_pull,
+        kinetic_push: pending.kinetic_push || clicked(MouseButton::Left) || gamepad_push,
+        kinetic_pull: pending.kinetic_pull || clicked(MouseButton::Right) || gamepad_pull,
     };
     intent.browse_map_level = 0;
 }
@@ -340,6 +347,30 @@ mod tests {
             pause_is_escape: true,
             escape: true,
         }
+    }
+
+    #[test]
+    fn a_tool_click_survives_render_frames_without_a_simulation_tick() {
+        let mut app = App::new();
+        app.init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<crate::settings::Settings>()
+            .init_resource::<MatchOverlayState>()
+            .init_resource::<UiInputCapture>()
+            .init_resource::<HexWfcIntent>()
+            .add_systems(Update, map_input);
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+        app.update();
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .clear();
+        app.update();
+        assert!(app.world().resource::<HexWfcIntent>().actions.kinetic_push);
+        app.world_mut().resource_mut::<HexWfcIntent>().actions = HexActionButtons::default();
+        app.update();
+        assert!(!app.world().resource::<HexWfcIntent>().actions.kinetic_push);
     }
 
     #[test]

@@ -622,6 +622,7 @@ fn headless_gate_bot_walks_climbs_deterministically() {
         a, b,
         "gate must be deterministic: run A escaped on tick {a}, run B on {b}"
     );
+    // Version 9 and sealed Backrooms move the digest; completion remains tick 9903.
     assert_eq!(
         first.snapshot().digest,
         second.snapshot().digest,
@@ -764,7 +765,7 @@ fn headless_gate_bot_walks_climbs_deterministically() {
     // digest (-> 0xf2df_3180_289e_b11d), tick unmoved.
     assert_eq!(
         first.snapshot().digest,
-        0xf2df_3180_289e_b11d,
+        0xd51e_c641_4b95_b9f2,
         "TR-10 pins the declared-climb final snapshot digest"
     );
 }
@@ -1827,13 +1828,36 @@ fn clearing_a_cell_beside_a_room_opens_a_window_and_building_it_closes_one() {
         .find_map(|(anchor, cell)| {
             HexFace::LATERAL.into_iter().find_map(|face| {
                 let next = grid.neighbor(cell, face)?;
-                (!world.placements[&cell].is_open(face)
-                    && world.placements[&next].space == HexSpace::Hall
-                    && !in_a_room(next))
-                .then_some((anchor, next))
+                if world.placements[&cell].is_open(face)
+                    || world.placements[&next].space != HexSpace::Hall
+                    || in_a_room(next)
+                {
+                    return None;
+                }
+                // Select an actual window-bearing wall under the district policy. The
+                // assertion below proves its incremental open/close projection.
+                let cleared = HexPlacement {
+                    coord: next,
+                    space: HexSpace::Void,
+                    archetype: HexArchetype::Void,
+                    doors: 0,
+                    up: PortClass::Sealed,
+                    down: PortClass::Sealed,
+                };
+                let (opened, _) = change(world, next, cleared);
+                let count = |pieces: &[HexStructurePiece]| {
+                    pieces
+                        .iter()
+                        .filter(|piece| {
+                            piece.source_cell == anchor && piece.part == HexPiecePart::Window
+                        })
+                        .count()
+                };
+                (count(&project(&opened).pieces) > count(&game.geometry.pieces))
+                    .then_some((anchor, next))
             })
         })
-        .expect("a hall beside a multi-cell room, away from its anchor");
+        .expect("a window-bearing hall beside a multi-cell room, away from its anchor");
     let windows = |pieces: &[HexStructurePiece]| {
         pieces
             .iter()

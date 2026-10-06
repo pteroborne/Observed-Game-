@@ -4,10 +4,7 @@ use std::collections::BTreeMap;
 
 use glam::Vec3;
 use observed_core::PlayerId;
-use observed_facility::{
-    hex_wfc::{HexWfcWorld, MAX_CONNECTION_COST},
-    map_spec::RoomRole,
-};
+use observed_facility::{hex_wfc::HexWfcWorld, map_spec::RoomRole};
 use observed_hex::{HexCoord, hex_origin, travel_distance};
 
 use super::{HexLanternState, HexMatchEvent, HexMatchEventKind, HexPlayerState};
@@ -96,9 +93,7 @@ impl HexGuardianState {
         // A closed door between them hides it, and so does anything else solid: some point
         // of its body has to be in plain view of the eye.
         let observed = players.values().any(|player| {
-            player_sees_guardian(world, player, self)
-                && !closed(player.cell, self.cell)
-                && in_plain_view(player.position + Vec3::Y * eye_height, self.position, clear)
+            !closed(player.cell, self.cell) && player_sees_guardian(player, self, eye_height, clear)
         });
         let anchored = lanterns.anchors_blueprint_cell(world, self.cell);
         self.status = if observed {
@@ -154,8 +149,11 @@ impl HexGuardianState {
         let target_cell = players[&target_id].cell;
         if target_cell == self.cell {
             let target_position = players[&target_id].position;
-            self.position +=
-                (target_position - self.position).normalize_or_zero() * GUARDIAN_SPEED * FIXED_DT;
+            self.position += (target_position - self.position)
+                .with_y(0.0)
+                .normalize_or_zero()
+                * GUARDIAN_SPEED
+                * FIXED_DT;
             if self.position.distance(target_position) <= CATCH_DISTANCE
                 && !closed(players[&target_id].cell, self.cell)
                 && let Some(destination) = recovery_destination(world, self.cell)
@@ -260,15 +258,9 @@ pub(super) struct HexGuardianBounds<'a> {
     pub eye_height: f32,
 }
 
-/// Heights above a Guardian's centre that an eye may see of it: low, middle and high.
-const SEEN_AT: [f32; 3] = [-0.5, 0.3, 1.1];
-
-/// Whether `eye` has a clear line to some point of the Guardian standing at `centre`.
-fn in_plain_view(eye: Vec3, centre: Vec3, clear: &dyn Fn(Vec3, Vec3) -> bool) -> bool {
-    SEEN_AT
-        .into_iter()
-        .any(|height| clear(eye, centre + Vec3::Y * height))
-}
+/// Samples from the four-tier major's lower body through its crown and eye.
+/// Seeing its head over cover must count even when its lower tiers are hidden.
+const SEEN_AT: [f32; 5] = [-0.2, 0.3, 1.1, 1.9, 2.5];
 
 impl super::HexWfcMatch {
     /// Send every major Guardian to `cell` instead of hunting, or back to the hunt with
@@ -298,40 +290,30 @@ impl HexGuardianBounds<'_> {
 }
 
 fn player_sees_guardian(
-    world: &HexWfcWorld,
     player: &HexPlayerState,
     guardian: &HexGuardianState,
+    eye_height: f32,
+    clear: &dyn Fn(Vec3, Vec3) -> bool,
 ) -> bool {
     if !player.in_facility() {
         return false;
     }
-    // Guard order is load-bearing, not stylistic. Every conjunct is pure, so the result
-    // is identical whichever way round they run — but `route_between` is a full A* over
-    // the facility graph, and when the Guardian is far away or unreachable it exhausts
-    // the entire component (thousands of cells of `BTreeMap` work) before answering. It
-    // used to run FIRST, for every player, every tick. Profiling put `guardian.step` at
-    // 97% of an expensive simulation step, almost all of it here.
-    //
-    // The proximity and facing tests are O(1) and far more selective: a route of two
-    // cells means the Guardian is in this cell or one adjacent to it, which the 14 m
-    // radius already implies. So they now pre-filter, and the graph search runs only for
-    // the handful of ticks where the Guardian is genuinely close and in view.
-    let offset = guardian.position - player.position;
-    let distance = offset.length();
-    if !(0.15..=14.0).contains(&distance) {
-        return false;
-    }
+    let eye = player.position + Vec3::Y * eye_height;
     let forward = Vec3::new(player.yaw.sin(), 0.0, -player.yaw.cos());
-    if forward.dot(offset.normalize_or_zero()) <= 0.42 {
-        return false;
-    }
-    // Bounded at the dearest single connection: a route of two cells spans one edge, so it
-    // can never cost more than that. If the cheapest route prices above the bound then no
-    // one-edge route exists and the test is false either way, so the bound cannot change
-    // the answer — it only stops the search from crawling the whole component to say so.
-    world
-        .route_within_cost(player.cell, guardian.cell, MAX_CONNECTION_COST)
-        .is_some_and(|route| route.cells.len() <= 2)
+    let right = Vec3::new(player.yaw.cos(), 0.0, player.yaw.sin());
+    // Physical sight is authoritative. A visible body across an atrium or several
+    // corridor cells must freeze even where no short walking route connects it.
+    SEEN_AT.into_iter().any(|height| {
+        let offset = guardian.position + Vec3::Y * height - eye;
+        let distance = offset.length();
+        let ahead = offset.dot(forward);
+        let horizontal = offset.dot(right).atan2(ahead).abs();
+        let pitch = offset.y.atan2(offset.with_y(0.0).length());
+        distance <= super::SIGHT_REACH
+            && horizontal <= 1.14
+            && (pitch - player.pitch).abs() <= 0.85
+            && clear(eye, eye + offset)
+    })
 }
 
 #[cfg(test)]
@@ -396,6 +378,99 @@ mod tests {
             &mut players,
             &mut Vec::new(),
             HexGuardianBounds::OPEN,
+        );
+        assert_eq!(guardian.status, HexGuardianStatus::FrozenByPlayer);
+        assert_eq!(guardian.position, before);
+    }
+
+    #[test]
+    fn direct_sight_across_multiple_cells_freezes_but_a_wall_does_not() {
+        let (world, cell) = guardian_world();
+        let mut guardian = HexGuardianState::new(&world);
+        let before = guardian.position;
+        let id = PlayerId(0);
+        let distant = world.config.spawn();
+        let mut players = BTreeMap::from([(id, player(id, distant, before + Vec3::Z * 35.0, 0.0))]);
+        let lanterns = HexLanternState::new([id], &world);
+        guardian.step(
+            120,
+            &world,
+            &lanterns,
+            &mut players,
+            &mut Vec::new(),
+            HexGuardianBounds::OPEN,
+        );
+        assert_eq!(guardian.status, HexGuardianStatus::FrozenByPlayer);
+        assert_eq!(guardian.position, before);
+        guardian.step(
+            121,
+            &world,
+            &lanterns,
+            &mut players,
+            &mut Vec::new(),
+            HexGuardianBounds {
+                clear: &|_, _| false,
+                ..HexGuardianBounds::OPEN
+            },
+        );
+        assert_eq!(guardian.status, HexGuardianStatus::Active);
+        players.get_mut(&id).unwrap().cell = cell;
+        players.get_mut(&id).unwrap().pitch = 1.4;
+        guardian.step(
+            122,
+            &world,
+            &lanterns,
+            &mut players,
+            &mut Vec::new(),
+            HexGuardianBounds::OPEN,
+        );
+        assert_eq!(
+            guardian.status,
+            HexGuardianStatus::Active,
+            "looking up does not observe it"
+        );
+    }
+
+    #[test]
+    fn the_major_at_the_side_of_the_view_still_freezes() {
+        let (world, cell) = guardian_world();
+        let mut guardian = HexGuardianState::new(&world);
+        let before = guardian.position;
+        let id = PlayerId(0);
+        let angle = 1.0_f32;
+        let offset = Vec3::new(angle.sin(), 0.0, -angle.cos()) * 5.0;
+        let mut players = BTreeMap::from([(id, player(id, cell, before - offset, 0.0))]);
+        let lanterns = HexLanternState::new([id], &world);
+        guardian.step(
+            120,
+            &world,
+            &lanterns,
+            &mut players,
+            &mut Vec::new(),
+            HexGuardianBounds::OPEN,
+        );
+        assert_eq!(guardian.status, HexGuardianStatus::FrozenByPlayer);
+        assert_eq!(guardian.position, before);
+    }
+
+    #[test]
+    fn the_major_freezes_when_only_its_crown_is_visible_over_cover() {
+        let (world, cell) = guardian_world();
+        let mut guardian = HexGuardianState::new(&world);
+        let before = guardian.position;
+        let id = PlayerId(0);
+        let mut players = BTreeMap::from([(id, player(id, cell, before + Vec3::Z * 5.0, 0.0))]);
+        let lanterns = HexLanternState::new([id], &world);
+        guardian.step(
+            120,
+            &world,
+            &lanterns,
+            &mut players,
+            &mut Vec::new(),
+            HexGuardianBounds {
+                clear: &|_, to| to.y > before.y + 2.0,
+                ..HexGuardianBounds::OPEN
+            },
         );
         assert_eq!(guardian.status, HexGuardianStatus::FrozenByPlayer);
         assert_eq!(guardian.position, before);

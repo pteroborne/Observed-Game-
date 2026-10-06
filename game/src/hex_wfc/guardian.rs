@@ -4,12 +4,11 @@
 //! sees it, or frozen by an anchor lantern. This module only draws and sounds those
 //! states, and never writes anything back.
 //!
-//! - **Hunting:** the tiers turn, the eye scans its target, the seams glow, and it hums.
-//! - **Seen:** the tiers snap into line and the latch drops home. The hum stops, so
-//!   silence means frozen.
+//! - **Hunting:** the tiers turn, the eye scans its target, and movement scrapes like stone.
+//! - **Seen:** the tiers snap into line and the latch drops home. Stone friction stops.
 //! - **Anchored:** the same, with the anchor's purple clamped round its base and the
 //!   clamp in the lantern's dark glass voice.
-//! - **Let go:** the ratchet winds back up into the hum.
+//! - **Let go:** the mass takes up its weight and stone friction follows its motion.
 //! - **A catch:** the simulation sends the Guardian home in the same tick as the catch,
 //!   so the catch plays as its own short-lived Tumbler where the Guardian was last
 //!   drawn. Its sound is the event cue, played from the catch's cell (`audio`).
@@ -62,6 +61,7 @@ pub(super) struct GuardianArt {
     beam: Handle<StandardMaterial>,
     clamp: Handle<StandardMaterial>,
     stamp: Handle<StandardMaterial>,
+    hum: Handle<AudioSource>,
     latch: Handle<AudioSource>,
     release: Handle<AudioSource>,
     clamp_sound: Handle<AudioSource>,
@@ -194,6 +194,7 @@ pub(super) fn setup(
             ..default()
         }),
         stamp: materials.add(haze(style::catch_flare() * 0.12)),
+        hum: asset_server.load(observed_assets::GUARDIAN_HUM.path),
         latch: asset_server.load(observed_assets::GUARDIAN_LATCH.path),
         release: asset_server.load(observed_assets::GUARDIAN_RELEASE.path),
         clamp_sound: asset_server.load(observed_assets::GUARDIAN_CLAMP.path),
@@ -218,7 +219,7 @@ pub(super) fn setup(
         // restart it from the top.
         root.spawn((
             GuardianHum,
-            AudioPlayer::<AudioSource>(asset_server.load(observed_assets::GUARDIAN_HUM.path)),
+            AudioPlayer::<AudioSource>(art.hum.clone()),
             PlaybackSettings {
                 mode: PlaybackMode::Loop,
                 volume: Volume::Linear(0.0),
@@ -229,7 +230,7 @@ pub(super) fn setup(
             Transform::IDENTITY,
         ));
     });
-    commands.insert_resource(released::ReleasedArt::new(&mut meshes));
+    commands.insert_resource(released::ReleasedArt::new(&mut meshes, &asset_server));
     commands.insert_resource(art);
     commands.insert_resource(GuardianPresentation {
         state: State::Hunting,
@@ -396,18 +397,8 @@ pub(super) fn sync(
         shown.since = clock;
     }
 
-    let at = match shown.at {
-        Some(at) if at.distance(floor) < SNAP => {
-            let step = GLIDE * time.delta_secs();
-            let to = floor - at;
-            if to.length() <= step {
-                floor
-            } else {
-                at + to.normalize() * step
-            }
-        }
-        _ => floor,
-    };
+    let before = shown.at;
+    let at = drawn_position(before, floor, state, time.delta_secs());
     shown.at = Some(at);
 
     // It looks at whoever it is after, or at whoever is watching.
@@ -437,7 +428,7 @@ pub(super) fn sync(
             LIGHT_FROZEN
         };
     }
-    let wanted = if state == State::Hunting { 1.0 } else { 0.0 };
+    let wanted = slide_gain(state, before, at, time.delta_secs());
     shown.hum += (wanted - shown.hum) * (HUM_FADE * time.delta_secs()).min(1.0);
     if let Ok((mut transform, sink)) = hum.single_mut() {
         transform.translation = eye;
@@ -445,6 +436,35 @@ pub(super) fn sync(
             sink.set_volume(Volume::Linear(shown.hum * HUM_VOLUME * volume));
         }
     }
+}
+
+/// A frozen model stops exactly where it was seen, including any unfinished glide.
+pub(super) fn drawn_position(previous: Option<Vec3>, floor: Vec3, state: State, dt: f32) -> Vec3 {
+    let Some(at) = previous else {
+        return floor;
+    };
+    if state.frozen() {
+        return at;
+    }
+    let step = GLIDE * dt;
+    let to = floor - at;
+    if to.length() >= SNAP || to.length() <= step {
+        floor
+    } else {
+        at + to.normalize() * step
+    }
+}
+
+/// Stone friction follows visible movement; idle, frozen and teleported bodies are quiet.
+pub(super) fn slide_gain(state: State, before: Option<Vec3>, at: Vec3, dt: f32) -> f32 {
+    let Some(before) = before else {
+        return 0.0;
+    };
+    let distance = before.distance(at);
+    if state != State::Hunting || dt <= 0.0 || !(0.001..SNAP).contains(&distance) {
+        return 0.0;
+    }
+    0.4 + 0.6 * (distance / (dt * GLIDE)).min(1.0)
 }
 
 /// Play the catches out, and clear them away.
@@ -527,46 +547,4 @@ fn one_shot(commands: &mut Commands, source: Handle<AudioSource>, volume: f32, a
 }
 
 #[cfg(test)]
-mod tests {
-    use observed_guardian::form::State;
-    use observed_match::hex_wfc::HexGuardianStatus;
-
-    use super::{Transition, state_for, transition};
-
-    #[test]
-    fn every_status_is_drawn_as_its_own_state() {
-        assert_eq!(state_for(HexGuardianStatus::Active), State::Hunting);
-        assert_eq!(
-            state_for(HexGuardianStatus::FrozenByPlayer),
-            State::FrozenBySight
-        );
-        assert_eq!(
-            state_for(HexGuardianStatus::FrozenByAnchor),
-            State::FrozenByAnchor
-        );
-    }
-
-    /// Each change of state that means something to a player has a sound, and the rest
-    /// do not: being seen latches, an anchor clamps, being let go unwinds.
-    #[test]
-    fn a_change_of_state_is_heard() {
-        use State::{FrozenByAnchor, FrozenBySight, Hunting};
-        assert_eq!(transition(Hunting, FrozenBySight), Some(Transition::Latch));
-        assert_eq!(transition(Hunting, FrozenByAnchor), Some(Transition::Clamp));
-        assert_eq!(
-            transition(FrozenBySight, FrozenByAnchor),
-            Some(Transition::Clamp)
-        );
-        assert_eq!(
-            transition(FrozenBySight, Hunting),
-            Some(Transition::Release)
-        );
-        assert_eq!(
-            transition(FrozenByAnchor, Hunting),
-            Some(Transition::Release)
-        );
-        // Anchored and then also seen: already locked, nothing new to hear.
-        assert_eq!(transition(FrozenByAnchor, FrozenBySight), None);
-        assert_eq!(transition(Hunting, Hunting), None);
-    }
-}
+mod tests;

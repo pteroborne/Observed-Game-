@@ -5,20 +5,9 @@
 //! composed; this one renders **only what the team has discovered**, because its
 //! job is to be a survivor's sketch.
 //!
-//! A tile is a pixel. On its own it means very little, so the map is built to
-//! show what the tiles *compose*, on four channels that do not compete:
-//!
-//! | channel | carries |
-//! |---|---|
-//! | colour | the district register |
-//! | height | the archetype |
-//! | footprint width | room / hallway / vertical — rooms fill their hex and meet with no seam, corridors are ribbons |
-//! | link bars | connectivity: one bar per port pair the survivor has seen from both sides |
-//! | cap plate | a cell the survivor is holding: an anchor, or a teammate standing on it |
-//! | literal label | an entered or locally surveyed room's function |
-//!
-//! Signal-tier cells (you, the exit) are recoloured outright so they punch
-//! through the district palette the way the Legibility Contract requires.
+//! Uses the replay's authored hulls and camera-facing wall cutaway. Only fresh,
+//! discovered cells are projected; rooms need their whole footprint known before
+//! their hulls can be shown. Stale and partial rooms remain flat memory markers.
 
 mod build;
 #[cfg(test)]
@@ -54,11 +43,15 @@ const ISO_PITCH: f32 = -0.615_479_7;
 #[derive(Component)]
 pub(crate) struct HexMapVisual;
 
-/// Only the per-hex solids. Links ride at midpoints between cells and caps ride
-/// above them, so a gate that asks "does every drawn thing stand over a hex the
-/// team knows" has to be able to ask about cells specifically.
+/// Known cell identities for inspection and leak checks. Authored hulls are
+/// tagged separately because a room can own many hulls across multiple cells.
 #[derive(Component)]
 pub(crate) struct HexMapCell;
+
+#[derive(Component, Reflect)]
+pub(crate) struct HexMapHull {
+    pub(crate) source: (u16, u16, u8),
+}
 
 #[derive(Component)]
 pub(crate) struct HexMapPlayerBeacon;
@@ -112,6 +105,10 @@ pub(in crate::hex_wfc) fn setup(mut commands: Commands) {
             DespawnOnExit(GameState::HexWfc),
             Camera3d::default(),
             Msaa::Off,
+            AmbientLight {
+                brightness: 600.0,
+                ..default()
+            },
             Camera {
                 order: MAP_CAMERA_ORDER,
                 is_active: false,
@@ -134,7 +131,7 @@ pub(in crate::hex_wfc) fn setup(mut commands: Commands) {
     commands.spawn((
         DespawnOnExit(GameState::HexWfc),
         DirectionalLight {
-            illuminance: 3_200.0,
+            illuminance: 6_000.0,
             shadow_maps_enabled: false,
             ..default()
         },
@@ -381,8 +378,6 @@ mod tests {
             room_cells: 3,
             hall_cells: 8,
             vertical_cells: 2,
-            lateral_links: 11,
-            vertical_links: 1,
             permanent: 5,
             mutable: 8,
             floors: [0u8, 1].into_iter().collect(),
@@ -394,8 +389,8 @@ mod tests {
         // named counterpart in the legend.
         for channel in [
             "colour = district",
-            "width = room/hallway",
-            "height = archetype",
+            "walls & stairs = real geometry",
+            "flat tiles = stale or incomplete room",
             "capped = anchor / teammate",
             "cyan = you & facing",
             "green = exit",
@@ -407,7 +402,6 @@ mod tests {
             assert!(text.contains(channel), "legend must document {channel}");
         }
         assert!(text.contains("decision"), "known rooms are named");
-        assert!(text.contains("11 lateral"), "connections are counted");
     }
 
     #[test]

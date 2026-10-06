@@ -1049,12 +1049,12 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
         Register::LiminalGrid => {
             palette.ambient_color = Color::srgb(0.62, 0.58, 0.38);
             palette.ambient_brightness = 145.0;
-            palette.fog_color = Color::srgb(0.035, 0.038, 0.014);
+            palette.fog_color = Color::srgb(0.038, 0.030, 0.014);
             palette.fog_start = 13.0;
             palette.fog_end = 41.0;
-            palette.light_color = Color::srgb(0.82, 0.98, 0.70);
+            palette.light_color = Color::srgb(1.0, 0.92, 0.76);
             palette.accent = LinearRgba::rgb(0.38, 0.32, 0.10);
-            palette.key_color = Color::srgb(0.92, 0.93, 0.67);
+            palette.key_color = Color::srgb(1.0, 0.95, 0.82);
             // The uncanny grid is fluorescent-flat; hard fixture shadows
             // would create false obstacle silhouettes on traversable floors.
             palette.key_shadows_enabled = false;

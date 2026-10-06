@@ -260,10 +260,22 @@ impl RapierTraversalScene {
     /// controller does, so it agrees with what a body would walk into.
     #[must_use]
     pub fn ray_distance(&self, origin: Vec3, direction: Vec3, reach: f32) -> Option<f32> {
+        self.ray_distance_where(origin, direction, reach, &|_| true)
+    }
+
+    /// A structural ray with an additional stable-ID filter, for sight through
+    /// transparent colliders that still stop bodies and tools.
+    #[must_use]
+    pub fn ray_distance_where(
+        &self,
+        origin: Vec3,
+        direction: Vec3,
+        reach: f32,
+        include: &dyn Fn(super::StableColliderId) -> bool,
+    ) -> Option<f32> {
         let active = |handle: ColliderHandle, collider: &Collider| {
-            self.stable_handles
-                .get(&super::StableColliderId(collider.user_data as u32))
-                == Some(&handle)
+            let id = super::StableColliderId(collider.user_data as u32);
+            self.stable_handles.get(&id) == Some(&handle) && include(id)
         };
         let query = self.broad_phase.as_query_pipeline(
             self.narrow_phase.query_dispatcher(),
@@ -673,6 +685,30 @@ mod tests {
         let spec = super::super::ArenaSpec::from_legacy(&arena);
         let scene = RapierTraversalScene::from_arena_spec(&spec);
         assert_eq!(scene.collider_count(), spec.colliders.len());
+    }
+
+    #[test]
+    fn filtered_sight_crosses_a_solid_collider_without_changing_body_collision() {
+        let id = super::super::StableColliderId(1);
+        let spec = super::super::ArenaSpec {
+            colliders: vec![super::super::ColliderSpec::cuboid(
+                id,
+                Vec3::new(1.5, 1.0, 0.0),
+                Vec3::new(0.2, 1.0, 1.0),
+            )],
+            floor_y: 0.0,
+            safety_center: Vec3::new(0.0, 2.0, 0.0),
+            safety_half: Vec3::splat(5.0),
+        };
+        let scene = RapierTraversalScene::from_arena_spec(&spec);
+        let from = Vec3::new(0.0, 1.0, 0.0);
+        assert!(scene.ray_distance(from, Vec3::X, 3.0).is_some());
+        assert!(
+            scene
+                .ray_distance_where(from, Vec3::X, 3.0, &|hit| hit != id)
+                .is_none()
+        );
+        assert!(!scene.capsule_is_clear(Vec3::new(1.5, 0.9, 0.0), 0.35, 0.9));
     }
 
     #[test]

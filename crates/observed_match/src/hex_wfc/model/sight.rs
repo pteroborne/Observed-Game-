@@ -97,7 +97,9 @@ impl HexWfcMatch {
                 let direction = forward * pitch.cos() + Vec3::Y * pitch.sin();
                 let stop = self
                     .physics
-                    .ray_distance(eye, direction, SIGHT_REACH)
+                    .ray_distance_where(eye, direction, SIGHT_REACH, &|id| {
+                        self.geometry.blocks_sight(id)
+                    })
                     .unwrap_or(SIGHT_REACH);
                 let last = (stop - SHY).max(0.0);
                 let mut at = 0.0_f32;
@@ -123,6 +125,23 @@ impl HexWfcMatch {
         }
         sight
     }
+}
+
+/// Sight passes transparent structural colliders; body and tool rays keep them solid.
+pub(super) fn line_is_clear(
+    physics: &observed_traversal::rapier_controller::RapierTraversalScene,
+    geometry: &crate::hex_wfc::HexWfcGeometrySnapshot,
+    from: Vec3,
+    to: Vec3,
+) -> bool {
+    let offset = to - from;
+    let length = offset.length();
+    length < 1e-4
+        || physics
+            .ray_distance_where(from, offset / length, length, &|id| {
+                geometry.blocks_sight(id)
+            })
+            .is_none()
 }
 
 #[cfg(test)]
@@ -365,9 +384,15 @@ mod tests {
                     }
                     game.guardian.cell = to;
                     game.guardian.position = centre;
-                    let seen = [-0.5, 0.3, 1.1]
-                        .into_iter()
-                        .any(|height| game.physics.line_is_clear(eye, centre + Vec3::Y * height));
+                    let seen = [-0.2, 0.3, 1.1, 1.9, 2.5].into_iter().any(|height| {
+                        let point = centre + Vec3::Y * height;
+                        let offset = point - eye;
+                        let in_view = (offset.y.atan2(offset.with_y(0.0).length())
+                            - game.players[&BODY].pitch)
+                            .abs()
+                            <= 0.85;
+                        in_view && super::line_is_clear(&game.physics, &game.geometry, eye, point)
+                    });
                     if seen && clear >= 1 || !seen && blocked >= 1 {
                         continue;
                     }

@@ -326,13 +326,13 @@ pub const GUARDIAN_DREAD: AssetSlot = AssetSlot {
     path: "sounds/guardian_dread.ogg",
     hint: "subtle CC0 guardian proximity dread cue",
 };
-/// The major Guardian (the Tumbler) hunting: a bronze hum under a turning ratchet,
+/// The major Guardian (the Tumbler) moving: a giant stone sliding,
 /// looped. Synthesised by `tools/generate_guardian_audio.py`.
 pub const GUARDIAN_HUM: AssetSlot = AssetSlot {
     name: "guardian_hum",
     kind: AssetKind::Sound,
     path: "sounds/guardian/tumbler_hum.ogg",
-    hint: "looping mechanical hum of a hunting major Guardian",
+    hint: "looping heavy stone friction of a moving major Guardian",
 };
 /// Seen: the ratchet runs out and the latch drops home. Silence after it means frozen.
 pub const GUARDIAN_LATCH: AssetSlot = AssetSlot {
@@ -361,6 +361,13 @@ pub const GUARDIAN_CATCH: AssetSlot = AssetSlot {
     kind: AssetKind::Sound,
     path: "sounds/guardian/tumbler_catch.ogg",
     hint: "a major Guardian catching an unwatched Observer",
+};
+/// A minor Guardian flipping onto its next face: a hollow box thud and edge clack.
+pub const MINOR_GUARDIAN_STEP: AssetSlot = AssetSlot {
+    name: "minor_guardian_step",
+    kind: AssetKind::Sound,
+    path: "sounds/guardian/roller_fall.ogg",
+    hint: "hollow box impact when a minor Guardian rolls onto a face",
 };
 pub const RUNNER_STAND: AssetSlot = AssetSlot {
     name: "runner_stand",
@@ -550,6 +557,7 @@ pub const SLOTS: &[AssetSlot] = &[
     GUARDIAN_RELEASE,
     GUARDIAN_CLAMP,
     GUARDIAN_CATCH,
+    MINOR_GUARDIAN_STEP,
     RUNNER_STAND,
     RUNNER_WALK1,
     RUNNER_WALK2,

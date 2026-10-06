@@ -10,9 +10,8 @@ burst of band-limited grit, not a sine ping; hiss is dark rush, never white nois
 bronze rings an octave or more down. Every cue is driven into a soft saturator for grit
 and then low-passed, so the harmonics the saturation adds stay warm instead of fizzing.
 
-The Tumbler's sounds carry its states by ear: hunting is a bronze drone under a
-grinding, turning ratchet; being seen cuts it with a latch, so silence means frozen;
-being let go unwinds back into the hum; an anchor clamps on in the lantern's darker
+The Tumbler's movement sounds like a giant stone sliding: deep weight and granular
+friction. Being seen drags it to a heavy stop; being let go takes its weight up again; an anchor clamps on in the lantern's darker
 glass, not the Guardian's bronze; a catch rises and stamps. The Plumb and Roller have
 their own palettes for the form lab.
 
@@ -33,7 +32,7 @@ TAU = math.tau
 
 # name: (duration seconds, peak, loop, saturation drive, low-pass cutoff Hz)
 CUES = {
-    'tumbler_hum': (4.0, 0.30, True, 2.6, 1300),
+    'tumbler_hum': (4.0, 0.40, True, 1.8, 1100),
     'tumbler_latch': (0.95, 0.45, False, 3.0, 1500),
     'tumbler_release': (0.85, 0.38, False, 2.6, 1300),
     'tumbler_clamp': (1.25, 0.40, False, 1.8, 2200),
@@ -45,11 +44,6 @@ CUES = {
     'roller_balance': (1.2, 0.34, False, 1.3, 1500),
     'roller_catch': (1.7, 0.46, False, 3.0, 1400),
 }
-
-# The Tumbler's ratchet: one tick every this many seconds while hunting, and the gear
-# teeth grinding under it. Both divide the 4 s loop exactly.
-TICK = 4.0 / 21
-TOOTH = 4.0 / 96
 
 
 class Noise:
@@ -136,13 +130,6 @@ def synth(name, duration, seed):
     # Loops are made long by half a second, which is crossfaded into their head.
     extra = 0.5 if loop else 0.0
     count = round(RATE * (duration + extra))
-    ticks = []
-    teeth = []
-    if name == 'tumbler_hum':
-        ticks = [(k * TICK + rng.uniform(-0.012, 0.012), rng.uniform(0.7, 1.0))
-                 for k in range(-1, 26)]
-        teeth = [(k * TOOTH + rng.uniform(-0.004, 0.004), rng.uniform(0.3, 1.0))
-                 for k in range(-1, 110)]
     rattle = [rng.uniform(0.0, 0.05) for _ in range(8)]
     noise = Noise(rng)
     samples = []
@@ -152,37 +139,22 @@ def synth(name, duration, seed):
         x = t / duration
         low, grit = noise.step()
         if name == 'tumbler_hum':
-            # Bronze drone on 55 Hz, its fifth and octave, breathing twice per loop,
-            # under grinding teeth and a turning ratchet.
-            breath = 0.75 + 0.25 * math.sin(TAU * 0.5 * t)
-            s = breath * (0.6 * math.sin(TAU * 55 * t) + 0.3 * math.sin(TAU * 82.5 * t)
-                          + 0.15 * math.sin(TAU * 110 * t))
-            s += 0.6 * low * breath
-            for at, level in teeth:
-                s += 0.18 * level * grain(t, at, 140, grit)
-            for at, level in ticks:
-                s += crunch(t, at, 150, grit, 0.9 * level)
+            # A giant stone sliding: deep weight and uneven granular friction,
+            # without a pitched drone or a machine's repeating ratchet.
+            pressure = 0.75 + 0.16 * math.sin(TAU * 0.25 * t) + 0.09 * math.sin(TAU * 0.75 * t)
+            roughness = 0.7 + 0.3 * math.sin(TAU * 2.25 * t) ** 2
+            s = pressure * (2.5 * low + 1.1 * grit * roughness)
+            s += 0.18 * math.sin(TAU * 32 * t) * pressure
         elif name == 'tumbler_latch':
-            # The ratchet runs faster and faster, then the latch drops home.
-            s = 0.0
-            for k in range(9):
-                at = 0.2 * (1 - (1 - k / 9) ** 1.8)
-                s += crunch(t, at, 170 + 12 * k, grit, 0.8)
-            s += 1.3 * thump(t, 0.22, 52, 14)
-            s += 1.1 * grain(t, 0.22, 22, grit) + 0.5 * knock(t, 0.22, 240, 30)
-            s += 0.4 * bronze(t, 0.22, 110, 4.5)
-            s += 0.7 * low * math.exp(-max(0.0, t - 0.22) * 16) * (t > 0.22)
+            # The sliding mass comes to rest: grit drags out into a heavy stop.
+            drag = max(0.0, 1 - t / 0.24)
+            s = (1.3 * low + 0.65 * grit) * drag * min(1.0, t * 500)
+            s += 1.3 * thump(t, 0.18, 44, 13) + 0.6 * grain(t, 0.18, 28, grit)
         elif name == 'tumbler_release':
-            # The latch lifts, and the ratchet winds back up into the hum.
-            s = 0.7 * crunch(t, 0.02, 200, grit) + 0.5 * thump(t, 0.02, 70, 26)
-            phase += TAU * (32 + 23 * x) / RATE
-            s += 0.45 * math.sin(phase) * min(1.0, x * 2) * (1 - 0.3 * x)
-            s += 0.3 * low * min(1.0, x * 2)
-            k, at = 0, 0.12
-            while at < duration - 0.02:
-                s += crunch(t, at, 140 + 40 * x, grit, 0.75)
-                k += 1
-                at += 0.16 * (1 - 0.55 * min(1.0, k / 8))
+            # Weight takes up again: a low initial knock and stone friction rising.
+            rise = min(1.0, t / 0.3)
+            s = 0.6 * thump(t, 0.015, 52, 20)
+            s += (2.0 * low + 0.8 * grit) * rise * (1 - 0.25 * x)
         elif name == 'tumbler_clamp':
             # The anchor's voice: a falling rush, a magnetic thunk, a dark glass dyad.
             s = 0.8 * low * max(0.0, 1 - t / 0.3) * min(1.0, t * 40)
@@ -225,10 +197,13 @@ def synth(name, duration, seed):
             s += 1.4 * thump(t, 0.5, 42, 7.5) + 1.0 * grain(t, 0.5, 16, grit)
             s += 0.3 * bronze(t, 0.5, 165, 3)
         elif name == 'roller_fall':
-            # A hollow cage landing on a face: a thud, and its struts crunching.
-            s = 1.3 * thump(t, 0.0, 52, 13) + 0.9 * low * math.exp(-t * 16)
-            for k in range(5):
-                s += crunch(t, 0.01 + rattle[k], 240 + 60 * k, grit, 0.55)
+            # A hollow box flipping onto its next face: low panel resonance,
+            # a short edge clack and a small rebound, with no sustained voice.
+            s = 1.2 * thump(t, 0.003, 58, 13) + 0.65 * low * math.exp(-t * 20)
+            s += 0.38 * math.sin(TAU * 170 * t) * math.exp(-t * 17)
+            s += 0.17 * math.sin(TAU * 277 * t) * math.exp(-t * 26)
+            s += 0.45 * grain(t, 0.003, 80, grit)
+            s += 0.3 * knock(t, 0.085, 95, 45) + 0.2 * grain(t, 0.085, 90, grit)
         elif name == 'roller_balance':
             # It tips onto one point, and a low pure tone holds, as if nothing should.
             s = 0.7 * thump(t, 0.0, 70, 18) + 0.4 * grain(t, 0.0, 45, grit)

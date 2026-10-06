@@ -86,12 +86,10 @@ pub(super) fn details(
         "capped = anchor / teammate"
     };
     format!(
-        "Only your team's discoveries are drawn.\n{} traversed | {} glimpsed | {} stale\nStale cells may have changed since you saw them.\nRooms: {rooms}\n{} lateral | {} vertical links seen from both sides\n{} may change | {} permanent | {} held\n{stability}\ncolour = district | width = room/hallway\nheight = archetype | {cap}\ncyan = you & facing | green = exit\npurple = device/held | amber = room\norientation: N (up-left) E (up-right) S (down-right) W (down-left)\n{heading}",
+        "Only your team's discoveries are drawn.\n{} traversed | {} glimpsed | {} stale\nStale cells may have changed since you saw them.\nRooms: {rooms}\n{} may change | {} permanent | {} held\n{stability}\ncolour = district | walls & stairs = real geometry\nflat tiles = stale or incomplete room | {cap}\ncyan = you & facing | green = exit\npurple = device/held | amber = room\norientation: N (up-left) E (up-right) S (down-right) W (down-left)\n{heading}",
         census.traversed,
         census.glimpsed,
         census.stale,
-        census.lateral_links,
-        census.vertical_links,
         census.mutable,
         census.permanent,
         census.held,

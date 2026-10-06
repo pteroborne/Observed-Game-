@@ -346,6 +346,7 @@ pub(super) fn setup_runtime(
 }
 
 pub(super) fn finish_runtime(
+    capture: Option<Res<super::HexWfcCapture>>,
     desk: Option<Res<super::architect::ArchitectDesk>>,
     spectator: Option<Res<crate::sim::state::SpectatorBot>>,
     mut runtime: ResMut<HexWfcRuntime>,
@@ -353,7 +354,11 @@ pub(super) fn finish_runtime(
     mut replay: Option<ResMut<crate::sim::replay::ReplayTape>>,
     mut next: ResMut<NextState<crate::GameState>>,
 ) {
-    if runtime.match_state.status != HexMatchStatus::Finished {
+    if runtime.match_state.status != HexMatchStatus::Finished
+        || capture
+            .as_ref()
+            .is_some_and(|capture| capture.mode == super::HexWfcCaptureMode::Map)
+    {
         return;
     }
     runtime.results_delay_frames = runtime.results_delay_frames.saturating_add(1);

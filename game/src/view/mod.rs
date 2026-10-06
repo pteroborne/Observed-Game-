@@ -7,6 +7,7 @@
 pub(crate) mod actor_metadata;
 pub(crate) mod assets;
 pub(crate) mod components;
+pub(crate) mod cutaway;
 pub(crate) mod environment;
 pub(crate) mod sprites;
 pub(crate) mod theme;

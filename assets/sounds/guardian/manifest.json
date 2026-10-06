@@ -2,20 +2,20 @@
   "tumbler_hum": {
     "duration": 4.0,
     "loop": true,
-    "peak_dbfs": -10.46,
-    "rms_dbfs": -15.78
+    "peak_dbfs": -7.96,
+    "rms_dbfs": -18.9
   },
   "tumbler_latch": {
     "duration": 0.95,
     "loop": false,
     "peak_dbfs": -6.94,
-    "rms_dbfs": -20.14
+    "rms_dbfs": -19.66
   },
   "tumbler_release": {
     "duration": 0.85,
     "loop": false,
     "peak_dbfs": -8.4,
-    "rms_dbfs": -13.87
+    "rms_dbfs": -17.49
   },
   "tumbler_clamp": {
     "duration": 1.25,
@@ -51,7 +51,7 @@
     "duration": 0.55,
     "loop": false,
     "peak_dbfs": -7.13,
-    "rms_dbfs": -17.93
+    "rms_dbfs": -16.94
   },
   "roller_balance": {
     "duration": 1.2,

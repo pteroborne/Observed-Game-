@@ -147,6 +147,21 @@ fn solid(points: &[Vec3], normal: Vec3, along: Vec3) -> bool {
 /// wall of `face` and the window crosses it. Cell-local in and out.
 #[must_use]
 pub fn cut(hull: &[Vec3], face: HexFace) -> Option<Vec<Vec<Vec3>>> {
+    cut_with_opening(hull, face, SILL, LINTEL, None)
+}
+
+/// A Backrooms window is a small high transom, never a panoramic wall.
+pub(super) fn cut_transom(hull: &[Vec3], face: HexFace) -> Option<Vec<Vec<Vec3>>> {
+    cut_with_opening(hull, face, 1.65, 2.25, Some(0.6))
+}
+
+fn cut_with_opening(
+    hull: &[Vec3],
+    face: HexFace,
+    sill: f32,
+    lintel: f32,
+    width: Option<f32>,
+) -> Option<Vec<Vec<Vec3>>> {
     if sector_of(hull) != Some(face) {
         return None;
     }
@@ -156,8 +171,8 @@ pub fn cut(hull: &[Vec3], face: HexFace) -> Option<Vec<Vec<Vec3>>> {
     if reach < apothem - AT_THE_EDGE || to - from < WALL_LENGTH {
         return None;
     }
-    let (sill, lintel) = (FLOOR_SLAB_TOP + SILL, FLOOR_SLAB_TOP + LINTEL);
-    let width = half - JAMB;
+    let (sill, lintel) = (FLOOR_SLAB_TOP + sill, FLOOR_SLAB_TOP + lintel);
+    let width = width.unwrap_or(half - JAMB);
     let band = clip(&clip(hull, -Vec3::Y, -sill), Vec3::Y, lintel);
     let opening = clip(&clip(&band, along, width), -along, width);
     if !solid(&opening, normal, along) {
@@ -215,6 +230,20 @@ mod tests {
         });
         (lo..=hi).contains(&point.y)
             && observed_traversal::point_in_convex_plan_hull(hull, Vec2::new(point.x, point.z))
+    }
+
+    #[test]
+    fn a_backrooms_transom_keeps_most_of_the_wall_solid() {
+        for face in HexFace::LATERAL {
+            let pieces = super::cut_transom(&wall(face, 0.4), face).unwrap();
+            let (normal, along, apothem, _) = frame(face);
+            let at = |t: f32, y: f32| normal * (apothem - 0.2) + along * t + Vec3::Y * y;
+            let drawn = |p: Vec3| pieces.iter().any(|piece| inside(piece, p));
+            assert!(!drawn(at(0.0, FLOOR_SLAB_TOP + 1.95)));
+            assert!(drawn(at(1.0, FLOOR_SLAB_TOP + 1.95)));
+            assert!(drawn(at(0.0, FLOOR_SLAB_TOP + 1.4)));
+            assert!(drawn(at(0.0, FLOOR_SLAB_TOP + 2.5)));
+        }
     }
 
     #[test]

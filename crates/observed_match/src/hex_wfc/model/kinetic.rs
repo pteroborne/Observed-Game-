@@ -98,7 +98,9 @@ impl HexWfcMatch {
     pub fn kinetic_target(&self, player: PlayerId) -> Option<HexKineticTarget> {
         let (eye, look) = self.eye_and_look(player)?;
         let config = self.content.traversal_profile().controller();
-        let radius = config.radius + AIM_TOLERANCE;
+        // The visible Roller is wider than its narrow traversal capsule. Select its
+        // cage as well as the capsule so a crosshair on a visible flank lands.
+        let radius = (config.radius + AIM_TOLERANCE).max(0.85);
         let half_height = config.half_height + AIM_TOLERANCE;
         let mut best: Option<HexKineticTarget> = None;
         for (&id, guardian) in &self.released {

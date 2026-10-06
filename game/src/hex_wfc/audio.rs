@@ -1,21 +1,13 @@
-//! Event one-shots for the hex match, routed through the shared SFX volume.
+//! Gameplay one-shots and grounded footsteps, routed through the shared SFX volume.
 //!
-//! Every event with a known place plays from that place: Bevy's spatial audio
-//! (stereo panning plus inverse-square distance falloff, via `rodio`) is
-//! enabled and the source `Transform` is set to the event's cell — the same
-//! location `feedback.rs` blooms a beacon at (`feedback::event_cells`), so an
-//! event that has a place to be seen also has a place to be heard from. A
-//! player should be able to hear a keystone claimed down the hall before they
-//! round the corner and see it, per the standing diegetic-feedback rule
-//! (`agents.md`). Events the simulation genuinely has no location for yet
-//! (`MutationWarning`, `MutationCancelled`, `MatchFinished` — see
-//! `feedback::event_cells`) play non-spatially, from the listener: that is
-//! what "the whole facility, no particular direction" sounds like, and it is
-//! honest about not knowing where.
+//! Located events use spatial audio at the hex-cell scale. Self footsteps and the
+//! followed Observer's catch stay listener-relative: imprisonment immediately moves
+//! the listener to a separate maze, far away from the original catch location.
 
 use bevy::audio::{PlaybackMode, SpatialListener, SpatialScale, Volume};
 use bevy::prelude::*;
 use observed_hex::hex_origin;
+use observed_match::hex_wfc::{HexMatchEvent, HexMatchEventKind};
 
 use super::cues::{HexWfcSound, cue_for};
 use super::feedback::event_cells;
@@ -47,11 +39,13 @@ pub(super) struct HexWfcAudioAssets {
     escape: Handle<AudioSource>,
     complete: Handle<AudioSource>,
     guardian: Handle<AudioSource>,
+    footstep: Handle<AudioSource>,
 }
 
 #[derive(Resource, Default)]
 pub(super) struct HexWfcAudioState {
     last_event_tick: u64,
+    stride: FootstepStride,
 }
 
 pub(super) fn setup(
@@ -67,6 +61,7 @@ pub(super) fn setup(
         complete: assets.load(observed_assets::EXIT_UNLOCK.path),
         // The Tumbler's own catch: its tiers telescope up and stamp.
         guardian: assets.load(observed_assets::GUARDIAN_CATCH.path),
+        footstep: assets.load(observed_assets::FOOTSTEP.path),
     });
     commands.insert_resource(HexWfcAudioState::default());
     // GameCam is the app's one persistent world camera (`game/src/lib.rs`), reused across
@@ -98,6 +93,22 @@ pub(super) fn sync(
     }
     state.last_event_tick = tick;
     let master = settings.effective_sfx_volume();
+    let player = runtime.viewed();
+    if state.stride.step(
+        player.id,
+        player.position,
+        player.place != observed_match::hex_wfc::HexBodyPlace::Void
+            && !player.escaped
+            && runtime.match_state.body_grounded(player.id),
+    ) {
+        play(
+            &mut commands,
+            assets.footstep.clone(),
+            0.55 * master,
+            "Observer footstep",
+            None,
+        );
+    }
     let delta = runtime.match_state.last_relayout_delta.as_ref();
     for event in &runtime.match_state.recent_events {
         if super::cues::presented_by_the_tool(event.kind) {
@@ -107,9 +118,13 @@ pub(super) fn sync(
         // One sound per event even when a mutation touches several cells (the first —
         // deterministic, since `changed_cells` is a `BTreeSet` — stands in for the whole
         // beat); the beacon still blooms at each of them.
-        let position = event_cells(event, delta)
-            .first()
-            .map(|&cell| Vec3::from_array(hex_origin(cell)) + Vec3::Y * EYE_OFFSET);
+        let position = (!follows_listener(event, player.id))
+            .then(|| {
+                event_cells(event, delta)
+                    .first()
+                    .map(|&cell| Vec3::from_array(hex_origin(cell)) + Vec3::Y * EYE_OFFSET)
+            })
+            .flatten();
         play(
             &mut commands,
             sound(&assets, definition.sound),
@@ -117,6 +132,38 @@ pub(super) fn sync(
             "Hex WFC event cue",
             position,
         );
+    }
+}
+
+fn follows_listener(event: &HexMatchEvent, player: observed_core::PlayerId) -> bool {
+    event.kind == HexMatchEventKind::GuardianCatch && event.player == Some(player)
+}
+
+/// Ground distance drives cadence; idle, falls and teleports never make footsteps.
+#[derive(Default)]
+struct FootstepStride {
+    previous: Option<(observed_core::PlayerId, Vec3)>,
+    distance: f32,
+}
+
+impl FootstepStride {
+    fn step(&mut self, player: observed_core::PlayerId, at: Vec3, grounded: bool) -> bool {
+        let previous = self.previous.replace((player, at));
+        let Some((previous_player, before)) = previous else {
+            return false;
+        };
+        let travelled = (at - before).with_y(0.0).length();
+        if !grounded || player != previous_player || at.distance(before) > 1.0 {
+            self.distance = 0.0;
+            return false;
+        }
+        self.distance += travelled;
+        if self.distance >= 1.8 {
+            self.distance %= 1.8;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -164,6 +211,41 @@ mod tests {
     use super::*;
     use bevy::ecs::system::RunSystemOnce;
     use observed_hex::HexCoord;
+
+    #[test]
+    fn the_followed_players_catch_is_audible_after_the_prison_teleport() {
+        let player = observed_core::PlayerId(0);
+        let event = HexMatchEvent {
+            tick: 1,
+            kind: HexMatchEventKind::GuardianCatch,
+            player: Some(player),
+            cell: Some(HexCoord {
+                q: 0,
+                r: 0,
+                level: 0,
+            }),
+        };
+        assert!(follows_listener(&event, player));
+        assert!(!follows_listener(&event, observed_core::PlayerId(1)));
+    }
+
+    #[test]
+    fn footsteps_follow_ground_distance_and_skip_air_and_teleports() {
+        let player = observed_core::PlayerId(0);
+        let mut stride = FootstepStride::default();
+        assert!(!stride.step(player, Vec3::ZERO, true));
+        for _ in 0..120 {
+            assert!(!stride.step(player, Vec3::ZERO, true));
+        }
+        let mut steps = 0;
+        for i in 1..=40 {
+            steps += usize::from(stride.step(player, Vec3::X * (i as f32 * 0.1), true));
+        }
+        assert_eq!(steps, 2);
+        assert!(!stride.step(player, Vec3::X * 4.2, false));
+        assert!(!stride.step(player, Vec3::X * 20.0, true));
+        assert!(!stride.step(observed_core::PlayerId(1), Vec3::X * 20.2, true));
+    }
 
     #[test]
     fn spatial_cue_sets_spatial_playback_scale_and_transform() {

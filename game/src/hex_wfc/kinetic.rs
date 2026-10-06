@@ -334,6 +334,13 @@ pub(super) fn read_shots(
                 0.0
             };
             presentation.credited_until = Some(now + hold + CREDIT_SECONDS);
+            let connected = match beat {
+                Beat::Push => "Minor pushed.",
+                Beat::Pull => "Minor pulled.",
+                Beat::Lash => "Minor reoriented.",
+                _ => "Kinetic tool connected.",
+            };
+            notice.show(connected, Tone::Good, time.elapsed_secs_f64());
         }
         let sound = if beat == Beat::Pull {
             assets.pull.clone()

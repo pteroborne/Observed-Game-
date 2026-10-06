@@ -8,6 +8,7 @@
 //!
 //! Presentation only: the simulation owns where each is, and nothing here writes back.
 //! Their arrival and their loss are heard through the match's event cues (`cues`).
+use bevy::audio::{PlaybackMode, SpatialScale, Volume};
 use bevy::prelude::*;
 use observed_guardian::form::{self, Look, Stage, State};
 use observed_guardian::mesh::mesh;
@@ -16,7 +17,7 @@ use observed_hex::{FLOOR_SLAB_TOP, hex_origin};
 use observed_match::hex_wfc::{HexReleasedGuardian, HexReleasedKind};
 
 use super::super::sim::{EYE_OFFSET, HexWfcRuntime};
-use super::{self as guardian, FORM, GLIDE, GuardianArt, GuardianPart, Parts, SNAP};
+use super::{self as guardian, FORM, GuardianArt, GuardianPart, Parts};
 use crate::GameState;
 
 /// A minor's size against the major Roller the form was drawn at: about a metre tall,
@@ -29,7 +30,26 @@ pub(super) struct ReleasedArt {
     roller: Vec<(Handle<Mesh>, Look)>,
     /// Plan distance one tip carries the Roller's centre, at the form's own scale.
     stride: f32,
+    land: Handle<AudioSource>,
 }
+
+/// A released Guardian's persistent voice, faded with its simulation state.
+#[derive(Component)]
+pub(super) struct ReleasedHum {
+    id: u16,
+    gain: f32,
+}
+
+pub(super) type ReleasedVoices<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut ReleasedHum,
+        &'static mut Transform,
+        Option<&'static mut SpatialAudioSink>,
+    ),
+    (Without<ReleasedVisual>, Without<GuardianPart>),
+>;
 
 /// One released Guardian as drawn.
 #[derive(Component)]
@@ -49,9 +69,10 @@ pub(in crate::hex_wfc) struct ReleasedVisual {
 }
 
 impl ReleasedArt {
-    pub(super) fn new(meshes: &mut Assets<Mesh>) -> Self {
+    pub(super) fn new(meshes: &mut Assets<Mesh>, server: &AssetServer) -> Self {
         let start = Rest::on_a_face(Vec3::ZERO);
         Self {
+            land: server.load(observed_assets::MINOR_GUARDIAN_STEP.path),
             roller: form::parts(form::Form::Roller)
                 .into_iter()
                 .map(|part| (meshes.add(mesh(part.shape)), part.look))
@@ -73,6 +94,8 @@ pub(super) fn sync(
     runtime: Res<HexWfcRuntime>,
     guardian_art: Res<GuardianArt>,
     art: Res<ReleasedArt>,
+    settings: Res<crate::settings::Settings>,
+    mut hums: ReleasedVoices,
     mut visuals: Query<
         (Entity, &mut ReleasedVisual, &mut Transform, &Children),
         Without<GuardianPart>,
@@ -102,6 +125,7 @@ pub(super) fn sync(
         .traversal_profile()
         .requirements()
         .capsule_half_height;
+    let mut voices = std::collections::BTreeMap::new();
     for (_, mut visual, mut transform, children) in &mut visuals {
         let Some(guardian) = released.get(&visual.id) else {
             continue;
@@ -113,15 +137,29 @@ pub(super) fn sync(
                     hex_origin(major.cell)[1] + FLOOR_SLAB_TOP,
                     major.position.z,
                 );
-                let step = GLIDE * time.delta_secs();
-                let to = floor - visual.at;
-                visual.at = if to.length() >= SNAP || to.length() <= step {
-                    floor
-                } else {
-                    visual.at + to.normalize() * step
-                };
+                let before = visual.at;
+                visual.at = guardian::drawn_position(
+                    Some(visual.at),
+                    floor,
+                    guardian::state_for(major.status),
+                    time.delta_secs(),
+                );
                 let state = guardian::state_for(major.status);
                 if state != visual.state {
+                    let source = match guardian::transition(visual.state, state) {
+                        Some(guardian::Transition::Latch) => Some(guardian_art.latch.clone()),
+                        Some(guardian::Transition::Clamp) => Some(guardian_art.clamp_sound.clone()),
+                        Some(guardian::Transition::Release) => Some(guardian_art.release.clone()),
+                        None => None,
+                    };
+                    if let Some(source) = source {
+                        guardian::one_shot(
+                            &mut commands,
+                            source,
+                            guardian::ONE_SHOT_VOLUME * settings.effective_sfx_volume(),
+                            visual.at + Vec3::Y * 2.5,
+                        );
+                    }
                     visual.state = state;
                     visual.since = clock;
                 }
@@ -141,6 +179,18 @@ pub(super) fn sync(
                         toward,
                     },
                 );
+                voices.insert(
+                    visual.id,
+                    (
+                        visual.at + Vec3::Y * 2.5,
+                        guardian::slide_gain(
+                            visual.state,
+                            Some(before),
+                            visual.at,
+                            time.delta_secs(),
+                        ) * guardian::HUM_VOLUME,
+                    ),
+                );
                 *transform = Transform::IDENTITY;
                 guardian::apply(&guardian_art, &pose, children, &mut parts);
             }
@@ -153,7 +203,15 @@ pub(super) fn sync(
                 if minor.plumbed() {
                     visual.at = feet;
                 } else {
-                    roll(&mut visual, feet, art.stride * MINOR_SCALE);
+                    if roll(&mut visual, feet, art.stride * MINOR_SCALE) {
+                        super::super::audio::play(
+                            &mut commands,
+                            art.land.clone(),
+                            0.45 * settings.effective_sfx_volume(),
+                            "Minor Guardian box impact",
+                            Some(feet + frame.up() * 0.4),
+                        );
+                    }
                 }
                 let mut body = Roll::toward(visual.rest, visual.heading).at(visual.progress);
                 // The body carries it along; the roll only turns and lifts it.
@@ -172,29 +230,43 @@ pub(super) fn sync(
             }
         }
     }
+    for (mut voice, mut transform, sink) in &mut hums {
+        let Some(&(at, wanted)) = voices.get(&voice.id) else {
+            continue;
+        };
+        transform.translation = at;
+        voice.gain += (wanted - voice.gain) * (guardian::HUM_FADE * time.delta_secs()).min(1.0);
+        if let Some(mut sink) = sink {
+            sink.set_volume(Volume::Linear(voice.gain * settings.effective_sfx_volume()));
+        }
+    }
 }
 
 /// Advance a minor's roll by the ground its feet covered since it was last drawn: a
 /// whole tip for every `stride`, landing each on the face it tipped onto.
-fn roll(visual: &mut ReleasedVisual, feet: Vec3, stride: f32) {
+fn roll(visual: &mut ReleasedVisual, feet: Vec3, stride: f32) -> bool {
     let moved = (feet - visual.at).with_y(0.0);
     visual.at = feet;
     if moved.length() < 1e-4 {
-        return;
+        return false;
     }
     let heading = moved.normalize();
+    let mut impact = false;
     // A sharp turn lands the tip in progress first, so the cage never tips two ways at
     // once.
     if heading.dot(visual.heading) < 0.5 && visual.progress > 0.0 {
         visual.rest = landed(Roll::toward(visual.rest, visual.heading).at(1.0));
         visual.progress = 0.0;
+        impact = true;
     }
     visual.heading = heading;
     visual.progress += moved.length() / stride;
     while visual.progress >= 1.0 {
         visual.rest = landed(Roll::toward(visual.rest, heading).at(1.0));
         visual.progress -= 1.0;
+        impact = true;
     }
+    impact
 }
 
 /// A landed rest brought back over its own feet, which the body has carried forward.
@@ -235,6 +307,23 @@ fn spawn(
             })
             .id(),
     };
+    if kind == HexReleasedKind::Major {
+        commands.entity(root).with_children(|root| {
+            root.spawn((
+                ReleasedHum { id, gain: 0.0 },
+                AudioPlayer(guardian_art.hum.clone()),
+                PlaybackSettings {
+                    mode: PlaybackMode::Loop,
+                    volume: Volume::Linear(0.0),
+                    spatial: true,
+                    spatial_scale: Some(SpatialScale::new(guardian::SPATIAL_SCALE)),
+                    ..default()
+                },
+                Transform::IDENTITY,
+                Name::new("Released major stone friction"),
+            ));
+        });
+    }
     let position = guardian.position();
     commands.entity(root).insert((
         ReleasedVisual {
@@ -280,11 +369,13 @@ mod tests {
     fn a_minor_rolls_as_far_as_it_walks() {
         let stride = 1.0;
         let mut minor = visual();
-        roll(&mut minor, Vec3::ZERO, stride);
+        assert!(!roll(&mut minor, Vec3::ZERO, stride));
         assert_eq!(minor.rest, Rest::on_a_face(Vec3::ZERO), "standing still");
+        let mut impacts = 0;
         for step in 1..=25 {
-            roll(&mut minor, Vec3::X * 0.1 * step as f32, stride);
+            impacts += usize::from(roll(&mut minor, Vec3::X * 0.1 * step as f32, stride));
         }
+        assert_eq!(impacts, 2, "one box impact per completed flip");
         assert!((minor.progress - 0.5).abs() < 1e-3, "{}", minor.progress);
         assert_ne!(minor.rest.rotation, Rest::on_a_face(Vec3::ZERO).rotation);
         // Every rest it lands on stands on a face, level with where it began.

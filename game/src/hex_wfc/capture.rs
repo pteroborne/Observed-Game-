@@ -6,12 +6,15 @@ use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use super::{ascent_capture, hud, launch, loading, sim, view, vista_capture};
 use crate::GameState;
 
+mod map;
 mod spectate;
+use self::map::{MapBeat, MapCapture};
 
 #[derive(Resource)]
 pub(super) struct HexWfcCapture {
     pub(super) path: String,
     pub(super) frame: u16,
+    map: MapCapture,
     pub(super) mode: HexWfcCaptureMode,
     /// Relayout mode only: the last simulation tick at which a GIF frame was captured.
     pub(super) last_shot_tick: u64,
@@ -219,6 +222,7 @@ pub(super) fn configure(app: &mut App) {
         app.insert_resource(HexWfcCapture {
             path,
             frame: 0,
+            map: MapCapture::default(),
             mode,
             last_shot_tick: 0,
             stills: 0,
@@ -342,21 +346,26 @@ fn capture_progress(
     request.frame = request.frame.saturating_add(1);
     match request.mode {
         HexWfcCaptureMode::Map => {
-            // Late enough that the spectator bot has explored a facility worth
-            // photographing: at frame 900 it has barely left spawn and the map
-            // shows five cells, which proves the fog-of-war contract but makes a
-            // useless visual gate.
-            if request.frame == 7_200
-                && let Some(runtime) = runtime.as_deref_mut()
-            {
-                runtime.map_open = true;
-            }
-            if request.frame == 7_260 {
-                commands
-                    .spawn(Screenshot::primary_window())
-                    .observe(save_to_disk(request.path.clone()));
-            } else if request.frame == 7_330 {
-                exit.write(AppExit::Success);
+            let finished = runtime.as_deref().is_some_and(|runtime| {
+                runtime.match_state.status == observed_match::hex_wfc::HexMatchStatus::Finished
+            });
+            let frame = request.frame;
+            match request.map.beat(frame, finished) {
+                MapBeat::Open => {
+                    if let Some(runtime) = runtime.as_deref_mut() {
+                        runtime.map_open = true;
+                    }
+                    commands.insert_resource(super::overlay::MatchOverlayState::SurvivorMap);
+                }
+                MapBeat::Shot => {
+                    commands
+                        .spawn(Screenshot::primary_window())
+                        .observe(save_to_disk(request.path.clone()));
+                }
+                MapBeat::Exit => {
+                    exit.write(AppExit::Success);
+                }
+                MapBeat::Wait => {}
             }
         }
         HexWfcCaptureMode::Vista

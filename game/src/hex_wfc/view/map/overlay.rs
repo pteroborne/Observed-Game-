@@ -53,6 +53,7 @@ pub(super) fn rooms_present(
     commands: &mut Commands,
     world: &HexWfcWorld,
     knowledge: &HexPlayerMapKnowledge,
+    level: u8,
     assets: &mut MapAssets,
     census: &mut MapCensus,
 ) {
@@ -61,6 +62,7 @@ pub(super) fn rooms_present(
         let known_cell = blueprint
             .cells
             .iter()
+            .filter(|cell| cell.level == level)
             .filter_map(|cell| {
                 knowledge
                     .cells

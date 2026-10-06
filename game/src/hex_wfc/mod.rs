@@ -124,6 +124,8 @@ impl Plugin for HexWfcPlugin {
                     doors::capture::drive,
                     sensors::capture::drive,
                     sim::step_runtime,
+                    audio::sync,
+                    kinetic::read_shots,
                     perf::end_fixed,
                 )
                     .chain()
@@ -205,7 +207,6 @@ impl Plugin for HexWfcPlugin {
                     view::map::sync,
                     feedback::sync,
                     feedback::animate,
-                    audio::sync,
                     (entities::sync, observer::sync, cosmetics::sync).chain(),
                     // Grouped: hand equipment, posed after the hands have swayed.
                     (
@@ -217,7 +218,6 @@ impl Plugin for HexWfcPlugin {
                         pad::sync_projection,
                         pad::sync_dynamic,
                         kinetic::sync_held,
-                        kinetic::read_shots,
                         kinetic::pose_held,
                         equipment::spin,
                     )

@@ -317,6 +317,15 @@ pub enum HexGeometryError {
 }
 
 impl HexWfcGeometrySnapshot {
+    /// Invisible glass and railing guards constrain bodies, not sight. Unknown IDs
+    /// (including deployed doors) remain opaque.
+    #[must_use]
+    pub fn blocks_sight(&self, id: StableColliderId) -> bool {
+        self.piece_indices
+            .get(&id)
+            .is_none_or(|&index| self.pieces[index].part.drawn())
+    }
+
     /// Project a solved world using its pure per-cell architecture register map.
     /// Manifest ordering does not affect selection: candidates are sorted by key.
     pub fn project(
@@ -1796,17 +1805,38 @@ fn room_windows(
     stamped: &StampedBlueprint,
     room: &RoomPrototype,
 ) -> BTreeMap<usize, Vec<Vec<Vec3>>> {
-    windows_for(&room.hulls, stamped.anchor, &stamped.cells, |cell, face| {
-        window::looks_out(world, &stamped.cells, cell, face)
-    })
+    let backrooms = room.key.register == "liminal_grid";
+    windows_with(
+        &room.hulls,
+        stamped.anchor,
+        &stamped.cells,
+        |cell, face| {
+            // One stable face per cell may carry a small transom. Most walls stay blank.
+            let chosen = (i32::from(cell.q) * 31 + i32::from(cell.r) * 17).rem_euclid(6) as usize;
+            (!backrooms || face.index() == chosen)
+                && window::looks_out(world, &stamped.cells, cell, face)
+        },
+        backrooms,
+    )
 }
 
 /// [`room_windows`] for any footprint and any rule for where it looks out.
+#[cfg(test)]
 fn windows_for(
     hulls: &[Vec<Vec3>],
     anchor: HexCoord,
     cells: &[HexCoord],
     looks_out: impl Fn(HexCoord, HexFace) -> bool,
+) -> BTreeMap<usize, Vec<Vec<Vec3>>> {
+    windows_with(hulls, anchor, cells, looks_out, false)
+}
+
+fn windows_with(
+    hulls: &[Vec<Vec3>],
+    anchor: HexCoord,
+    cells: &[HexCoord],
+    looks_out: impl Fn(HexCoord, HexFace) -> bool,
+    transom: bool,
 ) -> BTreeMap<usize, Vec<Vec<Vec3>>> {
     let anchor = Vec3::from_array(hex_origin(anchor));
     let offsets: Vec<(HexCoord, Vec3)> = cells
@@ -1834,7 +1864,13 @@ fn windows_for(
         let pieces = HexFace::LATERAL
             .into_iter()
             .filter(|&face| looks_out(cell, face))
-            .find_map(|face| window::cut(&local, face));
+            .find_map(|face| {
+                if transom {
+                    window::cut_transom(&local, face)
+                } else {
+                    window::cut(&local, face)
+                }
+            });
         if let Some(pieces) = pieces {
             windows.insert(
                 index,

@@ -129,6 +129,18 @@ fn minor(game: &HexWfcMatch) -> &super::super::HexMinorState {
 }
 
 #[test]
+fn a_crosshair_on_the_visible_cage_flank_selects_and_shoves_the_minor() {
+    let mut game = game();
+    let direction = open_direction(&game, 5.0);
+    let at = minor_ahead(&mut game, direction, 4.0);
+    let side = Vec3::new(-direction.z, 0.0, direction.x);
+    game.aim_body_for_tests(BODY, at + side * 0.65);
+    assert_eq!(game.kinetic_target(BODY).unwrap().guardian, MINOR);
+    assert!(step(&mut game, PUSH).contains(&HexMatchEventKind::KineticPush));
+    assert!(minor(&game).staggered());
+}
+
+#[test]
 fn a_level_ray_meets_the_cylinder_at_its_near_side() {
     let hit = ray_meets_upright(Vec3::ZERO, Vec3::NEG_Z, Vec3::new(0.0, 0.0, -5.0), 0.5, 1.0);
     assert!((hit.expect("hit") - 4.5).abs() < 1e-4);

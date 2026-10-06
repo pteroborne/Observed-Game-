@@ -282,7 +282,9 @@ impl HexWfcMatch {
                         prison: self.prison.as_ref(),
                         closed: &|a, b| super::doors::closed_between(&self.doors, grid, a, b),
                         directive: self.guardian_directive,
-                        clear: &|from, to| self.physics.line_is_clear(from, to),
+                        clear: &|from, to| {
+                            super::sight::line_is_clear(&self.physics, &self.geometry, from, to)
+                        },
                         eye_height,
                     },
                 ),

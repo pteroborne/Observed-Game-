@@ -291,7 +291,11 @@ fn landmarks_spawn_only_for_known_exit_and_anchors() {
         .query::<(&HexMapLandmark, &Name)>()
         .iter(&world)
         .any(|(_, name)| name.as_str() == "Hex map exit landmark");
-    assert!(exit_landmark, "exit landmark must spawn when exit is known");
+    assert_eq!(
+        exit_landmark,
+        exit_cell.level == runtime.map_level,
+        "landmarks belong to the selected floor"
+    );
 
     // Anchor landmark should exist
     let anchor_landmark = world
@@ -301,6 +305,23 @@ fn landmarks_spawn_only_for_known_exit_and_anchors() {
     assert!(
         anchor_landmark,
         "anchor landmark must spawn when cell is anchored"
+    );
+
+    runtime.map_level = exit_cell.level;
+    let mut exit_world = World::new();
+    let mut exit_queue = CommandQueue::default();
+    build(
+        &mut Commands::new(&mut exit_queue, &exit_world),
+        &runtime,
+        &mut meshes,
+        &mut materials,
+    );
+    exit_queue.apply(&mut exit_world);
+    assert!(
+        exit_world
+            .query::<(&HexMapLandmark, &Name)>()
+            .iter(&exit_world)
+            .any(|(_, name)| name.as_str() == "Hex map exit landmark")
     );
 
     // Case 2: Exit cell is NOT known
@@ -368,4 +389,110 @@ fn a_prison_body_is_not_drawn_at_its_maze_coordinates_in_the_facility() {
         0,
         "maze coordinates cannot locate a body in the facility"
     );
+}
+
+#[test]
+fn fresh_map_hulls_use_the_replay_cutaway_and_stale_cells_do_not_reveal_new_hulls() {
+    let mut runtime = test_runtime();
+    // Stage the ownership a multi-storey room uses. This compact seed otherwise
+    // stamps single-storey rooms, so the regression must not depend on its lottery.
+    let anchor = runtime.match_state.facility.config.spawn();
+    runtime
+        .match_state
+        .geometry
+        .pieces
+        .push(observed_match::hex_wfc::HexStructurePiece {
+            id: observed_traversal::StableColliderId(0xEFFF_FFFE),
+            anchor,
+            source_cell: anchor,
+            role: observed_match::hex_wfc::HexStructureRole::Room,
+            part: observed_match::hex_wfc::HexPiecePart::Authored,
+            tile: None,
+            center: Vec3::from_array(hex_origin(anchor))
+                + Vec3::Y * (observed_hex::TILE_LEVEL_HEIGHT + 0.6),
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            shape: observed_traversal::ColliderShape::Cuboid {
+                half: Vec3::new(2.0, 0.1, 2.0),
+            },
+        });
+    let team = runtime.local().team;
+    runtime.map_level = 1;
+    let level = runtime.map_level;
+    let known = runtime
+        .match_state
+        .facility
+        .placements
+        .iter()
+        .filter(|(_, p)| p.space.built())
+        .map(|(&cell, p)| {
+            (
+                cell,
+                HexMapCellKnowledge {
+                    discovery: HexMapDiscovery::Traversed,
+                    last_confirmed_revision: runtime
+                        .match_state
+                        .facility
+                        .cell_revisions
+                        .get(&cell)
+                        .copied()
+                        .unwrap_or(0),
+                    known_ports: p.ports(),
+                    anchored: false,
+                    room_role: None,
+                },
+            )
+        })
+        .collect();
+    runtime
+        .match_state
+        .map_knowledge
+        .insert(team, HexPlayerMapKnowledge { cells: known });
+    let expected = runtime
+        .match_state
+        .geometry
+        .pieces
+        .iter()
+        .filter(|p| {
+            runtime
+                .match_state
+                .player_map(runtime.local_player)
+                .unwrap()
+                .cells
+                .contains_key(&p.source_cell)
+                && crate::view::cutaway::surface(
+                    p,
+                    level,
+                    observed_style::iso::detent_bearing(0),
+                    false,
+                )
+                .is_some()
+        })
+        .count();
+    let mut world = World::new();
+    let mut queue = CommandQueue::default();
+    build(
+        &mut Commands::new(&mut queue, &world),
+        &runtime,
+        &mut Assets::default(),
+        &mut Assets::default(),
+    );
+    queue.apply(&mut world);
+    assert!(expected > 0);
+    assert_eq!(
+        world.query::<&super::HexMapHull>().iter(&world).count(),
+        expected
+    );
+    for revision in runtime.match_state.facility.cell_revisions.values_mut() {
+        *revision += 1;
+    }
+    let mut stale = World::new();
+    let mut queue = CommandQueue::default();
+    build(
+        &mut Commands::new(&mut queue, &stale),
+        &runtime,
+        &mut Assets::default(),
+        &mut Assets::default(),
+    );
+    queue.apply(&mut stale);
+    assert_eq!(stale.query::<&super::HexMapHull>().iter(&stale).count(), 0);
 }

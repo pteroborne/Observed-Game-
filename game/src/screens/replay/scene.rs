@@ -8,15 +8,12 @@ use crate::{
     },
 };
 use bevy::{
-    asset::RenderAssetUsages,
     camera::{RenderTarget, ScalingMode, visibility::RenderLayers},
     ecs::system::SystemParam,
-    mesh::{Indices, PrimitiveTopology},
     prelude::*,
     render::render_resource::TextureFormat,
 };
 use observed_match::hex_wfc::HexBodyPlace;
-use observed_traversal::{ColliderShape, ConvexRenderMesh};
 #[path = "figures.rs"]
 mod figures;
 
@@ -267,53 +264,16 @@ fn build_structure(
     view: (Vec2, bool),
 ) {
     let (bearing, eyes) = view;
-    let low = f32::from(level) * observed_hex::TILE_LEVEL_HEIGHT;
     for piece in &structure.pieces {
-        if !piece.part.drawn() {
+        let Some(floor) = crate::view::cutaway::surface(piece, level, bearing, eyes) else {
             continue;
-        }
-        let (min_y, max_y, local, floor) = match &piece.shape {
-            ColliderShape::ConvexHull { points } => {
-                let min = points.iter().map(|p| p.y).fold(f32::INFINITY, f32::min);
-                let max = points.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max);
-                let center = points.iter().copied().sum::<Vec3>() / points.len().max(1) as f32;
-                (
-                    min,
-                    max,
-                    center,
-                    observed_traversal::render_mesh::is_horizontal_slab(points),
-                )
-            }
-            ColliderShape::Cuboid { half } => (-half.y, half.y, Vec3::ZERO, half.y < 0.5),
         };
-        if !eyes {
-            let middle = piece.center.y + (min_y + max_y) * 0.5;
-            if middle < low || middle >= low + observed_hex::TILE_LEVEL_HEIGHT {
-                continue;
-            }
-            if !observed_style::iso::survives(min_y, max_y, local, bearing, true) {
-                continue;
-            }
-        }
         let key = Arc::as_ptr(piece) as usize;
         let mesh = if let Some(mesh) = cache.meshes.get(&key) {
             mesh.clone()
         } else {
-            let mesh = match &piece.shape {
-                ColliderShape::Cuboid { half } => Mesh::from(Cuboid::from_size(*half * 2.0)),
-                ColliderShape::ConvexHull { points } => {
-                    let Some(data) = ConvexRenderMesh::from_convex_hull(points) else {
-                        continue;
-                    };
-                    Mesh::new(
-                        PrimitiveTopology::TriangleList,
-                        RenderAssetUsages::default(),
-                    )
-                    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
-                    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
-                    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
-                    .with_inserted_indices(Indices::U32(data.indices))
-                }
+            let Some(mesh) = crate::view::cutaway::mesh(&piece.shape) else {
+                continue;
             };
             let mesh = meshes.add(mesh);
             cache.meshes.insert(key, mesh.clone());

@@ -220,6 +220,7 @@ impl CellState {
 /// Slab height for a cell known only by its archetype - used for the link deck,
 /// where blueprint membership does not change the height a bar has to clear.
 #[must_use]
+#[cfg(test)]
 pub(super) fn archetype_height(archetype: HexArchetype) -> Option<f32> {
     hex_sketch(sketch_role(archetype, HexSpace::Hall, false)).height
 }

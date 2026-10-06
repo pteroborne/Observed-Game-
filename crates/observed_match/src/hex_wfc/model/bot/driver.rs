@@ -62,6 +62,7 @@ pub struct HexBotDriver {
     /// Graph legs held over the module a bot is currently crossing. One map,
     /// so there is one answer to "may this bot still be mid-leg?".
     legs: BTreeMap<PlayerId, GraphLeg>,
+    approaches: BTreeMap<PlayerId, (u32, Vec3, Vec3)>,
 }
 
 impl HexBotDriver {
@@ -75,12 +76,14 @@ impl HexBotDriver {
     pub fn reset(&mut self) {
         self.routes.clear();
         self.legs.clear();
+        self.approaches.clear();
     }
 
     /// Forget one bot's local state after a seat/driver ownership change.
     pub fn clear_player(&mut self, id: PlayerId) {
         self.routes.remove(&id);
         self.legs.remove(&id);
+        self.approaches.remove(&id);
     }
 
     /// The graph leg this bot is executing across its current module.
@@ -278,11 +281,12 @@ impl HexBotDriver {
         }
 
         if target.cell == player.cell {
-            return if player.position.distance(target.position) > 0.75 {
-                steer_toward(player.yaw, player.position, target.position)
-            } else {
-                PlayerIntent::default()
-            };
+            if player.position.distance(target.position) <= 0.75 {
+                self.approaches.remove(&id);
+                return PlayerIntent::default();
+            }
+            let waypoint = self.approach_waypoint(game, id, target);
+            return game.apply_unstick(id, steer_toward(player.yaw, player.position, waypoint));
         }
         let current = player.cell;
         let route = self
@@ -296,6 +300,52 @@ impl HexBotDriver {
             BotBehaviour::Seek
         };
         self.command_for_behaviour(game, id, target.cell, behaviour, route.as_ref())
+    }
+
+    /// Route the last metres around an interior partition. A logical cell is
+    /// not necessarily one unobstructed room; retain the detour until reached.
+    fn approach_waypoint(
+        &mut self,
+        game: &HexWfcMatch,
+        id: PlayerId,
+        target: BotDestination,
+    ) -> Vec3 {
+        let player = &game.players[&id];
+        let config = game.content.traversal_profile().controller();
+        let clear = |from: Vec3, to: Vec3| {
+            let count = (from.distance(to) / 0.35).ceil().max(1.0) as u32;
+            (0..=count).all(|step| {
+                let center = from.lerp(to, step as f32 / count as f32);
+                game.physics
+                    .capsule_is_clear(center, config.radius, config.half_height)
+                    && game.stands_clear(center - Vec3::Y * config.half_height)
+            })
+        };
+        if clear(player.position, target.position) {
+            self.approaches.remove(&id);
+            return target.position;
+        }
+        let generation = game.facility.generation;
+        if let Some(&(revision, goal, waypoint)) = self.approaches.get(&id)
+            && revision == generation
+            && goal == target.position
+            && player.position.distance(waypoint) > 0.6
+        {
+            return waypoint;
+        }
+        let waypoint = game
+            .standing_points(target.cell)
+            .into_iter()
+            .map(|feet| Vec3::new(feet.x, player.position.y, feet.z))
+            .filter(|&point| clear(player.position, point) && clear(point, target.position))
+            .min_by(|a, b| {
+                (player.position.distance(*a) + a.distance(target.position))
+                    .total_cmp(&(player.position.distance(*b) + b.distance(target.position)))
+            })
+            .unwrap_or(target.position);
+        self.approaches
+            .insert(id, (generation, target.position, waypoint));
+        waypoint
     }
 
     fn cache_route(

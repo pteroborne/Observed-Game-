@@ -76,7 +76,8 @@ pub(super) use observed_hex::FLOOR_SLAB_TOP;
 /// tool's push and pull did, and to 8 when the plumb's aim joined [`HexPlayerCommand`]. The handshake compares this, so a peer built before a
 /// button is refused outright rather than connecting and then disagreeing about a bit
 /// it never sends.
-pub const HEX_INPUT_VERSION: u16 = 8;
+// Version 9 changes physical Guardian sight, kinetic selection and Backrooms enclosure.
+pub const HEX_INPUT_VERSION: u16 = 9;
 
 /// Most players one match may hold. Agrees with `observed_net::lan::MAX_SEATS`
 /// and `observed_progression::session::lan::LAN_MAX_SEATS`; a mismatch shows up
@@ -650,6 +651,12 @@ impl HexWfcMatch {
     }
 
     /// The immutable authored/runtime input this match retains for relayout.
+    /// Whether the controller is supported, for grounded movement feedback.
+    #[must_use]
+    pub fn body_grounded(&self, player: PlayerId) -> bool {
+        self.bodies.get(&player).is_some_and(|body| body.grounded)
+    }
+
     #[must_use]
     pub fn content(&self) -> &HexMatchContent {
         &self.content
@@ -708,7 +715,7 @@ impl HexWfcMatch {
                     prison: self.prison.as_ref(),
                     closed: &|a, b| doors::closed_between(doors, grid, a, b),
                     directive: self.guardian_directive,
-                    clear: &|from, to| physics.line_is_clear(from, to),
+                    clear: &|from, to| sight::line_is_clear(physics, &self.geometry, from, to),
                     eye_height,
                 },
             );

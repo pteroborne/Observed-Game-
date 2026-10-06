@@ -74,15 +74,15 @@ ceiling fixture uses a top-center pivot.
 | `sounds/keystone.ogg` | three rising bell notes (progress family) | In-repo synthesis (`tools/generate_audio.py`) |
 | `sounds/exit_unlock.ogg` | chord bloom and sub pulse (progress family) | In-repo synthesis (`tools/generate_audio.py`) |
 | `sounds/guardian_dread.ogg` | low inharmonic dread swell (threat family) | In-repo synthesis (`tools/generate_audio.py`) |
-| `sounds/guardian/tumbler_hum.ogg` | the major Guardian hunting: bronze drone under grinding teeth and a knocking ratchet, looped | In-repo synthesis (`tools/generate_guardian_audio.py`) |
-| `sounds/guardian/tumbler_latch.ogg` | the major Guardian seen: the ratchet knocks out and the latch drops home with a crunch | In-repo synthesis (`tools/generate_guardian_audio.py`) |
-| `sounds/guardian/tumbler_release.ogg` | the major Guardian let go: the latch lifts and the ratchet winds up | In-repo synthesis (`tools/generate_guardian_audio.py`) |
+| `sounds/guardian/tumbler_hum.ogg` | the major Guardian moving: giant stone sliding with deep weight and granular friction, looped | In-repo synthesis (`tools/generate_guardian_audio.py`) |
+| `sounds/guardian/tumbler_latch.ogg` | the major Guardian seen: sliding stone drags into a heavy stop | In-repo synthesis (`tools/generate_guardian_audio.py`) |
+| `sounds/guardian/tumbler_release.ogg` | the major Guardian let go: stone takes its weight up and starts scraping | In-repo synthesis (`tools/generate_guardian_audio.py`) |
 | `sounds/guardian/tumbler_clamp.ogg` | an anchor lantern clamping a Guardian: rush, thunk, dark glass dyad | In-repo synthesis (`tools/generate_guardian_audio.py`) |
 | `sounds/guardian/tumbler_catch.ogg` | the major Guardian's catch: a rising telescope, a sub boom and a burst of grit | In-repo synthesis (`tools/generate_guardian_audio.py`) |
 | `sounds/guardian/plumb_hum.ogg` | Plumb (form lab) hunting: low drone with three orbits rushing past, looped | In-repo synthesis (`tools/generate_guardian_audio.py`) |
 | `sounds/guardian/plumb_seal.ogg` | Plumb seen: three rings settle and the point sets down | In-repo synthesis (`tools/generate_guardian_audio.py`) |
 | `sounds/guardian/plumb_catch.ogg` | Plumb's catch: six faces grind open, a swell, a stamp | In-repo synthesis (`tools/generate_guardian_audio.py`) |
-| `sounds/guardian/roller_fall.ogg` | Roller (form lab) landing on a face: a hollow thud and its struts crunching | In-repo synthesis (`tools/generate_guardian_audio.py`) |
+| `sounds/guardian/roller_fall.ogg` | minor Guardian / Roller landing on a face: hollow box thud, edge clack and small rebound | In-repo synthesis (`tools/generate_guardian_audio.py`) |
 | `sounds/guardian/roller_balance.ogg` | Roller seen: it tips onto a point and a low pure tone holds | In-repo synthesis (`tools/generate_guardian_audio.py`) |
 | `sounds/guardian/roller_catch.ogg` | Roller's catch: a rush, a grinding clank as it splits, a stamp | In-repo synthesis (`tools/generate_guardian_audio.py`) |
 | `sounds/ambience_archive.ogg` | archive district bed: dry stillness, dust shimmer | In-repo synthesis (`tools/generate_audio.py`) |

@@ -427,7 +427,11 @@ fn bot_body_walks_to_a_powered_station_and_waits_until_full() {
             break;
         }
     }
-    assert!(recharging, "the bot never waited at the station");
+    assert!(
+        recharging,
+        "the bot never waited at the station: start={cell:?} station={station:?} final={:?}",
+        game.physical().players[&BODY]
+    );
     assert_eq!(game.rules().economy.charge(observer), MAX_CHARGE);
 }
 

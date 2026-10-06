@@ -123,7 +123,10 @@ fn opens_outward(world: &HexWfcWorld, at: HexCoord, face: HexFace) -> bool {
 #[must_use]
 pub fn open_edges(world: &HexWfcWorld, at: HexCoord) -> Option<OpenEdges> {
     let placement = world.placements.get(&at)?;
-    if world.sealed || !can_open(placement) {
+    if world.sealed
+        || world.architecture.get(&at) == Some(&observed_content::ArchitectureRegister::LiminalGrid)
+        || !can_open(placement)
+    {
         return None;
     }
     let faces = HexFace::LATERAL
@@ -636,6 +639,23 @@ mod tests {
             open_air: false,
             sealed: false,
         }
+    }
+
+    #[test]
+    fn backrooms_corridors_keep_their_walls_even_beside_open_air() {
+        let mut world = lone_hall(0);
+        let at = *world.placements.keys().next().unwrap();
+        assert!(open_edges(&world, at).is_some());
+        world
+            .architecture
+            .insert(at, ArchitectureRegister::LiminalGrid);
+        assert!(open_edges(&world, at).is_none());
+        let snapshot =
+            HexWfcGeometrySnapshot::project(&world, &crate::hex_wfc::test_tiles()).unwrap();
+        assert!(!snapshot.pieces.iter().any(|p| matches!(
+            p.part,
+            HexPiecePart::Lip | HexPiecePart::Walkway | HexPiecePart::Rail
+        )));
     }
 
     #[test]
