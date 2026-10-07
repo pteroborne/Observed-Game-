@@ -47,7 +47,7 @@ pub(super) fn warm_cells(
     let mut queue = VecDeque::from([(focus.cell, -2.2_f32, 2.2_f32)]);
     while let Some((at, left, right)) = queue.pop_front() {
         let origin = Vec3::from_array(hex_origin(at));
-        if (origin - focus.position).with_y(0.0).length() > radius + 8.0 {
+        if (origin - focus.position).length() > radius + 16.0 {
             continue;
         }
         if visited
@@ -121,7 +121,7 @@ pub(super) fn warm_cells(
     for (&owner, cell) in &catalog.cells {
         let near = cell.footprint.iter().any(|&at| {
             let p = Vec3::from_array(hex_origin(at));
-            at.level.abs_diff(focus.cell.level) <= 1 && p.distance(focus.position) <= 30.0
+            p.distance(focus.position) <= 48.0
         });
         let next_to_visible = cell.footprint.iter().any(|&at| {
             HexFace::ALL
@@ -133,18 +133,103 @@ pub(super) fn warm_cells(
                         .is_some_and(|owner| reached.contains(owner))
                 })
         });
-        if near || next_to_visible {
+        // Walkable portals do not describe sight across windows, balconies,
+        // open air, or stacked atria. Conservatively prepare exposed owners
+        // in the view cone, even without a traversable connection to them.
+        let exposed_view = cell.footprint.iter().any(|&at| {
+            let centre = Vec3::from_array(hex_origin(at)) + Vec3::Y * 4.0;
+            let delta = centre - focus.position;
+            if delta.length() > radius + 16.0 {
+                return false;
+            }
+            let forward = Vec3::new(
+                focus.yaw.sin() * focus.pitch.cos(),
+                focus.pitch.sin(),
+                -focus.yaw.cos() * focus.pitch.cos(),
+            );
+            let in_view = delta.dot(forward) >= -16.0;
+            in_view
+                && HexFace::ALL.into_iter().any(|face| {
+                    grid.neighbor(at, face).is_none_or(|next| {
+                        world
+                            .placements
+                            .get(&next)
+                            .is_none_or(|p| p.space == observed_facility::hex_wfc::HexSpace::Air)
+                    })
+                })
+        });
+        if near || next_to_visible || exposed_view {
             visible.insert(owner);
         }
     }
     visible
 }
 
+pub(super) fn spawn_priority(
+    footprint: &[HexCoord],
+    focus: &observed_match::hex_wfc::HexPlayerState,
+    camera: Option<&Transform>,
+) -> (bool, bool, u32) {
+    let intended = Vec3::new(
+        focus.yaw.sin() * focus.pitch.cos(),
+        focus.pitch.sin(),
+        -focus.yaw.cos() * focus.pitch.cos(),
+    );
+    let in_view = footprint.iter().any(|&cell| {
+        let centre = Vec3::from_array(hex_origin(cell)) + Vec3::Y * 4.0;
+        let delta = centre - focus.position;
+        delta.dot(intended) + 16.0 >= delta.length() * 0.5
+            || camera.is_some_and(|camera| {
+                let delta = centre - camera.translation;
+                delta.dot(camera.rotation * Vec3::NEG_Z) + 16.0 >= delta.length() * 0.5
+            })
+    });
+    let distance = footprint
+        .iter()
+        .map(|&cell| {
+            (Vec3::from_array(hex_origin(cell)) + Vec3::Y * 4.0 - focus.position).length_squared()
+        })
+        .fold(f32::INFINITY, f32::min);
+    (
+        !footprint.contains(&focus.cell),
+        !in_view,
+        (distance * 100.0) as u32,
+    )
+}
+
+/// Drawing is independent of walkable portal reach. Keep a generous camera
+/// cone, plus the nearby shadow neighbourhood, including the current
+/// rendered gaze while a spectator's camera eases towards the body intent.
+pub(super) fn draw_resident(
+    footprint: &[HexCoord],
+    focus: &observed_match::hex_wfc::HexPlayerState,
+    camera: Option<&Transform>,
+) -> bool {
+    let intended = Vec3::new(
+        focus.yaw.sin() * focus.pitch.cos(),
+        focus.pitch.sin(),
+        -focus.yaw.cos() * focus.pitch.cos(),
+    );
+    footprint.iter().any(|&cell| {
+        if cell == focus.cell {
+            return true;
+        }
+        let centre = Vec3::from_array(hex_origin(cell)) + Vec3::Y * 4.0;
+        let delta = centre - focus.position;
+        delta.length_squared() <= 48.0 * 48.0
+            || delta.dot(intended) + 16.0 >= delta.length() * 0.42
+            || camera.is_some_and(|camera| {
+                let delta = centre - camera.translation;
+                delta.dot(camera.rotation * Vec3::NEG_Z) + 16.0 >= delta.length() * 0.42
+            })
+    })
+}
+
 #[derive(PartialEq)]
 struct WindowKey {
     generation: u32,
     cell: HexCoord,
-    pose: [i32; 3],
+    pose: [i32; 5],
     radius: u32,
     doors: Vec<(HexCoord, HexFace)>,
 }
@@ -167,7 +252,9 @@ impl Window {
             pose: [
                 (p.position.x / 2.0).floor() as i32,
                 (p.position.z / 2.0).floor() as i32,
+                (p.position.y / 2.0).floor() as i32,
                 (p.yaw / 0.15).floor() as i32,
+                (p.pitch / 0.15).floor() as i32,
             ],
             radius: radius.to_bits(),
             doors: runtime

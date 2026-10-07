@@ -60,11 +60,11 @@ use crate::view::components::{GameCam, GameSun, MENU_SUN_ILLUMINANCE};
 
 /// Cells enter presentation residency inside this window. The logical facility and its
 /// pure collision snapshot remain complete regardless of presentation residency.
-const STREAM_ENTER_RADIUS: f32 = 90.0;
-const STREAM_ENTER_LEVELS: u8 = 2;
+const STREAM_ENTER_RADIUS: f32 = 180.0;
+const STREAM_ENTER_LEVELS: u8 = u8::MAX;
 /// A larger removal window prevents churn when the runner hovers near the enter edge.
-const STREAM_EXIT_RADIUS: f32 = 120.0;
-const STREAM_EXIT_LEVELS: u8 = 3;
+const STREAM_EXIT_RADIUS: f32 = 240.0;
+const STREAM_EXIT_LEVELS: u8 = u8::MAX;
 /// Entry always projects the current cell and its same-level one-ring neighborhood.
 const ENTRY_SAFE_RADIUS: f32 = 15.0;
 const ENTRY_CELL_SPAWN_BUDGET: usize = 24;

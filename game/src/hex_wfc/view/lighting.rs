@@ -38,15 +38,15 @@ mod cistern_tests;
 /// At four it happens to be in the budget, and the floor there is brighter.
 const PRACTICAL_SHADOW_BUDGET: usize = 3;
 
-/// The streamed multi-floor rig needs 2,048 Z-list entries in the surface tour.
-/// Reserve them before rendering so Bevy never presents an overflow frame while growing.
+/// Wider multi-floor views exceeded 4,096 Z-list entries in the walking capture.
+/// Reserve 16,384 before rendering to avoid corrupted lighting during buffer growth.
 pub(in crate::hex_wfc) fn configure_clusters(
     settings: Option<ResMut<bevy::light::cluster::GlobalClusterSettings>>,
 ) {
     if let Some(mut settings) = settings
         && let Some(gpu) = settings.gpu_clustering.as_mut()
     {
-        gpu.initial_z_slice_list_capacity = gpu.initial_z_slice_list_capacity.max(2_048);
+        gpu.initial_z_slice_list_capacity = gpu.initial_z_slice_list_capacity.max(16_384);
     }
 }
 

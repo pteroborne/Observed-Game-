@@ -5,11 +5,13 @@ use crate::hex_wfc::{sim::HexWfcRuntime, view::HexPresentationReadiness};
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, poll_once};
 use observed_match::hex_wfc::{HexStructurePiece, HexStructureRole};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Default)]
 pub(super) struct MeshWarmup {
     next_tile: usize,
+    blocked_cells: HashMap<observed_hex::HexCoord, (u32, u64)>,
+    structural: VecDeque<(super::mesh::MergedMeshKey, Vec<Vec<Vec3>>)>,
     required: VecDeque<(super::mesh::MergedMeshKey, Vec<Vec<Vec3>>)>,
     requested: HashSet<super::mesh::MergedMeshKey>,
     worker: Option<Task<(super::mesh::MergedMeshKey, Option<Mesh>)>>,
@@ -28,7 +30,12 @@ pub(in crate::hex_wfc) fn warm_reusable_meshes(
     if assets.warmup.worker.is_some() {
         return;
     }
-    let request = if let Some(required) = assets.warmup.required.pop_front() {
+    let request = if let Some(required) = assets
+        .warmup
+        .structural
+        .pop_front()
+        .or_else(|| assets.warmup.required.pop_front())
+    {
         Some(required)
     } else {
         if !readiness.entry_neighborhood_ready || readiness.spawned_this_frame > 0 {
@@ -114,12 +121,34 @@ impl HexWfcVisualAssets {
         }
     }
 
+    pub(in crate::hex_wfc::view) fn cell_can_retry(
+        &self,
+        coord: observed_hex::HexCoord,
+        generation: u32,
+    ) -> bool {
+        self.warmup.blocked_cells.get(&coord) != Some(&(generation, self.cache_misses))
+    }
+
+    pub(in crate::hex_wfc::view) fn finish_cell_attempt(
+        &mut self,
+        coord: observed_hex::HexCoord,
+        generation: u32,
+    ) {
+        if self.missing_meshes {
+            self.warmup
+                .blocked_cells
+                .insert(coord, (generation, self.cache_misses));
+        } else {
+            self.warmup.blocked_cells.remove(&coord);
+        }
+    }
+
     pub(super) fn request_merged_recipe(
         &mut self,
         key: super::mesh::MergedMeshKey,
         hulls: &[&[Vec3]],
     ) {
-        if self.warmup.required.len() < 128 && self.warmup.requested.insert(key.clone()) {
+        if self.warmup.required.len() < 64 && self.warmup.requested.insert(key.clone()) {
             self.warmup
                 .required
                 .push_back((key, hulls.iter().map(|hull| hull.to_vec()).collect()));
@@ -149,7 +178,11 @@ impl HexWfcVisualAssets {
                 continue;
             }
             ready = false;
-            self.request_merged_recipe(key, &data.hulls);
+            if self.warmup.structural.len() < 64 && self.warmup.requested.insert(key.clone()) {
+                self.warmup
+                    .structural
+                    .push_back((key, data.hulls.iter().map(|hull| hull.to_vec()).collect()));
+            }
         }
         ready
     }
@@ -190,7 +223,7 @@ mod tests {
         let groups = mesh_group::gather(&[&piece]);
         assert!(!assets.request_cell_meshes(Some("tile"), &groups));
         assert!(!assets.request_cell_meshes(Some("tile"), &groups));
-        assert_eq!(assets.warmup.required.len(), groups.len());
+        assert_eq!(assets.warmup.structural.len(), groups.len());
         // The cold entry path and worker populate the identical geometry key.
         for (key, group) in &groups {
             assets
@@ -201,12 +234,54 @@ mod tests {
         for tile in 0..200 {
             assets.request_cell_meshes(Some(&tile.to_string()), &groups);
         }
-        assert_eq!(assets.warmup.required.len(), 128);
+        assert_eq!(assets.warmup.structural.len(), 64);
         assert!(
             HexWfcVisualAssets::for_test(&mut materials)
                 .warmup
-                .required
+                .structural
                 .is_empty()
         );
+    }
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    #[test]
+    fn pending_dressing_retries_on_cache_progress_or_geometry_change() {
+        let mut materials = Assets::<StandardMaterial>::default();
+        let mut assets = HexWfcVisualAssets::for_test(&mut materials);
+        let coord = observed_hex::HexCoord::default();
+        assets.missing_meshes = true;
+        assets.finish_cell_attempt(coord, 5);
+        assert!(!assets.cell_can_retry(coord, 5));
+        assert!(
+            assets.cell_can_retry(coord, 6),
+            "a rewrite must invalidate pending recipes"
+        );
+        let hull: Vec<_> = [-1.0, 1.0]
+            .into_iter()
+            .flat_map(|x| {
+                [-1.0, 1.0]
+                    .into_iter()
+                    .flat_map(move |y| [-1.0, 1.0].into_iter().map(move |z| Vec3::new(x, y, z)))
+            })
+            .collect();
+        let mut meshes = Assets::<Mesh>::default();
+        assets
+            .merged_mesh_for(
+                &mut meshes,
+                Some("completed-recipe"),
+                MeshGroupKey::Interior,
+                &[&hull],
+            )
+            .unwrap();
+        assert!(
+            assets.cell_can_retry(coord, 5),
+            "completed mesh work must wake a pending cell"
+        );
+        assets.missing_meshes = false;
+        assets.finish_cell_attempt(coord, 5);
+        assert!(assets.warmup.blocked_cells.is_empty());
     }
 }

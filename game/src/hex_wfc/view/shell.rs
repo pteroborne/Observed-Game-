@@ -34,6 +34,7 @@ pub(super) struct SpawnedCell {
     pub(super) coord: HexCoord,
     pub(super) entity: Entity,
     pub(super) child_pieces: usize,
+    pub(super) needs_decoration: bool,
 }
 
 pub(super) fn spawn_boundary(
@@ -93,6 +94,11 @@ pub(super) fn spawn_cells(
     )
 }
 
+pub(super) struct SpawnBudget<'a> {
+    pub(super) time: std::time::Duration,
+    pub(super) retained: &'a BTreeSet<HexCoord>,
+}
+
 pub(super) fn spawn_cells_bounded(
     commands: &mut Commands,
     assets: &mut HexWfcVisualAssets,
@@ -100,7 +106,7 @@ pub(super) fn spawn_cells_bounded(
     (world, geometry): (&HexWfcWorld, &HexWfcGeometrySnapshot),
     catalog: &HexGeometryCatalog,
     requested: &[HexCoord],
-    budget: Option<std::time::Duration>,
+    budget: Option<SpawnBudget<'_>>,
 ) -> Vec<SpawnedCell> {
     let fallback_arch = *world
         .architecture
@@ -116,8 +122,15 @@ pub(super) fn spawn_cells_bounded(
         assets.poll_prepared_meshes(meshes);
     }
     for (visited, &coord) in requested.iter().enumerate() {
-        if visited > 0 && budget.is_some_and(|limit| started.elapsed() >= limit) {
+        if visited > 0
+            && budget
+                .as_ref()
+                .is_some_and(|limit| started.elapsed() >= limit.time)
+        {
             break;
+        }
+        if budget.is_some() && !assets.cell_can_retry(coord, geometry.generation) {
+            continue;
         }
         let Some(index) = catalog.cells.get(&coord) else {
             continue;
@@ -136,7 +149,7 @@ pub(super) fn spawn_cells_bounded(
         let lights = index.lights.iter().collect();
         assets.preparing_cell = budget.is_some();
         assets.missing_meshes = false;
-        let cell = spawn_cell(
+        let mut cell = spawn_cell(
             commands,
             assets,
             meshes,
@@ -150,11 +163,14 @@ pub(super) fn spawn_cells_bounded(
             fallback_arch,
         );
         assets.preparing_cell = false;
-        if assets.missing_meshes {
-            // The incomplete staging parent is never published. Old resident
-            // geometry remains drawn while its decorative recipes are prepared.
+        assets.finish_cell_attempt(coord, geometry.generation);
+        if assets.missing_meshes && budget.as_ref().is_some_and(|b| b.retained.contains(&coord)) {
+            // Keep an existing projection until its replacement is complete.
             commands.entity(cell.entity).despawn();
         } else {
+            // A new cell's complete structural shell must not wait on books or
+            // other decoration. Schedule its finished dressing as a later swap.
+            cell.needs_decoration = assets.missing_meshes;
             spawned.push(cell);
         }
     }
@@ -412,6 +428,7 @@ fn spawn_cell(
         coord,
         entity: cell,
         child_pieces,
+        needs_decoration: false,
     }
 }
 

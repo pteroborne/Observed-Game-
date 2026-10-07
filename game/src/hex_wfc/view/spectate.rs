@@ -69,10 +69,10 @@ pub(in crate::hex_wfc) const CYCLE_KEY: KeyCode = KeyCode::KeyF;
 
 /// How far from the followed body the massing yields to real geometry.
 ///
-/// A little past `STREAM_ENTER_RADIUS` (30 m), so a cell is always resident
+/// A little past `STREAM_ENTER_RADIUS` (180 m), so a cell is always resident
 /// before its prism disappears. The other order leaves a hole: massing gone,
 /// geometry not yet spawned, and the body apparently standing on nothing.
-pub(in crate::hex_wfc::view) const DETAIL_RADIUS: f32 = 100.0;
+pub(in crate::hex_wfc::view) const DETAIL_RADIUS: f32 = super::STREAM_ENTER_RADIUS + 10.0;
 
 // Compile-time, not a test: these are relationships between constants, so a
 // runtime assertion could only ever restate what the compiler already knows.

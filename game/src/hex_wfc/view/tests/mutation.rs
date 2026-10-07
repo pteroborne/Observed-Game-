@@ -165,42 +165,110 @@ fn a_parent_with_cold_decorations_is_not_published_or_leaked() {
     for (group, data) in super::super::mesh_group::gather(&pieces) {
         assets.merged_mesh_for(&mut meshes, Some(&key), group, &data.hulls);
     }
-    let mut world = World::new();
-    let initial_entities = world.entity_count();
-    let mut queue = bevy::ecs::world::CommandQueue::default();
-    let mut commands = Commands::new(&mut queue, &world);
-    let spawned = shell::spawn_cells_bounded(
-        &mut commands,
-        &mut assets,
-        &mut meshes,
-        (&runtime.match_state.facility, &runtime.match_state.geometry),
-        &catalog,
-        &[coord],
-        Some(std::time::Duration::from_millis(3)),
-    );
-    queue.apply(&mut world);
-    // Relationship despawn hooks enqueue their child cleanup on the world.
-    world.flush();
+    for replacing in [true, false] {
+        assets.cache_misses += 1;
+        let retained = if replacing {
+            BTreeSet::from([coord])
+        } else {
+            BTreeSet::new()
+        };
+        let mut world = World::new();
+        let initial_entities = world.entity_count();
+        let mut queue = bevy::ecs::world::CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, &world);
+        let spawned = shell::spawn_cells_bounded(
+            &mut commands,
+            &mut assets,
+            &mut meshes,
+            (&runtime.match_state.facility, &runtime.match_state.geometry),
+            &catalog,
+            &[coord],
+            Some(shell::SpawnBudget {
+                time: std::time::Duration::from_millis(3),
+                retained: &retained,
+            }),
+        );
+        queue.apply(&mut world);
+        world.flush();
+        assert!(assets.missing_meshes);
+        assert!(!assets.preparing_cell);
+        if replacing {
+            assert!(
+                spawned.is_empty(),
+                "an existing cell must wait for complete dressing"
+            );
+            assert_eq!(
+                world.entity_count(),
+                initial_entities,
+                "discarded staging must not leak"
+            );
+        } else {
+            assert_eq!(
+                spawned.len(),
+                1,
+                "new cells must show their structural shell before dressing finishes"
+            );
+            assert!(spawned[0].needs_decoration);
+            assert!(world.query::<&Mesh3d>().iter(&world).count() > 0);
+            world.despawn(spawned[0].entity);
+            world.flush();
+            assert_eq!(world.entity_count(), initial_entities);
+        }
+    }
+}
+
+#[test]
+fn prepared_residents_do_not_disappear_when_the_portal_window_turns_away() {
+    let mut runtime = test_runtime();
+    let id = runtime.local_player;
+    let player = runtime.match_state.players.get_mut(&id).unwrap();
+    player.yaw = 0.0;
+    player.pitch = 0.0;
+    player.position = Vec3::Y * 1.5;
+    let coord = observed_hex::HexCoord {
+        q: 0,
+        r: 8,
+        level: 0,
+    };
+    let catalog = super::catalog([(coord, vec![coord])]);
+    let mut window = visibility::Window::default();
     assert!(
-        spawned.is_empty(),
-        "a cell with pending book meshes must wait"
+        !window
+            .update(&runtime, &catalog, super::super::STREAM_ENTER_RADIUS)
+            .contains(&coord)
     );
-    assert!(assets.missing_meshes);
-    assert!(!assets.preparing_cell);
-    let leftovers: Vec<_> = world
-        .query::<(Entity, Option<&Name>, Option<&ChildOf>)>()
-        .iter(&world)
-        .map(|(entity, name, parent)| {
-            (
-                entity,
-                name.map(ToString::to_string),
-                parent.map(|parent| parent.0),
-            )
-        })
-        .collect();
+    let mut app = App::new();
+    let parent = app.world_mut().spawn(Visibility::Hidden).id();
+    app.world_mut().spawn((
+        crate::view::components::GameCam,
+        Transform::from_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
+    ));
+    let mut materials = Assets::<StandardMaterial>::default();
+    app.insert_resource(HexWfcVisualAssets::for_test(&mut materials));
+    app.insert_resource(Assets::<Mesh>::default());
+    app.insert_resource(runtime);
+    app.insert_resource(HexPresentationReadiness::default());
+    app.insert_resource(HexPresentationResidency {
+        catalog,
+        resident: BTreeMap::from([(
+            coord,
+            ResidentCell {
+                shown: false,
+                entity: parent,
+                child_pieces: 1,
+            },
+        )]),
+        replacements: BTreeSet::new(),
+        defer_incremental_once: false,
+        capture_unbounded: false,
+        reach: Reach::play(),
+        window,
+    });
+    app.add_systems(Update, residency::sync_streamed_cells);
+    app.update();
+    assert!(app.world().resource::<HexPresentationResidency>().resident[&coord].shown);
     assert_eq!(
-        world.entity_count(),
-        initial_entities,
-        "discarded staging children must not leak: {leftovers:?}"
+        app.world().get::<Visibility>(parent),
+        Some(&Visibility::Inherited)
     );
 }

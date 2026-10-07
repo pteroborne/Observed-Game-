@@ -47,7 +47,7 @@ fn resident(coords: impl IntoIterator<Item = HexCoord>) -> BTreeMap<HexCoord, Re
 #[test]
 fn streaming_window_is_bounded() {
     // A cell directly under the runner is streamed; far plan distance or
-    // level gap is culled.
+    // physical vertical distance is culled.
     let close = HexCoord {
         q: 5,
         r: 5,
@@ -78,7 +78,7 @@ fn streaming_window_is_bounded() {
     let far_level = HexCoord {
         q: 5,
         r: 5,
-        level: 5,
+        level: 30,
     };
     assert!(!cell_in_stream_range(
         far_level,
@@ -150,8 +150,8 @@ fn footprint_in_range_covers_a_whole_room_footprint() {
         level: 0,
     };
     let near_cell = HexCoord {
-        q: 5,
-        r: 5,
+        q: 10,
+        r: 10,
         level: 0,
     };
     let focus_position = Vec3::from_array(hex_origin(near_cell));
@@ -184,7 +184,7 @@ fn residency_hysteresis_keeps_a_cell_between_enter_and_exit_radii() {
     let focus = HexCoord::default();
     let focus_position = Vec3::from_array(hex_origin(focus));
     let edge = HexCoord {
-        q: 7,
+        q: 14,
         r: 0,
         level: 0,
     };
@@ -521,3 +521,40 @@ fn despawned_cell_rebuilds_identically_when_re_entered() {
 
 #[path = "tests/mutation.rs"]
 mod mutation;
+
+#[test]
+fn nearby_upper_floors_and_long_views_use_physical_distance() {
+    let focus = HexCoord::default();
+    let position = Vec3::Y * 1.5;
+    let upstairs = HexCoord { level: 5, ..focus };
+    assert!(cell_in_stream_range(
+        upstairs,
+        position,
+        focus.level,
+        STREAM_ENTER_RADIUS,
+        STREAM_ENTER_LEVELS
+    ));
+    let corridor = HexCoord { q: 10, ..focus };
+    assert!(cell_in_stream_range(
+        corridor,
+        position,
+        focus.level,
+        STREAM_ENTER_RADIUS,
+        STREAM_ENTER_LEVELS
+    ));
+    assert!(!cell_in_stream_range(
+        corridor,
+        position,
+        focus.level,
+        90.0,
+        STREAM_ENTER_LEVELS
+    ));
+    let vertically_far = HexCoord { level: 30, ..focus };
+    assert!(!cell_in_stream_range(
+        vertically_far,
+        position,
+        focus.level,
+        STREAM_ENTER_RADIUS,
+        STREAM_ENTER_LEVELS
+    ));
+}

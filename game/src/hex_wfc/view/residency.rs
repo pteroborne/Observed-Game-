@@ -33,7 +33,7 @@ impl Default for Reach {
 }
 
 impl Reach {
-    /// The shipped play budget, unchanged.
+    /// Shipped physical-distance residency, across all storeys in range.
     pub(in crate::hex_wfc) fn play() -> Self {
         Self {
             enter_radius: STREAM_ENTER_RADIUS,
@@ -125,9 +125,16 @@ pub(super) fn cell_in_stream_range(
     levels: u8,
 ) -> bool {
     let origin = Vec3::from_array(hex_origin(coord));
-    let plan = Vec2::new(origin.x - focus_position.x, origin.z - focus_position.z).length();
+    // Use the physical prism rather than a storey-count cutoff: an atrium
+    // can reveal several nearby floors while the Observer remains on one.
+    let vertical = (focus_position.y
+        - focus_position
+            .y
+            .clamp(origin.y, origin.y + observed_hex::TILE_LEVEL_HEIGHT))
+    .abs();
+    let plan = Vec2::new(origin.x - focus_position.x, origin.z - focus_position.z).length_squared();
     let level_gap = coord.level.abs_diff(focus_level);
-    plan <= radius && level_gap <= levels
+    plan + vertical * vertical <= radius * radius && level_gap <= levels
 }
 
 /// A cell's fixture group is streamed in when ANY cell of its footprint is
@@ -200,6 +207,7 @@ pub(super) fn plan_residency(
     let mut spawn_candidates = Vec::new();
     let mut despawn_candidates = Vec::new();
     let mut desired_cells = 0;
+    let mut pending_cells = 0;
     for (&coord, cell) in &catalog.cells {
         let is_resident = resident.contains_key(&coord);
         // This explicit containment guard is stronger than distance: a large authored
@@ -226,18 +234,24 @@ pub(super) fn plan_residency(
         if wanted {
             desired_cells += 1;
             if !is_resident {
-                spawn_candidates.push(coord);
+                pending_cells += 1;
+                if spawn_budget > 0 {
+                    spawn_candidates.push(coord);
+                }
             }
-        } else if is_resident {
+        } else if is_resident && despawn_budget > 0 {
             despawn_candidates.push(coord);
         }
     }
-    sort_nearest_first(&mut spawn_candidates, catalog, focus_position, focus_cell);
+    // The live stream filters its unbounded candidates through visibility and
+    // sorts once afterwards. Readiness only counts; neither needs this sort.
+    if spawn_budget > 0 && spawn_budget != usize::MAX {
+        sort_nearest_first(&mut spawn_candidates, catalog, focus_position, focus_cell);
+    }
     // Retire the farthest cells first. This makes a bounded removal backlog preserve the
     // most useful geometry without weakening the exit-window hysteresis rule.
     sort_nearest_first(&mut despawn_candidates, catalog, focus_position, focus_cell);
     despawn_candidates.reverse();
-    let pending_cells = spawn_candidates.len();
     spawn_candidates.truncate(spawn_budget);
     despawn_candidates.truncate(despawn_budget);
     ResidencyPlan {
@@ -337,6 +351,12 @@ pub(super) fn presentation_readiness(
     }
 }
 
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct StreamView<'w, 's> {
+    camera: Query<'w, 's, &'static Transform, With<crate::view::components::GameCam>>,
+    perf: Option<ResMut<'w, crate::hex_wfc::perf::HexPerfMetrics>>,
+}
+
 pub(crate) fn sync_streamed_cells(
     mut commands: Commands,
     runtime: Res<HexWfcRuntime>,
@@ -344,8 +364,10 @@ pub(crate) fn sync_streamed_cells(
     mut readiness: ResMut<HexPresentationReadiness>,
     mut assets: ResMut<HexWfcVisualAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut perf: Option<ResMut<crate::hex_wfc::perf::HexPerfMetrics>>,
+    view: StreamView,
 ) {
+    let StreamView { camera, mut perf } = view;
+    let camera_pose = camera.single().ok();
     let focus = runtime.viewed();
     if residency.defer_incremental_once {
         residency.defer_incremental_once = false;
@@ -382,7 +404,11 @@ pub(crate) fn sync_streamed_cells(
             .clone();
         plan.spawn.retain(|coord| warm.contains(coord));
         for (coord, cell) in &mut residency.resident {
-            let shown = warm.contains(coord);
+            let shown = super::visibility::draw_resident(
+                &residency.catalog.cells[coord].footprint,
+                focus,
+                camera_pose,
+            );
             if cell.shown != shown {
                 cell.shown = shown;
                 commands.entity(cell.entity).insert(if shown {
@@ -392,16 +418,13 @@ pub(crate) fn sync_streamed_cells(
                 });
             }
         }
-        plan.spawn.sort_by_key(|coord| {
-            (
-                !residency.catalog.cells[coord]
-                    .footprint
-                    .contains(&focus.cell),
-                coord.level.abs_diff(focus.cell.level),
-                (footprint_distance_squared(
-                    &residency.catalog.cells[coord].footprint,
-                    focus.position,
-                ) * 100.0) as u32,
+        // Visible passages on another floor outrank hidden current-floor
+        // cells. Calculate expensive footprint keys once, not per comparison.
+        plan.spawn.sort_by_cached_key(|coord| {
+            super::visibility::spawn_priority(
+                &residency.catalog.cells[coord].footprint,
+                focus,
+                camera_pose,
             )
         });
         plan.pending_cells = plan.spawn.len();
@@ -425,7 +448,11 @@ pub(crate) fn sync_streamed_cells(
         }
     }
     let requested = plan.spawn;
-    let budget = (!residency.capture_unbounded).then_some(std::time::Duration::from_millis(3));
+    let retained: BTreeSet<_> = residency.resident.keys().copied().collect();
+    let budget = (!residency.capture_unbounded).then_some(super::shell::SpawnBudget {
+        time: std::time::Duration::from_millis(2),
+        retained: &retained,
+    });
     let spawned = super::shell::spawn_cells_bounded(
         &mut commands,
         &mut assets,
@@ -441,6 +468,9 @@ pub(crate) fn sync_streamed_cells(
     }
     for spawned in spawned {
         residency.replacements.remove(&spawned.coord);
+        if spawned.needs_decoration {
+            residency.replacements.insert(spawned.coord);
+        }
         if let Some(old) = residency.resident.remove(&spawned.coord) {
             commands.entity(old.entity).despawn();
             despawned += 1;

@@ -378,6 +378,23 @@ pub(in crate::hex_wfc) fn rebuild_changed(
     }
 }
 
+fn detailed_coverage(
+    catalog: &super::shell::HexGeometryCatalog,
+    resident: &BTreeMap<HexCoord, super::ResidentCell>,
+) -> BTreeSet<HexCoord> {
+    resident
+        .iter()
+        .filter(|(_, cell)| cell.shown)
+        .flat_map(|(owner, _)| {
+            catalog
+                .cells
+                .get(owner)
+                .into_iter()
+                .flat_map(|cell| cell.footprint.iter().copied())
+        })
+        .collect()
+}
+
 /// A cell's exterior is hidden exactly while its detailed geometry is resident - and
 /// all of it, keels included, while the spectator overview is up. The overview looks
 /// in from outside the building, where the skin is a lid over the cutaway: the body
@@ -392,6 +409,7 @@ pub(in crate::hex_wfc) fn sync_visibility(
     let Some(residency) = residency else {
         return;
     };
+    let covered = detailed_coverage(&residency.catalog, &residency.resident);
     let shown = |yes: bool| {
         if yes {
             Visibility::Inherited
@@ -400,13 +418,7 @@ pub(in crate::hex_wfc) fn sync_visibility(
         }
     };
     for (shell, mut visibility) in &mut shells {
-        let wanted = shown(
-            !overview.active
-                && !residency
-                    .resident
-                    .get(&shell.0)
-                    .is_some_and(|cell| cell.shown),
-        );
+        let wanted = shown(!overview.active && !covered.contains(&shell.0));
         visibility.set_if_neq(wanted);
     }
     for mut visibility in &mut keels {
@@ -523,5 +535,40 @@ mod tests {
                 assert!(facing.dot(normal) >= -1e-4, "a back-facing triangle");
             }
         }
+    }
+    #[test]
+    fn detailed_rooms_replace_exterior_proxies_for_the_entire_footprint() {
+        use super::super::{
+            ResidentCell,
+            shell::{CellGeometryIndex, HexGeometryCatalog},
+        };
+        let anchor = at(0, 0, 0);
+        let footprint = vec![anchor, at(1, 0, 0), at(0, 0, 1)];
+        let catalog = HexGeometryCatalog {
+            generation: 0,
+            cells: BTreeMap::from([(
+                anchor,
+                CellGeometryIndex {
+                    footprint: footprint.clone(),
+                    piece_ids: Vec::new(),
+                    lights: Vec::new(),
+                },
+            )]),
+            boundary_piece_ids: Vec::new(),
+        };
+        let mut resident = BTreeMap::from([(
+            anchor,
+            ResidentCell {
+                shown: true,
+                entity: Entity::PLACEHOLDER,
+                child_pieces: 1,
+            },
+        )]);
+        assert_eq!(
+            detailed_coverage(&catalog, &resident),
+            footprint.into_iter().collect()
+        );
+        resident.get_mut(&anchor).unwrap().shown = false;
+        assert!(detailed_coverage(&catalog, &resident).is_empty());
     }
 }
