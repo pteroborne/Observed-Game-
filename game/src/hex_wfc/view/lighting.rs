@@ -52,7 +52,18 @@ pub(in crate::hex_wfc) fn configure_clusters(
 
 const BLEND_RATE: f32 = 2.5;
 /// A drawn mesh that has just streamed in.
-type JustStreamed = (With<Mesh3d>, Added<Cutaway>);
+type JustStreamed = (
+    With<Mesh3d>,
+    Added<Cutaway>,
+    Without<super::NeverShadowCaster>,
+);
+
+type StoreyMeshes<'w, 's> = Query<
+    'w,
+    's,
+    (Entity, &'static Cutaway, Has<NotShadowCaster>),
+    (With<Mesh3d>, Without<super::NeverShadowCaster>),
+>;
 
 /// Only geometry on the viewed body's storey and above casts shadows.
 ///
@@ -67,7 +78,7 @@ pub(in crate::hex_wfc) fn sync_storey_shadow_casters(
     runtime: Res<HexWfcRuntime>,
     mut last_level: Local<Option<u8>>,
     added: Query<(Entity, &Cutaway), JustStreamed>,
-    meshes: Query<(Entity, &Cutaway, Has<NotShadowCaster>), With<Mesh3d>>,
+    meshes: StoreyMeshes,
 ) {
     let level = runtime.viewed().cell.level;
     let casts = |cutaway: &Cutaway| cutaway.cell_level >= level;

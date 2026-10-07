@@ -547,6 +547,7 @@ mod tests {
         use crate::source::ModuleKind;
 
         let module = CompiledModule {
+            surfaces: Vec::new(),
             id: "authored/hall_cap".to_string(),
             source_path: "authored/hall_cap.map".to_string(),
             source_sha256: String::new(),

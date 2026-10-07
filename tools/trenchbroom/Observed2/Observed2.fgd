@@ -61,6 +61,7 @@
         "ramp_open" : "Ramp continuation"
         "shaft_open" : "Vertical shaft opening"
         "span" : "Climb continuation"
+        "low_door" : "Low doorway (3 m)"
     ]
     name(string) : "Stable threshold name" : "east_threshold"
 ]

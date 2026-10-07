@@ -402,7 +402,10 @@ fn build_with_projection(
             let projected_points;
             let source = match projection {
                 Projection::Cutaway { bearing, enabled } => {
-                    if !survives(min_y, max_y, centroid, bearing, enabled) {
+                    if (enabled
+                        && piece.surface == Some(observed_match::hex_wfc::HullSurface::Ceiling))
+                        || !survives(min_y, max_y, centroid, bearing, enabled)
+                    {
                         report.hulls_cut += 1;
                         continue;
                     }
@@ -410,7 +413,11 @@ fn build_with_projection(
                 }
                 Projection::LowWalls { height } => {
                     use observed_style::iso::HullRegion;
-                    match observed_style::iso::hull_region(min_y, max_y, centroid) {
+                    match if piece.surface == Some(observed_match::hex_wfc::HullSurface::Ceiling) {
+                        HullRegion::Ceiling
+                    } else {
+                        observed_style::iso::hull_region(min_y, max_y, centroid)
+                    } {
                         HullRegion::Ceiling => {
                             report.hulls_cut += 1;
                             continue;

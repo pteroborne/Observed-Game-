@@ -404,8 +404,18 @@ impl ArchitectLab {
         origin: HexCoord,
         limit: usize,
     ) -> BTreeMap<HexCoord, usize> {
-        let mut distance = BTreeMap::from([(origin, 0)]);
-        let mut queue = VecDeque::from([origin]);
+        self.distances_from_many([origin], limit)
+    }
+
+    /// Distance to the nearest origin. Equivalent to taking the pointwise
+    /// minimum of individual bounded searches, including duplicate origins.
+    pub(super) fn distances_from_many(
+        &self,
+        origins: impl IntoIterator<Item = HexCoord>,
+        limit: usize,
+    ) -> BTreeMap<HexCoord, usize> {
+        let mut distance: BTreeMap<_, _> = origins.into_iter().map(|origin| (origin, 0)).collect();
+        let mut queue: VecDeque<_> = distance.keys().copied().collect();
         while let Some(cell) = queue.pop_front() {
             let steps = distance[&cell];
             if steps >= limit {

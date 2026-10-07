@@ -482,6 +482,8 @@ pub struct HexPlacement {
     pub archetype: HexArchetype,
     /// Lateral door mask, bit `face.index()` for the six lateral faces.
     pub doors: u8,
+    /// Open lateral doorway faces with three metres of clearance. Never includes spans.
+    pub low_doors: u8,
     pub up: PortClass,
     pub down: PortClass,
 }
@@ -490,6 +492,21 @@ impl HexPlacement {
     #[must_use]
     pub const fn is_open(&self, face: HexFace) -> bool {
         face.is_lateral() && self.doors & lateral_bit(face) != 0
+    }
+
+    /// Specialize clearances from the canonical floor district before validating
+    /// connections. Topology domains remain shared because lowering both ends of
+    /// every doorway on one storey preserves their compatibility relation.
+    #[must_use]
+    pub fn on_floor(mut self, levels: u8) -> Self {
+        self.low_doors = if ArchitectureRegister::for_floor(self.coord.level, levels)
+            == ArchitectureRegister::LiminalGrid
+        {
+            self.doors & !self.archetype.span_mask()
+        } else {
+            0
+        };
+        self
     }
 
     /// The typed port view of this cell: doors, a climb's spans, and its vertical
@@ -502,6 +519,8 @@ impl HexPlacement {
             if self.is_open(face) {
                 ports[face.index()] = if spans & lateral_bit(face) != 0 {
                     PortClass::Span
+                } else if self.low_doors & lateral_bit(face) != 0 {
+                    PortClass::LowDoor
                 } else {
                     PortClass::Door
                 };

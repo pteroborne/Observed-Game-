@@ -3,3 +3,7 @@
 *.ron text eol=lf
 *.sh text eol=lf
 *.yml text eol=lf
+
+# The generated low-enclosure sources are byte-hashed in the compiled catalogue.
+# Preserve their validated CRLF inputs across checkouts.
+assets/tiles/authored/*_low.map -text -eol whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

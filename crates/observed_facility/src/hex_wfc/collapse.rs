@@ -392,6 +392,13 @@ pub(super) fn collapse_pocket_attempt(
             (
                 coord,
                 HexPlacement {
+                    low_doors: if ArchitectureRegister::for_floor(coord.level, config.levels)
+                        == ArchitectureRegister::LiminalGrid
+                    {
+                        variant.doors & !variant.archetype.span_mask()
+                    } else {
+                        0
+                    },
                     coord,
                     space: variant.space,
                     archetype: variant.archetype,
@@ -1370,6 +1377,13 @@ fn materialize(
             (
                 coord,
                 HexPlacement {
+                    low_doors: if ArchitectureRegister::for_floor(coord.level, config.levels)
+                        == ArchitectureRegister::LiminalGrid
+                    {
+                        variant.doors & !variant.archetype.span_mask()
+                    } else {
+                        0
+                    },
                     coord,
                     space: variant.space,
                     archetype: variant.archetype,
@@ -1408,6 +1422,7 @@ fn prune_disconnected(
             placement.space = HexSpace::Void;
             placement.archetype = HexArchetype::Void;
             placement.doors = 0;
+            placement.low_doors = 0;
             placement.up = PortClass::Sealed;
             placement.down = PortClass::Sealed;
             emit(

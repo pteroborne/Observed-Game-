@@ -262,6 +262,15 @@ impl AscentSession {
     /// An entire mismatched or repeated frame is refused before any command mutates
     /// state. Individual refusals do not stop other seats from acting this tick.
     pub fn advance(&mut self, frame: &InputFrame) -> Result<BTreeMap<PlayerId, Refusal>, Refusal> {
+        self.advance_profiled(frame, |_| {})
+    }
+
+    /// Diagnostic marks only; command ordering and all rule checks are identical.
+    pub(crate) fn advance_profiled(
+        &mut self,
+        frame: &InputFrame,
+        mut mark: impl FnMut(&'static str),
+    ) -> Result<BTreeMap<PlayerId, Refusal>, Refusal> {
         if frame.version != ASCENT_INPUT_VERSION {
             return Err(Refusal::Version);
         }
@@ -291,12 +300,16 @@ impl AscentSession {
                 }
             }
         }
+        mark("seat_commands");
         self.keep_hands_live();
+        mark("hand_refresh");
         self.run_bot_architects();
+        mark("loyal_architects");
         for hand in self.hands.values_mut().chain(self.rogue_hands.values_mut()) {
             hand.cooldown = hand.cooldown.saturating_sub(1);
         }
         self.sim.tick_with_observers(&observers);
+        mark("rules_tick");
         self.requests.retain(|_, request| {
             self.sim.tick.saturating_sub(request.created_at) < REQUEST_LIFETIME_TICKS
         });

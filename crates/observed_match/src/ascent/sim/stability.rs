@@ -159,6 +159,7 @@ impl ArchitectLab {
         self.condemned = None;
         {
             self.rewrite(observed_facility::hex_wfc::HexPlacement {
+                low_doors: 0,
                 coord: cell,
                 space: HexSpace::Void,
                 archetype: observed_facility::hex_wfc::HexArchetype::Void,

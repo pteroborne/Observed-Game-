@@ -12,6 +12,9 @@ use super::{Stage, VistaPose, face_dir, pose};
 use bevy::prelude::*;
 
 pub(in crate::hex_wfc) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
+    if std::env::var_os("OBSERVED2_BACKROOMS_PORTRAITS").is_some() {
+        return backrooms_poses(world);
+    }
     if std::env::var_os("OBSERVED2_LIBRARY_PORTRAITS").is_some() {
         return library_poses(world);
     }
@@ -53,6 +56,50 @@ pub(in crate::hex_wfc) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
             Some(pose(NAMES[usize::from(level)], at, face, 6.2, 0.02))
         })
         .collect()
+}
+
+pub(in crate::hex_wfc) fn backrooms_poses(world: &HexWfcWorld) -> Vec<VistaPose> {
+    use observed_content::ArchitectureRegister;
+    let mut out = Vec::new();
+    for (name, archetype, bend) in [
+        ("backrooms_straight", HexArchetype::Straight, None),
+        ("backrooms_turn_60", HexArchetype::Corner, Some(1)),
+        ("backrooms_turn_120", HexArchetype::Corner, Some(2)),
+        ("backrooms_junction", HexArchetype::Junction, None),
+        ("backrooms_field", HexArchetype::Expanse, None),
+        ("backrooms_room", HexArchetype::Room, None),
+    ] {
+        let selected = world.placements.values().find_map(|placement| {
+            if world.architecture.get(&placement.coord) != Some(&ArchitectureRegister::LiminalGrid)
+                || placement.archetype != archetype
+                || placement.coord.level != 0
+            {
+                return None;
+            }
+            if let Some(bend) = bend {
+                let doors = HexFace::LATERAL
+                    .into_iter()
+                    .filter(|&face| placement.is_open(face))
+                    .collect::<Vec<_>>();
+                if doors.len() != 2 {
+                    return None;
+                }
+                let difference = doors[0].index().abs_diff(doors[1].index());
+                if difference.min(6 - difference) != bend {
+                    return None;
+                }
+            }
+            HexFace::LATERAL
+                .into_iter()
+                .find(|&face| !placement.is_open(face))
+                .or(Some(HexFace::East))
+                .map(|face| (placement.coord, face))
+        });
+        if let Some((cell, face)) = selected {
+            out.push(pose(name, cell, face, 5.0, 0.02));
+        }
+    }
+    out
 }
 
 /// Ordinary production tiles, with no staged props or altered source geometry.

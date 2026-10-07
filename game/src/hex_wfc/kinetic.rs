@@ -32,22 +32,21 @@ use std::f32::consts::FRAC_PI_2;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use observed_core::PlayerId;
-use observed_match::ascent::economy::{KINETIC_SHOT_COST, MAX_CHARGE};
+use observed_match::ascent::economy::MAX_CHARGE;
 use observed_match::hex_wfc::{HexMatchEventKind, HexPlayerState};
 use observed_style::equipment::{Hardware, finish};
 use observed_style::kinetic::{Role, treatment};
 use observed_tool::{Beat, Design, Finish, ToolState};
 
 use super::equipment::{Hand, HeldSway, held_transform, sway_for};
-use super::hud::play::HudNotice;
-use super::hud::words::Tone;
-use super::overlay::MatchOverlayState;
+use super::hud::{play::HudNotice, words::Tone};
 use super::sim::HexWfcRuntime;
 use crate::GameState;
-use crate::view::theme::{DIM, WARNING};
 
 pub(super) mod capture;
 mod plumb;
+mod reticle;
+pub(super) use reticle::sync_reticle;
 
 pub(in crate::hex_wfc) use plumb::{ArmedPlumb, arm_and_fire};
 
@@ -204,23 +203,7 @@ pub(super) fn setup(
     });
     commands.insert_resource(KineticPresentation::default());
     commands.insert_resource(ArmedPlumb::default());
-    commands.spawn((
-        Reticle,
-        DespawnOnExit(GameState::HexWfc),
-        Node {
-            position_type: PositionType::Absolute,
-            left: percent(50),
-            top: percent(50),
-            width: px(10),
-            height: px(10),
-            margin: UiRect::new(px(-5), px(0), px(-5), px(0)),
-            border: UiRect::all(px(2)),
-            border_radius: BorderRadius::MAX,
-            ..default()
-        },
-        BorderColor::all(DIM.with_alpha(0.5)),
-        Visibility::Hidden,
-    ));
+    reticle::setup(&mut commands);
 }
 
 pub(super) fn cleanup(mut commands: Commands) {
@@ -451,88 +434,6 @@ pub(super) fn held_pose(
     player: &HexPlayerState,
 ) -> Transform {
     held_transform(player, sway_for(runtime, sway, player), &HAND)
-}
-
-/// Light the reticle for what a shot would do now, and answer a shot the pool cannot pay
-/// for with an empty click and a notice.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn sync_reticle(
-    mut commands: Commands,
-    time: Res<Time>,
-    runtime: Res<HexWfcRuntime>,
-    settings: Res<crate::settings::Settings>,
-    overlay: Res<MatchOverlayState>,
-    buttons: Option<Res<ButtonInput<MouseButton>>>,
-    gamepads: Query<&Gamepad>,
-    architect: Option<Res<super::architect::ArchitectDesk>>,
-    spectator: Option<Res<crate::sim::state::SpectatorBot>>,
-    assets: Option<Res<KineticAssets>>,
-    presentation: Option<ResMut<KineticPresentation>>,
-    mut notice: ResMut<HudNotice>,
-    mut reticle: Query<(&mut BorderColor, &mut Visibility), With<Reticle>>,
-) {
-    let (Some(assets), Some(mut presentation)) = (assets, presentation) else {
-        return;
-    };
-    let Ok((mut border, mut visibility)) = reticle.single_mut() else {
-        return;
-    };
-    let local = runtime.local_player;
-    let in_play = *overlay == MatchOverlayState::Playing
-        && architect.is_none()
-        && spectator.is_none()
-        && runtime
-            .match_state
-            .players
-            .get(&local)
-            .is_some_and(HexPlayerState::in_facility);
-    let wanted = if in_play {
-        Visibility::Inherited
-    } else {
-        Visibility::Hidden
-    };
-    if *visibility != wanted {
-        *visibility = wanted;
-    }
-    if !in_play {
-        return;
-    }
-    let now = time.elapsed_secs();
-    let dry = charge(&runtime, local).is_some_and(|charge| charge < KINETIC_SHOT_COST);
-    let pressed = buttons
-        .as_ref()
-        .is_some_and(|b| b.just_pressed(MouseButton::Left) || b.just_pressed(MouseButton::Right))
-        || gamepads.iter().any(|pad| {
-            pad.just_pressed(GamepadButton::RightTrigger2)
-                || pad.just_pressed(GamepadButton::RightThumb)
-        });
-    if dry && pressed {
-        presentation.empty_at = Some(now);
-        notice.show(
-            "Kinetic tool empty. Recharge at a powered station",
-            Tone::Against,
-            now.into(),
-        );
-        super::audio::play(
-            &mut commands,
-            assets.empty.clone(),
-            0.6 * settings.effective_sfx_volume(),
-            "Kinetic empty",
-            None,
-        );
-    }
-    let flashing = presentation.empty_at.is_some_and(|at| now - at < 0.6);
-    let color = if dry || flashing {
-        WARNING
-    } else if runtime.match_state.kinetic_target(local).is_some() {
-        treatment(Role::Push).base_color
-    } else {
-        DIM.with_alpha(0.5)
-    };
-    let wanted = BorderColor::all(color);
-    if *border != wanted {
-        *border = wanted;
-    }
 }
 
 #[cfg(test)]

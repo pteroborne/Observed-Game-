@@ -732,6 +732,7 @@ fn air_stays_derived_across_committed_and_reverted_relayouts() {
                 !(was.space == HexSpace::Air
                     && now.space == HexSpace::Void
                     && super::HexPlacement {
+                        low_doors: 0,
                         space: HexSpace::Void,
                         ..was
                     } == now
@@ -801,6 +802,7 @@ fn classifying_air_leaves_the_relayout_solve_unchanged() {
                     (
                         at,
                         super::HexPlacement {
+                            low_doors: 0,
                             space: placement.space.as_drawn(),
                             ..placement
                         },

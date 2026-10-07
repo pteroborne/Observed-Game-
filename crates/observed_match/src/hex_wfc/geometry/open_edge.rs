@@ -608,6 +608,7 @@ mod tests {
     fn lone_hall(level: u8) -> HexWfcWorld {
         let at = HexCoord { q: 4, r: 4, level };
         let placement = HexPlacement {
+            low_doors: 0,
             coord: at,
             space: HexSpace::Hall,
             archetype: HexArchetype::Corner,

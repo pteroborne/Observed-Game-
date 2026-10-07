@@ -36,6 +36,36 @@ fn game() -> HexWfcMatch {
     game
 }
 
+#[test]
+fn low_door_panel_tracks_the_actual_aperture_when_rebuilt() {
+    let mut game = game();
+    let cell = game.players[&BODY].cell;
+    let face = HexFace::LATERAL
+        .into_iter()
+        .find(|&face| {
+            game.facility.placements[&cell]
+                .ports()
+                .port(face)
+                .is_doorway()
+        })
+        .expect("spawn threshold");
+    let wanted = [((cell, face), true)];
+    game.set_doors(wanted);
+    let door = *game.doors().next().expect("door");
+    assert_eq!(door.height, 3.0);
+    assert_eq!(door.panel().center.y, door.pose().0.y + 1.5);
+    game.facility
+        .placements
+        .get_mut(&cell)
+        .expect("cell")
+        .low_doors = 0;
+    game.set_doors(wanted);
+    let rebuilt = game.doors().next().expect("rebuilt door");
+    assert_eq!(rebuilt.height, 4.0);
+    assert_eq!(rebuilt.collider, door.collider);
+    assert_eq!(rebuilt.panel().center.y, rebuilt.pose().0.y + 2.0);
+}
+
 fn walk(game: &mut HexWfcMatch, ticks: u32) -> Vec<HexMatchEventKind> {
     let mut events = Vec::new();
     for _ in 0..ticks {

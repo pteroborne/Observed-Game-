@@ -27,6 +27,9 @@ pub(crate) fn surface(
         ColliderShape::Cuboid { half } => (-half.y, half.y, Vec3::ZERO, half.y < 0.5),
     };
     if !eyes {
+        if piece.surface == Some(observed_authoring::HullSurface::Ceiling) {
+            return None;
+        }
         let low = f32::from(level) * observed_hex::TILE_LEVEL_HEIGHT;
         let middle = piece.center.y + (min_y + max_y) * 0.5;
         if middle < low

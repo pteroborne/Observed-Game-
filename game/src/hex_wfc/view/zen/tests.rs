@@ -12,6 +12,7 @@ fn fixture() -> (HexWfcWorld, HexCoord) {
 }
 fn piece(coord: HexCoord, center: Vec3, size: Vec3) -> HexStructurePiece {
     HexStructurePiece {
+        surface: None,
         id: StableColliderId(1),
         anchor: coord,
         source_cell: coord,

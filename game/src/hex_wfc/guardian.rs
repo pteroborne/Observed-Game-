@@ -38,9 +38,9 @@ pub(super) const GLIDE: f32 = 12.0;
 /// A jump longer than this is a teleport (a catch sending it home), drawn as one.
 pub(super) const SNAP: f32 = 30.0;
 /// The hum's share of the effects volume, and how fast it follows the state.
-const HUM_VOLUME: f32 = 0.55;
+const HUM_VOLUME: f32 = 0.7778;
 const HUM_FADE: f32 = 14.0;
-const ONE_SHOT_VOLUME: f32 = 0.7;
+const ONE_SHOT_VOLUME: f32 = 0.9899;
 /// The same distance shrink the event cues use (`audio::HEX_SPATIAL_SCALE`).
 const SPATIAL_SCALE: f32 = 0.15;
 /// The red light the eye throws: hunting, and held still.

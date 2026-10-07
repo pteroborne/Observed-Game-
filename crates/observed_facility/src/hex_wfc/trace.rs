@@ -114,6 +114,11 @@ pub fn fold_trace(steps: &[SolveStep]) -> BTreeMap<HexCoord, CellTrace> {
                 down,
             } => {
                 cells.entry(coord).or_default().resolved = Some(HexPlacement {
+                    low_doors: if coord.level == 0 {
+                        doors & !archetype.span_mask()
+                    } else {
+                        0
+                    },
                     coord,
                     space,
                     archetype,

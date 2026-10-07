@@ -324,6 +324,16 @@ fn reach_and_walls_bound_the_crosshair() {
     let direction = open_direction(&game, 16.0);
     minor_ahead(&mut game, direction, KINETIC_REACH + 1.5);
     assert_eq!(game.kinetic_target(BODY), None, "beyond reach");
+    let hint = game
+        .kinetic_aim_target(BODY, 30.0)
+        .expect("a visible target beyond action range has an aim hint");
+    assert!(hint.distance > KINETIC_REACH);
+    assert!(
+        !game
+            .aim_candidate(BODY, hint.point, KINETIC_REACH, 0.85)
+            .unwrap()
+            .in_reach
+    );
 
     let (eye, _) = game.eye_and_look(BODY).expect("a body");
     let centre = game.body_position_for_tests(BODY);
@@ -342,6 +352,10 @@ fn reach_and_walls_bound_the_crosshair() {
     game.stand_minor_for_tests(MINOR, behind);
     game.aim_body_for_tests(BODY, behind);
     assert_eq!(game.kinetic_target(BODY), None, "through a wall");
+    assert!(
+        game.kinetic_aim_target(BODY, 30.0).is_none(),
+        "range hints must not reveal an occluded Guardian"
+    );
 }
 
 /// The same shots on two peers leave the same world.
@@ -483,9 +497,17 @@ fn a_minor_plumbed_up_rises() {
         highest = highest.max(minor(&game).position.y);
     }
     assert!(
-        highest > start.y + 2.0,
+        highest > start.y + 1.0,
         "it rose only to {highest} from {}",
         start.y
+    );
+    let ceiling = f32::from(minor(&game).cell.level) * observed_hex::TILE_LEVEL_HEIGHT
+        + observed_hex::FLOOR_SLAB_TOP
+        + 3.0;
+    let half_height = game.content.traversal_profile().controller().half_height;
+    assert!(
+        highest + half_height <= ceiling + 0.01,
+        "the plumb crossed the low ceiling"
     );
 }
 

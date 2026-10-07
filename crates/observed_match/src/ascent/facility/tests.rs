@@ -520,6 +520,7 @@ fn a_retraction_cannot_open_a_window_beside_a_watched_room() {
         let mut probe = game.physical().clone();
         let before = drawn(&probe);
         let rock = HexPlacement {
+            low_doors: 0,
             coord: neighbour,
             space: HexSpace::Void,
             archetype: HexArchetype::Void,

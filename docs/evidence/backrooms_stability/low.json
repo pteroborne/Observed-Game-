@@ -1,0 +1,15 @@
+{
+  "after": [
+    14.0,
+    1.4101601839065552,
+    24.0
+  ],
+  "after_cell": "HexCoord { q: 0, r: 2, level: 0 }",
+  "before": [
+    14.0,
+    4.545000076293945,
+    24.0
+  ],
+  "cell": "HexCoord { q: 0, r: 2, level: 0 }",
+  "continuous_controller": true
+}

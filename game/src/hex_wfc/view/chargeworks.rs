@@ -50,6 +50,7 @@ pub(super) fn spawn(
                         .with_rotation(Quat::from_rotation_y(-angle)),
                     ChildOf(parent),
                     NotShadowCaster,
+                    crate::hex_wfc::view::NeverShadowCaster,
                     Cutaway {
                         local,
                         min_y: position.y - size.y / 2.0,

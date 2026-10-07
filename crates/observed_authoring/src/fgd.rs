@@ -149,6 +149,7 @@ fn class_label(class: PortClass) -> &'static str {
         PortClass::RampOpen => "Ramp continuation",
         PortClass::ShaftOpen => "Vertical shaft opening",
         PortClass::Span => "Climb continuation",
+        PortClass::LowDoor => "Low doorway (3 m)",
     }
 }
 

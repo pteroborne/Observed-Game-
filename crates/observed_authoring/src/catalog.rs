@@ -87,6 +87,8 @@ pub struct CompiledModule {
     /// same content-hash reason as `stair_spine`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deck_path: Vec<[f32; 3]>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surfaces: Vec<Option<crate::HullSurface>>,
     pub structural_hash: String,
     /// Present while the old runtime manifest remains the compatibility seam.
     pub legacy_key: Option<TileKey>,
@@ -124,6 +126,7 @@ pub struct RoomPrototype {
     pub ports: Vec<RoomPrototypePort>,
     pub sockets: Vec<RoomPrototypeSocket>,
     pub hulls: Vec<Vec<Vec3>>,
+    pub surfaces: Vec<Option<crate::HullSurface>>,
     pub lights: Vec<TileLight>,
     /// Module-local and unrotated. See [`RuntimeModuleContract`].
     pub contract: Option<RuntimeModuleContract>,
@@ -392,6 +395,7 @@ impl CompiledTileCatalog {
                                 levels: module.levels,
                                 signature,
                                 hulls: rotated_hulls.clone(),
+                                surfaces: module.surfaces.clone(),
                                 lights: rotated_lights.clone(),
                                 spine: rotated_spine.clone(),
                                 deck: rotated_deck.clone(),
@@ -411,6 +415,7 @@ impl CompiledTileCatalog {
                             ports: rotated_ports.clone(),
                             sockets: rotated_sockets.clone(),
                             hulls: rotated_hulls.clone(),
+                            surfaces: module.surfaces.clone(),
                             lights: rotated_lights.clone(),
                             contract: runtime_contract.clone(),
                             assembly: assembly.clone(),
@@ -793,6 +798,7 @@ fn class_name(class: PortClass) -> &'static str {
     match class {
         PortClass::Sealed => "sealed",
         PortClass::Door => "door",
+        PortClass::LowDoor => "low_door",
         PortClass::RampOpen => "ramp_open",
         PortClass::ShaftOpen => "shaft_open",
         PortClass::Span => "span",
@@ -944,6 +950,11 @@ fn compile_module(
         sockets,
         stair_spine,
         deck_path,
+        surfaces: if module.prototype.surfaces.iter().any(Option::is_some) {
+            module.prototype.surfaces.clone()
+        } else {
+            Vec::new()
+        },
         structural_hash,
         legacy_key: (module.authoring_version < 2).then(|| module.prototype.key.clone()),
         contract: module.contract.clone(),
@@ -1242,7 +1253,8 @@ mod tests {
         // three Chargeworks roles at six orientations.
         // Six Library Archive Well and six Zen Rain Court orientations bring the count to 266.
         // Six Sky Last Promenade orientations complete the seven district wonders.
-        assert_eq!(built.catalog.modules.len(), 284);
+        // 58 low-clearance editions preserve the old connection vocabulary.
+        assert_eq!(built.catalog.modules.len(), 342);
         let registers = crate::tile_source::REGISTERS;
         for path in ignored {
             let text = std::fs::read_to_string(root.join(&path)).expect("retired source exists");

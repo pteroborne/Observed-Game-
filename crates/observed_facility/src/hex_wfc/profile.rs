@@ -437,6 +437,7 @@ pub enum PinIntent {
 pub enum PinPortClass {
     Sealed,
     Door,
+    LowDoor,
     RampOpen,
     ShaftOpen,
     Span,
@@ -447,6 +448,7 @@ impl From<PortClass> for PinPortClass {
         match class {
             PortClass::Sealed => Self::Sealed,
             PortClass::Door => Self::Door,
+            PortClass::LowDoor => Self::LowDoor,
             PortClass::RampOpen => Self::RampOpen,
             PortClass::ShaftOpen => Self::ShaftOpen,
             PortClass::Span => Self::Span,
@@ -459,6 +461,7 @@ impl From<PinPortClass> for PortClass {
         match class {
             PinPortClass::Sealed => Self::Sealed,
             PinPortClass::Door => Self::Door,
+            PinPortClass::LowDoor => Self::LowDoor,
             PinPortClass::RampOpen => Self::RampOpen,
             PinPortClass::ShaftOpen => Self::ShaftOpen,
             PinPortClass::Span => Self::Span,

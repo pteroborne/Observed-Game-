@@ -96,6 +96,12 @@ impl HexWfcMatch {
     /// [`KINETIC_REACH`], with nothing solid in front of it. Ties go to the lower id.
     #[must_use]
     pub fn kinetic_target(&self, player: PlayerId) -> Option<HexKineticTarget> {
+        self.kinetic_aim_target(player, KINETIC_REACH)
+    }
+
+    /// Read-only visible aim candidate for range feedback. Shooting still calls
+    /// `kinetic_target` and keeps its authoritative reach.
+    pub fn kinetic_aim_target(&self, player: PlayerId, reach: f32) -> Option<HexKineticTarget> {
         let (eye, look) = self.eye_and_look(player)?;
         let config = self.content.traversal_profile().controller();
         // The visible Roller is wider than its narrow traversal capsule. Select its
@@ -111,7 +117,7 @@ impl HexWfcMatch {
             else {
                 continue;
             };
-            if distance > KINETIC_REACH || best.is_some_and(|best| distance >= best.distance) {
+            if distance > reach || best.is_some_and(|best| distance >= best.distance) {
                 continue;
             }
             best = Some(HexKineticTarget {

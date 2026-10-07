@@ -283,6 +283,7 @@ fn class_label(class: PortClass) -> &'static str {
     match class {
         PortClass::Sealed => "sealed",
         PortClass::Door => "door",
+        PortClass::LowDoor => "low_door",
         PortClass::RampOpen => "ramp_open",
         PortClass::ShaftOpen => "shaft_open",
         PortClass::Span => "span",

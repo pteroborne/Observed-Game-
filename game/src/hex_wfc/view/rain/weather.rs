@@ -267,6 +267,7 @@ fn spawn(
             Transform::IDENTITY,
             ChildOf(parent),
             NotShadowCaster,
+            crate::hex_wfc::view::NeverShadowCaster,
             NotShadowReceiver,
             Cutaway {
                 local: Vec3::ZERO,

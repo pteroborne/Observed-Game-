@@ -3,6 +3,7 @@
 //! feedback, replay, and screen lifecycle integration. It parallels `full_wfc/` in
 //! structure and fidelity, driven by [`observed_match::hex_wfc::HexWfcMatch`].
 
+mod ambience;
 mod architect;
 mod ascent;
 mod ascent_capture;
@@ -50,10 +51,13 @@ pub(crate) struct HexOnboardingGate {
     pub(crate) active: bool,
 }
 
+pub(crate) mod reference;
+
 pub(crate) struct HexWfcPlugin;
 
 impl Plugin for HexWfcPlugin {
     fn build(&self, app: &mut App) {
+        ambience::configure(app);
         perf::configure(app);
         view::cistern::install(app);
         view::chargeworks::install(app);
@@ -165,6 +169,7 @@ impl Plugin for HexWfcPlugin {
                         view::exterior::rebuild_changed,
                         view::sync_changed_geometry,
                         view::sync_streamed_cells,
+                        view::warm_reusable_meshes,
                         view::sync_prison_view,
                         prison_gate::sync_lobby_gate,
                         view::exterior::sync_visibility,
@@ -188,6 +193,7 @@ impl Plugin for HexWfcPlugin {
                         .chain(),
                     (
                         view::sync_camera,
+                        view::stabilize_surfaces,
                         view::sky::follow_camera,
                         view::sky::sync_mood,
                         view::sky::drift_clouds,

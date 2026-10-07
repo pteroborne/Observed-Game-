@@ -819,7 +819,9 @@ impl Probe {
     fn stand(&self, at: Vec3) -> Option<Vec3> {
         const STEP: f32 = 0.1;
         const HEADROOM: f32 = 1.9;
-        const TOP: f32 = observed_hex::TILE_LEVEL_HEIGHT;
+        // This one-floor Backrooms lab uses LowDoor clearance. The service
+        // void above its suspended lid is not a reachable walking surface.
+        const TOP: f32 = observed_hex::FLOOR_SLAB_TOP + 3.0;
         const BOTTOM: f32 = -1.0;
         let samples = ((TOP - BOTTOM) / STEP).ceil() as usize;
         // Occupancy of the column, bottom up.

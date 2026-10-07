@@ -103,6 +103,7 @@ fn stand_before(runtime: &mut HexWfcRuntime, fixture: Fixture) -> bool {
 /// Drive the local body: walk to the fixture, press interact when asked. Runs each fixed
 /// tick before the match steps.
 pub(in crate::hex_wfc) fn drive(
+    mut commands: Commands,
     capture: Option<Res<HexWfcCapture>>,
     power: Option<ResMut<PowerCapture>>,
     runtime: Option<ResMut<HexWfcRuntime>>,
@@ -116,6 +117,7 @@ pub(in crate::hex_wfc) fn drive(
     if capture.mode != HexWfcCaptureMode::Power {
         return;
     }
+    commands.remove_resource::<crate::sim::state::SpectatorBot>();
     let tick = runtime.match_state.tick;
     let elapsed = tick.saturating_sub(power.since);
     intent.intent = PlayerIntent::default();

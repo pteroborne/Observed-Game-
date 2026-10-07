@@ -1,5 +1,11 @@
 # Asset sources
 
+The nine Backrooms PBR maps under `textures/backrooms/` were created on
+October 6, 2026 from original procedural fields in
+[`tools/generate_backrooms_materials.py`](../tools/generate_backrooms_materials.py).
+They use no external source material. Their channels and physical repeats are
+documented in [the material README](textures/backrooms/README.md).
+
 All assets added for `ASSET_PLAN.md` are released under
 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). They were retrieved
 on June 20, 2026.
@@ -164,3 +170,14 @@ ceiling fixture uses a top-center pivot.
 | `oga_25d/derived/lab_table.png` | `LAB/sprites/d_table.png` inside `lab_sprite.zip` | Extracted table sprite | CC0 |
 | `oga_25d/derived/lab_wall_tile.png` | `LAB/wall/tile000.png` inside `lab_texture.zip` | Extracted wall texture sampler | CC0 |
 
+## Physical building soundscape — 2026-10-06
+
+Original deterministic synthesis from `tools/generate_backrooms_audio.py`:
+
+| Asset | Description | Source |
+| --- | --- | --- |
+| `sounds/backrooms/hvac.ogg` | ventilation room tone | Original in-repo synthesis |
+| `sounds/backrooms/fluorescent.ogg` | fluorescent ballast buzz | Original in-repo synthesis |
+| `sounds/backrooms/creak.ogg` | localized mechanical creak | Original in-repo synthesis |
+
+All three files peak below -6 dBFS before mix gains.

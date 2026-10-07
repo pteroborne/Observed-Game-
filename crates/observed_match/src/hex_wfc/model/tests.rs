@@ -717,7 +717,9 @@ fn headless_gate_bot_walks_climbs_deterministically() {
     // building. And a spine's target now looks past a node already underfoot
     // (`StairSpine::target`), and a walkway over a built cell hangs no truss. Not
     // comparable.
-    assert_eq!(a, 9_903, "TR-10 pins the declared-climb completion tick");
+    // Low Backrooms ceilings and doorway geometry preserve completion while
+    // moving the controller's final arrival by one tick.
+    assert_eq!(a, 9_902, "TR-10 pins the declared-climb completion tick");
     // Moved again by twenty open halls and by churn becoming a district
     // property, and again *without* moving the tick above - the same pairing,
     // and the same proof. The bot's route through the gate seed is tick for
@@ -765,7 +767,7 @@ fn headless_gate_bot_walks_climbs_deterministically() {
     // digest (-> 0xf2df_3180_289e_b11d), tick unmoved.
     assert_eq!(
         first.snapshot().digest,
-        0xd51e_c641_4b95_b9f2,
+        0xfcb006ef4d213b1e,
         "TR-10 pins the declared-climb final snapshot digest"
     );
 }
@@ -1589,12 +1591,9 @@ fn an_offered_anchor_site_is_one_deploy_actually_takes() {
     );
 }
 
-/// Open edges let a body fall onto the roof of a lower hall, where the railings that
-/// keep people in the loggias around it also keep it out. A fall is a setback, not a
-/// softlock: after three seconds on a roof the body goes back to the last cell it
-/// stood in, and not a tick sooner.
+/// A descending Observer enters the lower interior without a recovery teleport.
 #[test]
-fn a_body_stranded_on_a_roof_is_returned_to_the_last_cell_it_stood_in() {
+fn a_body_falls_through_a_roof_into_its_lower_floor() {
     let mut game = HexWfcMatch::new_with_rooms(
         0x5AFE,
         HexMatchConfig {
@@ -1651,16 +1650,15 @@ fn a_body_stranded_on_a_roof_is_returned_to_the_last_cell_it_stood_in() {
             break;
         }
     }
-    let tick = recovered_at.expect("a stranded body must be recovered");
     assert!(
-        tick + 1 >= u64::from(super::movement::STRANDED_RECOVERY_TICKS),
-        "recovered after {tick} ticks, before the grace period"
+        recovered_at.is_none(),
+        "ordinary roof falls must not teleport"
     );
-    assert_eq!(game.players[&id].cell, last);
+    assert_eq!(game.players[&id].cell, roof);
     let feet = game.bodies[&id].position.y - half_height;
     assert!(
-        (feet - (hex_origin(last)[1] + FLOOR_SLAB_TOP)).abs() < 0.5,
-        "back on the floor of {last:?}, feet at {feet}"
+        (feet - (hex_origin(roof)[1] + FLOOR_SLAB_TOP)).abs() < 0.1,
+        "land inside lower cell {roof:?}, feet at {feet}"
     );
 }
 
@@ -1837,6 +1835,7 @@ fn clearing_a_cell_beside_a_room_opens_a_window_and_building_it_closes_one() {
                 // Select an actual window-bearing wall under the district policy. The
                 // assertion below proves its incremental open/close projection.
                 let cleared = HexPlacement {
+                    low_doors: 0,
                     coord: next,
                     space: HexSpace::Void,
                     archetype: HexArchetype::Void,
@@ -1872,6 +1871,7 @@ fn clearing_a_cell_beside_a_room_opens_a_window_and_building_it_closes_one() {
         .map(|piece| piece.id)
         .collect();
     let cleared = HexPlacement {
+        low_doors: 0,
         coord: beside,
         space: HexSpace::Void,
         archetype: HexArchetype::Void,

@@ -297,6 +297,7 @@ fn compatibility_report(
     use observed_traversal::{DeckPath, StairSpine};
 
     let prototype = TilePrototype {
+        surfaces: Vec::new(),
         key: crate::manifest::TileKey {
             archetype: module.archetype.clone(),
             register: module

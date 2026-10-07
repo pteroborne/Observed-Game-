@@ -523,7 +523,7 @@ fn an_empty_catalog_reports_every_demand_as_missing() {
 /// room in every district is the same room. Distinct source ids is the honest
 /// measure, and this pins both numbers so the difference stays visible.
 #[test]
-fn room_roles_are_currently_single_module() {
+fn clearance_editions_do_not_claim_extra_room_choices() {
     let Ok((_, rooms)) = crate::corpus() else {
         panic!("the committed corpus must load");
     };
@@ -542,8 +542,7 @@ fn room_roles_are_currently_single_module() {
     assert_eq!(
         thin,
         coverage.room_variety.len(),
-        "every role is still backed by one authored module; if this fails somebody \
-         added real variety - update the panel copy and bug_backlog #25"
+        "every placement still has one compatible room choice; clearance editions are not interchangeable"
     );
     // And the trap this metric exists to avoid: prototypes look plural.
     assert!(

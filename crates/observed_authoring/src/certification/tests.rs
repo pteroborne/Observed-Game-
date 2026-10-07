@@ -284,6 +284,7 @@ fn tower_module(id: &str) -> CompiledModule {
     })
     .collect();
     CompiledModule {
+        surfaces: Vec::new(),
         id: id.to_string(),
         source_path: format!("synthetic/{id}.map"),
         source_sha256: String::new(),

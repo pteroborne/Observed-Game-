@@ -79,6 +79,7 @@ fn port_name(class: PortClass) -> &'static str {
     match class {
         PortClass::Sealed => "sealed",
         PortClass::Door => "door",
+        PortClass::LowDoor => "low door",
         PortClass::RampOpen => "ramp",
         PortClass::ShaftOpen => "shaft",
         PortClass::Span => "span",

@@ -207,7 +207,7 @@ pub(super) fn sync(
                         super::super::audio::play(
                             &mut commands,
                             art.land.clone(),
-                            0.45 * settings.effective_sfx_volume(),
+                            0.6364 * settings.effective_sfx_volume(),
                             "Minor Guardian box impact",
                             Some(feet + frame.up() * 0.4),
                         );

@@ -4,6 +4,8 @@
 //! Rapier controller. The square [`crate::full_wfc`] projection remains a
 //! separate regression fixture until the Arc L integration cutover.
 
+pub use observed_authoring::HullSurface;
+
 mod content;
 mod geometry;
 mod model;
@@ -24,17 +26,17 @@ pub use model::prison::{
     HexPrison, HexPrisonMaze, LOBBY_HOLD_TICKS, MAZE_COLS, MAZE_REGISTER, MAZE_ROWS,
 };
 pub use model::{
-    DOOR_HALF_WIDTH, DOOR_HEIGHT, DOOR_REACH, DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION,
-    HexActionButtons, HexAnchorSite, HexBodyPlace, HexBotDriver, HexDeployedLantern,
-    HexDeployedPad, HexDirectedError, HexDoor, HexDoorState, HexGuardianState, HexGuardianStatus,
-    HexInputFrame, HexInteraction, HexInteractionAction, HexKillingPush, HexKineticTarget,
-    HexKineticVerb, HexLanternCache, HexLanternState, HexMapCellKnowledge, HexMapCellSnapshot,
-    HexMapDiscovery, HexMatchConfig, HexMatchError, HexMatchEvent, HexMatchEventKind,
-    HexMatchSnapshot, HexMatchStatus, HexMinorState, HexPadState, HexPlayerCommand,
-    HexPlayerMapKnowledge, HexPlayerSnapshot, HexPlayerState, HexPlumbAim, HexReleasedGuardian,
-    HexReleasedKind, HexSight, HexTeamObjectiveState, HexTeamSnapshot, HexTeamState, HexWfcMatch,
-    KEYSTONES_REQUIRED, KINETIC_COOLDOWN_TICKS, KINETIC_PULL_SPEED, KINETIC_PUSH_SPEED,
-    KINETIC_REACH, KINETIC_STAGGER_FRICTION, KINETIC_STAGGER_TICKS, MAX_ROSTER,
+    AimCandidate, DOOR_HALF_WIDTH, DOOR_HEIGHT, DOOR_REACH, DUAL_STATION_HOLD_TICKS,
+    HEX_INPUT_VERSION, HexActionButtons, HexAnchorSite, HexBodyPlace, HexBotDriver,
+    HexDeployedLantern, HexDeployedPad, HexDirectedError, HexDoor, HexDoorState, HexGuardianState,
+    HexGuardianStatus, HexInputFrame, HexInteraction, HexInteractionAction, HexKillingPush,
+    HexKineticTarget, HexKineticVerb, HexLanternCache, HexLanternState, HexMapCellKnowledge,
+    HexMapCellSnapshot, HexMapDiscovery, HexMatchConfig, HexMatchError, HexMatchEvent,
+    HexMatchEventKind, HexMatchSnapshot, HexMatchStatus, HexMinorState, HexPadState,
+    HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot, HexPlayerState, HexPlumbAim,
+    HexReleasedGuardian, HexReleasedKind, HexSight, HexTeamObjectiveState, HexTeamSnapshot,
+    HexTeamState, HexWfcMatch, KEYSTONES_REQUIRED, KINETIC_COOLDOWN_TICKS, KINETIC_PULL_SPEED,
+    KINETIC_PUSH_SPEED, KINETIC_REACH, KINETIC_STAGGER_FRICTION, KINETIC_STAGGER_TICKS, MAX_ROSTER,
     MINOR_BREAKING_DROP, MINOR_SIGHT_STEPS, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER,
     PLUMB_COOLDOWN_TICKS, PLUMB_TICKS, SENSOR_HANG, SENSOR_REACH, SIGHT_REACH, SIGHT_REFRESH_TICKS,
     door_pose,

@@ -855,3 +855,39 @@ fn cistern_card_places_cohesive_multi_tile_room() {
     assert_eq!(sim.cooldown, ARCHITECT_COOLDOWN_TICKS);
     assert!(!sim.deck.hand.iter().any(|c| c.id == card_id));
 }
+
+#[test]
+fn nearest_hunter_search_matches_individual_searches_with_doors_and_limits() {
+    let mut lab = lab();
+    let origins: Vec<_> = lab
+        .world
+        .placements
+        .values()
+        .filter(|p| p.space.built())
+        .take(4)
+        .map(|p| p.coord)
+        .collect();
+    let threshold = lab
+        .world
+        .placements
+        .keys()
+        .find_map(|&cell| lab.threshold_key(cell, HexFace::East))
+        .unwrap();
+    for state in [DoorState::Closed, DoorState::Open] {
+        lab.doors.insert(threshold, state);
+        for limit in [0, 1, 4, 40] {
+            let mut expected = BTreeMap::new();
+            for &origin in &origins {
+                for (cell, distance) in lab.distances_from(origin, limit) {
+                    expected
+                        .entry(cell)
+                        .and_modify(|old: &mut usize| *old = (*old).min(distance))
+                        .or_insert(distance);
+                }
+            }
+            let repeated = origins.iter().copied().chain(origins.iter().copied());
+            assert_eq!(lab.distances_from_many(repeated, limit), expected);
+        }
+    }
+    assert!(lab.distances_from_many([], 40).is_empty());
+}

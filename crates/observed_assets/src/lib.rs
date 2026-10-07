@@ -75,6 +75,78 @@ pub const FLOOR: AssetSlot = AssetSlot {
     path: "textures/floor.png",
     hint: "a CC0 floor/concrete albedo (ambientCG)",
 };
+
+/// An authored neutral PBR finish. R/G/B in `orm` mean occlusion, roughness,
+/// metalness; normal maps are linear OpenGL tangent-space images.
+#[derive(Clone, Copy, Debug)]
+pub struct PbrMaterialSlots {
+    pub albedo: AssetSlot,
+    pub normal: AssetSlot,
+    pub orm: AssetSlot,
+}
+
+pub const BACKROOMS_MATERIALS: [PbrMaterialSlots; 3] = [
+    PbrMaterialSlots {
+        albedo: AssetSlot {
+            name: "backrooms_carpet_albedo",
+            kind: AssetKind::Texture,
+            path: "textures/backrooms/carpet_albedo.png",
+            hint: "Original neutral commercial carpet; four-metre repeat",
+        },
+        normal: AssetSlot {
+            name: "backrooms_carpet_normal",
+            kind: AssetKind::Texture,
+            path: "textures/backrooms/carpet_normal.png",
+            hint: "Fine low-pile relief, linear OpenGL normals",
+        },
+        orm: AssetSlot {
+            name: "backrooms_carpet_orm",
+            kind: AssetKind::Texture,
+            path: "textures/backrooms/carpet_orm.png",
+            hint: "Linear occlusion/roughness/metalness",
+        },
+    },
+    PbrMaterialSlots {
+        albedo: AssetSlot {
+            name: "backrooms_wallpaper_albedo",
+            kind: AssetKind::Texture,
+            path: "textures/backrooms/wallpaper_albedo.png",
+            hint: "Original neutral wallpaper; four-metre repeat",
+        },
+        normal: AssetSlot {
+            name: "backrooms_wallpaper_normal",
+            kind: AssetKind::Texture,
+            path: "textures/backrooms/wallpaper_normal.png",
+            hint: "Shallow paper seams, linear OpenGL normals",
+        },
+        orm: AssetSlot {
+            name: "backrooms_wallpaper_orm",
+            kind: AssetKind::Texture,
+            path: "textures/backrooms/wallpaper_orm.png",
+            hint: "Linear occlusion/roughness/metalness",
+        },
+    },
+    PbrMaterialSlots {
+        albedo: AssetSlot {
+            name: "backrooms_acoustic_albedo",
+            kind: AssetKind::Texture,
+            path: "textures/backrooms/acoustic_albedo.png",
+            hint: "Original acoustic panels; six-metre repeat, 600 x 1200 mm grid",
+        },
+        normal: AssetSlot {
+            name: "backrooms_acoustic_normal",
+            kind: AssetKind::Texture,
+            path: "textures/backrooms/acoustic_normal.png",
+            hint: "Shallow pores and T-bar joints, linear OpenGL normals",
+        },
+        orm: AssetSlot {
+            name: "backrooms_acoustic_orm",
+            kind: AssetKind::Texture,
+            path: "textures/backrooms/acoustic_orm.png",
+            hint: "Linear occlusion/roughness/metalness",
+        },
+    },
+];
 pub const PROP: AssetSlot = AssetSlot {
     name: "prop",
     kind: AssetKind::Model,
@@ -194,6 +266,24 @@ pub const AMBIENCE: AssetSlot = AssetSlot {
     kind: AssetKind::Sound,
     path: "sounds/ambience.ogg",
     hint: "looping industrial facility hum",
+};
+pub const BACKROOMS_HVAC: AssetSlot = AssetSlot {
+    name: "backrooms_hvac",
+    kind: AssetKind::Sound,
+    path: "sounds/backrooms/hvac.ogg",
+    hint: "original ventilation room tone",
+};
+pub const BACKROOMS_BUZZ: AssetSlot = AssetSlot {
+    name: "backrooms_buzz",
+    kind: AssetKind::Sound,
+    path: "sounds/backrooms/fluorescent.ogg",
+    hint: "original powered fluorescent ballast buzz",
+};
+pub const BUILDING_CREAK: AssetSlot = AssetSlot {
+    name: "building_creak",
+    kind: AssetKind::Sound,
+    path: "sounds/backrooms/creak.ogg",
+    hint: "original localized mechanical creak",
 };
 pub const AMBIENCE_ARCHIVE: AssetSlot = AssetSlot {
     name: "ambience_archive",
@@ -511,6 +601,15 @@ pub const WALL_ALBEDO_LAB: AssetSlot = AssetSlot {
 /// Every authored slot, in showcase order. Add a row (and a named const above) to
 /// add a drop-in point.
 pub const SLOTS: &[AssetSlot] = &[
+    BACKROOMS_MATERIALS[0].albedo,
+    BACKROOMS_MATERIALS[0].normal,
+    BACKROOMS_MATERIALS[0].orm,
+    BACKROOMS_MATERIALS[1].albedo,
+    BACKROOMS_MATERIALS[1].normal,
+    BACKROOMS_MATERIALS[1].orm,
+    BACKROOMS_MATERIALS[2].albedo,
+    BACKROOMS_MATERIALS[2].normal,
+    BACKROOMS_MATERIALS[2].orm,
     WALL,
     FLOOR,
     PROP,
@@ -533,6 +632,9 @@ pub const SLOTS: &[AssetSlot] = &[
     REROUTE,
     ESCAPE,
     AMBIENCE,
+    BACKROOMS_HVAC,
+    BACKROOMS_BUZZ,
+    BUILDING_CREAK,
     AMBIENCE_ARCHIVE,
     AMBIENCE_REACTOR,
     AMBIENCE_ATRIUM,

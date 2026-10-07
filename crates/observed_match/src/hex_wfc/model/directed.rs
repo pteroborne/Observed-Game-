@@ -141,10 +141,12 @@ impl HexWfcMatch {
         &mut self,
         placements: BTreeMap<HexCoord, HexPlacement>,
     ) -> Result<&HexRelayoutDelta, HexDirectedError> {
+        self.mark_mutation_phase("before_commit");
         let logical = self
             .facility
             .commit_directed_delta(placements)
             .map_err(HexDirectedError::Facility)?;
+        self.mark_mutation_phase("logical_commit");
         let geometry = match self.geometry.project_delta_with_rooms(
             &self.facility,
             &logical,
@@ -159,16 +161,22 @@ impl HexWfcMatch {
                 return Err(HexDirectedError::Geometry(error));
             }
         };
+        self.mark_mutation_phase("geometry_projection");
         if let Err(error) = self.physics.apply_collider_delta(&geometry.colliders) {
             self.facility
                 .revert_relayout_delta(logical)
                 .expect("the just-accepted logical delta is revertible");
             return Err(HexDirectedError::Colliders(error));
         }
+        self.mark_mutation_phase("collider_apply");
+        self.last_geometry_cells
+            .extend(geometry.changed_cells.iter().copied());
         self.geometry
             .apply_delta(&geometry)
             .expect("geometry delta was projected from this snapshot");
+        self.mark_mutation_phase("geometry_apply");
         self.refresh_spawn_to_exit_cost();
+        self.mark_mutation_phase("route_refresh");
         self.recent_events.push(HexMatchEvent {
             tick: self.tick,
             kind: if logical.changed_cells.is_empty() {

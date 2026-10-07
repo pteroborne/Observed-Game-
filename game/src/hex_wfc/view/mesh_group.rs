@@ -12,6 +12,7 @@ use observed_traversal::ColliderShape;
 pub(in crate::hex_wfc) enum MeshGroupKey {
     Floor,
     Ceiling,
+    Trim,
     Interior,
     Perimeter(u8),
     /// A ramp's or a stair tower's faces that point one way: drawn in the district's
@@ -74,6 +75,14 @@ impl MeshGroupKey {
             HexPiecePart::Walkway => return Self::Walkway,
             HexPiecePart::Truss => return Self::Truss,
             HexPiecePart::Guard | HexPiecePart::Glazing => return Self::Hidden,
+        }
+        if let Some(surface) = piece.surface {
+            return match surface {
+                observed_authoring::HullSurface::Floor => Self::Floor,
+                observed_authoring::HullSurface::Wall => Self::Interior,
+                observed_authoring::HullSurface::Ceiling => Self::Ceiling,
+                observed_authoring::HullSurface::Trim => Self::Trim,
+            };
         }
         match piece.role {
             // Split by facing when the meshes are built; the key only gathers them.

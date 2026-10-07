@@ -206,6 +206,7 @@ fn sync(
             ReservoirSurface(cell.0),
             ChildOf(parent),
             NotShadowCaster,
+            crate::hex_wfc::view::NeverShadowCaster,
             NotShadowReceiver,
         ));
     }

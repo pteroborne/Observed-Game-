@@ -109,6 +109,7 @@ impl FromWorld for DoorAssets {
 pub(super) struct DoorVisual {
     key: (HexCoord, HexFace),
     shown: f32,
+    height: f32,
 }
 
 #[derive(Component)]
@@ -133,6 +134,7 @@ fn spawn_door(commands: &mut Commands, assets: &DoorAssets, door: &HexDoor) -> E
                 key: (door.cell, door.face),
                 // Deployed rolled up: a door deployed closed rolls down into place.
                 shown: ROLLED,
+                height: door.height,
             },
             DespawnOnExit(GameState::HexWfc),
             Transform::from_translation(floor).with_rotation(rotation),
@@ -144,27 +146,28 @@ fn spawn_door(commands: &mut Commands, assets: &DoorAssets, door: &HexDoor) -> E
                 frame.spawn((
                     Mesh3d(assets.post.clone()),
                     MeshMaterial3d(assets.bronze.clone()),
-                    Transform::from_xyz(side * reach, DOOR_HEIGHT * 0.5, 0.0),
+                    Transform::from_xyz(side * reach, door.height * 0.5, 0.0)
+                        .with_scale(Vec3::new(1.0, door.height / DOOR_HEIGHT, 1.0)),
                 ));
             }
             frame.spawn((
                 Mesh3d(assets.lintel.clone()),
                 MeshMaterial3d(assets.bronze.clone()),
-                Transform::from_xyz(0.0, DOOR_HEIGHT + LINTEL * 0.5, 0.0),
+                Transform::from_xyz(0.0, door.height + LINTEL * 0.5, 0.0),
             ));
             frame.spawn((
                 Strip,
                 Mesh3d(assets.strip.clone()),
                 MeshMaterial3d(assets.closed.clone()),
-                Transform::from_xyz(0.0, DOOR_HEIGHT - 0.02, 0.0),
+                Transform::from_xyz(0.0, door.height - 0.02, 0.0),
             ));
             frame.spawn((
                 Shutter,
                 Mesh3d(assets.shutter.clone()),
                 MeshMaterial3d(assets.panel.clone()),
-                Transform::from_xyz(0.0, DOOR_HEIGHT, 0.0).with_scale(Vec3::new(
+                Transform::from_xyz(0.0, door.height, 0.0).with_scale(Vec3::new(
                     1.0,
-                    ROLLED * DOOR_HEIGHT,
+                    ROLLED * door.height,
                     1.0,
                 )),
             ));
@@ -213,11 +216,22 @@ pub(super) fn sync(
         .collect();
     // Gone: a rewritten or retracted cell took it.
     for (entity, visual, _) in &doors {
-        if !standing.contains_key(&visual.key) {
+        if !standing
+            .get(&visual.key)
+            .is_some_and(|door| door.height == visual.height)
+        {
             commands.entity(entity).despawn();
         }
     }
-    let drawn: Vec<_> = doors.iter().map(|(_, visual, _)| visual.key).collect();
+    let drawn: Vec<_> = doors
+        .iter()
+        .filter(|(_, visual, _)| {
+            standing
+                .get(&visual.key)
+                .is_some_and(|door| door.height == visual.height)
+        })
+        .map(|(_, visual, _)| visual.key)
+        .collect();
     let volume = settings.effective_sfx_volume();
     for (&key, door) in &standing {
         if !drawn.contains(&key) {
@@ -261,7 +275,7 @@ pub(super) fn sync(
         };
         for child in children.iter() {
             if let Ok(mut transform) = shutters.get_mut(child) {
-                transform.scale.y = visual.shown * DOOR_HEIGHT;
+                transform.scale.y = visual.shown * visual.height;
             }
             if let Ok(mut material) = strips.get_mut(child)
                 && material.0 != *lit

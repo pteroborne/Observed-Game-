@@ -177,6 +177,7 @@ fn retractions(game: &HexWfcMatch) {
     for cell in picked {
         let mut after = game.clone();
         let hole = HexPlacement {
+            low_doors: 0,
             coord: cell,
             space: HexSpace::Void,
             archetype: HexArchetype::Void,

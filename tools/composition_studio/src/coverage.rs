@@ -18,7 +18,7 @@
 //! second rule left to drift. [`CoverageReport::build`] still records what the
 //! *real* projector returned, and a test still asserts the two never disagree.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use observed_authoring::{RoomPrototype, TilePrototype};
 use observed_facility::hex_wfc::{
@@ -77,13 +77,16 @@ pub struct RoomVarietyRow {
     /// is the variety number — how many different rooms an author drew.
     pub modules: usize,
     pub registers: usize,
+    /// Maximum source choices for one register and exact interface signature.
+    /// A low-clearance edition cannot substitute for its normal-height edition.
+    pub alternatives: usize,
 }
 
 impl RoomVarietyRow {
-    /// One authored module means the same room every time, everywhere.
+    /// One compatible choice means there is no alternative at a given placement.
     #[must_use]
     pub fn is_thin(&self) -> bool {
-        self.modules <= 1
+        self.alternatives <= 1
     }
 }
 
@@ -241,11 +244,33 @@ fn room_variety(rooms: &[RoomPrototype]) -> Vec<RoomVarietyRow> {
             let mut modules: Vec<&str> = matching.iter().map(|room| room.id.as_str()).collect();
             modules.sort_unstable();
             modules.dedup();
+            let mut choices: BTreeMap<_, BTreeSet<_>> = BTreeMap::new();
+            for room in &matching {
+                let mut ports = room
+                    .ports
+                    .iter()
+                    .map(|port| {
+                        (
+                            port.cell.q,
+                            port.cell.r,
+                            port.cell.level,
+                            port.face.index(),
+                            port.class as u8,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                ports.sort_unstable();
+                choices
+                    .entry((room.key.register.as_str(), ports))
+                    .or_default()
+                    .insert(room.id.as_str());
+            }
             RoomVarietyRow {
                 role: name,
                 prototypes: matching.len(),
                 modules: modules.len(),
                 registers: registers.len(),
+                alternatives: choices.values().map(BTreeSet::len).max().unwrap_or(0),
             }
         })
         .collect()

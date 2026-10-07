@@ -336,6 +336,7 @@ impl PrisonState {
                     }
                 })
                 .or_insert_with(|| HexPlacement {
+                    low_doors: 0,
                     coord: cell,
                     space: HexSpace::Hall,
                     doors: 0,

@@ -103,6 +103,16 @@ pub struct TileLight {
 /// descent rather than authoring noise, in metres.
 const STAIR_NODE_LEVEL_TOLERANCE: f32 = 0.05;
 
+/// Optional brush material assignment, independent of collider shape and height.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HullSurface {
+    Floor,
+    Wall,
+    Ceiling,
+    Trim,
+}
+
 /// A validated, world-space tile ready for placement.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TilePrototype {
@@ -115,6 +125,8 @@ pub struct TilePrototype {
     /// Convex hulls in tile-local world meters: origin at the cell center,
     /// level 0 floor at y = 0.
     pub hulls: Vec<Vec<Vec3>>,
+    /// Brush-indexed surface semantics shared by projection and presentation.
+    pub surfaces: Vec<Option<HullSurface>>,
     /// Semantic practicals authored against visible fixture geometry.
     pub lights: Vec<TileLight>,
     /// The climbable line through this tile, empty for tiles with no climb.
@@ -229,6 +241,7 @@ pub(crate) fn face_name(face: HexFace) -> &'static str {
 pub(crate) fn class_from_name(name: &str) -> Result<PortClass, TileError> {
     Ok(match name {
         "door" => PortClass::Door,
+        "low_door" => PortClass::LowDoor,
         "ramp_open" => PortClass::RampOpen,
         "shaft_open" => PortClass::ShaftOpen,
         "span" => PortClass::Span,
@@ -240,6 +253,7 @@ pub(crate) fn class_name(class: PortClass) -> &'static str {
     match class {
         PortClass::Sealed => "sealed",
         PortClass::Door => "door",
+        PortClass::LowDoor => "low_door",
         PortClass::RampOpen => "ramp_open",
         PortClass::ShaftOpen => "shaft_open",
         PortClass::Span => "span",
@@ -485,10 +499,21 @@ pub fn parse_tile(text: &str) -> Result<TilePrototype, TileError> {
 
     let footprint = footprint_prisms(&map, levels)?;
     let mut hulls = Vec::new();
+    let mut surfaces = Vec::new();
     if let Some(world) = worldspawn {
         for (index, brush) in world.brushes.iter().enumerate() {
             let vertices = brush_vertices(brush).ok_or(TileError::DegenerateBrush { index })?;
             validate_footprint(&vertices, &footprint)?;
+            let surface = brush
+                .first()
+                .and_then(|face| match face.texture.to_bytes() {
+                    b"observed_floor" => Some(HullSurface::Floor),
+                    b"observed_wall" => Some(HullSurface::Wall),
+                    b"observed_ceiling" => Some(HullSurface::Ceiling),
+                    b"observed_trim" => Some(HullSurface::Trim),
+                    _ => None,
+                });
+            surfaces.push(surface);
             hulls.push(vertices.iter().map(|&v| to_world(v)).collect());
         }
     }
@@ -589,6 +614,7 @@ pub fn parse_tile(text: &str) -> Result<TilePrototype, TileError> {
         levels,
         signature,
         hulls,
+        surfaces,
         lights,
         spine,
         deck,

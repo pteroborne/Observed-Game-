@@ -16,6 +16,11 @@ use player_input::PlayerIntent;
 
 use crate::flow::ActiveMatchSeed;
 
+mod revisions;
+#[cfg(test)]
+use revisions::changed_revisions;
+pub(super) use revisions::record_generation_changes;
+
 use super::HexOnboardingGate;
 use super::launch::{HexLaunchError, HexLaunchSpec, HexSeedPolicy, prepare};
 use super::loading::{HexLaunchRequest, PreparedHexLaunchSlot};
@@ -510,27 +515,15 @@ pub(super) fn step_runtime(
             replay.record_hex_wfc(&runtime.match_state);
         }
     }
+    runtime.match_state.mark_mutation_phase("replay_recording");
     record_generation_changes(&mut runtime, previous_generation);
+    runtime.match_state.mark_mutation_phase("revision_tracking");
     // Survivor-map knowledge is simulation-owned and player-local. Presentation
     // reads it directly; rival occupancy never enters the local ledger.
     if let Some(event) = runtime.match_state.recent_events.last() {
         runtime.status = super::cues::cue_for(event.kind).label.to_string();
     }
     finish_input_tick(&mut intent, policy);
-}
-
-pub(super) fn record_generation_changes(runtime: &mut HexWfcRuntime, previous_generation: u32) {
-    if runtime.match_state.facility.generation == previous_generation {
-        return;
-    }
-    let changed = changed_revisions(
-        &runtime.match_state.facility.cell_revisions,
-        &runtime.presented_revisions,
-    );
-    for (cell, revision) in changed {
-        runtime.pending_visual_cells.insert(cell);
-        runtime.presented_revisions.insert(cell, revision);
-    }
 }
 
 fn clear_one_shot_input(intent: &mut PlayerIntent) {
@@ -574,17 +567,6 @@ fn browsed_level(discovered: &BTreeSet<HexCoord>, current: u8, direction: i8) ->
             .find(|&level| level < current)
             .unwrap_or(current)
     }
-}
-
-fn changed_revisions(
-    live: &BTreeMap<HexCoord, u32>,
-    presented: &BTreeMap<HexCoord, u32>,
-) -> Vec<(HexCoord, u32)> {
-    live.iter()
-        .filter_map(|(&cell, &revision)| {
-            (presented.get(&cell).copied().unwrap_or(0) != revision).then_some((cell, revision))
-        })
-        .collect()
 }
 
 #[cfg(test)]

@@ -18,67 +18,15 @@ use observed_match::hex_wfc::{
 use super::HexWfcGeometry;
 use super::assets::HexWfcVisualAssets;
 use super::fixtures::{PracticalProjection, spawn_cell_practicals};
+use super::seams::spawn_trim;
 use crate::GameState;
 use crate::hex_wfc::sim::HexWfcRuntime;
 
-/// Lightweight, presentation-only lookup into the authoritative geometry vectors.
-///
-/// Keeping indices rather than cloning pieces makes the resident renderer cheap to
-/// construct even for the production-sized facility. A relayout can reorder the
-/// snapshot's packed vectors, so [`HexGeometryCatalog::rebuild`] is called after every
-/// accepted geometry generation before any new resident cell is projected.
-pub(super) struct HexGeometryCatalog {
-    pub(super) generation: u32,
-    pub(super) cells: BTreeMap<HexCoord, CellGeometryIndex>,
-    pub(super) boundary_piece_indices: Vec<usize>,
-}
-
-pub(super) struct CellGeometryIndex {
-    pub(super) footprint: Vec<HexCoord>,
-    pub(super) piece_indices: Vec<usize>,
-    pub(super) light_indices: Vec<usize>,
-}
-
-impl HexGeometryCatalog {
-    /// Index `geometry`, the projection of `world`: the facility's, or a prison maze's.
-    pub(super) fn build(world: &HexWfcWorld, geometry: &HexWfcGeometrySnapshot) -> Self {
-        let mut cells = BTreeMap::<HexCoord, CellGeometryIndex>::new();
-        let mut boundary_piece_indices = Vec::new();
-        for (index, piece) in geometry.pieces.iter().enumerate() {
-            if piece.role == HexStructureRole::Boundary {
-                boundary_piece_indices.push(index);
-                continue;
-            }
-            cells
-                .entry(piece.source_cell)
-                .or_insert_with(|| CellGeometryIndex {
-                    footprint: cell_footprint(world, piece.source_cell),
-                    piece_indices: Vec::new(),
-                    light_indices: Vec::new(),
-                })
-                .piece_indices
-                .push(index);
-        }
-        for (index, light) in geometry.lights.iter().enumerate() {
-            if let Some(cell) = cells.get_mut(&light.source_cell) {
-                cell.light_indices.push(index);
-            }
-        }
-        Self {
-            generation: geometry.generation,
-            cells,
-            boundary_piece_indices,
-        }
-    }
-
-    pub(super) fn rebuild(&mut self, runtime: &HexWfcRuntime) {
-        *self = Self::build(&runtime.match_state.facility, &runtime.match_state.geometry);
-    }
-
-    pub(super) fn contains(&self, coord: HexCoord) -> bool {
-        self.cells.contains_key(&coord)
-    }
-}
+mod catalog;
+#[cfg(test)]
+pub(super) use catalog::CellGeometryIndex;
+pub(super) use catalog::HexGeometryCatalog;
+use catalog::cell_footprint;
 
 /// Result returned to the residency owner after one cell parent is projected. The
 /// entity is a transient presentation handle; the stable key remains [`HexCoord`].
@@ -100,8 +48,8 @@ pub(super) fn spawn_boundary(
         .architecture
         .get(&world.config.spawn())
         .unwrap_or(&ArchitectureRegister::ALL[0]);
-    for (hull_index, &piece_index) in catalog.boundary_piece_indices.iter().enumerate() {
-        if let Some(piece) = runtime.match_state.geometry.pieces.get(piece_index) {
+    for (hull_index, &piece_index) in catalog.boundary_piece_ids.iter().enumerate() {
+        if let Some(piece) = runtime.match_state.geometry.piece(piece_index) {
             spawn_piece(
                 commands,
                 assets,
@@ -126,27 +74,6 @@ fn group_trim_by_cell(trim: &[HexTrimPiece]) -> BTreeMap<HexCoord, Vec<&HexTrimP
     by_cell
 }
 
-/// The grid cells a spawned cell's fixtures actually occupy. An ordinary
-/// tile's footprint is just its own coordinate — `push_tile` in
-/// `observed_match::hex_wfc::geometry` keys it that way. A whole-room
-/// module is different: `push_room` stamps `source_cell = anchor` on every
-/// hull of the room, so all of a room's pieces are grouped here under one
-/// coordinate, its anchor. Looking that anchor up against the solved
-/// world's stamped blueprints recovers the room's true footprint, so
-/// streaming and the defensive light fallback can treat every cell the room
-/// actually occupies rather than only its anchor. For every coordinate that
-/// is *not* a room anchor (all of today's catalog, and every ordinary tile
-/// once rooms exist) this returns exactly `[coord]`, matching prior
-/// behavior precisely.
-fn cell_footprint(world: &HexWfcWorld, coord: HexCoord) -> Vec<HexCoord> {
-    world
-        .blueprints
-        .iter()
-        .find(|blueprint| blueprint.anchor == coord)
-        .map(|blueprint| blueprint.cells.clone())
-        .unwrap_or_else(|| vec![coord])
-}
-
 pub(super) fn spawn_cells(
     commands: &mut Commands,
     assets: &mut HexWfcVisualAssets,
@@ -155,30 +82,61 @@ pub(super) fn spawn_cells(
     catalog: &HexGeometryCatalog,
     requested: &BTreeSet<HexCoord>,
 ) -> Vec<SpawnedCell> {
+    spawn_cells_bounded(
+        commands,
+        assets,
+        meshes,
+        (world, geometry),
+        catalog,
+        &requested.iter().copied().collect::<Vec<_>>(),
+        None,
+    )
+}
+
+pub(super) fn spawn_cells_bounded(
+    commands: &mut Commands,
+    assets: &mut HexWfcVisualAssets,
+    meshes: &mut Assets<Mesh>,
+    (world, geometry): (&HexWfcWorld, &HexWfcGeometrySnapshot),
+    catalog: &HexGeometryCatalog,
+    requested: &[HexCoord],
+    budget: Option<std::time::Duration>,
+) -> Vec<SpawnedCell> {
     let fallback_arch = *world
         .architecture
         .get(&world.config.spawn())
         .unwrap_or(&ArchitectureRegister::ALL[0]);
     // Trim is derived only for the cells entering residency this frame. In particular,
     // off-screen relayout cells never pay a presentation rebuild cost.
-    let trim = derive_trim_for(geometry, requested);
+    let trim = derive_trim_for(geometry, &requested.iter().copied().collect());
     let mut trim_by_cell = group_trim_by_cell(&trim);
     let mut spawned = Vec::with_capacity(requested.len());
-    for &coord in requested {
+    let started = std::time::Instant::now();
+    if budget.is_some() {
+        assets.poll_prepared_meshes(meshes);
+    }
+    for (visited, &coord) in requested.iter().enumerate() {
+        if visited > 0 && budget.is_some_and(|limit| started.elapsed() >= limit) {
+            break;
+        }
         let Some(index) = catalog.cells.get(&coord) else {
             continue;
         };
-        let pieces = index
-            .piece_indices
+        let pieces: Vec<_> = index
+            .piece_ids
             .iter()
-            .filter_map(|&piece_index| geometry.pieces.get(piece_index))
+            .filter_map(|&piece_index| geometry.piece(piece_index))
             .collect();
-        let lights = index
-            .light_indices
-            .iter()
-            .filter_map(|&light_index| geometry.lights.get(light_index))
-            .collect();
-        spawned.push(spawn_cell(
+        if budget.is_some() {
+            let key = cell_mesh_key(&pieces, coord);
+            if !assets.request_cell_meshes(key.as_deref(), &super::mesh_group::gather(&pieces)) {
+                continue;
+            }
+        }
+        let lights = index.lights.iter().collect();
+        assets.preparing_cell = budget.is_some();
+        assets.missing_meshes = false;
+        let cell = spawn_cell(
             commands,
             assets,
             meshes,
@@ -190,7 +148,15 @@ pub(super) fn spawn_cells(
             },
             world,
             fallback_arch,
-        ));
+        );
+        assets.preparing_cell = false;
+        if assets.missing_meshes {
+            // The incomplete staging parent is never published. Old resident
+            // geometry remains drawn while its decorative recipes are prepared.
+            commands.entity(cell.entity).despawn();
+        } else {
+            spawned.push(cell);
+        }
     }
     spawned
 }
@@ -308,21 +274,28 @@ fn spawn_cell(
     } else {
         None
     };
-    let mut child_pieces = spawn_cell_practicals(
-        commands,
-        assets,
-        meshes,
-        PracticalProjection {
-            parent: cell,
-            coord,
-            footprint: &footprint,
-            architecture,
-            role: cell_role,
-            composition,
-            authored_lights: &lights,
-            wonder,
-        },
-    );
+    let decoration = if architecture == ArchitectureRegister::LiminalGrid && wonder.is_none() {
+        super::backrooms::spawn(commands, assets, meshes, cell, coord, &pieces)
+    } else {
+        super::backrooms::Decoration::default()
+    };
+    let mut child_pieces = decoration.meshes
+        + spawn_cell_practicals(
+            commands,
+            assets,
+            meshes,
+            PracticalProjection {
+                parent: cell,
+                coord,
+                footprint: &footprint,
+                architecture,
+                role: cell_role,
+                composition,
+                authored_lights: &lights,
+                fluorescent_field: decoration.fluorescent_field,
+                wonder,
+            },
+        );
     if let Some((part, heading)) = chargeworks {
         child_pieces +=
             super::chargeworks::spawn(commands, assets, meshes, cell, coord, part, heading);
@@ -350,21 +323,7 @@ fn spawn_cell(
             super::promenade::spawn(commands, assets, meshes, cell, coord, heading, &pieces);
     }
     let origin = Vec3::from_array(hex_origin(coord));
-    // The merged mesh cache is keyed on this string. A cell carrying open-edge or rim
-    // pieces is no longer a pure function of its tile - its walls came down, or a
-    // railing stands on the edge of the lattice - so it is keyed by where it is.
-    let bespoke = pieces
-        .iter()
-        .any(|piece| piece.part != observed_match::hex_wfc::HexPiecePart::Authored);
-    let tile_key = pieces.first().and_then(|p| {
-        p.tile.as_ref().map(|t| {
-            if bespoke {
-                format!("{t:?}@{coord:?}")
-            } else {
-                format!("{t:?}")
-            }
-        })
-    });
+    let tile_key = cell_mesh_key(&pieces, coord);
 
     let groups = super::mesh_group::gather(&pieces);
     for (group_key, group) in groups {
@@ -399,7 +358,7 @@ fn spawn_cell(
         } else if chargeworks.is_some() {
             assets.chargeworks_material(group_key)
         } else {
-            assets.material_for_group(architecture, group_key)
+            assets.material_for_group_at(architecture, group_key, coord)
         };
         let mut entity = commands.spawn((
             Mesh3d(mesh),
@@ -408,6 +367,9 @@ fn spawn_cell(
             ChildOf(cell),
             Name::new(format!("Hex cell {:?} mesh", group_key)),
         ));
+        if group_key == super::assets::MeshGroupKey::Ceiling {
+            entity.insert(super::spectate::CeilingCutaway);
+        }
         if group_key == super::assets::MeshGroupKey::Boundary {
             entity.insert(super::spectate::BoundaryShell);
         } else {
@@ -458,43 +420,6 @@ fn spawn_cell(
 /// non-authoritative decoration (no collider) and non-signal (Legibility
 /// Contract) — it only hides tile seams and makes the facility read as one
 /// megastructure.
-fn spawn_trim(
-    commands: &mut Commands,
-    assets: &mut HexWfcVisualAssets,
-    meshes: &mut Assets<Mesh>,
-    piece: &HexTrimPiece,
-    architecture: ArchitectureRegister,
-    parent: Entity,
-) {
-    let mesh = assets.trim_mesh(meshes, piece.kind);
-    let material = assets.trim_material(architecture);
-    // Trim is geometry too, and was the last thing in this view drawing itself
-    // on every storey whatever the cutaway said.
-    //
-    // Seam trim is a lintel or a threshold: it sits at head height on a face,
-    // which is precisely where a cutaway removes the wall around it. Untagged,
-    // a lintel outlived the doorway it framed and the ceiling above it, and
-    // stood in the air over the floor plan.
-    let origin = Vec3::from_array(hex_origin(piece.cell));
-    commands.spawn((
-        Mesh3d(mesh),
-        MeshMaterial3d(material),
-        Transform::from_translation(piece.position).with_rotation(Quat::from_array(piece.rotation)),
-        Name::new(format!("Hex trim {:?} {:?}", piece.kind, piece.face)),
-        // Measured as a point, like a diffuser: trim is small next to the
-        // tests being applied to it, and its height decides them.
-        super::spectate::Cutaway {
-            local: piece.position - origin,
-            min_y: piece.position.y - origin.y,
-            max_y: piece.position.y - origin.y,
-            origin_y: origin.y,
-            cell_level: piece.cell.level,
-            climb_wall: false,
-        },
-        ChildOf(parent),
-    ));
-}
-
 /// Project a standalone authored piece into the resident shell.
 fn spawn_piece(
     commands: &mut Commands,
@@ -583,4 +508,20 @@ fn cutaway_measure(piece: &HexStructurePiece) -> super::spectate::Cutaway {
         cell_level: piece.source_cell.level,
         climb_wall: false,
     }
+}
+
+pub(super) fn cell_mesh_key(pieces: &[&HexStructurePiece], coord: HexCoord) -> Option<String> {
+    let bespoke = pieces
+        .iter()
+        .any(|piece| piece.part != observed_match::hex_wfc::HexPiecePart::Authored);
+    pieces
+        .first()
+        .and_then(|piece| piece.tile.as_ref())
+        .map(|tile| {
+            if bespoke {
+                format!("{tile:?}@{coord:?}")
+            } else {
+                format!("{tile:?}")
+            }
+        })
 }

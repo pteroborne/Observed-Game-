@@ -18,6 +18,8 @@ use observed_traversal::{
     TraversalGuide, TraversalNodeId, rapier_controller::RapierTraversalScene,
 };
 
+mod surface;
+
 const COLLIDER_STRIDE: usize = 128;
 /// Collider IDs at and above this are never a cell's. It was the arena shell's range
 /// until open edges took the shell away; the ceiling on cell IDs stays where it was.
@@ -81,10 +83,39 @@ pub struct HexStructurePiece {
     pub source_cell: HexCoord,
     pub role: HexStructureRole,
     pub part: HexPiecePart,
+    pub surface: Option<observed_authoring::HullSurface>,
     pub tile: Option<TileKey>,
     pub center: Vec3,
     pub rotation: [f32; 4],
     pub shape: ColliderShape,
+}
+
+impl HexStructurePiece {
+    /// Immutable local recipe shared by authored projection and optional cache warming.
+    /// World ownership and stable IDs are assigned by the accepting projector.
+    #[must_use]
+    pub fn authored_template(tile: &TilePrototype, index: usize, role: HexStructureRole) -> Self {
+        let hull = &tile.hulls[index];
+        Self {
+            surface: surface::projected_surface(
+                tile.surfaces.get(index).copied().flatten(),
+                hull,
+                tile.levels,
+                role,
+            ),
+            id: StableColliderId(0),
+            anchor: HexCoord::default(),
+            source_cell: HexCoord::default(),
+            role,
+            part: HexPiecePart::Authored,
+            tile: Some(tile.key.clone()),
+            center: Vec3::ZERO,
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            shape: ColliderShape::ConvexHull {
+                points: hull.clone(),
+            },
+        }
+    }
 }
 
 /// One semantic practical selected with its authored prefab. Positions are
@@ -238,6 +269,7 @@ pub struct HexWfcGeometrySnapshot {
     pub blueprint_instances: usize,
     piece_indices: BTreeMap<StableColliderId, usize>,
     collider_indices: BTreeMap<StableColliderId, usize>,
+    cell_piece_ids: BTreeMap<HexCoord, Vec<StableColliderId>>,
 }
 
 /// What one projection pass accumulates: the colliders, practicals, and one
@@ -402,6 +434,13 @@ impl HexWfcGeometrySnapshot {
             .map_err(|_| HexGeometryError::InvalidArena)?;
         let piece_indices = stable_indices(&pieces, |piece| piece.id);
         let collider_indices = stable_indices(&arena.colliders, |collider| collider.id);
+        let mut cell_piece_ids: BTreeMap<_, Vec<_>> = BTreeMap::new();
+        for piece in &pieces {
+            cell_piece_ids
+                .entry(piece.source_cell)
+                .or_default()
+                .push(piece.id);
+        }
         Ok(Self {
             generation: world.generation,
             pieces,
@@ -414,7 +453,24 @@ impl HexWfcGeometrySnapshot {
             blueprint_instances: world.blueprints.len(),
             piece_indices,
             collider_indices,
+            cell_piece_ids,
         })
+    }
+
+    /// Stable-ID lookup survives packed-vector swap removals after relayouts.
+    #[must_use]
+    pub fn piece(&self, id: StableColliderId) -> Option<&HexStructurePiece> {
+        self.piece_indices
+            .get(&id)
+            .map(|&index| &self.pieces[index])
+    }
+
+    pub fn pieces_in_cell(&self, coord: HexCoord) -> impl Iterator<Item = &HexStructurePiece> {
+        self.cell_piece_ids
+            .get(&coord)
+            .into_iter()
+            .flatten()
+            .filter_map(|&id| self.piece(id))
     }
 
     #[must_use]
@@ -570,6 +626,15 @@ impl HexWfcGeometrySnapshot {
                 delta_generation: delta.generation,
             });
         }
+        for cell in &delta.changed_cells {
+            self.cell_piece_ids.remove(cell);
+        }
+        for piece in &delta.upserted_pieces {
+            self.cell_piece_ids
+                .entry(piece.source_cell)
+                .or_default()
+                .push(piece.id);
+        }
         apply_indexed_delta(
             &mut self.pieces,
             &mut self.piece_indices,
@@ -608,13 +673,20 @@ fn apply_guide_delta(
     changed_cells: &BTreeSet<HexCoord>,
     upserted_guides: &BTreeMap<HexCoord, ProjectedTraversalGuide>,
 ) {
-    guides.retain(|coord, _| !changed_cells.contains(coord));
-    guides.extend(
-        upserted_guides
-            .iter()
-            .map(|(coord, guide)| (*coord, guide.clone())),
-    );
-    (*climbs, *decks) = compatibility_guide_maps(guides);
+    for coord in changed_cells {
+        guides.remove(coord);
+        climbs.remove(coord);
+        decks.remove(coord);
+    }
+    for (&coord, guide) in upserted_guides {
+        if let Some(climb) = &guide.climb {
+            climbs.insert(coord, climb.clone());
+        }
+        if let Some(deck) = &guide.deck {
+            decks.insert(coord, deck.clone());
+        }
+        guides.insert(coord, guide.clone());
+    }
 }
 
 fn compatibility_guide_maps(
@@ -739,7 +811,14 @@ fn project_cell(
                 cell_index: index,
             },
         )?;
-        let signature = blueprint.cell_signature(blueprint.cells[index]);
+        let signature = if world.architecture[&coord]
+            == observed_content::ArchitectureRegister::LiminalGrid
+            && coord.level == 0
+        {
+            blueprint.cell_signature(blueprint.cells[index]).lowered()
+        } else {
+            blueprint.cell_signature(blueprint.cells[index])
+        };
         let tile = tile_for(world, catalogue, coord, archetype, signature, None)?;
         return push_tile(
             world,
@@ -1049,6 +1128,15 @@ impl<'a> HexTileCatalogue<'a> {
     /// re-projecting only the cell it touched: the mixed column this rule exists to stop.
     #[must_use]
     pub fn register_cell(&self, world: &HexWfcWorld, archetype: &str, coord: HexCoord) -> HexCoord {
+        // A stamped room wears its anchor's district, including an atrium
+        // crossing a storey. A shaft lane must not assign it a random column colour.
+        if let Some(room) = world
+            .blueprints
+            .iter()
+            .find(|room| room.cells.contains(&coord))
+        {
+            return room.anchor;
+        }
         match self.scope(archetype) {
             AssemblyScope::Cell => coord,
             AssemblyScope::VerticalColumn => {
@@ -1279,7 +1367,9 @@ impl<'a> RoomCatalogue<'a> {
         let candidates = candidate_list
             .iter()
             .copied()
-            .filter(|candidate| room_contract_matches(candidate, &blueprint))
+            .filter(|candidate| {
+                room_contract_matches(candidate, &blueprint, register == "liminal_grid")
+            })
             .collect::<Vec<_>>();
         weighted_select(&candidates, variation, |candidate| candidate.weight)
     }
@@ -1336,6 +1426,7 @@ fn cell_ref(offset: (i32, i32, i32)) -> Option<ModuleCellRef> {
 fn room_contract_matches(
     candidate: &RoomPrototype,
     blueprint: &observed_facility::hex_wfc::RoomBlueprint,
+    low: bool,
 ) -> bool {
     let expected_cells = blueprint
         .cells
@@ -1359,7 +1450,11 @@ fn room_contract_matches(
         let Some(cell) = cell_ref(offset) else {
             return false;
         };
-        let signature = blueprint.cell_signature(offset);
+        let signature = if low && offset.2 == 0 {
+            blueprint.cell_signature(offset).lowered()
+        } else {
+            blueprint.cell_signature(offset)
+        };
         for face in HexFace::ALL {
             let (dq, dr, dl) = face.delta();
             let neighbor = cell_ref((offset.0 + dq, offset.1 + dr, offset.2 + dl));
@@ -1380,7 +1475,7 @@ fn room_contract_matches(
             candidate.ports.iter().any(|port| {
                 port.cell == cell
                     && port.face == face
-                    && port.class == PortClass::Door
+                    && port.class.is_doorway()
                     && normalized_role(&port.name) == normalized_role(name)
             })
         })
@@ -1495,7 +1590,14 @@ fn project_blueprint(
         // Boundary stamping seals ports that leave the lattice in simulation.
         // Authored room prefabs retain the blueprint signature. The arena
         // shell closes a named threshold physically when it leaves the grid.
-        let signature = blueprint.cell_signature(blueprint.cells[index]);
+        let signature = if world.architecture[&coord]
+            == observed_content::ArchitectureRegister::LiminalGrid
+            && coord.level == 0
+        {
+            blueprint.cell_signature(blueprint.cells[index]).lowered()
+        } else {
+            blueprint.cell_signature(blueprint.cells[index])
+        };
         let tile = tile_for(world, catalogue, coord, archetype, signature, None)?;
         push_tile(
             world,
@@ -1607,19 +1709,12 @@ fn push_tile(
         if open.is_some_and(|open| open.span.is_some() || open_edge::is_opened_wall(hull, &open)) {
             continue;
         }
-        out.pieces.push(HexStructurePiece {
-            id: id(index),
-            anchor,
-            source_cell,
-            role,
-            part: HexPiecePart::Authored,
-            tile: Some(tile.key.clone()),
-            center,
-            rotation: [0.0, 0.0, 0.0, 1.0],
-            shape: ColliderShape::ConvexHull {
-                points: hull.clone(),
-            },
-        });
+        let mut piece = HexStructurePiece::authored_template(tile, index, role);
+        piece.id = id(index);
+        piece.anchor = anchor;
+        piece.source_cell = source_cell;
+        piece.center = center;
+        out.pieces.push(piece);
     }
     let added = match open {
         Some(OpenEdges {
@@ -1653,6 +1748,7 @@ fn push_tile(
     // that broke it would collide without ever being drawn.
     for (offset, piece) in added.into_iter().enumerate() {
         out.pieces.push(HexStructurePiece {
+            surface: None,
             id: id(tile.hulls.len() + offset),
             anchor,
             source_cell,
@@ -1737,6 +1833,18 @@ fn push_room(
     }
     for (index, hull) in room.hulls.iter().enumerate() {
         out.pieces.push(HexStructurePiece {
+            surface: surface::projected_surface(
+                room.surfaces.get(index).copied().flatten(),
+                hull,
+                room.footprint
+                    .iter()
+                    .map(|cell| cell.level)
+                    .max()
+                    .unwrap_or(0)
+                    .max(0) as u8
+                    + 1,
+                HexStructureRole::Room,
+            ),
             id: StableColliderId(
                 u32::try_from(base + index as u64).expect("validated collider ID capacity"),
             ),
@@ -1759,6 +1867,7 @@ fn push_room(
     let first = room.hulls.len() + rim.len();
     for (offset, piece) in rim.into_iter().enumerate() {
         out.pieces.push(HexStructurePiece {
+            surface: None,
             id: StableColliderId(
                 u32::try_from(base + (room.hulls.len() + offset) as u64)
                     .expect("validated collider ID capacity"),
@@ -1777,6 +1886,7 @@ fn push_room(
     }
     for (offset, points) in windows.into_values().flatten().enumerate() {
         out.pieces.push(HexStructurePiece {
+            surface: None,
             id: StableColliderId(
                 u32::try_from(base + (first + offset) as u64)
                     .expect("validated collider ID capacity"),

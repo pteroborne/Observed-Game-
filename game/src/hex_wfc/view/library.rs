@@ -61,6 +61,15 @@ impl Bookcase {
     }
 }
 
+#[cfg(test)]
+pub(in crate::hex_wfc::view) fn has_bookcase_support(
+    world: &HexWfcWorld,
+    coord: HexCoord,
+    pieces: &[&HexStructurePiece],
+) -> bool {
+    !bookcases(world, coord, pieces).is_empty()
+}
+
 fn bookcases(world: &HexWfcWorld, coord: HexCoord, pieces: &[&HexStructurePiece]) -> Vec<Bookcase> {
     let Some(placement) = world.placements.get(&coord) else {
         return Vec::new();

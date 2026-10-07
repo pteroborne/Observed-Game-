@@ -6,7 +6,7 @@ use glam::{Vec2, Vec3};
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{HexCoord, HexFace, HexWfcConfig};
 use observed_hex::{TILE_LEVEL_HEIGHT, hex_origin};
-use observed_traversal::rapier_controller::step_character_with_settings;
+use observed_traversal::rapier_controller::step_character_with_filter;
 use player_input::PlayerIntent;
 
 use super::{FIXED_DT, FLOOR_SLAB_TOP, HexMatchEvent, HexMatchEventKind, HexWfcMatch};
@@ -62,13 +62,21 @@ impl HexWfcMatch {
         }
         let profile = self.content.traversal_profile();
         let config = profile.controller();
-        let step = step_character_with_settings(
+        let ignored = self.roof_passages.ignored(
+            &self.geometry,
+            id,
+            &self.bodies[&id],
+            config.half_height,
+            config.radius,
+        );
+        let step = step_character_with_filter(
             &self.physics,
             self.bodies.get_mut(&id).expect("body"),
             intent,
             &config,
             profile.rapier(),
             FIXED_DT,
+            &|collider| !ignored.contains(&collider),
         );
         self.sync_player_from_body(id);
         if step.recovered {
@@ -130,8 +138,9 @@ impl HexWfcMatch {
     /// high edge can land on the roof of a lower hall, where the railings that keep
     /// people from falling out of the loggias around it also keep it from getting
     /// back in. A fall is meant to cost time and ground, not the match, so a body
-    /// that stands on a roof for [`STRANDED_RECOVERY_TICKS`] is returned to the last
-    /// cell it stood in.
+    /// that remains on an unsupported edge for [`STRANDED_RECOVERY_TICKS`] is
+    /// recovered inside the built floor below it. Ordinary enclosure roofs are
+    /// passed through continuously by the movement query.
     pub(super) fn recover_fallen_bodies(&mut self) {
         let floor_y = self.geometry.arena.floor_y;
         let half_height = self
@@ -159,7 +168,22 @@ impl HexWfcMatch {
             if out_of_world && self.prison.is_some() {
                 lost.push(player.id);
             } else if out_of_world || *ticks >= STRANDED_RECOVERY_TICKS {
-                recovered.push((player.id, player.cell));
+                let feet = body.position - Vec3::Y * half_height;
+                let destination = if stranded && !out_of_world {
+                    (0..=physical_level(feet.y, self.facility.config.levels.saturating_sub(1)))
+                        .rev()
+                        .filter_map(|level| containing_cell(self.facility.config, feet, level))
+                        .find(|cell| {
+                            self.facility
+                                .placements
+                                .get(cell)
+                                .is_some_and(|p| p.space.built())
+                        })
+                        .unwrap_or(player.cell)
+                } else {
+                    player.cell
+                };
+                recovered.push((player.id, destination));
             }
         }
         for id in lost {
@@ -171,7 +195,9 @@ impl HexWfcMatch {
                 Vec3::from_array(hex_origin(cell)) + Vec3::Y * (FLOOR_SLAB_TOP + half_height);
             *self.bodies.get_mut(&id).expect("body") =
                 observed_traversal::FpsBody::spawned(anchor, self.players[&id].yaw);
-            self.players.get_mut(&id).expect("player").position = anchor;
+            let player = self.players.get_mut(&id).expect("player");
+            player.position = anchor;
+            player.cell = cell;
             self.recent_events.push(HexMatchEvent {
                 tick,
                 kind: HexMatchEventKind::PlayerRecovered,
@@ -181,17 +207,24 @@ impl HexWfcMatch {
         }
     }
 
-    /// Whether feet at `feet` stand inside a built cell: the deck nearest them, at the
-    /// plan cell under them. A roof resolves to the unbuilt cell above it.
+    /// Whether feet stand inside the built storey volume. Raised galleries remain
+    /// in their own storey; roof tops lie outside the enclosure.
     fn stands_in_built_cell(&self, feet: Vec3) -> bool {
-        let top_level = f32::from(self.facility.config.levels.saturating_sub(1));
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let level = ((feet.y - FLOOR_SLAB_TOP) / TILE_LEVEL_HEIGHT)
-            .round()
-            .clamp(0.0, top_level) as u8;
-        containing_cell(self.facility.config, feet, level)
-            .and_then(|cell| self.facility.placements.get(&cell))
-            .is_some_and(|placement| placement.space.built())
+        let level = physical_level(feet.y, self.facility.config.levels.saturating_sub(1));
+        let Some(cell) = containing_cell(self.facility.config, feet, level) else {
+            return false;
+        };
+        let Some(placement) = self.facility.placements.get(&cell) else {
+            return false;
+        };
+        let low = self.facility.architecture.get(&cell)
+            == Some(&observed_content::ArchitectureRegister::LiminalGrid)
+            && !matches!(
+                placement.archetype,
+                observed_facility::hex_wfc::HexArchetype::Climb { .. }
+                    | observed_facility::hex_wfc::HexArchetype::Cistern { .. }
+            );
+        placement.space.built() && (!low || feet.y - hex_origin(cell)[1] < 3.5)
     }
 
     /// Update each player's no-progress counter for the objective bot's
@@ -334,12 +367,30 @@ pub(super) fn look_face(yaw: f32, pitch: f32) -> HexFace {
         .expect("lateral faces are non-empty")
 }
 
+/// A raised gallery remains inside its storey; the enclosure boundary starts
+/// the next volume. Rounding to a deck falsely stranded half-storey platforms.
+fn physical_level(feet: f32, top: u8) -> u8 {
+    (0..=top)
+        .rev()
+        .find(|level| feet >= f32::from(*level) * TILE_LEVEL_HEIGHT)
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod level_tests {
-    use super::{LEVEL_ARRIVE_MARGIN, LEVEL_DEPART_MARGIN, resolve_level};
+    use super::{LEVEL_ARRIVE_MARGIN, LEVEL_DEPART_MARGIN, physical_level, resolve_level};
     use observed_hex::TILE_LEVEL_HEIGHT;
 
     const TOP: f32 = 3.0;
+
+    #[test]
+    fn galleries_belong_to_the_lower_interior_and_roofs_to_the_next_volume() {
+        assert_eq!(physical_level(4.5, 7), 0);
+        assert_eq!(physical_level(7.9, 7), 0);
+        assert_eq!(physical_level(8.0, 7), 1);
+        assert_eq!(physical_level(12.5, 7), 1);
+        assert_eq!(physical_level(16.0, 7), 2);
+    }
 
     /// The invariant that matters. The measured stall was a bot ping-ponging
     /// between level 0 and level 1 — five round trips, ~7,900 ticks, to climb

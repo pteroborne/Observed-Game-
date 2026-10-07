@@ -35,8 +35,12 @@ mod kinetic;
 mod knowledge;
 pub mod prison;
 pub use interaction::{HexInteraction, HexInteractionAction};
+mod ceilings;
+mod targeting;
+pub use targeting::AimCandidate;
 mod movement;
 mod mutation;
+mod mutation_profile;
 mod objectives;
 mod pad;
 #[cfg(test)]
@@ -76,8 +80,8 @@ pub(super) use observed_hex::FLOOR_SLAB_TOP;
 /// tool's push and pull did, and to 8 when the plumb's aim joined [`HexPlayerCommand`]. The handshake compares this, so a peer built before a
 /// button is refused outright rather than connecting and then disagreeing about a bit
 /// it never sends.
-// Version 9 changes physical Guardian sight, kinetic selection and Backrooms enclosure.
-pub const HEX_INPUT_VERSION: u16 = 9;
+// Version 10 adds district doorway clearances and correct stamped-room material ownership.
+pub const HEX_INPUT_VERSION: u16 = 11;
 
 /// Most players one match may hold. Agrees with `observed_net::lan::MAX_SEATS`
 /// and `observed_progression::session::lan::LAN_MAX_SEATS`; a mismatch shows up
@@ -385,6 +389,9 @@ pub struct HexWfcMatch {
     /// and map-knowledge consumers can update exact cells without inferring a
     /// global rebuild from `facility.generation`.
     pub last_relayout_delta: Option<HexRelayoutDelta>,
+    /// Actual projection owners and neighbours touched this tick, including whole rooms.
+    pub last_geometry_cells: BTreeSet<HexCoord>,
+    mutation_profile: mutation_profile::MutationProfile,
     /// The latest simulation-frame observation projection (occupied cells and
     /// the looked-at blueprint thresholds). Relayout directors consume this to
     /// pin geometry exactly as on the square lattice.
@@ -410,6 +417,7 @@ pub struct HexWfcMatch {
     /// after a fall from an open edge. Omitted from snapshots for the same reason as
     /// [`Self::stuck_ticks`]; it only ever counts toward a recovery.
     pub(super) stranded_ticks: BTreeMap<PlayerId, u16>,
+    roof_passages: ceilings::RoofPassages,
     /// Ticks before each body's kinetic tool fires again; absent is ready. Omitted from
     /// snapshots like [`Self::stuck_ticks`]: late joiners replay from tick one.
     pub(super) kinetic_cooldowns: BTreeMap<PlayerId, u8>,
@@ -543,7 +551,9 @@ impl HexWfcMatch {
             content.cells(),
             content.rooms(),
         )?;
-        let physics = geometry.rapier_scene();
+        let mut physics = geometry.rapier_scene();
+        physics.warm_convex_hulls(content.cells().iter().flat_map(|tile| &tile.hulls));
+        physics.warm_convex_hulls(content.rooms().iter().flat_map(|room| &room.hulls));
         let traversal_config = content.traversal_config();
         let spawn = facility.config.spawn();
         let spawn_yaw = initial_spawn_yaw(&facility);
@@ -622,11 +632,14 @@ impl HexWfcMatch {
             player_escape_order: Vec::new(),
             recent_events: Vec::new(),
             last_relayout_delta: None,
+            last_geometry_cells: BTreeSet::new(),
+            mutation_profile: mutation_profile::MutationProfile::default(),
             observation: HexObservationFrame::default(),
             bodies,
             physics,
             stuck_ticks: BTreeMap::new(),
             stranded_ticks: BTreeMap::new(),
+            roof_passages: ceilings::RoofPassages::default(),
             kinetic_cooldowns: BTreeMap::new(),
             doors: BTreeMap::new(),
             dark_floors: BTreeSet::new(),
@@ -678,8 +691,10 @@ impl HexWfcMatch {
     }
 
     pub fn step(&mut self, frame: &HexInputFrame) -> &[HexMatchEvent] {
+        self.begin_mutation_profile();
         self.recent_events.clear();
         self.last_relayout_delta = None;
+        self.last_geometry_cells.clear();
         if self.status == HexMatchStatus::Finished || frame.version != HEX_INPUT_VERSION {
             return &self.recent_events;
         }
@@ -857,6 +872,14 @@ impl HexWfcMatch {
             .route_within_cost(player.cell, exit, baseline)
             .map_or(baseline, |route| route.cost_millis);
         (1.0 - remaining as f32 / baseline as f32).clamp(0.0, 1.0)
+    }
+
+    /// Hold architecture and threats while a reference viewer walks the real
+    /// controller scene. Opt-in evidence only; ordinary matches never call this.
+    pub fn hold_environment_for_reference(&mut self) {
+        self.next_mutation_tick = u64::MAX;
+        self.pending_relayout = None;
+        self.guardian_active = false;
     }
 
     /// Whether the Guardian hunts this match (`HexMatchConfig::guardian`).

@@ -27,15 +27,18 @@ pub enum PortClass {
     /// ever carry that, so every signature from before this class existed reads back
     /// exactly as it was.
     Span = 4,
+    /// A lateral doorway with three metres of clearance above the floor.
+    LowDoor = 5,
 }
 
 impl PortClass {
-    pub const ALL: [PortClass; 5] = [
+    pub const ALL: [PortClass; 6] = [
         PortClass::Sealed,
         PortClass::Door,
         PortClass::RampOpen,
         PortClass::ShaftOpen,
         PortClass::Span,
+        PortClass::LowDoor,
     ];
 
     /// Whether this class may sit on `face` at all.
@@ -43,8 +46,35 @@ impl PortClass {
     pub const fn valid_on(self, face: HexFace) -> bool {
         match self {
             PortClass::Sealed => true,
-            PortClass::Door | PortClass::Span => face.is_lateral(),
+            PortClass::Door | PortClass::LowDoor | PortClass::Span => face.is_lateral(),
             PortClass::RampOpen | PortClass::ShaftOpen => face.is_vertical(),
+        }
+    }
+
+    /// A doorway accepts deployable doors and ordinary lateral traversal.
+    #[must_use]
+    pub const fn is_doorway(self) -> bool {
+        matches!(self, Self::Door | Self::LowDoor)
+    }
+
+    /// Floor-to-lintel clearance of a doorway, metres.
+    #[must_use]
+    pub const fn doorway_height(self) -> Option<f32> {
+        match self {
+            Self::Door => Some(4.0),
+            Self::LowDoor => Some(3.0),
+            _ => None,
+        }
+    }
+
+    /// Replace ordinary doorway lanes with low doorways; vertical and span
+    /// bonds retain their original encoding.
+    #[must_use]
+    pub const fn lowered(self) -> Self {
+        if matches!(self, Self::Door) {
+            Self::LowDoor
+        } else {
+            self
         }
     }
 
@@ -54,19 +84,20 @@ impl PortClass {
             PortClass::Sealed => 0,
             PortClass::Door => 1,
             PortClass::RampOpen | PortClass::Span => 2,
-            PortClass::ShaftOpen => 3,
+            PortClass::ShaftOpen | PortClass::LowDoor => 3,
         }
     }
 
     /// The class two packed bits mean on `face`. Lane 2 is a span on a lateral face
-    /// and a ramp bond on a vertical one; lane 3 has no lateral meaning and reads as a
-    /// shaft opening, which [`PortSignature::is_valid`] then refuses there.
+    /// and a ramp bond on a vertical one; lane 3 is a low doorway laterally and a shaft opening vertically.
+    /// All signatures that were valid before low doorways retain their meaning.
     const fn from_bits(bits: u16, face: HexFace) -> PortClass {
         match bits & 0b11 {
             0 => PortClass::Sealed,
             1 => PortClass::Door,
             2 if face.is_lateral() => PortClass::Span,
             2 => PortClass::RampOpen,
+            3 if face.is_lateral() => PortClass::LowDoor,
             _ => PortClass::ShaftOpen,
         }
     }
@@ -116,6 +147,13 @@ impl PortSignature {
         PortClass::from_bits(self.0 >> (face.index() * 2), face)
     }
 
+    /// The same topology with low ordinary doorway clearances.
+    #[must_use]
+    pub fn lowered(self) -> Self {
+        Self::try_from_ports(self.ports().map(PortClass::lowered))
+            .expect("lowering preserves valid face classes")
+    }
+
     /// Unpack into the readable form.
     #[must_use]
     pub fn ports(self) -> [PortClass; 8] {
@@ -135,6 +173,20 @@ impl PortSignature {
 mod tests {
     use super::{PortClass, PortSignature, ports_compatible};
     use crate::faces::HexFace;
+
+    #[test]
+    fn low_doors_use_only_the_previously_unused_lateral_lane() {
+        let mut ports = [PortClass::Sealed; 8];
+        ports[HexFace::East.index()] = PortClass::LowDoor;
+        ports[HexFace::Up.index()] = PortClass::ShaftOpen;
+        let signature = PortSignature::try_from_ports(ports).expect("valid assignment");
+        assert_eq!(signature.port(HexFace::East), PortClass::LowDoor);
+        assert_eq!(signature.port(HexFace::Up), PortClass::ShaftOpen);
+        assert_eq!(signature.0 & 3, 3);
+        assert!(!ports_compatible(PortClass::Door, PortClass::LowDoor));
+        assert_eq!(PortClass::LowDoor.doorway_height(), Some(3.0));
+        assert!(!PortClass::LowDoor.valid_on(HexFace::Up));
+    }
 
     #[test]
     fn compatibility_is_equal_class_matching_and_symmetric() {

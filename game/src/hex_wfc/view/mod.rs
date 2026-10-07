@@ -4,11 +4,13 @@
 //! module adds style-owned materials, a bounded lighting/post-process rig, and
 //! presentation residency streaming by proximity to the runner.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 pub(in crate::hex_wfc) mod archive;
 mod assets;
+pub(in crate::hex_wfc) use assets::warmup::warm_reusable_meshes;
+mod backrooms;
 pub(in crate::hex_wfc) mod camera;
 pub(in crate::hex_wfc) mod chargeworks;
 pub(in crate::hex_wfc) mod cistern;
@@ -27,18 +29,22 @@ mod open_edge_materials;
 mod prison;
 pub(in crate::hex_wfc) mod rain;
 mod residency;
+mod seams;
 mod shell;
 pub(in crate::hex_wfc) mod sky;
 pub(in crate::hex_wfc) mod spectate;
 #[cfg(test)]
 mod spectate_tests;
 mod support;
+mod temporal;
 pub(in crate::hex_wfc) mod thresholds;
+mod visibility;
+pub(super) use temporal::stabilize_surfaces;
 mod zen;
 
-use bevy::anti_alias::fxaa::Fxaa;
+use bevy::anti_alias::{fxaa::Fxaa, taa::TemporalAntiAliasing};
 use bevy::camera::Hdr;
-use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};
+use bevy::core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass, NormalPrepass};
 use bevy::pbr::{
     DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel,
 };
@@ -54,10 +60,10 @@ use crate::view::components::{GameCam, GameSun, MENU_SUN_ILLUMINANCE};
 
 /// Cells enter presentation residency inside this window. The logical facility and its
 /// pure collision snapshot remain complete regardless of presentation residency.
-const STREAM_ENTER_RADIUS: f32 = 30.0;
+const STREAM_ENTER_RADIUS: f32 = 90.0;
 const STREAM_ENTER_LEVELS: u8 = 2;
 /// A larger removal window prevents churn when the runner hovers near the enter edge.
-const STREAM_EXIT_RADIUS: f32 = 42.0;
+const STREAM_EXIT_RADIUS: f32 = 120.0;
 const STREAM_EXIT_LEVELS: u8 = 3;
 /// Entry always projects the current cell and its same-level one-ring neighborhood.
 const ENTRY_SAFE_RADIUS: f32 = 15.0;
@@ -72,8 +78,13 @@ const CELL_DESPAWN_BUDGET: usize = 24;
 #[derive(Component)]
 pub(super) struct HexWfcGeometry;
 
+/// Authored decoration must never become a caster after a storey change.
+#[derive(Component)]
+pub(super) struct NeverShadowCaster;
+
 #[derive(Clone, Copy, Debug)]
 struct ResidentCell {
+    shown: bool,
     entity: Entity,
     child_pieces: usize,
 }
@@ -84,6 +95,8 @@ struct ResidentCell {
 pub(super) struct HexPresentationResidency {
     catalog: shell::HexGeometryCatalog,
     resident: BTreeMap<HexCoord, ResidentCell>,
+    /// Changed parents stay resident until their complete replacement is ready.
+    replacements: BTreeSet<HexCoord>,
     /// `OnEnter` already consumes the entry-frame budget. The first `Update` therefore
     /// reports readiness but does not enqueue a second batch in the same rendered frame.
     defer_incremental_once: bool,
@@ -94,6 +107,7 @@ pub(super) struct HexPresentationResidency {
     /// and the spectator overview only *asks* for a wider one. It also keeps
     /// the streaming system inside its parameter budget.
     reach: residency::Reach,
+    window: visibility::Window,
 }
 
 impl HexPresentationResidency {
@@ -173,7 +187,7 @@ pub(super) fn setup_view(
                 ..default()
             },
             Msaa::Off,
-            Fxaa::default(),
+            TemporalAntiAliasing::default(),
             DepthPrepass,
             NormalPrepass,
             ScreenSpaceAmbientOcclusion {
@@ -255,6 +269,7 @@ pub(super) fn setup_view(
             (
                 spawned.coord,
                 ResidentCell {
+                    shown: true,
                     entity: spawned.entity,
                     child_pieces: spawned.child_pieces,
                 },
@@ -269,9 +284,11 @@ pub(super) fn setup_view(
     commands.insert_resource(HexPresentationResidency {
         catalog,
         resident,
+        replacements: BTreeSet::new(),
         defer_incremental_once: true,
         capture_unbounded,
         reach: residency::Reach::play(),
+        window: visibility::Window::default(),
     });
     commands.insert_resource(readiness);
     commands.insert_resource(assets);
@@ -305,6 +322,10 @@ pub(super) fn clear_view(
                 Bloom,
                 DistanceFog,
                 Fxaa,
+                TemporalAntiAliasing,
+                bevy::render::camera::TemporalJitter,
+                bevy::render::camera::MipBias,
+                MotionVectorPrepass,
                 ScreenSpaceAmbientOcclusion,
                 DepthPrepass,
                 NormalPrepass,
@@ -345,4 +366,4 @@ fn capture_requests_deterministic_residency() -> bool {
 
 #[cfg(test)]
 #[path = "tests.rs"]
-mod tests;
+pub(super) mod tests;

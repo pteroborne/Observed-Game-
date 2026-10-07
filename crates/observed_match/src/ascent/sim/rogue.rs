@@ -75,19 +75,19 @@ impl ArchitectLab {
 
         // Close the hunt: each Guardian's search and each detected Observer's, joined
         // through a candidate's cell.
-        let from_hunters: Vec<BTreeMap<HexCoord, usize>> = hunters
-            .iter()
-            .map(|&cell| self.distances_from(cell, HUNT_SEARCH_STEPS))
-            .collect();
+        // The score asks only for the nearest hunter, never its identity.
+        // One multi-source search gives exactly that minimum without repeating
+        // a forty-step search for every member of a released wave.
+        let from_hunters = self.distances_from_many(hunters, HUNT_SEARCH_STEPS);
         // A candidate is within reach of its prey, so the prey's own search need only reach
         // past it; only the Guardians' runs the length of a hunt.
         let from_prey: Vec<BTreeMap<HexCoord, usize>> = prey
             .iter()
             .map(|&cell| self.distances_from(cell, PREY_SEARCH_STEPS))
             .collect();
-        let now = from_hunters
+        let now = prey
             .iter()
-            .flat_map(|reach| prey.iter().filter_map(|cell| reach.get(cell).copied()))
+            .filter_map(|cell| from_hunters.get(cell).copied())
             .min()
             .unwrap_or(NO_WAY_UP);
         // The candidates are all beside prey, so each is judged against the prey it is
@@ -97,13 +97,9 @@ impl ArchitectLab {
             .iter()
             .filter(|(_, changes)| changes.len() == 1)
             .map(|(command, changes)| {
-                let route = from_hunters
+                let route = from_prey
                     .iter()
-                    .flat_map(|hunter| {
-                        from_prey.iter().map(|target| {
-                            self.through(changes[0].coord, changes[0], hunter, target)
-                        })
-                    })
+                    .map(|target| self.through(changes[0].coord, changes[0], &from_hunters, target))
                     .min()
                     .unwrap_or(NO_WAY_UP);
                 (route, command)

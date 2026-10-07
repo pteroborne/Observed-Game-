@@ -402,6 +402,7 @@ fn fresh_map_hulls_use_the_replay_cutaway_and_stale_cells_do_not_reveal_new_hull
         .geometry
         .pieces
         .push(observed_match::hex_wfc::HexStructurePiece {
+            surface: None,
             id: observed_traversal::StableColliderId(0xEFFF_FFFE),
             anchor,
             source_cell: anchor,

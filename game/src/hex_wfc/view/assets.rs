@@ -19,6 +19,10 @@ pub(in crate::hex_wfc) use super::mesh_group::MeshGroupKey;
 use super::open_edge_materials::OpenEdgeMaterials;
 use crate::view::environment::{cuboid_mesh, load_repeating_texture};
 
+mod backrooms;
+mod mesh;
+pub(super) mod warmup;
+pub(super) use mesh::build_merged_mesh_facing;
 mod concourse;
 mod jade;
 mod promenade;
@@ -33,6 +37,8 @@ pub(in crate::hex_wfc) struct RegisterMaterials {
     floor: Handle<StandardMaterial>,
     wall: Handle<StandardMaterial>,
     ceiling: Handle<StandardMaterial>,
+    trim: Handle<StandardMaterial>,
+    ceiling_phase: Option<[Handle<StandardMaterial>; 3]>,
     fixture: Handle<StandardMaterial>,
     boundary: Handle<StandardMaterial>,
 }
@@ -83,9 +89,14 @@ pub(in crate::hex_wfc) struct HexWfcVisualAssets {
     promenade: promenade::PromenadeMaterials,
     archive_details: [Handle<StandardMaterial>; 8],
     chargeworks_details: [Handle<StandardMaterial>; 4],
+    warmup: warmup::MeshWarmup,
+    pub(in crate::hex_wfc::view) preparing_cell: bool,
+    pub(in crate::hex_wfc::view) missing_meshes: bool,
     hull_cache: HashMap<(String, usize), Handle<Mesh>>,
     cuboid_cache: HashMap<[u32; 3], Handle<Mesh>>,
-    merged_hull_cache: HashMap<(String, MeshGroupKey), Handle<Mesh>>,
+    merged_hull_cache: mesh::MergedMeshCache,
+    pub(super) cache_hits: u64,
+    pub(super) cache_misses: u64,
     /// Open-edge pieces are the same in every register: the lip is a signal, and the
     /// railing, walkway and truss belong to the connective structure, not a district.
     open_edge: OpenEdgeMaterials,
@@ -102,6 +113,9 @@ impl HexWfcVisualAssets {
         let registers: Vec<RegisterMaterials> = ArchitectureRegister::ALL
             .into_iter()
             .map(|register| {
+                if register == ArchitectureRegister::LiminalGrid {
+                    return backrooms::load(materials, images);
+                }
                 let palette = style::architecture(register);
                 // The shell's own look - the albedo pull-down and the emissive
                 // trim that keep exact hex hulls in the neon-noir tier - now
@@ -156,6 +170,8 @@ impl HexWfcVisualAssets {
                 };
                 RegisterMaterials {
                     floor,
+                    trim: wall.clone(),
+                    ceiling_phase: None,
                     wall,
                     ceiling,
                     fixture: tinted(
@@ -195,9 +211,14 @@ impl HexWfcVisualAssets {
             chargeworks,
             chargeworks_details: wonder::details(materials),
             registers,
+            warmup: warmup::MeshWarmup::default(),
+            preparing_cell: false,
+            missing_meshes: false,
             hull_cache: HashMap::new(),
             cuboid_cache: HashMap::new(),
-            merged_hull_cache: HashMap::new(),
+            merged_hull_cache: mesh::MergedMeshCache::default(),
+            cache_hits: 0,
+            cache_misses: 0,
             open_edge: OpenEdgeMaterials::new(materials),
         }
     }
@@ -211,6 +232,8 @@ impl HexWfcVisualAssets {
                 floor: dummy.clone(),
                 wall: dummy.clone(),
                 ceiling: dummy.clone(),
+                trim: dummy.clone(),
+                ceiling_phase: None,
                 fixture: dummy.clone(),
                 boundary: dummy.clone(),
             })
@@ -226,9 +249,14 @@ impl HexWfcVisualAssets {
             chargeworks: WonderMaterials::for_test(&dummy),
             chargeworks_details: std::array::from_fn(|_| dummy.clone()),
             registers,
+            warmup: warmup::MeshWarmup::default(),
+            preparing_cell: false,
+            missing_meshes: false,
             hull_cache: HashMap::new(),
             cuboid_cache: HashMap::new(),
-            merged_hull_cache: HashMap::new(),
+            merged_hull_cache: mesh::MergedMeshCache::default(),
+            cache_hits: 0,
+            cache_misses: 0,
             open_edge: OpenEdgeMaterials::new(materials),
         }
     }
@@ -296,8 +324,7 @@ impl HexWfcVisualAssets {
     }
 
     /// Cached mesh for a derived seam-trim descriptor. Railings run along a
-    /// cell's open lateral edge (a long thin bar at waist height); buttresses
-    /// stand at a role/register seam (a slim near-full-level pillar). Both are
+    /// cell's open lateral edge (a long thin bar at waist height). Trim uses
     /// cuboids keyed by size in the shared `cuboid_cache`, so every trim piece
     /// of a kind shares one handle. `Lintel` is defined but never emitted by
     /// `derive_trim` yet (the snapshot carries no port class); it maps to a
@@ -311,7 +338,6 @@ impl HexWfcVisualAssets {
         // faces' rails do not visibly overlap at the shared corners.
         let size = match kind {
             HexTrimKind::Railing => Vec3::new(7.4, 0.12, 0.12),
-            HexTrimKind::Buttress => Vec3::new(0.55, observed_hex::TILE_LEVEL_HEIGHT * 0.9, 0.55),
             HexTrimKind::Lintel => Vec3::new(2.0, 0.22, 0.30),
         };
         let key = [size.x.to_bits(), size.y.to_bits(), size.z.to_bits()];
@@ -333,8 +359,16 @@ impl HexWfcVisualAssets {
         self.register(register).wall.clone()
     }
 
-    pub(in crate::hex_wfc) fn fixture_mesh(&mut self, meshes: &mut Assets<Mesh>) -> Handle<Mesh> {
-        let size = Vec3::new(2.25, 0.10, 0.55);
+    pub(in crate::hex_wfc) fn fixture_mesh(
+        &mut self,
+        meshes: &mut Assets<Mesh>,
+        register: ArchitectureRegister,
+    ) -> Handle<Mesh> {
+        let size = if register == ArchitectureRegister::LiminalGrid {
+            Vec3::new(0.56, 0.035, 1.16)
+        } else {
+            Vec3::new(2.25, 0.10, 0.55)
+        };
         let key = [size.x.to_bits(), size.y.to_bits(), size.z.to_bits()];
         self.cuboid_cache
             .entry(key)
@@ -379,6 +413,20 @@ impl HexWfcVisualAssets {
         }
     }
 
+    pub(super) fn material_for_group_at(
+        &self,
+        architecture: ArchitectureRegister,
+        group: MeshGroupKey,
+        coord: observed_hex::HexCoord,
+    ) -> Handle<StandardMaterial> {
+        if group == MeshGroupKey::Ceiling
+            && let Some(phases) = &self.register(architecture).ceiling_phase
+        {
+            return phases[usize::from((coord.q % 3 + 2 * (coord.r % 3)) % 3)].clone();
+        }
+        self.material_for_group(architecture, group)
+    }
+
     pub(in crate::hex_wfc) fn material_for_group(
         &self,
         architecture: ArchitectureRegister,
@@ -388,6 +436,7 @@ impl HexWfcVisualAssets {
         match group {
             MeshGroupKey::Floor => reg.floor.clone(),
             MeshGroupKey::Ceiling => reg.ceiling.clone(),
+            MeshGroupKey::Trim => reg.trim.clone(),
             MeshGroupKey::Interior | MeshGroupKey::Perimeter(_) => reg.wall.clone(),
             MeshGroupKey::Climb(super::mesh_group::Facing::Up) => reg.floor.clone(),
             MeshGroupKey::Climb(super::mesh_group::Facing::Side) => reg.wall.clone(),
@@ -415,72 +464,29 @@ impl HexWfcVisualAssets {
             _ => None,
         };
         if let Some(key) = tile_key {
-            let cache_key = (key.to_string(), group);
+            let cache_key = mesh::MergedMeshKey::new(key, group, hulls);
             if let Some(handle) = self.merged_hull_cache.get(&cache_key) {
-                return Some(handle.clone());
+                self.cache_hits += 1;
+                return handle.clone();
             }
+            if self.preparing_cell {
+                self.missing_meshes = true;
+                self.request_merged_recipe(cache_key, hulls);
+                return None;
+            }
+            self.cache_misses += 1;
             let mesh = build_merged_mesh_facing(hulls, facing)?;
             let handle = meshes.add(mesh);
             self.merged_hull_cache.insert(cache_key, handle.clone());
             Some(handle)
         } else {
+            self.cache_misses += 1;
             let mesh = build_merged_mesh_facing(hulls, facing)?;
             Some(meshes.add(mesh))
         }
     }
 }
 
-/// Convert multiple convex hulls into a single merged Bevy mesh, keeping only the
-/// triangles that face `facing` when one is given.
-pub(super) fn build_merged_mesh_facing(
-    hulls: &[&[Vec3]],
-    facing: Option<super::mesh_group::Facing>,
-) -> Option<Mesh> {
-    let mut all_positions = Vec::new();
-    let mut all_normals = Vec::new();
-    let mut all_uvs = Vec::new();
-    let mut all_indices = Vec::new();
-
-    for hull in hulls {
-        let Some(data) = ConvexRenderMesh::from_convex_hull(hull) else {
-            continue;
-        };
-        // Every triangle's corners are its own (`ConvexRenderMesh` duplicates them),
-        // so a triangle is three consecutive vertices and can be kept or dropped whole.
-        for corner in data.indices.chunks_exact(3) {
-            let point = |index: u32| Vec3::from_array(data.positions[index as usize]);
-            let (a, b, c) = (point(corner[0]), point(corner[1]), point(corner[2]));
-            let normal = (b - a).cross(c - a).normalize_or_zero();
-            if facing.is_some_and(|facing| !facing.holds(normal)) {
-                continue;
-            }
-            for &index in corner {
-                let next = u32::try_from(all_positions.len()).ok()?;
-                all_positions.push(data.positions[index as usize]);
-                all_normals.push(data.normals[index as usize]);
-                all_uvs.push(data.uvs[index as usize]);
-                all_indices.push(next);
-            }
-        }
-    }
-
-    if all_positions.is_empty() {
-        return None;
-    }
-
-    Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
-    )
-    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, all_positions)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, all_normals)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, all_uvs)
-    .with_inserted_indices(Indices::U32(all_indices))
-    .with_generated_tangents()
-    .ok()
-}
-
-/// Convert shared engine-independent render data into Bevy's mesh format.
 pub(super) fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
     let data = ConvexRenderMesh::from_convex_hull(hull)?;
     Mesh::new(
@@ -489,6 +495,13 @@ pub(super) fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
     )
     .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
     .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_UV_1,
+        data.uvs
+            .iter()
+            .map(|uv| [uv[0] * 8.0, uv[1] * 8.0])
+            .collect::<Vec<_>>(),
+    )
     .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
     .with_inserted_indices(Indices::U32(data.indices))
     .with_generated_tangents()
@@ -496,6 +509,15 @@ pub(super) fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
 }
 
 fn horizontal_surface(piece: &HexStructurePiece) -> HorizontalSurface {
+    if let Some(surface) = piece.surface {
+        return match surface {
+            observed_authoring::HullSurface::Floor => HorizontalSurface::Floor,
+            observed_authoring::HullSurface::Ceiling => HorizontalSurface::Ceiling,
+            observed_authoring::HullSurface::Wall | observed_authoring::HullSurface::Trim => {
+                HorizontalSurface::Wall
+            }
+        };
+    }
     let ColliderShape::ConvexHull { points } = &piece.shape else {
         return HorizontalSurface::Wall;
     };
@@ -529,67 +551,4 @@ fn horizontal_surface(piece: &HexStructurePiece) -> HorizontalSurface {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use observed_match::hex_wfc::HexPiecePart;
-    use observed_traversal::StableColliderId;
-
-    fn piece(points: Vec<Vec3>) -> HexStructurePiece {
-        HexStructurePiece {
-            id: StableColliderId(1),
-            anchor: default(),
-            source_cell: default(),
-            role: HexStructureRole::Hall,
-            part: HexPiecePart::Authored,
-            tile: None,
-            center: Vec3::ZERO,
-            rotation: [0.0, 0.0, 0.0, 1.0],
-            shape: ColliderShape::ConvexHull { points },
-        }
-    }
-
-    #[test]
-    fn horizontal_hulls_select_floor_wall_and_ceiling_material_classes() {
-        assert_eq!(
-            horizontal_surface(&piece(vec![Vec3::ZERO, Vec3::Y * 0.5])),
-            HorizontalSurface::Floor
-        );
-        assert_eq!(
-            horizontal_surface(&piece(vec![Vec3::ZERO, Vec3::Y * 4.0])),
-            HorizontalSurface::Wall
-        );
-        assert_eq!(
-            horizontal_surface(&piece(vec![
-                Vec3::Y * 7.5,
-                Vec3::Y * observed_hex::TILE_LEVEL_HEIGHT,
-            ])),
-            HorizontalSurface::Ceiling
-        );
-    }
-
-    /// A balcony is a floor. It had been a wall, because it is three metres up
-    /// and the classifier only asked how high the hull was.
-    #[test]
-    fn a_thin_slab_off_the_ground_is_a_deck_rather_than_a_wall() {
-        assert_eq!(
-            horizontal_surface(&piece(vec![
-                Vec3::new(-2.0, 3.0, -1.5),
-                Vec3::new(2.0, 3.4, 1.5),
-            ])),
-            HorizontalSurface::Floor
-        );
-    }
-
-    /// And a pier is still a wall, at any height. Thickness alone would call a
-    /// short post a deck, so the test is the ratio rather than the thickness.
-    #[test]
-    fn a_stub_at_the_same_height_is_still_a_wall() {
-        assert_eq!(
-            horizontal_surface(&piece(vec![
-                Vec3::new(-0.3, 1.0, -0.3),
-                Vec3::new(0.3, 4.0, 0.3),
-            ])),
-            HorizontalSurface::Wall
-        );
-    }
-}
+mod tests;

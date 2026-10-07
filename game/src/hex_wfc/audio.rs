@@ -29,7 +29,7 @@ const LISTENER_EAR_GAP: f32 = 0.5;
 /// and a several-cells-away one a distant, audible-but-quiet tell rather than
 /// nothing. Picked by reading the falloff math, not confirmed against a
 /// speaker — a human pass with real audio should retune this.
-const HEX_SPATIAL_SCALE: f32 = 0.15;
+pub(super) const HEX_SPATIAL_SCALE: f32 = 0.15;
 
 #[derive(Resource)]
 pub(super) struct HexWfcAudioAssets {
@@ -128,7 +128,11 @@ pub(super) fn sync(
         play(
             &mut commands,
             sound(&assets, definition.sound),
-            0.62 * master,
+            if matches!(definition.sound, HexWfcSound::Guardian) {
+                0.8768 * master
+            } else {
+                0.62 * master
+            },
             "Hex WFC event cue",
             position,
         );

@@ -87,12 +87,8 @@ pub(crate) fn sync_changed_geometry(
             })
         })
         .collect::<Vec<_>>();
-    for coord in invalidated {
-        if let Some(cell) = residency.resident.remove(&coord) {
-            commands.entity(cell.entity).despawn();
-        }
-    }
-    residency.catalog.rebuild(&runtime);
+    residency.replacements.extend(invalidated);
+    residency.catalog.update_changed(&runtime, &changed);
     debug_assert_eq!(
         residency.catalog.generation,
         runtime.match_state.geometry.generation
@@ -106,6 +102,7 @@ pub(crate) fn sync_changed_geometry(
         .filter(|&coord| !residency.catalog.contains(coord))
         .collect::<Vec<_>>();
     for coord in retired {
+        residency.replacements.remove(&coord);
         if let Some(cell) = residency.resident.remove(&coord) {
             commands.entity(cell.entity).despawn();
         }
@@ -367,36 +364,91 @@ pub(crate) fn sync_streamed_cells(
         CELL_SPAWN_BUDGET
     };
     let reach = residency.reach;
-    let plan = plan_residency(
+    let mut plan = plan_residency(
         &residency.catalog,
         &residency.resident,
         focus.position,
         focus.cell,
-        spawn_budget,
+        usize::MAX,
         CELL_DESPAWN_BUDGET,
         reach,
     );
+    plan.spawn.extend(residency.replacements.iter().copied());
+    if !residency.capture_unbounded && reach.enter_radius <= STREAM_ENTER_RADIUS {
+        let residency = &mut *residency;
+        let warm = residency
+            .window
+            .update(&runtime, &residency.catalog, reach.enter_radius)
+            .clone();
+        plan.spawn.retain(|coord| warm.contains(coord));
+        for (coord, cell) in &mut residency.resident {
+            let shown = warm.contains(coord);
+            if cell.shown != shown {
+                cell.shown = shown;
+                commands.entity(cell.entity).insert(if shown {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                });
+            }
+        }
+        plan.spawn.sort_by_key(|coord| {
+            (
+                !residency.catalog.cells[coord]
+                    .footprint
+                    .contains(&focus.cell),
+                coord.level.abs_diff(focus.cell.level),
+                (footprint_distance_squared(
+                    &residency.catalog.cells[coord].footprint,
+                    focus.position,
+                ) * 100.0) as u32,
+            )
+        });
+        plan.pending_cells = plan.spawn.len();
+        plan.spawn.truncate(spawn_budget);
+    } else {
+        for cell in residency.resident.values_mut() {
+            if !cell.shown {
+                cell.shown = true;
+                commands.entity(cell.entity).insert(Visibility::Inherited);
+            }
+        }
+    }
+    let pending_visible = plan.pending_cells;
+    let desired_visible = plan.desired_cells;
     let mut despawned = 0;
     for coord in plan.despawn {
+        residency.replacements.remove(&coord);
         if let Some(cell) = residency.resident.remove(&coord) {
             commands.entity(cell.entity).despawn();
             despawned += 1;
         }
     }
-    let requested = plan.spawn.into_iter().collect::<BTreeSet<_>>();
-    let spawned = super::shell::spawn_cells(
+    let requested = plan.spawn;
+    let budget = (!residency.capture_unbounded).then_some(std::time::Duration::from_millis(3));
+    let spawned = super::shell::spawn_cells_bounded(
         &mut commands,
         &mut assets,
         &mut meshes,
         (&runtime.match_state.facility, &runtime.match_state.geometry),
         &residency.catalog,
         &requested,
+        budget,
     );
     let spawned_count = spawned.len();
+    if let Some(metrics) = perf.as_deref_mut() {
+        metrics.mesh_cache = [assets.cache_hits, assets.cache_misses];
+    }
     for spawned in spawned {
+        residency.replacements.remove(&spawned.coord);
+        if let Some(old) = residency.resident.remove(&spawned.coord) {
+            commands.entity(old.entity).despawn();
+            despawned += 1;
+        }
         residency.resident.insert(
             spawned.coord,
             ResidentCell {
+                shown: true,
                 entity: spawned.entity,
                 child_pieces: spawned.child_pieces,
             },
@@ -409,6 +461,9 @@ pub(crate) fn sync_streamed_cells(
         spawned_count,
         despawned,
     );
+    readiness.pending_cells = pending_visible.saturating_sub(spawned_count);
+    readiness.desired_cells = desired_visible;
+    readiness.stream_window_ready = readiness.pending_cells == 0;
     crate::hex_wfc::perf::record_streaming(
         &mut perf,
         readiness.resident_cells,

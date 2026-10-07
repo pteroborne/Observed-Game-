@@ -438,7 +438,10 @@ fn validate_ports(module: &AuthoredModule) -> Result<(), SourceError> {
                 cell: port.cell,
                 face: port.face,
             })?;
-            let expected = expected_port_origin(port.cell, port.face);
+            let mut expected = expected_port_origin(port.cell, port.face);
+            if port.class == PortClass::LowDoor {
+                expected[2] -= 16.0;
+            }
             // A **vertical** port's plan position is a declaration, not a
             // formality: it says where in the cell a body crosses the level
             // plane. Only its height is fixed, because that is the seam two
@@ -1202,6 +1205,7 @@ pub fn port_class_counts(module: &AuthoredModule) -> BTreeMap<&'static str, usiz
         let name = match port.class {
             PortClass::Sealed => "sealed",
             PortClass::Door => "door",
+            PortClass::LowDoor => "low_door",
             PortClass::RampOpen => "ramp_open",
             PortClass::ShaftOpen => "shaft_open",
             PortClass::Span => "span",

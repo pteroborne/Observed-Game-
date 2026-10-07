@@ -64,6 +64,13 @@ pub fn compatibility_cells() -> Result<Vec<crate::TilePrototype>, crate::TileErr
         .collect::<Result<Vec<_>, crate::TileError>>()?;
     for &register in REGISTERS {
         for source in catalog::library_for(&[register]) {
+            if register == "liminal_grid"
+                && let Some(low) = crate::forge::backrooms::lower_source(&source.text)
+            {
+                let mut tile = crate::parse_tile(&low)?;
+                tile.key.archetype = compatibility_archetype(&tile).to_string();
+                cells.push(tile);
+            }
             cells.push(convert(source, None)?);
         }
     }
@@ -75,7 +82,7 @@ fn compatibility_archetype(tile: &crate::TilePrototype) -> &'static str {
         "hall_corner" => {
             let faces = HexFace::LATERAL
                 .into_iter()
-                .filter(|&face| tile.signature.port(face) == observed_hex::PortClass::Door)
+                .filter(|&face| tile.signature.port(face).is_doorway())
                 .map(HexFace::index)
                 .collect::<Vec<_>>();
             let distance = faces[0].abs_diff(faces[1]);
@@ -88,7 +95,7 @@ fn compatibility_archetype(tile: &crate::TilePrototype) -> &'static str {
         "hall_junction" => {
             let doors = HexFace::LATERAL
                 .into_iter()
-                .filter(|&face| tile.signature.port(face) == observed_hex::PortClass::Door)
+                .filter(|&face| tile.signature.port(face).is_doorway())
                 .count();
             if doors == 3 {
                 "hall_junction_3way"

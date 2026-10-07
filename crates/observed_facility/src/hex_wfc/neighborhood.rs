@@ -259,7 +259,10 @@ impl Neighborhood {
         let mut placements = BTreeMap::new();
         for (&coord, set) in &domains {
             let index = set.iter().next()?;
-            placements.insert(coord, placement_of(tables.variants[index], coord));
+            placements.insert(
+                coord,
+                placement_of(tables.variants[index], coord).on_floor(config.levels),
+            );
         }
         Some(placements)
     }
@@ -273,6 +276,7 @@ fn single(index: usize) -> VariantSet {
 
 fn placement_of(variant: super::variants::HexVariant, coord: HexCoord) -> HexPlacement {
     HexPlacement {
+        low_doors: 0,
         coord,
         space: variant.space,
         archetype: variant.archetype,
@@ -471,7 +475,7 @@ pub fn neighborhood(
             .iter()
             .map(|index| {
                 let variant = tables.variants[index];
-                let placement = placement_of(variant, coord);
+                let placement = placement_of(variant, coord).on_floor(config.levels);
                 NeighborCandidate {
                     placement,
                     weight: context::effective_weight(

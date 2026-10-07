@@ -222,12 +222,17 @@ impl AscentRules {
         // inert (`power`).
         self.hand_over_power(physical);
         physical.step(&self.affordable(bodies));
+        physical.mark_mutation_phase("physical_step");
         self.pay_for_shots(physical);
         self.observe(physical);
         self.operate_generators(physical, bodies);
         self.operate_doors(physical, bodies);
         self.operate_sensors(physical, bodies);
-        let refusals = self.session.advance(seats)?;
+        physical.mark_mutation_phase("observation_and_interactions");
+        let refusals = self
+            .session
+            .advance_profiled(seats, |phase| physical.mark_mutation_phase(phase))?;
+        physical.mark_mutation_phase("architect_rules");
         self.recharge_at_stations(physical);
         let rewrites = self.session.sim.take_rewrites();
         let changed: Vec<HexCoord> = rewrites.keys().copied().collect();
@@ -238,6 +243,7 @@ impl AscentRules {
                 .apply_directed_change(rewrites)
                 .expect("the rules rewrite only what the facility can build");
         }
+        physical.mark_mutation_phase("after_commit");
         self.refresh_station_sites(physical, changed);
         self.refresh_station_fixtures();
         // After the rewrites, which consume the doors of the cells they took.
@@ -274,6 +280,7 @@ impl AscentRules {
         if self.session.sim.outcome != MatchOutcome::Running {
             physical.status = crate::hex_wfc::HexMatchStatus::Finished;
         }
+        physical.mark_mutation_phase("equipment_and_releases");
         Ok(refusals)
     }
 

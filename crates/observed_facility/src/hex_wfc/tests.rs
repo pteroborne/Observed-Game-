@@ -503,6 +503,8 @@ fn ports_view_matches_the_placement() {
                 PortClass::Sealed
             } else if placement.archetype.span_mask() & lateral_bit(face) != 0 {
                 PortClass::Span
+            } else if placement.low_doors & lateral_bit(face) != 0 {
+                PortClass::LowDoor
             } else {
                 PortClass::Door
             };

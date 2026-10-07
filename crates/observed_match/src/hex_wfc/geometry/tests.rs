@@ -363,16 +363,16 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
         (
             1u64,
             214usize,
-            0x102b_9f57_5839_8d54u64,
+            0x760056a7796e6f2eu64,
             16usize,
-            0x3a00_ae27_3908_e18eu64,
+            0x54d0_19f6_675f_588fu64,
         ),
         (
             10_000_031u64,
             198usize,
-            0x3d35_97f4_c0c2_4587u64,
+            0x72af8346308818d2u64,
             44usize,
-            0x5f6f_8a03_3dd5_64b6u64,
+            0x7982_3861_5738_0d56u64,
         ),
     ];
     let mut actual = Vec::new();
@@ -638,11 +638,12 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
                 level: 0,
             },
             face,
-            class: PortClass::Door,
+            class: PortClass::LowDoor,
             name: name.to_string(),
         })
         .collect();
     let room = RoomPrototype {
+        surfaces: Vec::new(),
         id: "test/whole-start".to_string(),
         room_role: "start".to_string(),
         key: TileKey {
@@ -971,6 +972,7 @@ fn multi_cell_room_prototype(role: RoomRole, archetype: &str, variant: u16) -> R
         )
         .collect();
     RoomPrototype {
+        surfaces: Vec::new(),
         id: format!("test/{archetype}"),
         room_role: blueprint.name.to_string(),
         key: TileKey {
@@ -1016,6 +1018,7 @@ fn multi_cell_world(role: RoomRole, anchor: HexCoord) -> HexWfcWorld {
         placements.insert(
             coord,
             HexPlacement {
+                low_doors: 0,
                 coord,
                 space: HexSpace::Room,
                 archetype: HexArchetype::Room,
@@ -1624,7 +1627,7 @@ fn every_open_seam_in_a_projected_facility_actually_meets() {
     let mut checked = 0usize;
     let mut floor_mismatches: Vec<String> = Vec::new();
     let mut headroom_mismatches: Vec<String> = Vec::new();
-    let mut headroom_shapes: Vec<(f32, f32)> = Vec::new();
+    let mut headroom_shapes: Vec<(f32, f32, PortClass)> = Vec::new();
 
     for (&coord, placement) in &world.placements {
         for face in HexFace::LATERAL {
@@ -1653,7 +1656,7 @@ fn every_open_seam_in_a_projected_facility_actually_meets() {
                 floor_mismatches.push(entry.clone());
             }
             if (near.1 - far.1).abs() > 0.05 {
-                headroom_shapes.push((near.1, far.1));
+                headroom_shapes.push((near.1, far.1, placement.ports().port(face)));
                 headroom_mismatches.push(entry);
             }
         }
@@ -1692,11 +1695,14 @@ fn every_open_seam_in_a_projected_facility_actually_meets() {
     // makes this gate useful to the work it was built for — rewriting all of
     // the generated geometry must not make seams worse.
     const KNOWN_HEADROOM_DISAGREEMENTS: usize = 259;
-    for (a, b) in &headroom_shapes {
+    for (a, b, class) in &headroom_shapes {
         let pair = (a.min(*b), a.max(*b));
         assert!(
-            (pair.0 - 4.5).abs() < 0.01 && (pair.1 - 8.0).abs() < 0.01,
-            "unfamiliar headroom disagreement {pair:?}; the known one is 4.5 vs 8.0"
+            ((pair.0 - 4.5).abs() < 0.01 && (pair.1 - 8.0).abs() < 0.01)
+                || (*class == PortClass::LowDoor
+                    && (pair.0 - 3.625).abs() < 0.01
+                    && ((pair.1 - 8.0).abs() < 0.01 || (pair.1 - 4.5).abs() < 0.01)),
+            "unfamiliar boundary envelope disagreement {pair:?} for {class:?}"
         );
     }
     assert!(
@@ -1704,6 +1710,51 @@ fn every_open_seam_in_a_projected_facility_actually_meets() {
         "headroom disagreements rose from {KNOWN_HEADROOM_DISAGREEMENTS} to {} of {checked}:\n{}",
         headroom_mismatches.len(),
         sample(&headroom_mismatches)
+    );
+}
+
+#[test]
+fn low_doorways_offer_the_declared_headroom_on_both_sides() {
+    let world = showcase();
+    let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("projection");
+    let scene = observed_traversal::rapier_controller::RapierTraversalScene::from_arena_spec(
+        &snapshot.arena,
+    );
+    let grid = world.config.grid();
+    let mut checked = 0;
+    for (&cell, placement) in &world.placements {
+        for face in HexFace::LATERAL {
+            if placement.ports().port(face) != PortClass::LowDoor {
+                continue;
+            }
+            let Some(other) = grid.neighbor(cell, face) else {
+                continue;
+            };
+            if other < cell {
+                continue;
+            }
+            let [a, b] = observed_hex::face_edge(face);
+            let middle = glam::Vec3::new(
+                f32::from((a.0 + b.0) as i16) * 0.5,
+                0.55,
+                f32::from((a.1 + b.1) as i16) * 0.5,
+            );
+            let normal = middle.with_y(0.0).normalize();
+            let origin = glam::Vec3::from_array(observed_hex::hex_origin(cell));
+            for side in [-1.0, 1.0] {
+                let from = origin + middle + normal * (side * 0.15);
+                let clearance = scene.ray_distance(from, glam::Vec3::Y, 3.0).unwrap_or(3.0);
+                assert!(
+                    clearance >= 2.90,
+                    "{cell:?} {face:?}: only {clearance} m above the floor probe"
+                );
+            }
+            checked += 1;
+        }
+    }
+    assert!(
+        checked > 10,
+        "the proof must cover a connected Backrooms floor"
     );
 }
 

@@ -38,6 +38,8 @@ pub struct HexDoor {
     pub cell: HexCoord,
     pub face: HexFace,
     pub closed: bool,
+    /// Clear height of this exact threshold.
+    pub height: f32,
     collider: StableColliderId,
 }
 
@@ -72,10 +74,10 @@ impl HexDoor {
         let (floor, along) = self.pose();
         ColliderSpec {
             id: self.collider,
-            center: floor + Vec3::Y * (DOOR_HEIGHT * 0.5),
+            center: floor + Vec3::Y * (self.height * 0.5),
             rotation: Quat::from_rotation_arc(Vec3::X, along).to_array(),
             shape: ColliderShape::Cuboid {
-                half: Vec3::new(DOOR_HALF_WIDTH, DOOR_HEIGHT * 0.5, DOOR_THICKNESS * 0.5),
+                half: Vec3::new(DOOR_HALF_WIDTH, self.height * 0.5, DOOR_THICKNESS * 0.5),
             },
             friction: 0.8,
         }
@@ -107,9 +109,19 @@ impl HexWfcMatch {
             }
         }
         for (&(cell, face), &closed) in &wanted {
+            let height = self
+                .facility
+                .placements
+                .get(&cell)
+                .and_then(|p| p.ports().port(face).doorway_height())
+                .unwrap_or(DOOR_HEIGHT);
             let door = match self.doors.get(&(cell, face)) {
-                Some(door) if door.closed == closed => continue,
-                Some(door) => HexDoor { closed, ..*door },
+                Some(door) if door.closed == closed && door.height == height => continue,
+                Some(door) => HexDoor {
+                    closed,
+                    height,
+                    ..*door
+                },
                 None => {
                     let collider = StableColliderId(DOOR_COLLIDER_BASE + self.next_door_collider);
                     self.next_door_collider += 1;
@@ -117,6 +129,7 @@ impl HexWfcMatch {
                         cell,
                         face,
                         closed,
+                        height,
                         collider,
                     }
                 }

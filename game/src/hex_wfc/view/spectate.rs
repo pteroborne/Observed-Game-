@@ -72,7 +72,7 @@ pub(in crate::hex_wfc) const CYCLE_KEY: KeyCode = KeyCode::KeyF;
 /// A little past `STREAM_ENTER_RADIUS` (30 m), so a cell is always resident
 /// before its prism disappears. The other order leaves a hole: massing gone,
 /// geometry not yet spawned, and the body apparently standing on nothing.
-pub(in crate::hex_wfc::view) const DETAIL_RADIUS: f32 = 34.0;
+pub(in crate::hex_wfc::view) const DETAIL_RADIUS: f32 = 100.0;
 
 // Compile-time, not a test: these are relationships between constants, so a
 // runtime assertion could only ever restate what the compiler already knows.
@@ -352,11 +352,17 @@ pub(in crate::hex_wfc) fn sync_key_light(
 /// and no system-ordering change can put a frame between them.
 /// `OverviewFrame` is in this module's history precisely because two
 /// derivations of one fact drift.
+#[derive(Component)]
+pub(in crate::hex_wfc) struct CeilingCutaway;
+
 pub(in crate::hex_wfc) fn sync_cutaway(
     runtime: Res<HexWfcRuntime>,
     overview: Res<SpectatorOverview>,
     mut marks: cutaway_marks::CutawayMarks,
-    mut hulls: Query<(&Cutaway, &mut Visibility), Without<cutaway_marks::BodyMark>>,
+    mut hulls: Query<
+        (&Cutaway, Has<CeilingCutaway>, &mut Visibility),
+        Without<cutaway_marks::BodyMark>,
+    >,
 ) {
     marks.sync(&runtime, &overview);
 
@@ -378,14 +384,15 @@ pub(in crate::hex_wfc) fn sync_cutaway(
     let band = overview
         .active
         .then(|| super::camera::storey(runtime.local().cell.level));
-    for (hull, mut visibility) in &mut hulls {
+    for (hull, ceiling, mut visibility) in &mut hulls {
         let off_level = band.is_some_and(|(low, high)| {
             let middle = (hull.min_y + hull.max_y) * 0.5 + hull.origin_y;
             middle < low || middle >= high
         });
         let cut = off_level
             || bearing.is_some_and(|bearing| {
-                hull.climb_wall
+                ceiling
+                    || hull.climb_wall
                     || !observed_style::iso::survives(
                         hull.min_y, hull.max_y, hull.local, bearing, true,
                     )

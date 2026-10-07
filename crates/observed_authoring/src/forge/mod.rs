@@ -8,6 +8,7 @@
 pub mod archive_well;
 pub mod audience;
 pub mod back;
+pub mod backrooms;
 pub mod borrowed;
 pub mod chargeworks;
 pub mod cistern;
@@ -94,6 +95,7 @@ pub fn generate_all() -> Vec<(String, String)> {
     out.extend(liminal::generated());
     out.extend(halls::open_builders());
     out.extend(climb::builders());
+    out.extend(backrooms::generated(&out));
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
 }
@@ -272,10 +274,10 @@ mod tests {
         }
         // The spiral stair tower held the budget at 45 until it retired. The
         // Cistern now spends 39 on its arcade, dry gallery, treads and aqueduct;
-        // its complete three-cell room is 117 hulls, below the 128 room budget.
+        // its low edition adds one threshold header per sector (40, below 45).
         assert_eq!(
             worst,
-            (39, "cistern_sector".to_string()),
+            (40, "cistern_sector_low".to_string()),
             "the most expensive cell in the corpus moved"
         );
     }

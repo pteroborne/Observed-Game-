@@ -11,22 +11,9 @@ fn tiles() -> Vec<TilePrototype> {
     crate::hex_wfc::test_tiles()
 }
 
-/// A hand-built two-cell world: `A` at `(5, 5, 0)` is a plain E/W hall, `B`
-/// immediately east of it is a climb's foot (different [`HexStructureRole`]).
-/// No solver run, no other occupied cells — every other lateral neighbor of
-/// `A` and `B` is void by omission. This gives a fully known expected trim
-/// set:
-/// - a single `Buttress` on `A`'s `East` face (the only occupied neighbor,
-///   with a differing role: Hall vs. Ramp),
-/// - a `Railing` on every other lateral face of both `A` and `B` (five each,
-///   all bordering nothing).
-///
-/// Both cells are put on different [`ArchitectureRegister`]s too, but that
-/// alone would not be visible to `derive_trim`: [`HexStructurePiece::tile`]
-/// carries the *selected geometry-catalogue* register (here always
-/// `"generic"`, since these two cells use the register-agnostic compatibility
-/// hall kit), not `HexWfcWorld::architecture` directly. The role difference is
-/// what this fixture can actually exercise.
+/// A hall and a climb foot share an occupied seam despite different roles and
+/// districts. Only the climb's five exterior edges receive decorative railings;
+/// the hall already has real open-edge geometry.
 fn two_cell_world() -> HexWfcWorld {
     let a = observed_hex::HexCoord {
         q: 5,
@@ -42,6 +29,7 @@ fn two_cell_world() -> HexWfcWorld {
     placements.insert(
         a,
         HexPlacement {
+            low_doors: 0,
             coord: a,
             space: HexSpace::Hall,
             archetype: HexArchetype::Straight,
@@ -53,6 +41,7 @@ fn two_cell_world() -> HexWfcWorld {
     placements.insert(
         b,
         HexPlacement {
+            low_doors: 0,
             coord: b,
             space: HexSpace::Hall,
             archetype: HexArchetype::Climb {
@@ -102,7 +91,7 @@ fn two_cell_world() -> HexWfcWorld {
 }
 
 #[test]
-fn two_cell_world_yields_one_buttress_and_railings_only_where_edges_stay_walled() {
+fn two_cell_world_yields_railings_only_where_edges_stay_walled() {
     let world = two_cell_world();
     let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("tiny projection");
     let trim = derive_trim(&snapshot);
@@ -118,13 +107,12 @@ fn two_cell_world_yields_one_buttress_and_railings_only_where_edges_stay_walled(
         level: 0,
     };
 
-    let buttresses: Vec<_> = trim
-        .iter()
-        .filter(|piece| piece.kind == HexTrimKind::Buttress)
-        .collect();
-    assert_eq!(buttresses.len(), 1, "exactly one shared occupied seam");
-    assert_eq!(buttresses[0].cell, a, "owned by the lower-ordered cell");
-    assert_eq!(buttresses[0].face, HexFace::East);
+    assert!(
+        !trim
+            .iter()
+            .any(|piece| piece.cell == a && piece.face == HexFace::East),
+        "the shared passage must remain free of decorative columns"
+    );
 
     let railings: Vec<_> = trim
         .iter()
@@ -249,28 +237,21 @@ fn derive_trim_is_pure_and_deterministic_over_a_solved_facility() {
 }
 
 #[test]
-fn buttress_pieces_mark_a_real_role_or_register_seam_between_two_occupied_cells() {
-    let world = showcase();
-    let prototypes = tiles();
-    let snapshot = HexWfcGeometrySnapshot::project(&world, &prototypes).expect("projection");
-    let cells = summarize_cells(&snapshot.pieces, None);
-    for piece in derive_trim(&snapshot)
-        .into_iter()
-        .filter(|piece| piece.kind == HexTrimKind::Buttress)
-    {
-        let neighbor_coord = step(piece.cell, piece.face).expect("buttress faces a real neighbor");
-        let here = cells.get(&piece.cell).expect("buttress owner is occupied");
-        let neighbor = cells
-            .get(&neighbor_coord)
-            .expect("buttress neighbor is occupied");
-        assert!(
-            piece.cell < neighbor_coord,
-            "owned by the lower-ordered cell"
-        );
-        assert!(
-            here.role != neighbor.role || here.register != neighbor.register,
-            "buttress must mark an actual role or register difference"
-        );
+fn occupied_seams_have_no_decorative_columns_on_any_floor() {
+    let world = two_cell_world();
+    let mut snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("projection");
+    for level in 0..8 {
+        for piece in &mut snapshot.pieces {
+            piece.source_cell.level = level;
+        }
+        let cells = summarize_cells(&snapshot.pieces, None);
+        for piece in derive_trim(&snapshot) {
+            let neighbor = step(piece.cell, piece.face).expect("fixture's lateral neighbor");
+            assert!(
+                !cells.contains_key(&neighbor),
+                "decorative trim must not stand between occupied cells on floor {level}"
+            );
+        }
     }
 }
 

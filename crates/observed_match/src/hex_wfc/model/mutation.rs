@@ -97,6 +97,8 @@ impl HexWfcMatch {
                 .expect("the just-accepted logical delta is revertible");
             return HexMatchEventKind::MutationCancelled;
         }
+        self.last_geometry_cells
+            .extend(geometry.changed_cells.iter().copied());
         self.geometry
             .apply_delta(&geometry)
             .expect("geometry delta was projected from this snapshot");

@@ -868,6 +868,7 @@ mod tests {
             }
         }
         RoomPrototype {
+            surfaces: Vec::new(),
             id: format!("{}_test", blueprint.name),
             room_role: blueprint.name.to_string(),
             key: TileKey {

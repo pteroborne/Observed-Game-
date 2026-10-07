@@ -26,6 +26,7 @@ pub mod promenade;
 pub mod rain_court;
 
 pub mod architect;
+pub mod backrooms;
 pub mod cosmetics;
 pub mod equipment;
 pub mod guardian;
@@ -1047,12 +1048,12 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.fog_end = 54.0;
         }
         Register::LiminalGrid => {
-            palette.ambient_color = Color::srgb(0.62, 0.58, 0.38);
-            palette.ambient_brightness = 145.0;
-            palette.fog_color = Color::srgb(0.038, 0.030, 0.014);
-            palette.fog_start = 13.0;
-            palette.fog_end = 41.0;
-            palette.light_color = Color::srgb(1.0, 0.92, 0.76);
+            palette.ambient_color = Color::srgb(0.95, 0.94, 0.87);
+            palette.ambient_brightness = 190.0;
+            palette.fog_color = Color::srgb(0.24, 0.21, 0.13);
+            palette.fog_start = 22.0;
+            palette.fog_end = 70.0;
+            palette.light_color = Color::srgb(1.0, 0.96, 0.87);
             palette.accent = LinearRgba::rgb(0.38, 0.32, 0.10);
             palette.key_color = Color::srgb(1.0, 0.95, 0.82);
             // The uncanny grid is fluorescent-flat; hard fixture shadows
@@ -1951,6 +1952,9 @@ pub fn hex_shell_surface(
     register: observed_content::ArchitectureRegister,
     role: ArchitectureSurfaceRole,
 ) -> HexSurfaceLook {
+    if register == observed_content::ArchitectureRegister::LiminalGrid {
+        return backrooms::surface(role);
+    }
     use observed_content::ArchitectureRegister as Register;
     if register == Register::Megastructure && role != ArchitectureSurfaceRole::PracticalFixture {
         return reactor::surface(role);
@@ -2010,8 +2014,11 @@ pub fn hex_practical_light(
     };
     let per_source = (source_count.max(1) as f32).sqrt().recip().clamp(0.55, 1.0);
     let noon = register == observed_content::ArchitectureRegister::OverlitGrid;
+    let backrooms = register == observed_content::ArchitectureRegister::LiminalGrid;
     let source_intensity = if noon {
         3_000_000.0
+    } else if backrooms {
+        300_000.0
     } else if register == observed_content::ArchitectureRegister::ShadowScreen {
         rain_court::ORDINARY_FIXTURE_INTENSITY
     } else {
@@ -2023,7 +2030,13 @@ pub fn hex_practical_light(
         range: 14.0,
         // A broad source softens the near-fixture specular response. Shadowless
         // fill is deliberate for the Noon's concealed, indirect fixtures.
-        radius: if noon { 2.0 } else { 0.0 },
+        radius: if noon {
+            2.0
+        } else if backrooms {
+            0.6
+        } else {
+            0.0
+        },
         shadows_allowed: !noon,
     }
 }

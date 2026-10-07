@@ -7,14 +7,15 @@
 //! checks around the fixed step and one absent-resource check in the Update schedule.
 
 mod report;
+mod route_capture;
 mod systems;
+mod workload;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use bevy::prelude::*;
-use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::HexWfcWorld;
 use observed_match::hex_wfc::{HexMatchEventKind, HexWfcGeometrySnapshot};
@@ -28,6 +29,7 @@ use crate::GameState;
 
 pub(super) const CAPTURE_ENV: &str = "OBSERVED2_CAPTURE_HEX_WFC_PHASE96";
 pub(super) const ARC_GATE_ENV: &str = "OBSERVED2_CAPTURE_HEX_WFC_PHASE101";
+pub(super) const SOLO_ROUTE_ENV: &str = "OBSERVED2_CAPTURE_SOLO_ROUTE";
 const DEFAULT_SEED: u64 = 0xF011_FAC1_1177;
 const REPORT_TICK: u64 = 600;
 /// Overrides [`REPORT_TICK`] so a run can be given a long enough route for the bot to
@@ -108,10 +110,17 @@ pub(super) struct HexPerfMetrics {
     commits: Vec<CommitTiming>,
     fixed_started: Option<Instant>,
     frame_count: u32,
+    wall_frame_started: Option<Instant>,
+    warmed_wall_frames: Vec<u64>,
+    hitches: Vec<workload::Hitch>,
+    pub(super) mesh_cache: [u64; 2],
     startup_shots: u8,
     report_written: bool,
     arc_gate: bool,
     report_tick: u64,
+    route_ticks: u64,
+    route_last_tick: u64,
+    route_runs: u32,
     pending_commit_frame: Option<(usize, bool)>,
 }
 
@@ -122,7 +131,11 @@ impl HexPerfMetrics {
                 .ok()
                 .and_then(|value| value.trim().parse::<u64>().ok())
                 .filter(|ticks| *ticks > 0)
-                .unwrap_or(REPORT_TICK),
+                .unwrap_or(if std::env::var_os(SOLO_ROUTE_ENV).is_some() {
+                    7200
+                } else {
+                    REPORT_TICK
+                }),
             directory,
             pipeline: PipelineTiming::default(),
             view: Vec::new(),
@@ -148,9 +161,16 @@ impl HexPerfMetrics {
             commits: Vec::new(),
             fixed_started: None,
             frame_count: 0,
+            wall_frame_started: None,
+            warmed_wall_frames: Vec::new(),
+            hitches: Vec::new(),
+            mesh_cache: [0; 2],
             startup_shots: 0,
             report_written: false,
             arc_gate,
+            route_ticks: 0,
+            route_last_tick: 0,
+            route_runs: 0,
             pending_commit_frame: None,
         }
     }
@@ -158,7 +178,10 @@ impl HexPerfMetrics {
 
 /// Install the evidence-only systems when the capture environment variable is present.
 pub(super) fn configure(app: &mut App) {
-    let (directory, arc_gate) = if let Ok(directory) = std::env::var(ARC_GATE_ENV) {
+    route_capture::install(app);
+    let (directory, arc_gate) = if let Ok(directory) = std::env::var(SOLO_ROUTE_ENV) {
+        (directory, false)
+    } else if let Ok(directory) = std::env::var(ARC_GATE_ENV) {
         (directory, true)
     } else if let Ok(directory) = std::env::var(CAPTURE_ENV) {
         (directory, false)
@@ -169,7 +192,11 @@ pub(super) fn configure(app: &mut App) {
     std::fs::create_dir_all(&directory)
         .expect("Phase 96 performance evidence directory must be creatable");
     app.insert_resource(HexPerfMetrics::new(directory, arc_gate))
-        .add_systems(Startup, autostart)
+        .add_systems(Startup, workload::autostart)
+        .add_systems(
+            OnEnter(GameState::MainMenu),
+            workload::autostart.run_if(|| std::env::var_os(SOLO_ROUTE_ENV).is_some()),
+        )
         .add_systems(
             Startup,
             uncap_present_mode.run_if(|| std::env::var(UNCAPPED_ENV).is_ok()),
@@ -190,6 +217,7 @@ pub(super) fn configure(app: &mut App) {
     )
     .add_systems(Last, end_main_schedule.run_if(in_state(GameState::HexWfc)));
     systems::configure(app);
+    app.add_systems(Update, workload::write_progress);
     if std::env::var(GPU_PROFILE_ENV).is_ok() {
         app.add_systems(
             Update,
@@ -210,20 +238,11 @@ fn uncap_present_mode(mut window: Query<&mut Window, With<bevy::window::PrimaryW
     }
 }
 
-fn autostart(mut commands: Commands, mut next: ResMut<NextState<GameState>>) {
-    let seed = std::env::var(crate::flow::SEED_OVERRIDE_ENV)
-        .ok()
-        .and_then(|value| crate::flow::parse_seed_override(&value))
-        .unwrap_or(DEFAULT_SEED);
-    commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
-    commands.insert_resource(crate::sim::state::SpectatorBot::for_seed(seed));
-    next.set(GameState::HexWfc);
-}
-
 /// Re-run the exact public production pipeline only in evidence mode so its three
 /// otherwise-opaque construction phases have independent wall-clock measurements.
 /// The measured artifacts are discarded; the live match remains the authoritative one.
-fn profile_pipeline(mut metrics: ResMut<HexPerfMetrics>, runtime: Res<HexWfcRuntime>) {
+fn profile_pipeline(mut metrics: ResMut<HexPerfMetrics>, mut runtime: ResMut<HexWfcRuntime>) {
+    runtime.match_state.enable_mutation_profiling();
     if metrics.arc_gate {
         return;
     }
@@ -271,6 +290,13 @@ pub(super) fn end_fixed(
         return;
     };
     let elapsed = micros(started.elapsed());
+    let tick = runtime.match_state.tick;
+    metrics.route_ticks += if tick >= metrics.route_last_tick {
+        tick - metrics.route_last_tick
+    } else {
+        tick
+    };
+    metrics.route_last_tick = tick;
     metrics.fixed_steps_this_frame = metrics.fixed_steps_this_frame.saturating_add(1);
     if !metrics.arc_gate || runtime.match_state.tick >= ARC_GATE_WARMUP_TICK {
         metrics.fixed_microseconds.push(elapsed);
@@ -293,47 +319,15 @@ pub(super) fn end_fixed(
             tick: runtime.match_state.tick,
             generation: runtime.match_state.facility.generation,
             fixed_microseconds: elapsed,
+            phases: runtime.match_state.mutation_phases().to_vec(),
+            collider_cache_hits_misses: runtime.match_state.collider_cache_counts(),
             frame_microseconds: 0,
         });
         metrics.pending_commit_frame = Some((index, false));
     }
 }
 
-/// Record what the streaming window did this frame. Called from
-/// [`crate::hex_wfc::view::sync_streamed_cells`]; a no-op outside evidence mode.
-pub(super) fn record_streaming(
-    metrics: &mut Option<ResMut<HexPerfMetrics>>,
-    visible: usize,
-    flipped: usize,
-    visible_pieces: usize,
-) {
-    let Some(metrics) = metrics.as_deref_mut() else {
-        return;
-    };
-    metrics.last_streaming_flips = flipped;
-    metrics.last_visible_pieces = visible_pieces;
-    metrics.peak_visible_cells = metrics.peak_visible_cells.max(visible);
-}
-
-pub(super) fn record_view(
-    metrics: &mut Option<ResMut<HexPerfMetrics>>,
-    kind: ViewTimingKind,
-    runtime: &HexWfcRuntime,
-    elapsed: Duration,
-) {
-    let Some(metrics) = metrics.as_deref_mut() else {
-        return;
-    };
-    metrics.view.push(ViewTiming {
-        kind: match kind {
-            ViewTimingKind::Startup => "startup",
-            ViewTimingKind::MutationRebuild => "mutation_delta",
-        },
-        tick: runtime.match_state.tick,
-        generation: runtime.match_state.facility.generation,
-        microseconds: micros(elapsed),
-    });
-}
+pub(super) use workload::{record_streaming, record_view};
 
 /// Bucket every render pass's GPU time under the register the runner is standing in.
 ///
@@ -399,15 +393,26 @@ fn end_main_schedule(runtime: Res<HexWfcRuntime>, mut metrics: ResMut<HexPerfMet
 
 fn sample_frame_and_capture(
     time: Res<Time>,
-    runtime: Res<HexWfcRuntime>,
+    mut runtime: ResMut<HexWfcRuntime>,
     mut metrics: ResMut<HexPerfMetrics>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
+    mut next: ResMut<NextState<GameState>>,
 ) {
     metrics.frame_count = metrics.frame_count.saturating_add(1);
-    let frame_microseconds = micros(time.delta());
+    let now = Instant::now();
+    let frame_microseconds = metrics.wall_frame_started.replace(now).map_or_else(
+        || micros(time.delta()),
+        |before| micros(now.duration_since(before)),
+    );
+    if frame_microseconds > 50_000 {
+        workload::record_hitch(&mut metrics, &runtime, frame_microseconds);
+    }
     if !metrics.arc_gate || runtime.match_state.tick >= ARC_GATE_WARMUP_TICK {
         metrics.frame_microseconds.push(frame_microseconds);
+        if runtime.match_state.tick >= 300 {
+            metrics.warmed_wall_frames.push(frame_microseconds);
+        }
         if let Some(register) = current_register(&runtime) {
             metrics
                 .frame_by_register
@@ -437,37 +442,16 @@ fn sample_frame_and_capture(
     if let Some((index, armed)) = metrics.pending_commit_frame {
         if armed {
             if let Some(commit) = metrics.commits.get_mut(index) {
-                commit.frame_microseconds = frame_microseconds;
+                commit.frame_microseconds = commit.frame_microseconds.max(frame_microseconds);
             }
             metrics.pending_commit_frame = None;
         } else {
+            metrics.commits[index].frame_microseconds = frame_microseconds;
             metrics.pending_commit_frame = Some((index, true));
         }
     }
 
-    // Screenshot extraction lags main-world setup, so keep a geometric sequence of the
-    // first render opportunities. The sequence makes the first non-black facility frame
-    // falsifiable instead of assuming which extraction frame becomes render-ready.
-    const STARTUP_SHOTS: [(u32, u8, &str); 5] = [
-        (2, 0b00001, "startup_frame_002.png"),
-        (4, 0b00010, "startup_frame_004.png"),
-        (8, 0b00100, "startup_frame_008.png"),
-        (16, 0b01000, "startup_frame_016.png"),
-        (32, 0b10000, "first_visible_frame.png"),
-    ];
-    for (frame, bit, name) in STARTUP_SHOTS {
-        if metrics.arc_gate {
-            break;
-        }
-        if metrics.frame_count >= frame && metrics.startup_shots & bit == 0 {
-            metrics.startup_shots |= bit;
-            let path = metrics.directory.join(name);
-            commands
-                .spawn(Screenshot::primary_window())
-                .observe(save_to_disk(path));
-            break;
-        }
-    }
+    workload::startup_shots(&mut metrics, &mut commands);
 
     let ready = if metrics.arc_gate {
         metrics.commits.len() >= ARC_GATE_COMMITS
@@ -475,10 +459,50 @@ fn sample_frame_and_capture(
                 .commits
                 .iter()
                 .all(|commit| commit.frame_microseconds > 0)
+    } else if std::env::var_os(SOLO_ROUTE_ENV).is_some() {
+        metrics.route_ticks >= metrics.report_tick
     } else {
         runtime.match_state.tick >= metrics.report_tick
     };
-    if !ready || metrics.report_written {
+    let finished = runtime.match_state.status == observed_match::hex_wfc::HexMatchStatus::Finished;
+    if std::env::var_os(SOLO_ROUTE_ENV).is_some() && !ready && finished {
+        next.set(GameState::MainMenu);
+        return;
+    }
+    if metrics.arc_gate && !ready && finished {
+        // Continue the same mutation workload for another walking lap. A
+        // faster route must not turn the ten-commit proof into a nine-commit
+        // failure. World generation, timers and recorded samples stay intact.
+        let spawn = runtime.match_state.facility.config.spawn();
+        let feet = Vec3::from_array(observed_hex::hex_origin(spawn))
+            + Vec3::Y * observed_hex::FLOOR_SLAB_TOP;
+        let ids = runtime
+            .match_state
+            .players
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        for team in runtime.match_state.teams.values_mut() {
+            team.escaped = false;
+            team.finish_tick = None;
+        }
+        for id in ids {
+            runtime
+                .match_state
+                .players
+                .get_mut(&id)
+                .expect("player")
+                .escaped = false;
+            runtime
+                .match_state
+                .stage_body_facing(id, spawn, feet, feet + Vec3::new(4.0, 1.6, 0.0));
+        }
+        runtime.match_state.status = observed_match::hex_wfc::HexMatchStatus::Running;
+        runtime.results_delay_frames = 0;
+        runtime.bot_driver.reset();
+        return;
+    }
+    if (!ready && !finished) || metrics.report_written {
         return;
     }
     write_report(&mut metrics, &runtime);
@@ -523,8 +547,13 @@ fn write_report(metrics: &mut HexPerfMetrics, runtime: &HexWfcRuntime) {
     let report = Phase96Report {
         // 3: adds `by_register`, so a report can be read against the per-district
         // key-shadow cost without re-deriving the palette.
-        schema_version: 3,
+        schema_version: 5,
         seed: runtime.match_state.seed,
+        rules: if runtime.ascent.is_some() {
+            "ascent"
+        } else {
+            "race"
+        },
         generation: runtime.match_state.facility.generation,
         grid: [
             u64::from(config.cols),
@@ -536,6 +565,11 @@ fn write_report(metrics: &mut HexPerfMetrics, runtime: &HexWfcRuntime) {
         view: &metrics.view,
         fixed: stats(&metrics.fixed_microseconds),
         frame,
+        wall_frames_microseconds: &metrics.frame_microseconds,
+        mesh_cache_hits_misses: metrics.mesh_cache,
+        warmed_frames: stats(&metrics.warmed_wall_frames),
+        hitches: &metrics.hitches,
+        route_ticks_runs: [metrics.route_ticks, u64::from(metrics.route_runs)],
         by_register: &by_register,
         gpu_passes: &gpu_passes,
         systems: &systems,

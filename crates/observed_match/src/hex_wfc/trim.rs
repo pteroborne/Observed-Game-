@@ -1,7 +1,7 @@
 //! Derived seam-trim geometry: a non-authoritative "transition grammar" pass
 //! over an already-projected [`HexWfcGeometrySnapshot`]. It never changes
-//! structure or collision — it only proposes decorative descriptors (railings,
-//! buttresses, ...) that a later, separate renderer pass can turn into meshes.
+//! structure or collision — it only proposes decorative railing descriptors
+//! that a later, separate renderer pass can turn into meshes.
 //!
 //! This module is intentionally pure: no RNG, no time, no globals, no Bevy
 //! types. `derive_trim` is a plain function of its snapshot input, so the same
@@ -26,7 +26,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use glam::{Quat, Vec2, Vec3};
-use observed_hex::{HexCoord, HexFace, TILE_LEVEL_HEIGHT, face_edge, hex_origin};
+use observed_hex::{HexCoord, HexFace, face_edge, hex_origin};
 
 use observed_facility::hex_wfc::HexWfcWorld;
 
@@ -55,15 +55,6 @@ pub enum HexTrimKind {
     /// opens onto a hall. Derived by [`derive_thresholds`] from the solved
     /// world, not by [`derive_trim`] from the snapshot.
     Lintel,
-    /// A structural seam marker where two adjacent occupied cells differ in
-    /// role (e.g. room <-> hall) or in resolved tile register. "Register"
-    /// here is [`observed_authoring::TileKey::register`] on the piece that
-    /// was actually selected for each cell — the projected snapshot does not
-    /// carry `HexWfcWorld::architecture` (the procedural style register)
-    /// directly, so a facility whose whole occupied catalogue resolves to
-    /// one fallback register (e.g. an all-"generic" compatibility kit) will
-    /// only ever trigger this rule through the role half of the check.
-    Buttress,
 }
 
 /// One derived, non-colliding trim descriptor. Pure data — no mesh, no
@@ -87,14 +78,12 @@ pub struct HexTrimPiece {
     pub rotation: [f32; 4],
 }
 
-/// One occupied cell's role/register, summarized from its structure pieces.
+/// One occupied cell's edge treatment, summarized from its structure pieces.
 /// `Boundary`-role pieces (the arena shell) are excluded: they all share the
 /// spawn cell as a bookkeeping anchor rather than describing per-cell
 /// coverage, so they carry no useful adjacency signal here.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct CellSummary<'a> {
-    role: HexStructureRole,
-    register: Option<&'a str>,
+struct CellSummary {
     /// The cell's edges onto the outside are real: open-edge lips and railings
     /// projected with the structure. Trim must not draw a second railing over them.
     open_edges: bool,
@@ -123,8 +112,7 @@ pub fn derive_trim(snapshot: &HexWfcGeometrySnapshot) -> Vec<HexTrimPiece> {
 /// Only two things are needed to decide `owners`' trim: their own summaries, and those of
 /// their lateral neighbours (a seam is classified by comparing the two sides). So this
 /// summarizes just that halo and emits for `owners` alone. Ownership rules are untouched —
-/// a buttress still belongs to the lower-ordered cell of its pair — so the result is
-/// exactly the `owners` subset of [`derive_trim`], in the same order.
+/// the result is exactly the `owners` subset of [`derive_trim`], in the same order.
 #[must_use]
 pub fn derive_trim_for(
     snapshot: &HexWfcGeometrySnapshot,
@@ -138,7 +126,10 @@ pub fn derive_trim_for(
             }
         }
     }
-    let cells = summarize_cells(&snapshot.pieces, Some(&halo));
+    let cells = summarize_cells(
+        halo.iter().flat_map(|&cell| snapshot.pieces_in_cell(cell)),
+        None,
+    );
     let mut trim = Vec::new();
     for &coord in owners {
         let Some(summary) = cells.get(&coord) else {
@@ -153,8 +144,8 @@ pub fn derive_trim_for(
 /// drift from the full one.
 fn push_cell_trim(
     coord: HexCoord,
-    summary: &CellSummary<'_>,
-    cells: &BTreeMap<HexCoord, CellSummary<'_>>,
+    summary: &CellSummary,
+    cells: &BTreeMap<HexCoord, CellSummary>,
     trim: &mut Vec<HexTrimPiece>,
 ) {
     for face in HexFace::LATERAL {
@@ -177,32 +168,20 @@ fn push_cell_trim(
                     RAILING_HEIGHT,
                 ));
             }
-            Some(neighbor) => {
-                // Only emit once per unordered pair, on the lower-ordered cell,
-                // so the two cells sharing a seam do not each emit a duplicate.
-                if coord < neighbor_coord
-                    && (summary.role != neighbor.role || summary.register != neighbor.register)
-                {
-                    trim.push(trim_piece(
-                        HexTrimKind::Buttress,
-                        coord,
-                        face,
-                        TILE_LEVEL_HEIGHT * 0.5,
-                    ));
-                }
-            }
+            // Occupied seams remain clear, including room and district transitions.
+            Some(_) => {}
         }
     }
 }
 
-/// Reduce every projected piece down to one role/register summary per
+/// Reduce every projected piece down to one edge-treatment summary per
 /// `source_cell`, skipping the boundary shell (see [`CellSummary`] docs).
 /// `within`, when given, restricts the summary to those cells — the scoped derivation
 /// only needs a small halo, and skipping the rest avoids a map insert per projected piece.
 fn summarize_cells<'a>(
-    pieces: &'a [HexStructurePiece],
+    pieces: impl IntoIterator<Item = &'a HexStructurePiece>,
     within: Option<&BTreeSet<HexCoord>>,
-) -> BTreeMap<HexCoord, CellSummary<'a>> {
+) -> BTreeMap<HexCoord, CellSummary> {
     let mut cells = BTreeMap::new();
     for piece in pieces {
         if piece.role == HexStructureRole::Boundary {
@@ -211,11 +190,9 @@ fn summarize_cells<'a>(
         if within.is_some_and(|within| !within.contains(&piece.source_cell)) {
             continue;
         }
-        let summary = cells.entry(piece.source_cell).or_insert(CellSummary {
-            role: piece.role,
-            register: piece.tile.as_ref().map(|key| key.register.as_str()),
-            open_edges: false,
-        });
+        let summary = cells
+            .entry(piece.source_cell)
+            .or_insert(CellSummary { open_edges: false });
         summary.open_edges |= matches!(piece.part, HexPiecePart::Lip | HexPiecePart::Walkway);
     }
     cells

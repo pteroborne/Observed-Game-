@@ -191,6 +191,10 @@ pub fn run() {
     // Opt-in evidence capture (no-op in normal play).
     evidence::configure(&mut app);
 
+    if std::env::var_os("OBSERVED2_BACKROOMS_REFERENCE").is_some() {
+        hex_wfc::reference::install(&mut app);
+    }
+
     app.run();
 }
 

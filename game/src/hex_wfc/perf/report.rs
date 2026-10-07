@@ -18,11 +18,13 @@ pub(super) struct ViewTiming {
     pub(super) microseconds: u64,
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(super) struct CommitTiming {
     pub(super) tick: u64,
     pub(super) generation: u32,
     pub(super) fixed_microseconds: u64,
+    pub(super) phases: Vec<(&'static str, u64)>,
+    pub(super) collider_cache_hits_misses: [u64; 2],
     pub(super) frame_microseconds: u64,
 }
 
@@ -42,6 +44,7 @@ pub(super) struct TimingStats {
     pub(super) minimum_microseconds: u64,
     pub(super) median_microseconds: u64,
     pub(super) p95_microseconds: u64,
+    pub(super) p99_microseconds: u64,
     pub(super) maximum_microseconds: u64,
     pub(super) mean_microseconds: u64,
 }
@@ -94,6 +97,7 @@ pub(super) struct SystemTiming {
     pub(super) system: &'static str,
     pub(super) median_microseconds: u64,
     pub(super) p95_microseconds: u64,
+    pub(super) p99_microseconds: u64,
     pub(super) samples: usize,
 }
 
@@ -112,6 +116,7 @@ pub(super) fn system_timings(
                 system,
                 median_microseconds: summary.median_microseconds,
                 p95_microseconds: summary.p95_microseconds,
+                p99_microseconds: summary.p99_microseconds,
                 samples: summary.samples,
             }
         })
@@ -164,6 +169,7 @@ pub(super) struct PerformanceGate {
 pub(super) struct Phase96Report<'a> {
     pub(super) schema_version: u16,
     pub(super) seed: u64,
+    pub(super) rules: &'static str,
     pub(super) generation: u32,
     pub(super) grid: [u64; 3],
     /// True when the run released the vsync cap. Medians from a capped run are pinned to
@@ -173,6 +179,11 @@ pub(super) struct Phase96Report<'a> {
     pub(super) view: &'a [ViewTiming],
     pub(super) fixed: TimingStats,
     pub(super) frame: TimingStats,
+    pub(super) wall_frames_microseconds: &'a [u64],
+    pub(super) mesh_cache_hits_misses: [u64; 2],
+    pub(super) warmed_frames: TimingStats,
+    pub(super) route_ticks_runs: [u64; 2],
+    pub(super) hitches: &'a [super::workload::Hitch],
     pub(super) by_register: &'a [RegisterTiming],
     /// Per-render-pass GPU cost, present only when the run enabled GPU profiling.
     pub(super) gpu_passes: &'a [GpuPassTiming],
@@ -192,8 +203,8 @@ pub(super) struct Phase96Report<'a> {
 pub(super) const NOTES: [&str; 6] = [
     "wall-clock evidence only; never read by simulation",
     "pipeline probe reproduces the live seed/config and discards its artifacts",
-    "frame samples are Bevy Time deltas and include presentation/present delay",
-    "mutation frame is the next measured frame, which contains prior-frame fixed/update work",
+    "frame samples are unclamped Instant wall-clock deltas and include presentation/present delay",
+    "mutation frame is the maximum of submission and following wall-clock intervals, covering fixed/update and render work",
     "by_register buckets each frame by the register the runner stood in; a Time delta describes the previous frame, so single samples astride a cell crossing land in the neighbouring bucket",
     "by_register sample counts are whatever the bot's route happened to visit, not a balanced design; compare medians, and treat thin buckets as unmeasured",
 ];
@@ -221,6 +232,7 @@ pub(super) fn stats(samples: &[u64]) -> TimingStats {
         minimum_microseconds: sorted[0],
         median_microseconds: percentile(50),
         p95_microseconds: percentile(95),
+        p99_microseconds: percentile(99),
         maximum_microseconds: *sorted.last().expect("non-empty samples"),
         mean_microseconds: u64::try_from(total / sorted.len() as u128).unwrap_or(u64::MAX),
     }

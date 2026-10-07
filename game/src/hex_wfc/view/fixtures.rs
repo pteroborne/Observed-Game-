@@ -18,6 +18,7 @@ pub(super) struct PracticalProjection<'a> {
     pub(super) composition: observed_style::HexComposition,
     pub(super) authored_lights: &'a [&'a HexLightSource],
     pub(super) wonder: Option<super::lighting::WonderLighting>,
+    pub(super) fluorescent_field: bool,
 }
 
 /// Cell-owned lighting follows authored sources, with a fallback for unlit cells.
@@ -37,6 +38,7 @@ pub(super) fn spawn_cell_practicals(
         composition,
         authored_lights,
         wonder,
+        fluorescent_field,
     } = projection;
     if role == HexStructureRole::Boundary {
         return 0;
@@ -62,6 +64,7 @@ pub(super) fn spawn_cell_practicals(
     let mut child_pieces = 0;
     for position in positions {
         if has_authored_lights
+            && !fluorescent_field
             && !matches!(
                 wonder,
                 Some(
@@ -86,13 +89,17 @@ pub(super) fn spawn_cell_practicals(
             // hanging in the air. That is what the "floating fixtures" over the
             // overview's floor plan were.
             let origin = Vec3::from_array(hex_origin(coord));
-            let at = position + Vec3::Y * 0.18;
+            let mut at = position + Vec3::Y * 0.18;
+            if architecture == ArchitectureRegister::LiminalGrid && wonder.is_none() {
+                at.x = ((at.x - 0.3) / 0.6).round() * 0.6 + 0.3;
+                at.z = ((at.z - 0.6) / 1.2).round() * 1.2 + 0.6;
+            }
             if architecture == ArchitectureRegister::ShadowScreen && wonder.is_none() {
                 child_pieces +=
                     super::zen::fixture_frame(commands, assets, meshes, parent, coord, at);
             }
             commands.spawn((
-                Mesh3d(assets.fixture_mesh(meshes)),
+                Mesh3d(assets.fixture_mesh(meshes, architecture)),
                 MeshMaterial3d(assets.register(architecture).fixture()),
                 Transform::from_translation(at),
                 HexPractical(coord),

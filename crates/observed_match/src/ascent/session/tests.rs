@@ -915,3 +915,53 @@ fn an_observer_beside_a_sensor_dismantles_it_and_one_away_cannot() {
     assert!(!session.sim.sensors.contains_key(&beside));
     assert!(session.sim.sensors.contains_key(&far));
 }
+
+#[test]
+fn diagnostic_preparation_cannot_change_simultaneous_seat_results() {
+    let mut ordinary = session();
+    let mut profiled = ordinary.clone();
+    for _ in 0..3 {
+        let input = InputFrame {
+            version: ASCENT_INPUT_VERSION,
+            tick: ordinary.sim.tick + 1,
+            commands: BTreeMap::from([
+                (
+                    PlayerId(0),
+                    SeatCommand::Architect(ArchitectCommand::Requisition),
+                ),
+                (
+                    PlayerId(3),
+                    SeatCommand::Architect(ArchitectCommand::Requisition),
+                ),
+            ]),
+        };
+        let mut phases = Vec::new();
+        assert_eq!(
+            ordinary.advance(&input),
+            profiled.advance_profiled(&input, |phase| phases.push(phase))
+        );
+        assert!(!phases.is_empty());
+        for player in ordinary.seats.keys() {
+            assert_eq!(ordinary.snapshot(*player), profiled.snapshot(*player));
+        }
+        assert_eq!(ordinary.sim.world, profiled.sim.world);
+        assert_eq!(ordinary.sim.command_log, profiled.sim.command_log);
+    }
+}
+
+#[test]
+fn a_previously_legal_preview_is_refused_when_observation_changes() {
+    let mut session = session();
+    let command = session.sim.legal_commands().into_iter().find(|command| matches!(command, ArchitectCommand::Play { card, .. } if session.sim.deck.hand.iter().any(|held| held.id == *card && matches!(held.kind, crate::ascent::sim::CardKind::Tile(_)))) && session.architect_refusal(PlayerId(3), *command).is_none()).unwrap();
+    let ArchitectCommand::Play { target, .. } = command else {
+        unreachable!()
+    };
+    session.sim.observed.insert(target);
+    let before = session.sim.world.placements[&target];
+    let input = frame(&session, PlayerId(3), SeatCommand::Architect(command));
+    assert_eq!(
+        session.advance(&input).unwrap().get(&PlayerId(3)),
+        Some(&Refusal::Architect(CommandRefusal::Observed))
+    );
+    assert_eq!(session.sim.world.placements[&target], before);
+}

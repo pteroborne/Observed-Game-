@@ -13,6 +13,9 @@ use player_input::PlayerIntent;
 use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use rapier3d::prelude::*;
 
+mod shape_cache;
+use shape_cache::ColliderShapeCache;
+
 use super::{
     Aabb3, FpsArena, FpsBody, FpsConfig, FpsStep, RapierKinematicSettings, approach, clamp_len,
 };
@@ -45,6 +48,7 @@ pub struct RapierTraversalScene {
     colliders: ColliderSet,
     stable_handles: BTreeMap<super::StableColliderId, ColliderHandle>,
     dormant_handles: Vec<ColliderHandle>,
+    shape_cache: ColliderShapeCache,
     broad_phase: BroadPhaseBvh,
     narrow_phase: NarrowPhase,
     floor_y: f32,
@@ -148,6 +152,7 @@ impl RapierTraversalScene {
             colliders,
             stable_handles,
             dormant_handles: Vec::new(),
+            shape_cache: ColliderShapeCache::default(),
             broad_phase,
             narrow_phase,
             floor_y,
@@ -161,9 +166,13 @@ impl RapierTraversalScene {
         let mut colliders = ColliderSet::new();
         let mut handles = Vec::with_capacity(spec.colliders.len());
         let mut stable_handles = BTreeMap::new();
+        let mut shape_cache = ColliderShapeCache::default();
 
         for collider in &spec.colliders {
-            let handle = colliders.insert(build_collider(collider));
+            let handle = colliders.insert(
+                build_collider_checked(collider, &mut shape_cache)
+                    .expect("validated collider spec"),
+            );
             handles.push(handle);
             stable_handles.insert(collider.id, handle);
         }
@@ -185,6 +194,7 @@ impl RapierTraversalScene {
             colliders,
             stable_handles,
             dormant_handles: Vec::new(),
+            shape_cache,
             broad_phase,
             narrow_phase,
             floor_y: spec.floor_y,
@@ -316,8 +326,8 @@ impl RapierTraversalScene {
             if !upsert_ids.insert(collider.id) {
                 return Err(super::ColliderDeltaError::DuplicateUpsert(collider.id));
             }
-            let built =
-                build_collider_checked(collider).map_err(super::ColliderDeltaError::InvalidSpec)?;
+            let built = build_collider_checked(collider, &mut self.shape_cache)
+                .map_err(super::ColliderDeltaError::InvalidSpec)?;
             prepared.push((collider.id, built));
         }
         for &id in &delta.removed {
@@ -350,6 +360,19 @@ impl RapierTraversalScene {
         Ok(())
     }
 
+    /// Bake immutable authored hulls before play. Exact local coordinates are the
+    /// cache identity; transforms, IDs, friction and semantics remain per collider.
+    pub fn warm_convex_hulls<'a>(&mut self, hulls: impl IntoIterator<Item = &'a Vec<Vec3>>) {
+        for hull in hulls {
+            self.shape_cache.convex(hull);
+        }
+    }
+
+    #[must_use]
+    pub fn shape_cache_counts(&self) -> [u64; 2] {
+        self.shape_cache.counts()
+    }
+
     pub fn floor_y(&self) -> f32 {
         self.floor_y
     }
@@ -359,27 +382,17 @@ impl RapierTraversalScene {
     }
 }
 
-fn build_collider(collider: &super::ColliderSpec) -> Collider {
-    build_collider_checked(collider).expect("validated collider spec")
-}
-
 fn build_collider_checked(
     collider: &super::ColliderSpec,
+    cache: &mut ColliderShapeCache,
 ) -> Result<Collider, super::ArenaSpecError> {
     super::world::validate_collider_metadata(collider)?;
     let [x, y, z, w] = collider.rotation;
     let rotation = Rotation::from_xyzw(x, y, z, w).normalize();
-    let builder = match &collider.shape {
-        super::ColliderShape::Cuboid { half } => ColliderBuilder::cuboid(half.x, half.y, half.z),
-        super::ColliderShape::ConvexHull { points } => {
-            let pts: Vec<Vector> = points
-                .iter()
-                .map(|point| Vector::new(point.x, point.y, point.z))
-                .collect();
-            ColliderBuilder::convex_hull(&pts)
-                .ok_or(super::ArenaSpecError::DegenerateHull(collider.id))?
-        }
-    };
+    let shape = cache
+        .shape(&collider.shape)
+        .ok_or(super::ArenaSpecError::DegenerateHull(collider.id))?;
+    let builder = ColliderBuilder::new(shape);
     Ok(builder
         .position(Pose::from_parts(
             Vector::new(collider.center.x, collider.center.y, collider.center.z),
@@ -419,11 +432,23 @@ pub fn step_character_with_settings(
     rapier: RapierKinematicSettings,
     dt: f32,
 ) -> FpsStep {
+    step_character_with_filter(scene, body, intent, config, rapier, dt, &|_| true)
+}
+
+/// Per-body movement filtering by stable collider identity. Other scene queries and
+/// other bodies keep the complete collision world.
+pub fn step_character_with_filter(
+    scene: &RapierTraversalScene,
+    body: &mut FpsBody,
+    intent: PlayerIntent,
+    config: &FpsConfig,
+    rapier: RapierKinematicSettings,
+    dt: f32,
+    accepts: &dyn Fn(super::StableColliderId) -> bool,
+) -> FpsStep {
     let active = |handle: ColliderHandle, collider: &Collider| {
-        scene
-            .stable_handles
-            .get(&super::StableColliderId(collider.user_data as u32))
-            == Some(&handle)
+        let id = super::StableColliderId(collider.user_data as u32);
+        scene.stable_handles.get(&id) == Some(&handle) && accepts(id)
     };
     let query = scene.broad_phase.as_query_pipeline(
         scene.narrow_phase.query_dispatcher(),

@@ -110,12 +110,12 @@ pub fn format_coverage_panel(coverage: &CoverageReport, seams: &SeamAudit) -> St
         out.push('\n');
     }
 
-    out.push_str("ROOM VARIETY   modules -> prototypes / registers\n");
+    out.push_str("ROOM VARIETY   source editions -> prototypes / registers / compatible choices\n");
     for row in &coverage.room_variety {
         let mark = if row.is_thin() { "THIN" } else { "ok" };
         out.push_str(&format!(
-            "  {:<18} {:>2} -> {:>3} / {:<2}  {mark}\n",
-            row.role, row.modules, row.prototypes, row.registers
+            "  {:<18} {:>2} -> {:>3} / {:<2} / {:<2}  {mark}\n",
+            row.role, row.modules, row.prototypes, row.registers, row.alternatives
         ));
     }
     let thin = coverage
@@ -125,9 +125,8 @@ pub fn format_coverage_panel(coverage: &CoverageReport, seams: &SeamAudit) -> St
         .count();
     if thin > 0 {
         out.push_str(&format!(
-            "  {thin} role(s) sit on ONE authored module.\n\
-             \x20 Register expansion makes copies, not variety:\n\
-             \x20 that room is the same room in every district.\n\
+            "  {thin} role(s) offer ONE compatible layout per placement.\n\
+             \x20 Register and clearance editions are not extra choices.\n\
              \x20 (bug_backlog #25)\n"
         ));
     }

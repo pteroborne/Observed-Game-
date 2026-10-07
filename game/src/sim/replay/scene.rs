@@ -1,5 +1,6 @@
 //! Owned visual history for canonical matches. No physics worlds or live resources.
 use super::ReplayActorId;
+mod structure;
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
 use observed_core::{PlayerId, TeamId};
@@ -7,10 +8,18 @@ use observed_hex::HexCoord;
 use observed_match::hex_wfc::{
     HexBodyPlace, HexGuardianStatus, HexReleasedGuardian, HexStructurePiece, HexWfcMatch,
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
+#[cfg(test)]
+use structure::retain_pieces;
+use structure::retain_structure;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReplayStructure {
+    piece_indices: HashMap<observed_traversal::StableColliderId, usize>,
+    cell_piece_ids: BTreeMap<HexCoord, Vec<observed_traversal::StableColliderId>>,
     pub seed: u64,
     pub generation: u32,
     pub pieces: Vec<Arc<HexStructurePiece>>,
@@ -71,16 +80,17 @@ impl ReplaySceneFrame {
             .filter(|p| p.facility.generation == game.facility.generation)
             .map(|p| Arc::clone(&p.facility))
             .unwrap_or_else(|| {
-                Arc::new(ReplayStructure {
-                    seed: game.facility.seed,
-                    generation: game.facility.generation,
-                    pieces: retain_pieces(
-                        &game.geometry.pieces,
-                        previous.map(|p| p.facility.as_ref()),
-                    ),
-                    registers: game.facility.architecture.clone(),
-                    exit: game.facility.config.exit(),
-                })
+                Arc::new(retain_structure(
+                    &game.facility,
+                    &game.geometry,
+                    previous.map(|p| p.facility.as_ref()),
+                    previous
+                        .filter(|p| {
+                            p.facility.generation.wrapping_add(1) == game.facility.generation
+                        })
+                        .filter(|_| !game.last_geometry_cells.is_empty())
+                        .map(|_| &game.last_geometry_cells),
+                ))
             });
         let prisons = game
             .prison
@@ -93,13 +103,7 @@ impl ReplaySceneFrame {
                 (
                     team,
                     retained.cloned().unwrap_or_else(|| {
-                        Arc::new(ReplayStructure {
-                            seed: maze.world.seed,
-                            generation: maze.world.generation,
-                            pieces: retain_pieces(&maze.geometry.pieces, None),
-                            registers: maze.world.architecture.clone(),
-                            exit: maze.exit(),
-                        })
+                        Arc::new(retain_structure(&maze.world, &maze.geometry, None, None))
                     }),
                 )
             })
@@ -170,25 +174,6 @@ pub fn body_position(a: &ReplayBody, b: Option<&ReplayBody>, fraction: f32) -> V
     }
 }
 
-fn retain_pieces(
-    pieces: &[HexStructurePiece],
-    previous: Option<&ReplayStructure>,
-) -> Vec<Arc<HexStructurePiece>> {
-    let old: BTreeMap<_, _> = previous
-        .into_iter()
-        .flat_map(|p| &p.pieces)
-        .map(|p| (p.id, p))
-        .collect();
-    pieces
-        .iter()
-        .map(|piece| {
-            old.get(&piece.id)
-                .filter(|old| old.as_ref() == piece)
-                .map_or_else(|| Arc::new(piece.clone()), |old| Arc::clone(old))
-        })
-        .collect()
-}
-
 pub(super) fn event_label(kind: observed_match::hex_wfc::HexMatchEventKind) -> &'static str {
     use observed_match::hex_wfc::HexMatchEventKind::*;
     match kind {
@@ -252,5 +237,48 @@ mod tests {
         b.place = a.place;
         b.position = Vec3::X * 20.0;
         assert_eq!(body_position(&a, Some(&b), 0.5), a.position);
+    }
+    #[test]
+    fn replay_reuses_untouched_pieces_and_keeps_prior_geometry_immutable() {
+        use observed_match::hex_wfc::{HexPiecePart, HexStructureRole};
+        use observed_traversal::{ColliderShape, StableColliderId};
+        let piece = |id, cell| HexStructurePiece {
+            id: StableColliderId(id),
+            anchor: cell,
+            source_cell: cell,
+            role: HexStructureRole::Hall,
+            part: HexPiecePart::Authored,
+            surface: None,
+            tile: None,
+            center: Vec3::ZERO,
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            shape: ColliderShape::Cuboid { half: Vec3::ONE },
+        };
+        let a = HexCoord::default();
+        let b = HexCoord { q: 1, ..a };
+        let original = vec![piece(1, a), piece(2, b)];
+        let previous = ReplayStructure {
+            seed: 1,
+            generation: 0,
+            pieces: retain_pieces(&original, None),
+            registers: BTreeMap::new(),
+            exit: a,
+            piece_indices: original
+                .iter()
+                .enumerate()
+                .map(|(index, piece)| (piece.id, index))
+                .collect(),
+            cell_piece_ids: BTreeMap::from([(a, vec![original[0].id]), (b, vec![original[1].id])]),
+        };
+        let mut rewritten = original.clone();
+        rewritten.swap(0, 1);
+        rewritten[1].center = Vec3::X;
+        let retained = retain_pieces(&rewritten, Some(&previous));
+        assert!(Arc::ptr_eq(&retained[0], &previous.pieces[1]));
+        assert!(!Arc::ptr_eq(&retained[1], &previous.pieces[0]));
+        assert_eq!(*previous.pieces[0], original[0]);
+        assert_eq!(*retained[1], rewritten[1]);
+        // A discontinuous history falls back to full equality checks.
+        assert_eq!(retained, retain_pieces(&rewritten, Some(&previous)));
     }
 }

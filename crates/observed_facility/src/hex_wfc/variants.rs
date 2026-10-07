@@ -376,6 +376,7 @@ pub fn geometry_demands() -> Vec<HexGeometryDemand> {
     let mut demands = BTreeSet::new();
     for variant in catalogue() {
         let placement = HexPlacement {
+            low_doors: 0,
             coord: observed_hex::HexCoord::default(),
             space: variant.space,
             archetype: variant.archetype,

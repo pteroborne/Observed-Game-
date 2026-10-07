@@ -30,6 +30,7 @@ use super::{
 pub fn authored_hall(coord: HexCoord, doors: u8) -> Option<HexPlacement> {
     let doors = doors & 0b11_1111;
     (2..=4).contains(&doors.count_ones()).then(|| HexPlacement {
+        low_doors: if coord.level == 0 { doors } else { 0 },
         coord,
         space: HexSpace::Hall,
         archetype: hall_archetype(doors),
@@ -108,7 +109,12 @@ pub fn authored_climb_shaped(
     let rising = turn.apply(heading);
     let high = grid.neighbor(mid, rising)?;
     let landing = grid.neighbor(high, HexFace::Up)?;
-    let cell = |coord, part, heading, doors, up, down| HexPlacement {
+    let cell = |coord: HexCoord, part, heading, doors, up, down| HexPlacement {
+        low_doors: if coord.level == 0 {
+            doors & !HexArchetype::Climb { part, heading }.span_mask()
+        } else {
+            0
+        },
         coord,
         space: HexSpace::Hall,
         archetype: HexArchetype::Climb { part, heading },
@@ -259,7 +265,7 @@ fn authored_triad(
     }
     let cell_b = grid.neighbor(anchor, face(0))?;
     let cell_c = grid.neighbor(anchor, face(1))?;
-    let cell = |coord, offset| {
+    let cell = |coord: HexCoord, offset| {
         let heading = face(offset);
         let archetype = archetype(offset, heading);
         HexPlacement {
@@ -267,6 +273,11 @@ fn authored_triad(
             space: HexSpace::Hall,
             archetype,
             doors: archetype.span_mask() | (1 << face(offset + 4).index()),
+            low_doors: if coord.level == 0 && matches!(archetype, HexArchetype::Cistern { .. }) {
+                1 << face(offset + 4).index()
+            } else {
+                0
+            },
             up: PortClass::Sealed,
             down: PortClass::Sealed,
         }
@@ -299,6 +310,20 @@ impl HexWfcWorld {
                 return Err(HexWfcError::UnsafeChange(coord));
             }
         }
+        let placements: BTreeMap<_, _> = placements
+            .into_iter()
+            .map(|(coord, mut placement)| {
+                placement.low_doors = if self.architecture.get(&coord)
+                    == Some(&observed_content::ArchitectureRegister::LiminalGrid)
+                    && coord.level == 0
+                {
+                    placement.doors & !placement.archetype.span_mask()
+                } else {
+                    0
+                };
+                (coord, placement)
+            })
+            .collect();
         let cells: BTreeSet<HexCoord> = placements.keys().copied().collect();
         let previous_placements: BTreeMap<_, _> = cells
             .iter()
@@ -371,6 +396,7 @@ fn same_shape(a: &HexPlacement, b: &HexPlacement) -> bool {
     a.space == b.space
         && a.archetype == b.archetype
         && a.doors == b.doors
+        && a.low_doors == b.low_doors
         && a.up == b.up
         && a.down == b.down
 }
@@ -540,9 +566,12 @@ mod tests {
             };
             let archetype = placement_tile_archetype(&placement).expect("a flat hall draws");
             assert!(
-                demands
-                    .iter()
-                    .any(|d| d.archetype == archetype && d.signature == placement.ports()),
+                demands.iter().any(|d| d.archetype == archetype
+                    && (if placement.coord.level == 0 {
+                        d.signature.lowered()
+                    } else {
+                        d.signature
+                    }) == placement.ports()),
                 "{archetype} {doors:06b} is not a geometry demand"
             );
             built += 1;
@@ -605,6 +634,7 @@ mod tests {
             })
             .expect("something is built on the edge");
         let rock = HexPlacement {
+            low_doors: 0,
             coord: cell,
             space: HexSpace::Void,
             archetype: crate::hex_wfc::HexArchetype::Void,
@@ -701,7 +731,7 @@ mod tests {
                 .flat_map(|p| {
                     HexFace::LATERAL
                         .into_iter()
-                        .filter(|&f| p.ports().port(f) == PortClass::Door)
+                        .filter(|&f| p.ports().port(f).is_doorway())
                 })
                 .map(HexFace::index)
                 .collect();

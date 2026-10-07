@@ -337,7 +337,10 @@ fn all_edges_match(
                 if open != other.is_open(face.opposite()) || unexpected_room_seam {
                     return false;
                 }
-                if open && !spans_join(placement.archetype, face, other.archetype) {
+                if open
+                    && (placement.ports().port(face) != other.ports().port(face.opposite())
+                        || !spans_join(placement.archetype, face, other.archetype))
+                {
                     return false;
                 }
             } else {
@@ -471,6 +474,7 @@ mod tests {
                 (
                     coord,
                     HexPlacement {
+                        low_doors: 0,
                         coord,
                         space: HexSpace::Hall,
                         archetype: if expanse.contains(&coord) {

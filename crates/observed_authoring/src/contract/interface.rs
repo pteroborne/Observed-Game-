@@ -444,6 +444,7 @@ fn class_tag(class: PortClass) -> u8 {
     match class {
         PortClass::Sealed => 0,
         PortClass::Door => 1,
+        PortClass::LowDoor => 5,
         PortClass::RampOpen => 2,
         PortClass::ShaftOpen => 3,
         PortClass::Span => 4,
@@ -528,6 +529,7 @@ mod class_serde {
         serializer.serialize_str(match class {
             PortClass::Sealed => "sealed",
             PortClass::Door => "door",
+            PortClass::LowDoor => "low_door",
             PortClass::RampOpen => "ramp_open",
             PortClass::ShaftOpen => "shaft_open",
             PortClass::Span => "span",
@@ -539,6 +541,7 @@ mod class_serde {
         match value.as_str() {
             "sealed" => Ok(PortClass::Sealed),
             "door" => Ok(PortClass::Door),
+            "low_door" => Ok(PortClass::LowDoor),
             "ramp_open" => Ok(PortClass::RampOpen),
             "shaft_open" => Ok(PortClass::ShaftOpen),
             "span" => Ok(PortClass::Span),

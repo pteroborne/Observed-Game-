@@ -18,13 +18,13 @@ fn catalog(
                     coord,
                     shell::CellGeometryIndex {
                         footprint,
-                        piece_indices: Vec::new(),
-                        light_indices: Vec::new(),
+                        piece_ids: Vec::new(),
+                        lights: Vec::new(),
                     },
                 )
             })
             .collect(),
-        boundary_piece_indices: Vec::new(),
+        boundary_piece_ids: Vec::new(),
     }
 }
 
@@ -35,6 +35,7 @@ fn resident(coords: impl IntoIterator<Item = HexCoord>) -> BTreeMap<HexCoord, Re
             (
                 coord,
                 ResidentCell {
+                    shown: true,
                     entity: Entity::PLACEHOLDER,
                     child_pieces: 1,
                 },
@@ -183,8 +184,8 @@ fn residency_hysteresis_keeps_a_cell_between_enter_and_exit_radii() {
     let focus = HexCoord::default();
     let focus_position = Vec3::from_array(hex_origin(focus));
     let edge = HexCoord {
-        q: 2,
-        r: 1,
+        q: 7,
+        r: 0,
         level: 0,
     };
     let catalog = catalog([(edge, vec![edge])]);
@@ -261,7 +262,7 @@ fn occupied_room_footprint_is_never_retired_even_when_its_anchor_is_far() {
     assert_eq!(plan.desired_cells, 1);
 }
 
-fn test_runtime() -> crate::hex_wfc::sim::HexWfcRuntime {
+pub(in crate::hex_wfc) fn test_runtime() -> crate::hex_wfc::sim::HexWfcRuntime {
     use crate::hex_wfc::sim::load_prototypes;
     use observed_core::PlayerId;
     use observed_match::hex_wfc::{HexBotDriver, HexMatchConfig, HexWfcMatch};
@@ -314,20 +315,21 @@ fn cell_entity_count_falls_with_merged_hull_meshes() {
     // Pick a non-trivial cell with multiple raw pieces, all of them its tile's own:
     // a cell with open edges carries lips and railings too, which this does not measure.
     // Not a climb either: its pieces merge by facing, three groups whatever the tile.
-    let pieces = &runtime.match_state.geometry.pieces;
     let (coord, cell_index) = catalog
         .cells
         .iter()
         .find(|(_, index)| {
-            index.piece_indices.len() >= 10
-                && index.piece_indices.iter().all(|&i| {
-                    pieces[i].part == observed_match::hex_wfc::HexPiecePart::Authored
-                        && pieces[i].role != observed_match::hex_wfc::HexStructureRole::Climb
+            index.piece_ids.len() >= 10
+                && index.piece_ids.iter().all(|&i| {
+                    runtime.match_state.geometry.piece(i).unwrap().part
+                        == observed_match::hex_wfc::HexPiecePart::Authored
+                        && runtime.match_state.geometry.piece(i).unwrap().role
+                            != observed_match::hex_wfc::HexStructureRole::Climb
                 })
         })
         .expect("must have a walled cell with >= 10 raw pieces");
 
-    let raw_piece_count = cell_index.piece_indices.len();
+    let raw_piece_count = cell_index.piece_ids.len();
     assert!(
         raw_piece_count >= 10,
         "precondition: cell has multiple raw collider pieces (got {raw_piece_count})"
@@ -516,3 +518,6 @@ fn despawned_cell_rebuilds_identically_when_re_entered() {
         assert_eq!(name1, name2, "rebuilt name must match at index {i}");
     }
 }
+
+#[path = "tests/mutation.rs"]
+mod mutation;

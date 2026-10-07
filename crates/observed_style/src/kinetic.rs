@@ -70,9 +70,52 @@ pub const LEGEND: &[(Role, &str)] = &[
         "BLINKING RETICLE / artificial gravity expiring",
     ),
 ];
+/// Shape and colour are paired with text in the production reticle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReticleState {
+    Neutral,
+    Ready,
+    TooFar,
+    Unavailable,
+}
+pub fn reticle_color(state: ReticleState) -> bevy::color::Color {
+    match state {
+        ReticleState::Neutral => treatment(Role::Text).base_color,
+        ReticleState::Ready => treatment(Role::Push).base_color,
+        ReticleState::TooFar => treatment(Role::Target).base_color,
+        ReticleState::Unavailable => treatment(Role::GravityWarning).base_color,
+    }
+}
+pub const fn reticle_edges(state: ReticleState) -> [f32; 4] {
+    match state {
+        ReticleState::Ready => [3.0; 4],
+        ReticleState::TooFar => [2.0, 2.0, 0.0, 0.0],
+        ReticleState::Unavailable => [1.0; 4],
+        ReticleState::Neutral => [2.0; 4],
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn targeting_readiness_has_distinct_shapes_and_opaque_signals() {
+        assert_ne!(
+            reticle_edges(ReticleState::Ready),
+            reticle_edges(ReticleState::TooFar)
+        );
+        assert_ne!(
+            reticle_edges(ReticleState::Neutral),
+            reticle_edges(ReticleState::Unavailable)
+        );
+        for state in [
+            ReticleState::Neutral,
+            ReticleState::Ready,
+            ReticleState::TooFar,
+            ReticleState::Unavailable,
+        ] {
+            assert_eq!(reticle_color(state).to_srgba().alpha, 1.0);
+        }
+    }
     #[test]
     fn kinetic_signals_keep_the_shared_emission_floor() {
         for (role, _) in LEGEND {

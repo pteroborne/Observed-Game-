@@ -835,7 +835,7 @@ impl ArchitectLab {
                 }
                 let fits = placements.iter().any(|placement| {
                     HexFace::LATERAL.into_iter().any(|face| {
-                        placement.ports().port(face) == observed_hex::PortClass::Door
+                        placement.ports().port(face).is_doorway()
                             && self
                                 .world
                                 .config
@@ -942,6 +942,7 @@ impl ArchitectLab {
                 .expect("legality proved the corpus builds this tile")
         } else {
             HexPlacement {
+                low_doors: if target.level == 0 { doors } else { 0 },
                 coord: target,
                 space: HexSpace::Hall,
                 archetype: shape.archetype(),

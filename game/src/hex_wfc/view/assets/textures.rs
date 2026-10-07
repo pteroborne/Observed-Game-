@@ -3,6 +3,13 @@
 use bevy::prelude::*;
 use observed_style as style;
 
+#[derive(Clone, Copy)]
+pub(super) enum TextureKind {
+    Albedo,
+    Normal,
+    Data,
+}
+
 /// Upload a surface image ([`style::surfaces`]) as a repeating texture with its whole
 /// mip chain, box-filtered here.
 ///
@@ -14,10 +21,29 @@ pub(super) fn surface_texture(
     data: Vec<u8>,
     srgb: bool,
 ) -> Handle<Image> {
+    surface_texture_sized(
+        images,
+        data,
+        style::surfaces::SURFACE_TEXTURE_SIZE as usize,
+        if srgb {
+            TextureKind::Albedo
+        } else {
+            TextureKind::Normal
+        },
+    )
+}
+
+pub(super) fn surface_texture_sized(
+    images: &mut Assets<Image>,
+    data: Vec<u8>,
+    size: usize,
+    kind: TextureKind,
+) -> Handle<Image> {
+    let srgb = matches!(kind, TextureKind::Albedo);
     use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
     use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
-    let size = style::surfaces::SURFACE_TEXTURE_SIZE as usize;
+    assert!(size.is_power_of_two() && data.len() == size * size * 4);
     let mut chain = data.clone();
     let mut level = data;
     let mut side = size;
@@ -28,19 +54,41 @@ pub(super) fn surface_texture(
         for y in 0..half {
             for x in 0..half {
                 let texel = |dx: usize, dy: usize, c: usize| {
-                    f32::from(level[((y * 2 + dy) * side + x * 2 + dx) * 4 + c])
+                    let value = f32::from(level[((y * 2 + dy) * side + x * 2 + dx) * 4 + c]);
+                    if srgb && c < 3 {
+                        let value = value / 255.0;
+                        255.0
+                            * if value <= 0.04045 {
+                                value / 12.92
+                            } else {
+                                ((value + 0.055) / 1.055).powf(2.4)
+                            }
+                    } else {
+                        value
+                    }
                 };
                 let mut rgba = [0.0f32; 4];
                 for (c, channel) in rgba.iter_mut().enumerate() {
                     *channel =
                         (texel(0, 0, c) + texel(1, 0, c) + texel(0, 1, c) + texel(1, 1, c)) * 0.25;
                 }
-                if !srgb {
+                if matches!(kind, TextureKind::Normal) {
                     let v = |c: f32| c / 127.5 - 1.0;
                     let (nx, ny, nz) = (v(rgba[0]), v(rgba[1]), v(rgba[2]));
                     let length = (nx * nx + ny * ny + nz * nz).sqrt().max(1e-4);
                     for (channel, n) in rgba.iter_mut().zip([nx, ny, nz]) {
                         *channel = (n / length + 1.0) * 127.5;
+                    }
+                }
+                if srgb {
+                    for channel in &mut rgba[..3] {
+                        let value = *channel / 255.0;
+                        *channel = 255.0
+                            * if value <= 0.0031308 {
+                                value * 12.92
+                            } else {
+                                1.055 * value.powf(1.0 / 2.4) - 0.055
+                            };
                     }
                 }
                 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -84,4 +132,33 @@ pub(super) fn surface_texture(
         ..default()
     });
     images.add(image)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roughness_mips_remain_data_and_albedo_mips_preserve_light() {
+        let mut images = Assets::<Image>::default();
+        let values = [
+            [0, 0, 0, 255],
+            [255, 255, 255, 255],
+            [0, 0, 0, 255],
+            [255, 255, 255, 255],
+        ]
+        .concat();
+        let data = surface_texture_sized(&mut images, values.clone(), 2, TextureKind::Data);
+        let albedo = surface_texture_sized(&mut images, values, 2, TextureKind::Albedo);
+        let mip = |handle: &Handle<Image>| {
+            images
+                .get(handle)
+                .expect("image")
+                .data
+                .as_ref()
+                .expect("pixels")[16]
+        };
+        assert_eq!(mip(&data), 128);
+        assert!((187..=188).contains(&mip(&albedo)));
+    }
 }

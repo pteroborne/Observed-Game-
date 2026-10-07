@@ -117,6 +117,7 @@ impl Author {
             placements.insert(
                 coord,
                 HexPlacement {
+                    low_doors: 0,
                     coord,
                     space: HexSpace::Void,
                     archetype: HexArchetype::Void,

@@ -115,6 +115,7 @@ fn spawn(
             Transform::from_xyz(0.0, 0.035, 0.0),
             ChildOf(parent),
             NotShadowCaster,
+            crate::hex_wfc::view::NeverShadowCaster,
             NotShadowReceiver,
             Cutaway {
                 local,

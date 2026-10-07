@@ -76,7 +76,12 @@ pub fn braided_maze(
             let placement = doors
                 .get(&coord)
                 .and_then(|&mask| authored_hall(coord, mask))
+                .map(|mut placement| {
+                    placement.low_doors = 0;
+                    placement
+                })
                 .unwrap_or(HexPlacement {
+                    low_doors: 0,
                     coord,
                     space: HexSpace::Void,
                     archetype: HexArchetype::Void,
@@ -255,7 +260,10 @@ mod tests {
                     );
                     assert_eq!(
                         Some(*placement),
-                        authored_hall(placement.coord, placement.doors)
+                        authored_hall(placement.coord, placement.doors).map(|mut tile| {
+                            tile.low_doors = 0;
+                            tile
+                        })
                     );
                 } else {
                     assert_eq!(placement.doors, 0);

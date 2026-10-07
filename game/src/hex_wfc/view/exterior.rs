@@ -14,6 +14,8 @@
 //! whether or not the cell above it is resident. Proven first-person in
 //! `labs/vista_lab`.
 use std::collections::{BTreeMap, BTreeSet};
+mod skin;
+pub(super) use skin::cell_skin;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::light::NotShadowCaster;
@@ -22,8 +24,8 @@ use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::exposure::{Overhang, exposure};
 use observed_facility::hex_wfc::{HexCoord, HexFace, HexWfcWorld};
-use observed_hex::{CORNERS, FLOOR_SLAB_TOP, TILE_LEVEL_HEIGHT, hex_origin};
-use observed_match::hex_wfc::{RAILED_BELOW_LEVEL, open_edges};
+use observed_hex::{CORNERS, FLOOR_SLAB_TOP};
+use observed_match::hex_wfc::RAILED_BELOW_LEVEL;
 
 use super::assets::{HexWfcVisualAssets, MeshGroupKey};
 use crate::GameState;
@@ -145,83 +147,6 @@ fn keel_hash(at: HexCoord) -> u32 {
     h ^= h >> 15;
     h = h.wrapping_mul(0x2C1B_3C6D);
     h ^ (h >> 12)
-}
-
-/// The skin of one built cell, or `None` for anything unbuilt.
-#[must_use]
-pub(super) fn cell_skin(world: &HexWfcWorld, at: HexCoord) -> Option<CellSkin> {
-    if !world.placements.get(&at)?.space.built() {
-        return None;
-    }
-    let o = Vec3::from_array(hex_origin(at));
-    let open = open_edges(world, at);
-    let mut skin = CellSkin::default();
-    if let Some(axis) = open.and_then(|open| open.span) {
-        span_skin(&mut skin, o, axis);
-        return Some(skin);
-    }
-    for face in HexFace::LATERAL
-        .into_iter()
-        .filter(|&face| unbuilt(world, at, face))
-    {
-        let (a, b) = (
-            o + corner(face.index()) * OUTSET,
-            o + corner(face.index() + 1) * OUTSET,
-        );
-        let outward = ((a + b) * 0.5 - o).with_y(0.0);
-        let band = |skin: &mut SkinData, lo: f32, hi: f32| {
-            skin.polygon(
-                &[
-                    a + Vec3::Y * lo,
-                    b + Vec3::Y * lo,
-                    b + Vec3::Y * hi,
-                    a + Vec3::Y * hi,
-                ],
-                outward,
-            );
-        };
-        if open.is_some_and(|open| open.opens(face)) {
-            band(&mut skin.walls, 0.0, FLOOR_SLAB_TOP);
-            band(
-                &mut skin.walls,
-                TILE_LEVEL_HEIGHT - CEILING_BAND,
-                TILE_LEVEL_HEIGHT,
-            );
-            band(&mut skin.lips, FLOOR_SLAB_TOP, FLOOR_SLAB_TOP + 0.08);
-        } else {
-            band(&mut skin.walls, 0.0, TILE_LEVEL_HEIGHT);
-            // Somebody is home: up to three lit slits, a hand's width proud of the face.
-            let slits = keel_hash(at) >> (face.index() * 2) & 3;
-            for slot in 0..slits {
-                #[allow(clippy::cast_precision_loss)]
-                let t = (slot as f32 + 1.0) / (slits as f32 + 1.0);
-                let run = b - a;
-                let centre = a + run * t + outward.normalize_or_zero() * 0.05;
-                let half = run.normalize_or_zero() * 0.28;
-                skin.windows.polygon(
-                    &[
-                        centre - half + Vec3::Y * 2.6,
-                        centre + half + Vec3::Y * 2.6,
-                        centre + half + Vec3::Y * 5.0,
-                        centre - half + Vec3::Y * 5.0,
-                    ],
-                    outward,
-                );
-            }
-        }
-    }
-    let ring = |y: f32, inset: f32| -> Vec<Vec3> {
-        (0..6)
-            .map(|i| o + corner(i) * inset + Vec3::Y * y)
-            .collect()
-    };
-    if unbuilt(world, at, HexFace::Up) {
-        skin.caps.polygon(&ring(TILE_LEVEL_HEIGHT, OUTSET), Vec3::Y);
-    }
-    if unbuilt(world, at, HexFace::Down) {
-        keel(&mut skin.keel, world, at, o);
-    }
-    Some(skin)
 }
 
 /// The underside of a hanging cell, and under a cell hanging over true void the
@@ -368,6 +293,7 @@ fn spawn_cell(
             MeshMaterial3d(assets.material_for_group(register, group)),
             Transform::IDENTITY,
             NotShadowCaster,
+            crate::hex_wfc::view::NeverShadowCaster,
         ));
         match parent {
             Some(parent) => {
@@ -474,7 +400,13 @@ pub(in crate::hex_wfc) fn sync_visibility(
         }
     };
     for (shell, mut visibility) in &mut shells {
-        let wanted = shown(!overview.active && !residency.resident.contains_key(&shell.0));
+        let wanted = shown(
+            !overview.active
+                && !residency
+                    .resident
+                    .get(&shell.0)
+                    .is_some_and(|cell| cell.shown),
+        );
         visibility.set_if_neq(wanted);
     }
     for mut visibility in &mut keels {
@@ -500,6 +432,7 @@ mod tests {
                 (
                     coord,
                     HexPlacement {
+                        low_doors: 0,
                         coord,
                         space: HexSpace::Hall,
                         archetype,
