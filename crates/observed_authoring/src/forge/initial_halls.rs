@@ -1,14 +1,26 @@
-//! Two complete flat-hall kits for initial Library and Lumen compositions.
+//! Complete flat-hall kits for initial district compositions.
 //! Interfaces remain ordinary doors; the initial selector owns where the kits
 //! form connected beats. Architect replacements use the ordinary hall lottery.
 use super::GENERATED_NOTE;
-use super::entities::{Meta, ceiling_fixture, lateral_port, tile_cell_default, worldspawn};
+use super::entities::{
+    Meta, ceiling_fixture, lateral_port, tile_cell_default, wall_fixture, worldspawn,
+};
 use super::geometry::{
     FLOOR_TOP, LEVEL, band, boxed, corners, door_wall_default, face_mid, hex_slab, prism, wall,
 };
 
 pub const GALLERY_BASE: u16 = 2000;
 pub const COURT_BASE: u16 = 2100;
+const TERRACE_GALLERY_BASE: u16 = 2200;
+const TERRACE_COURT_BASE: u16 = 2300;
+pub const TARGETS: [(&str, bool); 5] = [
+    ("infinite_gallery", false),
+    ("overlit_grid", false),
+    ("shadow_screen", false),
+    ("facet_monument", false),
+    ("facet_monument", true),
+];
+mod dressing;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InitialHallKind {
@@ -63,7 +75,19 @@ fn archetype(mask: u8) -> &'static str {
 /// lottery. Only an explicit initial choice may select one of these modules.
 #[must_use]
 pub fn kind_for_key(key: &crate::TileKey) -> Option<InitialHallKind> {
-    if !matches!(key.register.as_str(), "infinite_gallery" | "overlit_grid") {
+    definition_for_key(key).map(|(kind, _)| kind)
+}
+
+#[must_use]
+pub fn is_terrace_key(key: &crate::TileKey) -> bool {
+    definition_for_key(key).is_some_and(|(_, terrace)| terrace)
+}
+
+fn definition_for_key(key: &crate::TileKey) -> Option<(InitialHallKind, bool)> {
+    if !matches!(
+        key.register.as_str(),
+        "infinite_gallery" | "overlit_grid" | "shadow_screen" | "facet_monument"
+    ) {
         return None;
     }
     if !matches!(
@@ -77,31 +101,66 @@ pub fn kind_for_key(key: &crate::TileKey) -> Option<InitialHallKind> {
         return None;
     }
     let source = key.variant / 6;
-    [InitialHallKind::Gallery, InitialHallKind::Court]
-        .into_iter()
-        .find(|kind| {
-            source
-                .checked_sub(kind.base())
-                .and_then(|mask| u8::try_from(mask).ok())
-                .is_some_and(|mask| {
-                    mask < 64 && (2..=4).contains(&mask.count_ones()) && canonical(mask) == mask
-                })
-        })
+    [
+        (InitialHallKind::Gallery, false),
+        (InitialHallKind::Court, false),
+        (InitialHallKind::Gallery, true),
+        (InitialHallKind::Court, true),
+    ]
+    .into_iter()
+    .find(|&(kind, terrace)| {
+        if terrace && key.register != "facet_monument" {
+            return false;
+        }
+        source
+            .checked_sub(source_base(kind, terrace))
+            .and_then(|mask| u8::try_from(mask).ok())
+            .is_some_and(|mask| {
+                mask < 64 && (2..=4).contains(&mask.count_ones()) && canonical(mask) == mask
+            })
+    })
+}
+
+fn source_base(kind: InitialHallKind, terrace: bool) -> u16 {
+    match (kind, terrace) {
+        (_, false) => kind.base(),
+        (InitialHallKind::Gallery, true) => TERRACE_GALLERY_BASE,
+        (InitialHallKind::Court, true) => TERRACE_COURT_BASE,
+    }
+}
+
+fn name_for(register: &str, kind: InitialHallKind, mask: u8, terrace: bool) -> String {
+    let district = match register {
+        "infinite_gallery" => "library",
+        "overlit_grid" => "lumen",
+        "shadow_screen" => "zen",
+        "facet_monument" => {
+            if terrace {
+                "monument_terrace"
+            } else {
+                "monument"
+            }
+        }
+        _ => unreachable!("initial district"),
+    };
+    format!("initial_{district}_{}_m{mask:02}", kind.slug())
 }
 
 fn trim(brush: String) -> String {
     brush.replace("__TB_empty", "observed_trim")
 }
 
-fn build(register: &str, kind: InitialHallKind, mask: u8) -> String {
+fn build(register: &str, kind: InitialHallKind, mask: u8, terrace: bool) -> String {
     let library = register == "infinite_gallery";
     let mut brushes = hex_slab(0.0, FLOOR_TOP, 0.0, 0.0);
-    brushes.push_str(&hex_slab(120.0, LEVEL, 0.0, 0.0));
+    if !terrace {
+        brushes.push_str(&hex_slab(120.0, LEVEL, 0.0, 0.0));
+    }
     for face in 0..6 {
         if mask & (1 << face) != 0 {
             brushes.push_str(&door_wall_default(face, 0.0, LEVEL));
         } else {
-            brushes.push_str(&wall(face, 0.0, LEVEL));
+            brushes.push_str(&wall(face, 0.0, if terrace { 24.0 } else { LEVEL }));
             if library {
                 let courses: &[f64] = if kind == InitialHallKind::Gallery {
                     &[24.0, 44.0, 64.0]
@@ -111,10 +170,11 @@ fn build(register: &str, kind: InitialHallKind, mask: u8) -> String {
                 for &z in courses {
                     brushes.push_str(&trim(band(face, 8.0, 22.0, z, z + 3.0)));
                 }
-            } else if kind == InitialHallKind::Court {
+            } else if register == "overlit_grid" && kind == InitialHallKind::Court {
                 brushes.push_str(&band(face, 8.0, 20.0, FLOOR_TOP, 19.2));
                 brushes.push_str(&trim(band(face, 7.0, 21.0, 19.2, 21.0)));
             }
+            brushes.push_str(&dressing::bay(register, kind, face, terrace));
             let (x, y) = face_mid(face);
             let scale = if kind == InitialHallKind::Gallery {
                 0.75
@@ -124,6 +184,8 @@ fn build(register: &str, kind: InitialHallKind, mask: u8) -> String {
             let (x, y) = (x * scale, y * scale);
             let top = if kind == InitialHallKind::Gallery {
                 88.0
+            } else if terrace {
+                72.0
             } else {
                 120.0
             };
@@ -143,25 +205,27 @@ fn build(register: &str, kind: InitialHallKind, mask: u8) -> String {
         // A centre hanger joins the canopy to the outer cap. Its centroid
         // stays outside wall sectors, so opening a flank never removes the
         // last support along with the sealed-bay piers.
-        brushes.push_str(&trim(boxed((-5.0, -5.0, 92.0), (5.0, 5.0, 120.0))));
+        if !terrace {
+            brushes.push_str(&trim(boxed((-5.0, -5.0, 92.0), (5.0, 5.0, 120.0))));
+        }
         88.0
     } else {
         120.0
     };
-    let (fixture, lights) = ceiling_fixture(0.0, 0.0, ceiling, 28.0, 7.0);
+    let (fixture, lights) = if terrace && kind == InitialHallKind::Court {
+        wall_fixture(0, 0.05, 76.0, 16.0)
+    } else {
+        ceiling_fixture(0.0, 0.0, ceiling, 28.0, 7.0)
+    };
     brushes.push_str(&fixture);
-    let name = format!(
-        "initial_{}_{}_m{mask:02}",
-        if library { "library" } else { "lumen" },
-        kind.slug()
-    );
+    let name = name_for(register, kind, mask, terrace);
     let mut out = format!("// Initial mutable hall composition: {name}.\n{GENERATED_NOTE}");
     out.push_str(&worldspawn(&brushes));
     out.push_str(
         &Meta::cell(
             &format!("authored/{name}"),
             archetype(mask),
-            i32::from(kind.base()) + i32::from(mask),
+            i32::from(source_base(kind, terrace)) + i32::from(mask),
             1,
             1,
         )
@@ -188,20 +252,12 @@ fn build(register: &str, kind: InitialHallKind, mask: u8) -> String {
 #[must_use]
 pub fn generated() -> Vec<(String, String)> {
     let mut out = Vec::new();
-    for register in ["infinite_gallery", "overlit_grid"] {
+    for (register, terrace) in TARGETS {
         for kind in [InitialHallKind::Gallery, InitialHallKind::Court] {
             for mask in 0..64u8 {
                 if (2..=4).contains(&mask.count_ones()) && canonical(mask) == mask {
-                    let name = format!(
-                        "initial_{}_{}_m{mask:02}",
-                        if register == "infinite_gallery" {
-                            "library"
-                        } else {
-                            "lumen"
-                        },
-                        kind.slug()
-                    );
-                    out.push((name, build(register, kind, mask)));
+                    let name = name_for(register, kind, mask, terrace);
+                    out.push((name, build(register, kind, mask, terrace)));
                 }
             }
         }
@@ -226,7 +282,12 @@ mod tests {
         )
         .expect("catalog")
         .catalog
-        .runtime_catalog(&["infinite_gallery", "overlit_grid"])
+        .runtime_catalog(&[
+            "infinite_gallery",
+            "overlit_grid",
+            "shadow_screen",
+            "facet_monument",
+        ])
         .expect("runtime")
     }
 
@@ -235,7 +296,7 @@ mod tests {
         let root =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles/authored");
         let generated = generated();
-        assert_eq!(generated.len(), 40);
+        assert_eq!(generated.len(), 100);
         for (name, source) in generated {
             assert_eq!(
                 std::fs::read_to_string(root.join(format!("{name}.map")))
@@ -254,7 +315,7 @@ mod tests {
             );
         }
         let runtime = runtime();
-        for register in ["infinite_gallery", "overlit_grid"] {
+        for (register, terrace) in TARGETS {
             for kind in [InitialHallKind::Gallery, InitialHallKind::Court] {
                 for demand in observed_facility::hex_wfc::geometry_demands()
                     .into_iter()
@@ -276,7 +337,8 @@ mod tests {
                             .any(|tile| tile.key.register == register
                                 && tile.key.archetype == demand.archetype
                                 && tile.signature == demand.signature
-                                && kind_for_key(&tile.key) == Some(kind)),
+                                && kind_for_key(&tile.key) == Some(kind)
+                                && is_terrace_key(&tile.key) == terrace),
                         "{register} {kind:?}: missing {demand:?}"
                     );
                 }

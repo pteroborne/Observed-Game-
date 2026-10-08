@@ -1,9 +1,10 @@
-//! Body-height review of the production initial Library/Lumen hall compositions.
+//! Body-height review of production initial district hall compositions.
 use super::{Stage, VistaPose, face_dir};
 use crate::hex_wfc::sim::HexWfcRuntime;
 use bevy::prelude::*;
 use observed_authoring::{
-    forge::initial_halls::InitialHallKind, initial_composition::seed_initial_halls,
+    forge::initial_halls::{InitialHallKind, is_terrace_key},
+    initial_composition::seed_initial_halls,
 };
 use observed_hex::{HexFace, hex_origin};
 
@@ -32,6 +33,11 @@ pub(super) fn poses(runtime: &HexWfcRuntime) -> Vec<VistaPose> {
         .map(|plan| {
             let cell = plan.cells[0];
             let variant = proposal.initial_modules[&cell];
+            let terrace = state.content().cells().iter().any(|tile| {
+                tile.key.variant == variant
+                    && tile.key.register == plan.register
+                    && is_terrace_key(&tile.key)
+            });
             let entry = HexFace::LATERAL[usize::from(variant % 6)];
             let dir = face_dir(entry);
             let origin = Vec3::from_array(hex_origin(cell));
@@ -49,7 +55,15 @@ pub(super) fn poses(runtime: &HexWfcRuntime) -> Vec<VistaPose> {
                 ("infinite_gallery", InitialHallKind::Court) => "library_court",
                 ("overlit_grid", InitialHallKind::Gallery) => "lumen_gallery",
                 ("overlit_grid", InitialHallKind::Court) => "lumen_court",
-                _ => unreachable!("planner targets two districts"),
+                ("shadow_screen", InitialHallKind::Gallery) => "zen_gallery",
+                ("shadow_screen", InitialHallKind::Court) => "zen_court",
+                ("facet_monument", InitialHallKind::Gallery) if terrace => {
+                    "monument_terrace_gallery"
+                }
+                ("facet_monument", InitialHallKind::Court) if terrace => "monument_terrace_court",
+                ("facet_monument", InitialHallKind::Gallery) => "monument_gallery",
+                ("facet_monument", InitialHallKind::Court) => "monument_court",
+                _ => unreachable!("planner targets authored districts"),
             };
             VistaPose {
                 name,

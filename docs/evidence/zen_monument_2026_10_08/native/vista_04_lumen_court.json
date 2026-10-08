@@ -1,0 +1,26 @@
+{
+  "cell": [
+    13,
+    12,
+    2
+  ],
+  "feet": [
+    268.7209167480469,
+    16.5,
+    148.66441345214844
+  ],
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "initial_module_variant": 12643,
+  "input_version": 13,
+  "mode": "staged production construction reference, environment held",
+  "name": "lumen_court",
+  "pitch": 0.2536734938621521,
+  "seed": 1,
+  "simulation_content_hash": "9922a1750e5c27dd861c3e77035c096a492fa6dd4ef16f5325f71ef16e149adb",
+  "tick": 2442,
+  "yaw": -0.5280758738517761
+}

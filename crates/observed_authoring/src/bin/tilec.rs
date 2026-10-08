@@ -359,7 +359,7 @@ fn run() -> Result<(), String> {
             let mut profile: observed_facility::hex_wfc::HexCompositionProfile =
                 ron::from_str(&source).map_err(|error| error.to_string())?;
             let version = observed_facility::hex_wfc::COMPOSITION_PROFILE_VERSION;
-            if profile.version != version && profile.version != 6 {
+            if profile.version != version && !matches!(profile.version, 6 | 7) {
                 return Err(format!(
                     "cannot migrate profile version {}",
                     profile.version

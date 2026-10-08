@@ -1,0 +1,26 @@
+{
+  "cell": [
+    1,
+    4,
+    2
+  ],
+  "feet": [
+    39.27909469604492,
+    16.5,
+    43.335594177246094
+  ],
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "initial_module_variant": 12022,
+  "input_version": 13,
+  "mode": "staged production construction reference, environment held",
+  "name": "lumen_gallery",
+  "pitch": 0.16514866054058075,
+  "seed": 1,
+  "simulation_content_hash": "9922a1750e5c27dd861c3e77035c096a492fa6dd4ef16f5325f71ef16e149adb",
+  "tick": 1932,
+  "yaw": 2.613517999649048
+}

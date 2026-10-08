@@ -27,6 +27,11 @@ now provide two distinct connected beats on each target floor, with revision-sco
 physical choices and ordinary card replacement. Remaining districts and human
 landmark recognition continue under the same quality programme.
 
+[Zen and Monument compositions](docs/evidence/zen_monument_2026_10_08/README.md)
+extend the mutable references through floors 3–5, with screen galleries,
+massive interior courts and separate open terrace kits. Reactor and Sky remain
+the next spatial slice; all-floor human recognition remains open.
+
 > **Canonical direction reset (2026-09-07).** The new governing design is
 > [Architect Ascent](docs/architect_ascent_design.md). It supersedes the
 > precomposed facility race as the final game while retaining the continuous hex

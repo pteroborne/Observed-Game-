@@ -2,7 +2,7 @@
 //! The planner changes no topology, protection, revision or team knowledge.
 use crate::{
     TilePrototype,
-    forge::initial_halls::{InitialHallKind, kind_for_key},
+    forge::initial_halls::{InitialHallKind, is_terrace_key, kind_for_key},
 };
 use observed_facility::hex_wfc::{
     HexArchetype, HexCompositionProfile, HexSpace, HexWfcWorld, placement_tile_archetype,
@@ -60,7 +60,7 @@ fn path(
     })
 }
 
-/// Select two distinct connected beats on each Library/Lumen floor. Module
+/// Select two distinct connected beats on each authored target floor. Module
 /// choices are immutable initialization metadata, not pins; cell revisions
 /// relinquish them individually after card plays or relayouts.
 pub fn seed_initial_halls(
@@ -90,9 +90,17 @@ pub fn seed_initial_halls(
             .iter()
             .find_map(|(cell, register)| (cell.level == level).then_some(register.slug()))
             .unwrap_or("");
-        if !matches!(register, "infinite_gallery" | "overlit_grid") {
+        if !matches!(
+            register,
+            "infinite_gallery" | "overlit_grid" | "shadow_screen" | "facet_monument"
+        ) {
             continue;
         }
+        let terrace = register == "facet_monument"
+            && world
+                .architecture
+                .iter()
+                .any(|(cell, prior)| cell.level < level && prior.slug() == "facet_monument");
         let floor_route = route
             .iter()
             .copied()
@@ -142,6 +150,7 @@ pub fn seed_initial_halls(
                             && tile.key.archetype == archetype
                             && tile.signature == placement.ports()
                             && kind_for_key(&tile.key) == Some(kind)
+                            && is_terrace_key(&tile.key) == terrace
                     })
                     .map(|tile| tile.key.variant)
                     .collect::<Vec<_>>();
@@ -238,8 +247,8 @@ mod tests {
             .expect("survey seed solves");
             let before = world.clone();
             let plans = seed_initial_halls(&mut world, &catalog.cells, &catalog.composition);
-            assert_eq!(plans.len(), 4, "seed {seed}");
-            assert_eq!(world.initial_modules.len(), 12);
+            assert_eq!(plans.len(), 10, "seed {seed}");
+            assert_eq!(world.initial_modules.len(), 30);
             assert_eq!(world.placements, before.placements);
             assert_eq!(world.blueprints, before.blueprints);
             assert_eq!(world.architecture, before.architecture);
@@ -262,6 +271,12 @@ mod tests {
                     assert_eq!(placement.up, observed_hex::PortClass::Sealed);
                     assert_eq!(placement.down, observed_hex::PortClass::Sealed);
                     assert!(world.route_between(world.config.spawn(), cell).is_some());
+                    let key = prototypes_key(&world, cell);
+                    assert_eq!(
+                        is_terrace_key(&key),
+                        cell.level == 5,
+                        "wrong Monument floor treatment"
+                    );
                 }
             }
             let mut repeated = before;
@@ -270,6 +285,16 @@ mod tests {
                 plans
             );
             assert_eq!(repeated.initial_modules, world.initial_modules);
+        }
+    }
+
+    fn prototypes_key(world: &HexWfcWorld, cell: HexCoord) -> crate::TileKey {
+        crate::TileKey {
+            archetype: placement_tile_archetype(&world.placements[&cell])
+                .unwrap()
+                .to_string(),
+            register: world.architecture[&cell].slug().to_string(),
+            variant: world.initial_modules[&cell],
         }
     }
 

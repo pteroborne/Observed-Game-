@@ -232,3 +232,36 @@ production simulation measurement reports p95 **349.531 µs** over 7,200 ticks,
 excluding command generation/rendering, with no catch. The compact climb baseline
 is unchanged. Four supported native reference views were inspected. The complete
 extended instrumentation suite and fresh graphics/device acceptance remain unrun.
+
+### Mutable Zen and Monument compositions — 2026-10-08
+
+[Native references and implementation record](../evidence/zen_monument_2026_10_08/README.md)
+extend the initial gallery/court system through Zen, Monument interiors and
+Monument terraces. Zen introduces wall-backed screen rails and low garden ledges;
+interiors use heavier ledges and courses. Separate terrace sources use parapets,
+pier-supported canopies and courts without an authored roof cap. Sources and
+controllers validate every doorway pairing and rotation for Observers and majors.
+
+The 24 fixed seeds retain their solved topology and receive ten compositions,
+thirty mutable hall choices across floors 1–5. Same-door card rebuilding, preview
+retirement, revision consistency and incremental/fresh geometry checks pass.
+Sixty maps bring the archive to 538 sources, 442 active. Profile compatibility is
+**8**; input remains **13**. Simulation identity is
+`9922a1750e5c27dd861c3e77035c096a492fa6dd4ef16f5325f71ef16e149adb`.
+
+Ten supported body-height native captures were inspected. They make the lower
+canopy, perimeter screens and heavier courses visible, but do not yet establish
+strong landmark recognition. The repeated shared surface treatment still dominates
+many views. Terrace courts can read as covered because a neighbouring upper-floor
+slab remains overhead; the missing authored cap alone does not provide a cleared
+skyline. Ordinary-hall exposed undersides remain visible through openings. These
+are recorded construction/art gaps, not accepted AAA completion.
+
+Reactor and Sky references remain next. Human match pacing, all-floor recognition,
+performance budgets, Deck and physical LAN acceptance remain open.
+
+Final engineering gate: formatting and warning-free Clippy pass; workspace tests
+pass **2,860 / zero failures / 44 ignored**, across 297 targets. The separate
+7,200-tick simulation probe reports p95 **336.362 µs**, excluding commands/rendering,
+with five plays and no catch. The complete extended instrumentation suite and
+fresh graphical/device acceptance remain unrun.

@@ -29,7 +29,7 @@ $env:OBSERVED2_SCRIPT = "scratch/<name>_view.json"; cargo dev-run -p hex_tile_la
 
 ## Curated production library
 
-The forge owns 478 source maps; the current production catalog selects 382.
+The forge owns 538 source maps; the current production catalog selects 442.
 `assets/tiles/.tileignore` retires 96 alternatives without deleting their builders.
 `gen-tiles` regenerates the source archive; `build` compiles only the active set.
 Check [the retirement list](../assets/tiles/.tileignore) before adding
@@ -71,7 +71,7 @@ cargo run -p observed_authoring --bin tilec -- profile-hash
 
 # Re-serialize and regenerate the sidecar after an edit
 cargo run -p observed_authoring --bin tilec -- profile-write
-# Enable/disable initial mutable Library/Lumen hall compositions; upgrade v6 to v7 explicitly
+# Enable/disable initial mutable district hall compositions; upgrade v6/v7 to v8 explicitly
 cargo run -p observed_authoring --bin tilec -- profile-halls on
 ```
 
@@ -85,7 +85,7 @@ What it controls (`crates/observed_facility/src/hex_wfc/profile.rs`):
 | `score` | Component weights for candidate scoring. |
 | `search.candidates` | How many layouts to solve and score before keeping one. |
 | `pin_sets` | Authored per-cell constraints. |
-| `initial_hall_compositions` | Connected initial Library/Lumen physical kits on production-sized boards; no topology changes or persistent pins. |
+| `initial_hall_compositions` | Connected initial Library/Lumen/Zen/Monument interior and terrace physical kits on production-sized boards; no topology changes or persistent pins. |
 
 Two rules the profile cannot break, both enforced rather than documented:
 

@@ -20,8 +20,8 @@ fn physical() -> crate::hex_wfc::HexWfcMatch {
 #[test]
 fn initial_hall_choices_are_the_actual_projected_modules() {
     let game = physical();
-    assert_eq!(game.facility.initial_modules.len(), 12);
-    assert_eq!(game.snapshot().initial_modules.len(), 12);
+    assert_eq!(game.facility.initial_modules.len(), 30);
+    assert_eq!(game.snapshot().initial_modules.len(), 30);
     for (&cell, &variant) in &game.facility.initial_modules {
         let pieces = game
             .geometry
@@ -64,7 +64,7 @@ fn rebuilding_the_same_topology_retires_only_its_initial_kit_and_preview_matches
     assert!(logical.changed_cells.contains(&cell));
     assert_eq!(game.facility.cell_revision(cell), Some(1));
     assert_eq!(game.facility.initial_module_variant(cell), None);
-    assert_eq!(game.snapshot().initial_modules.len(), 11);
+    assert_eq!(game.snapshot().initial_modules.len(), 29);
     let current = game
         .geometry
         .pieces

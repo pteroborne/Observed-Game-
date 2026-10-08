@@ -1,0 +1,37 @@
+{
+  "base_commit": "93018c24b3d37db004cfeb66924e22dabd3d60f8",
+  "seed": 1,
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "catalog_hash": "d1602b954c408239ab8dd4944cc2fcbf08007d9f460d8c1c2c5eac76f4b1fb09",
+  "profile_hash": "8e419298dca0e8132e69b43aeaabbc9c67ab847a3ecdcc344228c4be3d60322f",
+  "simulation_hash": "9922a1750e5c27dd861c3e77035c096a492fa6dd4ef16f5325f71ef16e149adb",
+  "sha256": {
+    "checks.json": "8782d667080bc6a00fe123ae438ae2a8b6864576bdf37c30097ab7079c4b7316",
+    "native/vista_01_library_gallery.json": "ac52768dc44baf38dd8493cf49448ff5538c8f550805d294e9ec3fe72cd8d54f",
+    "native/vista_01_library_gallery.png": "6247d227cd1ea23b596b3ce2ff13a924491d1ca8272280c6d4bcae832ff77bdb",
+    "native/vista_02_library_court.json": "84bdf7e278abe8c1d0d1517a97a6b885b734274ebdbd6dcf7ffb478ba8c246ff",
+    "native/vista_02_library_court.png": "e53f9b74e20d1bd3f45b0dbe020d1fba3dc4c93b2c7df2ebc4b2f26ea4ce0bd0",
+    "native/vista_03_lumen_gallery.json": "dd8781084ffcac4f5c0a7bdc1fe83b92c08eeb3d5c7d12b30e882b740aeaf82e",
+    "native/vista_03_lumen_gallery.png": "f7841972506cec3ea586abe4c154074842caccc5b7bc4af0f4f377a46f91b206",
+    "native/vista_04_lumen_court.json": "536da8a8adbdcbbc846a1e9a3215c2988522e120a6dfaac8c56bb9782dea532e",
+    "native/vista_04_lumen_court.png": "853fe8c0c4640b8216c01e4f3605bd2fa455596f60e8ad8f6feddd46a5f25d6c",
+    "native/vista_05_zen_gallery.json": "bf02120237038ce4d7effd0998d341e836eacfa8423bdf884d5c9d4b13443094",
+    "native/vista_05_zen_gallery.png": "5907ae2f2cca6cd865fa371b9ec0ab4e8275845095aceebbe2515050241bc895",
+    "native/vista_06_zen_court.json": "10aab1a75ea892f83ee2f0ff732560b11b5f7f70b97128ecc7d59af0947593c7",
+    "native/vista_06_zen_court.png": "8dc760887de8caef7002665ae7c7ddeec268ee95de8d65b6c7d35bed043021c1",
+    "native/vista_07_monument_gallery.json": "63802a7fa5c21c4b31efaf4a9a7d9eb6c666385bdedcb0c2eab3d12f4a97e032",
+    "native/vista_07_monument_gallery.png": "cf85159b223e9b13440e25997b1915f74136f612b733d891ebd39d92626987bf",
+    "native/vista_08_monument_court.json": "4fa42a82323d54f892ee68f5a5c2d9ab84a04a1dd95c614a3c979d3949f9bdd3",
+    "native/vista_08_monument_court.png": "6ea735a467ff1f9624806f97757f53099c27d6c06ea91edb12399e6ec155c6fe",
+    "native/vista_09_monument_terrace_gallery.json": "0567a11bb4e2d6e059b495317ce81cd0941c4c2af5659c80ae7cb87c261bfce4",
+    "native/vista_09_monument_terrace_gallery.png": "0f9a0489e108e72635144e4fef921926e66af8b1636eb2348f306537cc276a2c",
+    "native/vista_10_monument_terrace_court.json": "a219ca68db2baa714caeaa17bf62a5e58a67b7b382c9e4345489278cbe4484c5",
+    "native/vista_10_monument_terrace_court.png": "c3a663b07daf97cfbc4685eb2b37c3468975c145e0203e2bdd6300bd2ca92e25",
+    "simulation-timing.txt": "ee725115dcc08f0f242af4a726e3567e669daea29139a86b80db7a72c23acffe",
+    "survey.csv": "b6f721258154bc520804d54da37f49351aa78c47c8fdf4159fabad9b77bec60e"
+  }
+}

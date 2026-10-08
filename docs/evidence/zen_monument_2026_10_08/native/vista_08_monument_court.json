@@ -1,0 +1,26 @@
+{
+  "cell": [
+    17,
+    9,
+    4
+  ],
+  "feet": [
+    303.7209167480469,
+    32.5,
+    112.6644058227539
+  ],
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "initial_module_variant": 12727,
+  "input_version": 13,
+  "mode": "staged production construction reference, environment held",
+  "name": "monument_court",
+  "pitch": 0.25367382168769836,
+  "seed": 1,
+  "simulation_content_hash": "9922a1750e5c27dd861c3e77035c096a492fa6dd4ef16f5325f71ef16e149adb",
+  "tick": 4482,
+  "yaw": -0.5280765891075134
+}

@@ -806,17 +806,17 @@ mod tests {
         // solve control changed - `COMPOSITION_PROFILE_VERSION` went to 2
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
-        // Forty reserved initial Library/Lumen hall sources add two physical
+        // One hundred reserved Library/Lumen/Zen/Monument sources add two physical
         // kits in each district, preserving the existing flat-hall interfaces.
         const CATALOG_HASH: &str =
-            "2bd68f6ac106342c842c5c4cb67c55385a559b2ab6c37fb9fd2f4715971d0d81";
+            "d1602b954c408239ab8dd4944cc2fcbf08007d9f460d8c1c2c5eac76f4b1fb09";
         // The open-air composition (void share 2,000), 2026-09-24, at profile
-        // version 7 now enables revision-scoped initial hall compositions.
+        // version 8 extends initial halls through Zen and both Monument floors.
         const PROFILE_HASH: &str =
-            "42603bf9f2b4c546aff2b45875a2b95cb19b3b20504a1a0902d223c1fac30847";
+            "8e419298dca0e8132e69b43aeaabbc9c67ab847a3ecdcc344228c4be3d60322f";
         // Catalog and composition policy both enter physical match identity.
         const SIMULATION_HASH: &str =
-            "15efcbcef864cfa37fb9ffa23238c526dc8ca7f482b61e2141295332e2094d89";
+            "9922a1750e5c27dd861c3e77035c096a492fa6dd4ef16f5325f71ef16e149adb";
 
         let root = committed_tiles();
         let compiled_text =
@@ -828,8 +828,8 @@ mod tests {
         // climbed by a composition since, and none of either is compiled. 230 since
         // climbs turn: four turning mid cells and three turned landings, in seven
         // dressings.
-        // Forty reserved initial-hall sources bring the active corpus to 382.
-        assert_eq!(compiled.modules.len(), 382, "committed strict source count");
+        // One hundred reserved initial-hall sources bring the active corpus to 442.
+        assert_eq!(compiled.modules.len(), 442, "committed strict source count");
         assert!(
             compiled
                 .modules

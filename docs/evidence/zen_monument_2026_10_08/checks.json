@@ -1,0 +1,27 @@
+{
+  "cargo_fmt_all": "pass",
+  "cargo_dev_clippy": "pass, no warnings",
+  "cargo_dev_test": {
+    "passed": 2860,
+    "failed": 0,
+    "ignored": 44,
+    "targets": 297
+  },
+  "survey": {
+    "solved": 24,
+    "compositions_per_seed": 10,
+    "hall_cells_per_seed": 30,
+    "maximum_solve_selection_ms": 1451.304
+  },
+  "native_supported_views": 10,
+  "production_probe": {
+    "ticks": 7200,
+    "median_us": 256.916,
+    "p95_us": 336.362,
+    "maximum_ms": 4.078674,
+    "plays": 5,
+    "catches": 0,
+    "outcome": "Running"
+  },
+  "extended_instrumentation": "not run"
+}

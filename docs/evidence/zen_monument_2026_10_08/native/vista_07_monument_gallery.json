@@ -1,0 +1,26 @@
+{
+  "cell": [
+    2,
+    5,
+    4
+  ],
+  "feet": [
+    57.599998474121094,
+    32.5,
+    60.0
+  ],
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "initial_module_variant": 12033,
+  "input_version": 13,
+  "mode": "staged production construction reference, environment held",
+  "name": "monument_gallery",
+  "pitch": 0.16514863073825836,
+  "seed": 1,
+  "simulation_content_hash": "9922a1750e5c27dd861c3e77035c096a492fa6dd4ef16f5325f71ef16e149adb",
+  "tick": 3972,
+  "yaw": 1.5707963705062866
+}
