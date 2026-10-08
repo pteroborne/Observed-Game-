@@ -13,10 +13,15 @@ use super::{HexLanternState, HexMatchEvent, HexMatchEventKind, HexPlayerState};
 /// [`HexGuardianState::pressure_for`], since at or past this cost the answer is 0.0
 /// whether or not a route exists.
 const PRESSURE_FALLOFF_COST: u32 = 12_000;
-const MOVE_PERIOD_TICKS: u64 = 120;
-const GUARDIAN_SPEED: f32 = 2.5;
 const CATCH_DISTANCE: f32 = 1.1;
-const FIXED_DT: f32 = 1.0 / 60.0;
+mod physical;
+
+/// The four-tier Tumbler fits the lowest (3 m) doorway, including controller skin.
+pub const MAJOR_MODEL_SCALE: f32 = 0.9;
+/// World-aligned solid envelope contains the scaled tiers, including their rotating corners.
+pub const MAJOR_RADIUS: f32 = 1.35;
+pub const MAJOR_HALF_HEIGHT: f32 = 1.4;
+const POSITION_ABOVE_FEET: f32 = 0.9;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HexGuardianStatus {
@@ -28,9 +33,11 @@ pub enum HexGuardianStatus {
 #[derive(Clone, Debug, PartialEq)]
 pub struct HexGuardianState {
     pub cell: HexCoord,
+    /// Legacy reference point 0.9 m above the physical feet; presentation uses `feet()`.
     pub position: Vec3,
     pub status: HexGuardianStatus,
     pub target: Option<PlayerId>,
+    pub(super) motion: physical::MajorMotion,
 }
 
 impl HexGuardianState {
@@ -39,9 +46,11 @@ impl HexGuardianState {
         let cell = guardian_home(world);
         Self {
             cell,
-            position: Vec3::from_array(hex_origin(cell)) + Vec3::Y * 0.9,
+            position: Vec3::from_array(hex_origin(cell))
+                + Vec3::Y * (super::FLOOR_SLAB_TOP + POSITION_ABOVE_FEET),
             status: HexGuardianStatus::Active,
             target: None,
+            motion: physical::MajorMotion::default(),
         }
     }
 
@@ -50,9 +59,11 @@ impl HexGuardianState {
     pub fn at(cell: HexCoord) -> Self {
         Self {
             cell,
-            position: Vec3::from_array(hex_origin(cell)) + Vec3::Y * 0.9,
+            position: Vec3::from_array(hex_origin(cell))
+                + Vec3::Y * (super::FLOOR_SLAB_TOP + POSITION_ABOVE_FEET),
             status: HexGuardianStatus::Active,
             target: None,
+            motion: physical::MajorMotion::default(),
         }
     }
 
@@ -74,6 +85,19 @@ impl HexGuardianState {
             })
     }
 
+    #[must_use]
+    pub fn physically_placed(&self) -> bool {
+        self.motion.placed()
+    }
+
+    /// The sole visual/sight origin, on the physical walking surface.
+    #[must_use]
+    pub fn feet(&self) -> Vec3 {
+        self.position - Vec3::Y * POSITION_ABOVE_FEET
+    }
+
+    /// Decide whether to freeze, catch, or pursue; physical movement is resolved by
+    /// the match afterward, never by cell teleportation or a presentation glide.
     pub(super) fn step(
         &mut self,
         tick: u64,
@@ -82,7 +106,7 @@ impl HexGuardianState {
         players: &mut BTreeMap<PlayerId, HexPlayerState>,
         events: &mut Vec<HexMatchEvent>,
         bounds: HexGuardianBounds<'_>,
-    ) {
+    ) -> Option<(HexCoord, Vec3)> {
         let HexGuardianBounds {
             prison,
             closed,
@@ -90,99 +114,64 @@ impl HexGuardianState {
             clear,
             eye_height,
         } = bounds;
-        // A closed door between them hides it, and so does anything else solid: some point
-        // of its body has to be in plain view of the eye.
-        let observed = players.values().any(|player| {
-            !closed(player.cell, self.cell) && player_sees_guardian(player, self, eye_height, clear)
-        });
-        let anchored = lanterns.anchors_blueprint_cell(world, self.cell);
+        let observed = players
+            .values()
+            .any(|player| player_sees_guardian(player, self, eye_height, clear));
         self.status = if observed {
             HexGuardianStatus::FrozenByPlayer
-        } else if anchored {
+        } else if lanterns.anchors_blueprint_cell(world, self.cell) {
             HexGuardianStatus::FrozenByAnchor
         } else {
             HexGuardianStatus::Active
         };
         if self.status != HexGuardianStatus::Active {
-            return;
+            self.motion.stop();
+            return None;
         }
-
-        // Where the lobby and closed doors let it step.
-        let may_enter = |from: HexCoord, next: HexCoord| {
-            // The prison lobby is sanctuary: a Guardian waits at its door, never inside.
-            prison.is_none_or(|prison| !prison.lobby.contains(&next))
-                // Nor does it pass a closed door: it waits at that too.
-                && !closed(from, next)
-        };
-
-        // Directed, it walks where the Rogue sent it - unless a body shares its cell, which
-        // it catches first. Where the directive cannot be reached it hunts as ever.
+        let same_cell = players
+            .values()
+            .any(|player| player.in_facility() && player.cell == self.cell);
         if let Some(goal) = directive
             && goal != self.cell
-            && !players
-                .values()
-                .any(|player| player.in_facility() && player.cell == self.cell)
+            && !same_cell
         {
-            if !tick.is_multiple_of(MOVE_PERIOD_TICKS) {
-                self.target = None;
-                return;
-            }
-            if let Some(route) = world.route_between_cells(self.cell, goal) {
-                self.target = None;
-                if let Some(&next) = route.cells.get(1)
-                    && may_enter(self.cell, next)
-                {
-                    self.cell = next;
-                    self.position = Vec3::from_array(hex_origin(next)) + Vec3::Y * 0.9;
-                }
-                return;
-            }
-        }
-
-        // Where a catch means prison, even a lone runner is hunted: the prison is how the
-        // Rogue wins. Elsewhere a lone runner's route is the whole challenge.
-        let Some(target_id) = leading_player(world, players, prison.is_some()) else {
             self.target = None;
-            return;
-        };
-        self.target = Some(target_id);
-        let target_cell = players[&target_id].cell;
-        if target_cell == self.cell {
-            let target_position = players[&target_id].position;
-            self.position += (target_position - self.position)
-                .with_y(0.0)
-                .normalize_or_zero()
-                * GUARDIAN_SPEED
-                * FIXED_DT;
-            if self.position.distance(target_position) <= CATCH_DISTANCE
-                && !closed(players[&target_id].cell, self.cell)
-                && let Some(destination) = recovery_destination(world, self.cell)
-            {
-                let player = players.get_mut(&target_id).expect("target exists");
-                let from = player.cell;
-                player.cell = destination;
-                player.position = Vec3::from_array(hex_origin(destination)) + Vec3::Y * 0.9;
-                events.push(HexMatchEvent {
-                    tick,
-                    kind: HexMatchEventKind::GuardianCatch,
-                    player: Some(target_id),
-                    cell: Some(from),
-                });
-                // A catch is one complete pressure cycle. Returning home gives
-                // the recovered runner a readable new attempt instead of
-                // allowing the Guardian to camp the last survivor forever.
-                self.cell = guardian_home(world);
-                self.position = Vec3::from_array(hex_origin(self.cell)) + Vec3::Y * 0.9;
-                self.target = None;
-            }
-        } else if tick.is_multiple_of(MOVE_PERIOD_TICKS)
-            && let Some(route) = world.route_between_cells(self.cell, target_cell)
-            && let Some(&next) = route.cells.get(1)
-            && may_enter(self.cell, next)
-        {
-            self.cell = next;
-            self.position = Vec3::from_array(hex_origin(next)) + Vec3::Y * 0.9;
+            return Some((goal, Vec3::from_array(hex_origin(goal))));
         }
+        let target_id = leading_player(world, players, prison.is_some())?;
+        self.target = Some(target_id);
+        let player = &players[&target_id];
+        // A catch needs actual proximity, deck height and unobstructed sight, not
+        // merely equal cell labels. A partition cannot catch through a wall.
+        if player.cell == self.cell
+            && player
+                .position
+                .with_y(0.0)
+                .distance(self.position.with_y(0.0))
+                <= CATCH_DISTANCE
+            && (player.position.y - self.position.y).abs() <= 1.5
+            && !closed(player.cell, self.cell)
+            && clear(self.position, player.position)
+            && let Some(destination) = recovery_destination(world, self.cell)
+        {
+            let player = players.get_mut(&target_id).expect("target exists");
+            let from = player.cell;
+            player.cell = destination;
+            player.position = Vec3::from_array(hex_origin(destination)) + Vec3::Y * 0.9;
+            events.push(HexMatchEvent {
+                tick,
+                kind: HexMatchEventKind::GuardianCatch,
+                player: Some(target_id),
+                cell: Some(from),
+            });
+            self.cell = guardian_home(world);
+            self.position = Vec3::from_array(hex_origin(self.cell))
+                + Vec3::Y * (super::FLOOR_SLAB_TOP + POSITION_ABOVE_FEET);
+            self.target = None;
+            self.motion = physical::MajorMotion::default();
+            return None;
+        }
+        Some((player.cell, player.position))
     }
 }
 
@@ -260,9 +249,18 @@ pub(super) struct HexGuardianBounds<'a> {
 
 /// Samples from the four-tier major's lower body through its crown and eye.
 /// Seeing its head over cover must count even when its lower tiers are hidden.
-const SEEN_AT: [f32; 5] = [-0.2, 0.3, 1.1, 1.9, 2.5];
+const SEEN_AT: [f32; 5] = [0.3, 0.8, 1.4, 2.1, 2.65];
 
 impl super::HexWfcMatch {
+    /// Whether a supplied embodied viewpoint sees the major's actual solid pose.
+    /// Uses the same range, samples and structural transparency as freezing.
+    #[must_use]
+    pub fn major_visible_from(&self, viewer: &HexPlayerState, major: &HexGuardianState) -> bool {
+        player_sees_guardian(viewer, major, self.eye_height(), &|a, b| {
+            super::sight::line_is_clear(&self.physics, &self.geometry, a, b)
+        })
+    }
+
     /// Send every major Guardian to `cell` instead of hunting, or back to the hunt with
     /// `None`. The Ascent rules own the directive and say when it is spent
     /// (`ascent::sim::ArchitectLab::directed`); this only walks the bodies.
@@ -304,15 +302,25 @@ fn player_sees_guardian(
     // Physical sight is authoritative. A visible body across an atrium or several
     // corridor cells must freeze even where no short walking route connects it.
     SEEN_AT.into_iter().any(|height| {
-        let offset = guardian.position + Vec3::Y * height - eye;
-        let distance = offset.length();
-        let ahead = offset.dot(forward);
-        let horizontal = offset.dot(right).atan2(ahead).abs();
-        let pitch = offset.y.atan2(offset.with_y(0.0).length());
-        distance <= super::SIGHT_REACH
-            && horizontal <= 1.14
-            && (pitch - player.pitch).abs() <= 0.85
-            && clear(eye, eye + offset)
+        [
+            Vec3::ZERO,
+            Vec3::X * 0.6,
+            -Vec3::X * 0.6,
+            Vec3::Z * 0.6,
+            -Vec3::Z * 0.6,
+        ]
+        .into_iter()
+        .any(|side| {
+            let offset = guardian.feet() + Vec3::Y * height + side - eye;
+            let distance = offset.length();
+            let ahead = offset.dot(forward);
+            let horizontal = offset.dot(right).atan2(ahead).abs();
+            let pitch = offset.y.atan2(offset.with_y(0.0).length());
+            distance <= super::SIGHT_REACH
+                && horizontal <= 1.14
+                && (pitch - player.pitch).abs() <= 0.85
+                && clear(eye, eye + offset)
+        })
     })
 }
 
@@ -468,7 +476,7 @@ mod tests {
             &mut players,
             &mut Vec::new(),
             HexGuardianBounds {
-                clear: &|_, to| to.y > before.y + 2.0,
+                clear: &|_, to| to.y > before.y + 1.5,
                 ..HexGuardianBounds::OPEN
             },
         );

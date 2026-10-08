@@ -252,12 +252,44 @@ pub fn binding_conflict_summary(bindings: &KeyBindings) -> Option<String> {
 /// an older version without treating their whole preferences file as new.
 pub const CURRENT_ONBOARDING_VERSION: u32 = 1;
 
+/// Saved presentation policy. It never enters inputs, collision or LAN identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PresentationPreset {
+    Desktop,
+    Deck,
+}
+
+impl PresentationPreset {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Desktop => "Desktop / 60 fps target",
+            Self::Deck => "Steam Deck / 30 fps target",
+        }
+    }
+    pub fn toggled(self) -> Self {
+        match self {
+            Self::Desktop => Self::Deck,
+            Self::Deck => Self::Desktop,
+        }
+    }
+}
+
+impl Default for PresentationPreset {
+    fn default() -> Self {
+        let deck = std::env::var("SteamDeck").is_ok_and(|v| v == "1")
+            || std::fs::read_to_string("/sys/devices/virtual/dmi/id/product_name")
+                .is_ok_and(|v| matches!(v.trim(), "Jupiter" | "Galileo"));
+        if deck { Self::Deck } else { Self::Desktop }
+    }
+}
+
 /// The player-editable settings: audio, mouse sensitivity, bindings, accessibility,
 /// and versioned onboarding completion. App-lifetime (inserted at startup, saved on
 /// change) — not part of the match resource lifecycle.
 #[derive(Resource, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UserPreferences {
+    pub presentation_preset: PresentationPreset,
     pub master_volume: f32,
     pub sfx_volume: f32,
     pub music_volume: f32,
@@ -298,6 +330,7 @@ pub const DEFAULT_MOUSE_SENSITIVITY: f32 = 0.12;
 impl Default for UserPreferences {
     fn default() -> Self {
         Self {
+            presentation_preset: PresentationPreset::default(),
             master_volume: 1.0,
             sfx_volume: 1.0,
             music_volume: 1.0,

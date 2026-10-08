@@ -13,11 +13,10 @@ use bevy::prelude::*;
 use observed_guardian::form::{self, Look, Stage, State};
 use observed_guardian::mesh::mesh;
 use observed_guardian::roll::{Rest, Roll};
-use observed_hex::{FLOOR_SLAB_TOP, hex_origin};
 use observed_match::hex_wfc::{HexReleasedGuardian, HexReleasedKind};
 
 use super::super::sim::{EYE_OFFSET, HexWfcRuntime};
-use super::{self as guardian, FORM, GuardianArt, GuardianPart, Parts};
+use super::{self as guardian, GuardianArt, GuardianPart, Parts};
 use crate::GameState;
 
 /// A minor's size against the major Roller the form was drawn at: about a metre tall,
@@ -132,11 +131,7 @@ pub(super) fn sync(
         };
         match guardian {
             HexReleasedGuardian::Major(major) => {
-                let floor = Vec3::new(
-                    major.position.x,
-                    hex_origin(major.cell)[1] + FLOOR_SLAB_TOP,
-                    major.position.z,
-                );
+                let floor = major.feet();
                 let before = visual.at;
                 visual.at = guardian::drawn_position(
                     Some(visual.at),
@@ -169,8 +164,7 @@ pub(super) fn sync(
                     .unwrap_or_else(|| runtime.viewed())
                     .position
                     + Vec3::Y * EYE_OFFSET;
-                let pose = form::pose(
-                    FORM,
+                let pose = guardian::major_pose(
                     visual.state,
                     clock - visual.since,
                     clock,
@@ -329,11 +323,10 @@ fn spawn(
         ReleasedVisual {
             id,
             kind,
-            at: Vec3::new(
-                position.x,
-                hex_origin(guardian.cell())[1] + FLOOR_SLAB_TOP,
-                position.z,
-            ),
+            at: match guardian {
+                HexReleasedGuardian::Major(major) => major.feet(),
+                HexReleasedGuardian::Minor(_) => position,
+            },
             state: State::Hunting,
             since: clock,
             rest: Rest::on_a_face(Vec3::ZERO),

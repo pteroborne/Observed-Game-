@@ -4,6 +4,9 @@
 //! turn [`ConvexRenderMesh`] into its engine mesh without repeating
 //! triangulation, smoothing, or UV policy in every Bevy adapter.
 
+mod coplanar;
+pub use coplanar::merge_coplanar_surfaces;
+
 use std::collections::{BTreeMap, HashMap};
 
 use glam::Vec3;

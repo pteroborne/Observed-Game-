@@ -186,7 +186,7 @@ pub(super) fn spawn(
                 for row in (((lo.z + origin.z) / 1.2).ceil() as i32)
                     ..(((hi.z + origin.z) / 1.2).floor() as i32)
                 {
-                    if (column + row).rem_euclid(3) != 0 {
+                    if !observed_style::backrooms::fluorescent_bay(column, row) {
                         continue;
                     }
                     let a = Vec2::new(
@@ -240,7 +240,8 @@ pub(super) fn spawn(
             "backrooms-{name}-{:?}-{:?}",
             pieces.first().and_then(|piece| piece.tile.as_ref()),
             if name != "cove base" {
-                (coord.q % 9, coord.r % 9)
+                // Phase repeats after 6 q / 12 r steps on this axial grid.
+                (coord.q % 6, coord.r % 12)
             } else {
                 (0, 0)
             }

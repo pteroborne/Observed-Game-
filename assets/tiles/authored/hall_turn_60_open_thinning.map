@@ -195,10 +195,12 @@
 {
 "classname" "tile_light"
 "kind" "practical"
+"mount" "surface"
 "origin" "44 0 108"
 }
 {
 "classname" "tile_light"
 "kind" "practical"
+"mount" "surface"
 "origin" "22.1703 38.0063 108"
 }

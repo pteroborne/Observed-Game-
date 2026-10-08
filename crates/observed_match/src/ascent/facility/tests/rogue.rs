@@ -218,7 +218,8 @@ fn a_directed_tumbler_walks_where_the_rogue_sent_it() {
     assert_eq!(
         game.physical().guardian.cell,
         goal,
-        "the directive is spent by arriving, not by running out"
+        "the directive is spent by arriving, not by running out: {:?}",
+        game.physical().guardian
     );
     assert!(ticks < crate::ascent::sim::DIRECTIVE_TICKS as usize);
     // Spent, it lets the Tumbler go back to hunting.

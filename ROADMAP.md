@@ -15,6 +15,13 @@ This document outlines the current active development goals, completed milestone
 
 ## Active & Upcoming Phases
 
+**Premium quality programme (2026-10-07):** the accepted [eight-floor quality bar](docs/quality/aaa_bar.md) governs the current finish pass. Begin with the [solo Guardian/ceiling/fixture findings](docs/playtests/2026-10-07-solo-quality.md), then spatial composition, realistic construction, complete-match clarity and desktop/Deck release gates. Human acceptance remains separate from code completion.
+
+The [first initial-room reference (2026-10-08)](docs/evidence/spatial_reference_2026_10_08/README.md)
+adds a framed Backrooms departure, screened decision/reveal and calmer ceiling
+rhythm, with matched native views and a 24-seed room distribution survey. Next:
+mutable landmark compositions on the floors the current room policy leaves sparse.
+
 > **Canonical direction reset (2026-09-07).** The new governing design is
 > [Architect Ascent](docs/architect_ascent_design.md). It supersedes the
 > precomposed facility race as the final game while retaining the continuous hex

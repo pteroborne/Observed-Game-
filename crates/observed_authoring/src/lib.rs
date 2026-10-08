@@ -179,3 +179,6 @@ impl RuntimeHexCatalog {
         })
     }
 }
+
+mod light_attachment;
+pub use light_attachment::{LightAttachment, light_attachment};

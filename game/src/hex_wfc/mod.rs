@@ -167,6 +167,7 @@ impl Plugin for HexWfcPlugin {
                     // Grouped: the facility's outside follows its detailed geometry.
                     (
                         view::exterior::rebuild_changed,
+                        view::apply_preset,
                         view::sync_changed_geometry,
                         view::sync_streamed_cells,
                         view::warm_reusable_meshes,

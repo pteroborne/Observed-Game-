@@ -161,6 +161,20 @@ pub fn follow_graph(
     exit: TraversalNodeId,
     profile: &TraversalRuntimeProfile,
 ) -> GraphFollowDecision {
+    follow_graph_with_clearance(pose, guide, cursor, exit, profile, 0.0)
+}
+
+/// A wider body's clearance at authored corner checkpoints. Physical collision
+/// remains authoritative; this only releases a waypoint its centre cannot occupy.
+#[must_use]
+pub fn follow_graph_with_clearance(
+    pose: FollowerPose,
+    guide: &TraversalGuide,
+    cursor: &mut TraversalCursor,
+    exit: TraversalNodeId,
+    profile: &TraversalRuntimeProfile,
+    clearance: f32,
+) -> GraphFollowDecision {
     let Some(mut target_id) = guide.cursor_target(*cursor) else {
         return GraphFollowDecision {
             state: GraphFollowState::InvalidCursor,
@@ -179,7 +193,9 @@ pub fn follow_graph(
         };
     };
 
-    while climb_metric(pose.feet).distance(climb_metric(target)) <= GRAPH_NODE_CAPTURE_RADIUS {
+    while climb_metric(pose.feet).distance(climb_metric(target))
+        <= GRAPH_NODE_CAPTURE_RADIUS + clearance.max(0.0)
+    {
         if target_id == exit {
             return GraphFollowDecision {
                 state: GraphFollowState::Arrived,

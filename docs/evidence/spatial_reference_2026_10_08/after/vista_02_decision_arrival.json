@@ -1,0 +1,25 @@
+{
+  "cell": [
+    4,
+    14,
+    0
+  ],
+  "feet": [
+    148.1999969482422,
+    0.5,
+    168.0
+  ],
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "input_version": 13,
+  "mode": "staged production-room reference, environment held",
+  "name": "decision_arrival",
+  "pitch": -6.9775101252389504e-9,
+  "seed": 1,
+  "simulation_content_hash": "675d5f9653e648e9cabc3b65a6f4dcdf09aa7393a67698075006476bb5f8cf03",
+  "tick": 1422,
+  "yaw": 1.9610849618911743
+}

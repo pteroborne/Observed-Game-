@@ -20,7 +20,6 @@ use bevy::light::{NotShadowCaster, NotShadowReceiver};
 use bevy::prelude::*;
 use observed_guardian::form::{self, CATCH_SECONDS, Form, Look, Pose, Stage, State};
 use observed_guardian::mesh::mesh;
-use observed_hex::{FLOOR_SLAB_TOP, hex_origin};
 use observed_match::hex_wfc::{HexGuardianStatus, HexMatchEventKind};
 use observed_style::guardian::{self as style, Part as Finish};
 use observed_style::{MarkerRole, marker};
@@ -32,9 +31,6 @@ pub(super) mod released;
 
 /// The major Guardian: the Tumbler at four tiers.
 pub(super) const FORM: Form = Form::Tumbler { tiers: 4 };
-/// How fast the drawn Guardian glides toward where the simulation has it, m/s: a
-/// cell's 14 m in a little over a second.
-pub(super) const GLIDE: f32 = 12.0;
 /// A jump longer than this is a teleport (a catch sending it home), drawn as one.
 pub(super) const SNAP: f32 = 30.0;
 /// The hum's share of the effects volume, and how fast it follows the state.
@@ -346,11 +342,7 @@ pub(super) fn sync(
     let clock = time.elapsed_secs();
     let guardian = &runtime.match_state.guardian;
     let state = state_for(guardian.status);
-    let floor = Vec3::new(
-        guardian.position.x,
-        hex_origin(guardian.cell)[1] + FLOOR_SLAB_TOP,
-        guardian.position.z,
-    );
+    let floor = guardian.feet();
     let volume = settings.effective_sfx_volume();
 
     // A catch plays where the Guardian was drawn; then it is drawn at home.
@@ -408,13 +400,7 @@ pub(super) fn sync(
         .unwrap_or_else(|| runtime.viewed())
         .position
         + Vec3::Y * EYE_OFFSET;
-    let pose = form::pose(
-        FORM,
-        state,
-        clock - shown.since,
-        clock,
-        Stage { at, toward },
-    );
+    let pose = major_pose(state, clock - shown.since, clock, Stage { at, toward });
     if let Ok(children) = roots.single() {
         apply(&art, &pose, children, &mut parts);
     }
@@ -438,21 +424,14 @@ pub(super) fn sync(
     }
 }
 
-/// A frozen model stops exactly where it was seen, including any unfinished glide.
-pub(super) fn drawn_position(previous: Option<Vec3>, floor: Vec3, state: State, dt: f32) -> Vec3 {
-    let Some(at) = previous else {
-        return floor;
-    };
-    if state.frozen() {
-        return at;
-    }
-    let step = GLIDE * dt;
-    let to = floor - at;
-    if to.length() >= SNAP || to.length() <= step {
-        floor
-    } else {
-        at + to.normalize() * step
-    }
+/// Never invent a second threat position; frozen and hunting models share sight's pose.
+pub(super) fn drawn_position(
+    _previous: Option<Vec3>,
+    floor: Vec3,
+    _state: State,
+    _dt: f32,
+) -> Vec3 {
+    floor
 }
 
 /// Stone friction follows visible movement; idle, frozen and teleported bodies are quiet.
@@ -464,7 +443,7 @@ pub(super) fn slide_gain(state: State, before: Option<Vec3>, at: Vec3, dt: f32) 
     if state != State::Hunting || dt <= 0.0 || !(0.001..SNAP).contains(&distance) {
         return 0.0;
     }
-    0.4 + 0.6 * (distance / (dt * GLIDE)).min(1.0)
+    0.4 + 0.6 * (distance / (dt * 7.0)).min(1.0)
 }
 
 /// Play the catches out, and clear them away.
@@ -482,8 +461,7 @@ pub(super) fn play_catches(
             commands.entity(entity).despawn();
             continue;
         }
-        let pose = form::pose(
-            FORM,
+        let pose = major_pose(
             State::Catch,
             t,
             clock,
@@ -515,6 +493,16 @@ pub(super) fn apply(art: &GuardianArt, pose: &Pose, children: &Children, parts: 
             }
         }
     }
+}
+
+pub(super) fn major_pose(state: State, t: f32, clock: f32, stage: Stage) -> Pose {
+    let mut pose = form::pose(FORM, state, t, clock, stage);
+    for transform in pose.parts.iter_mut().flatten() {
+        transform.translation = stage.at
+            + (transform.translation - stage.at) * observed_match::hex_wfc::MAJOR_MODEL_SCALE;
+        transform.scale *= observed_match::hex_wfc::MAJOR_MODEL_SCALE;
+    }
+    pose
 }
 
 /// Where the eye is in `pose`: the first part drawn as one.

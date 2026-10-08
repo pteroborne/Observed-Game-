@@ -8,13 +8,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::f32::consts::TAU;
 
-use glam::Vec3;
+use glam::{Vec3, Vec3Swizzles};
 use player_input::PlayerIntent;
 use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use rapier3d::prelude::*;
 
 mod shape_cache;
 use shape_cache::ColliderShapeCache;
+#[cfg(test)]
+mod ramps;
 
 use super::{
     Aabb3, FpsArena, FpsBody, FpsConfig, FpsStep, RapierKinematicSettings, approach, clamp_len,
@@ -226,6 +228,16 @@ impl RapierTraversalScene {
         !query
             .intersect_shape(pose, &capsule)
             .any(|(_, collider)| collider.user_data != 0)
+    }
+
+    /// Whether an upright solid character envelope fits, excluding the canonical floor.
+    pub fn solid_is_clear(&self, center: Vec3, radius: f32, half_height: f32) -> bool {
+        let shape = Cylinder::new(half_height, radius);
+        self.with_query(|query| {
+            !query
+                .intersect_shape(Pose::translation(center.x, center.y, center.z), &shape)
+                .any(|(_, collider)| collider.user_data != 0)
+        })
     }
 
     /// Whether nothing solid stands on the straight line from `from` to `to`.
@@ -479,6 +491,75 @@ pub fn step_character_in_query(
     dt: f32,
     bounds: (Vec3, Vec3),
 ) -> FpsStep {
+    let capsule = Capsule::new_y(
+        (config.half_height - config.radius).max(0.01),
+        config.radius,
+    );
+    step_character_in_query_shape(query, body, intent, config, rapier, dt, (bounds, &capsule))
+}
+
+/// A flat-bottomed upright character, using the same controller as a capsule.
+/// Solid architectural actors must not have a rounded foot that lets their
+/// visible base intersect a ramp. This does not change the player controller.
+pub fn step_solid_character_with_settings(
+    scene: &RapierTraversalScene,
+    body: &mut FpsBody,
+    intent: PlayerIntent,
+    config: &FpsConfig,
+    rapier: RapierKinematicSettings,
+    dt: f32,
+) -> FpsStep {
+    let shape = Cylinder::new(config.half_height, config.radius);
+    let was_grounded = body.grounded;
+    scene.with_query(|query| {
+        let mut report = step_character_in_query_shape(
+            query,
+            body,
+            intent,
+            config,
+            rapier,
+            dt,
+            (scene.safety_bounds(), &shape),
+        );
+        // Rounded lateral supports can lose the KCC's contact flag for one frame
+        // on a ramp. Confirm support with the complete flat-bottomed shape,
+        // never a centre ray or an assumed floor height. Player capsules keep
+        // their original controller path.
+        if !body.grounded
+            && !report.jumped
+            && !report.recovered
+            && body.velocity.y <= 0.0
+            && let Some((_, hit)) = query.cast_shape(
+                &Pose::translation(body.position.x, body.position.y, body.position.z),
+                Vector::NEG_Y,
+                &shape,
+                rapier3d::parry::query::ShapeCastOptions {
+                    max_time_of_impact: rapier.ground_snap,
+                    target_distance: rapier.controller_offset,
+                    compute_impact_geometry_on_penetration: true,
+                    ..Default::default()
+                },
+            )
+            && hit.normal1.y >= rapier.maximum_slope_degrees.to_radians().cos()
+        {
+            body.position.y -= hit.time_of_impact;
+            body.grounded = true;
+            body.velocity.y = 0.0;
+            report.landed |= !was_grounded;
+        }
+        report
+    })
+}
+
+fn step_character_in_query_shape(
+    query: &QueryPipeline<'_>,
+    body: &mut FpsBody,
+    intent: PlayerIntent,
+    config: &FpsConfig,
+    rapier: RapierKinematicSettings,
+    dt: f32,
+    (bounds, shape): ((Vec3, Vec3), &dyn Shape),
+) -> FpsStep {
     let mut intent = intent;
     if intent.movement.length_squared() > 1.0 {
         intent.movement = intent.movement.normalize_or_zero();
@@ -520,9 +601,6 @@ pub fn step_character_in_query(
     }
 
     let was_grounded = body.grounded;
-    let radius = config.radius;
-    let segment_half = (config.half_height - radius).max(0.01);
-    let capsule = Capsule::new_y(segment_half, radius);
     let controller = KinematicCharacterController {
         offset: CharacterLength::Absolute(rapier.controller_offset),
         autostep: Some(CharacterAutostep {
@@ -536,11 +614,11 @@ pub fn step_character_in_query(
         ..Default::default()
     };
     let pose = Pose::translation(body.position.x, body.position.y, body.position.z);
-    let desired = body.velocity * dt;
+    let desired = grounded_translation(query, body, config, rapier) * dt;
     let movement = controller.move_shape(
         dt,
         query,
-        &capsule,
+        shape,
         &pose,
         Vector::new(desired.x, desired.y, desired.z),
         |_| {},
@@ -568,6 +646,51 @@ pub fn step_character_in_query(
         report.recovered = true;
     }
     report
+}
+
+/// Lift grounded input onto its supporting plane at the requested surface speed.
+/// Rapier still resolves every obstacle and the slope limit; projecting horizontal
+/// input alone otherwise loses a cosine of speed while climbing. Probe through the
+/// same filtered movement query, so one-way ceilings and per-body exclusions apply.
+fn grounded_translation(
+    query: &QueryPipeline<'_>,
+    body: &FpsBody,
+    config: &FpsConfig,
+    rapier: RapierKinematicSettings,
+) -> Vec3 {
+    let velocity = body.velocity;
+    if !body.grounded || velocity.y > 0.0 || velocity.xz().length_squared() < 1.0e-8 {
+        return velocity;
+    }
+    // A vertical ray reads the structural face normal rather than a noisy capsule
+    // contact normal. Account for the rounded foot's clearance on the steepest ramp.
+    let reach = config.half_height - config.radius
+        + config.radius / rapier.maximum_slope_degrees.to_radians().cos()
+        + rapier.ground_snap
+        + rapier.controller_offset;
+    let ray = Ray::new(
+        Vector::new(body.position.x, body.position.y, body.position.z),
+        -Vector::Y,
+    );
+    let Some((_, hit)) = query.cast_ray_and_get_normal(&ray, reach, true) else {
+        return velocity;
+    };
+    let normal = Vec3::new(hit.normal.x, hit.normal.y, hit.normal.z);
+    if normal.y >= 0.99999 || normal.y <= rapier.maximum_slope_degrees.to_radians().cos() {
+        return velocity;
+    }
+    let horizontal = Vec3::new(velocity.x, 0.0, velocity.z);
+    let tangent = horizontal - Vec3::Y * (horizontal.dot(normal) / normal.y);
+    let tangent = tangent.normalize_or_zero() * horizontal.length();
+    if tangent.y > 0.0 {
+        // Supply horizontal input whose collision projection is this tangent.
+        // An upward input would tell Rapier this is a jump and bypass its wall
+        // climbing guard when the ramp meets a vertical obstruction.
+        let projected_input = tangent - normal * (tangent.y / normal.y);
+        Vec3::new(projected_input.x, 0.0, projected_input.z)
+    } else {
+        tangent
+    }
 }
 
 #[cfg(test)]

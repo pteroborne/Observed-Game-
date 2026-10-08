@@ -5247,9 +5247,9 @@ mod hex_wfc_gates {
 
     /// Gate 3: full-match autonomous soak mirroring the Arc K 36,000-tick run. The
     /// objective bots must drive every runner to the exit with zero panics/stalls.
-    /// `#[ignore]` for runtime; run with `cargo test -p observed_game -- --ignored`.
+    /// Returns on actual completion; measured at about six seconds after the physical-major fix.
+    /// This asserts and therefore belongs in the ordinary workspace gate.
     #[test]
-    #[ignore = "36k-tick soak; run explicitly"]
     fn hex_full_match_soak() {
         let mut game = solvable_showcase(flow::MATCH_SEED);
         let mut driver = HexBotDriver::new();

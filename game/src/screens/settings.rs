@@ -40,7 +40,8 @@ const BINDING_BUTTON_WIDTH: f32 = (BINDING_GRID_WIDTH
     - BINDING_COLUMN_GAP * (BINDING_COLUMNS as f32 - 1.0))
     / BINDING_COLUMNS as f32;
 
-const PREFERENCE_ROWS: [SettingsRow; 8] = [
+const PREFERENCE_ROWS: [SettingsRow; 9] = [
+    SettingsRow::PresentationPreset,
     SettingsRow::MasterVolume,
     SettingsRow::SfxVolume,
     SettingsRow::MusicVolume,
@@ -53,6 +54,7 @@ const PREFERENCE_ROWS: [SettingsRow; 8] = [
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum SettingsRow {
+    PresentationPreset,
     MasterVolume,
     SfxVolume,
     MusicVolume,
@@ -68,6 +70,7 @@ pub(crate) enum SettingsRow {
 impl SettingsRow {
     pub(crate) fn all() -> Vec<Self> {
         let mut rows = vec![
+            Self::PresentationPreset,
             Self::MasterVolume,
             Self::SfxVolume,
             Self::MusicVolume,
@@ -84,6 +87,9 @@ impl SettingsRow {
 
     pub(crate) fn label(self, settings: &Settings) -> String {
         match self {
+            Self::PresentationPreset => {
+                format!("Visual quality: {}", settings.presentation_preset.label())
+            }
             Self::MasterVolume => {
                 format!("Master volume: {:.0}%", settings.master_volume * 100.0)
             }
@@ -122,6 +128,7 @@ impl SettingsRow {
 
     pub(crate) const fn widget_id(self) -> WidgetId {
         let key = match self {
+            Self::PresentationPreset => 8,
             Self::MasterVolume => 0,
             Self::SfxVolume => 1,
             Self::MusicVolume => 2,
@@ -447,7 +454,7 @@ fn spawn_preferences_page(root: &mut ChildSpawnerCommands, settings: &Settings) 
                         order as u16,
                         row.label(settings),
                     )
-                    .with_size(620.0, 44.0),
+                    .with_size(620.0, 40.0),
                     SettingsRowText(row),
                 );
             }
@@ -459,7 +466,7 @@ fn spawn_preferences_page(root: &mut ChildSpawnerCommands, settings: &Settings) 
                     PREFERENCE_ROWS.len() as u16,
                     "Controls and key bindings",
                 )
-                .with_size(620.0, 44.0),
+                .with_size(620.0, 40.0),
                 SettingsPageAction::OpenBindings,
             );
             widgets::spawn_button(
@@ -470,7 +477,7 @@ fn spawn_preferences_page(root: &mut ChildSpawnerCommands, settings: &Settings) 
                     PREFERENCE_ROWS.len() as u16 + 1,
                     "Back to main menu",
                 )
-                .with_size(620.0, 44.0),
+                .with_size(620.0, 40.0),
                 SettingsRowText(SettingsRow::Back),
             );
         });
@@ -546,6 +553,9 @@ fn adjust_volume(value: &mut f32, delta: f32) {
 /// increments, and clamp rules cannot drift from the standalone Settings screen.
 pub(crate) fn adjust_row(row: SettingsRow, direction: f32, settings: &mut Settings) -> bool {
     match row {
+        SettingsRow::PresentationPreset => {
+            settings.presentation_preset = settings.presentation_preset.toggled()
+        }
         SettingsRow::MasterVolume => {
             adjust_volume(&mut settings.master_volume, direction * VOLUME_STEP)
         }
@@ -621,7 +631,8 @@ mod tests {
         const BINDING_ROW_HEIGHT: f32 = 44.0 + 2.0 * 3.0 + 2.0;
 
         let preference_targets = PREFERENCE_ROWS.len() + 2;
-        let preference_height = PAGE_CHROME + (preference_targets - 1) as f32 * BINDING_ROW_HEIGHT;
+        let preference_height =
+            PAGE_CHROME + (preference_targets - 1) as f32 * (40.0 + 2.0 * 3.0 + 2.0);
         assert!(
             preference_height <= BASELINE_HEIGHT,
             "Preferences need {preference_height}px; split the page before adding more rows"

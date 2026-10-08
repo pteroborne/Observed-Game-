@@ -210,5 +210,6 @@
 {
 "classname" "tile_light"
 "kind" "practical"
+"mount" "surface"
 "origin" "0 42 69.8462"
 }

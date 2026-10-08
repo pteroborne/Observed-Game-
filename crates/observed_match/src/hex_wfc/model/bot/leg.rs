@@ -13,7 +13,7 @@ use observed_facility::hex_wfc::{HexCoord, HexFace};
 use observed_hex::{TILE_LEVEL_HEIGHT, face_edge, hex_origin};
 use observed_traversal::{
     FollowerPose, GraphFollowDecision, GraphFollowState, TraversalGuide, TraversalGuideBuilder,
-    TraversalMode, TraversalNodeId, compile_compatibility_graph, follow_graph,
+    TraversalMode, TraversalNodeId, compile_compatibility_graph,
 };
 
 use crate::hex_wfc::{
@@ -38,7 +38,7 @@ const PORT_BIND_MAX_RISE: f32 = 0.5;
 /// carries no geometry, no archetype, and no steering: the port identifies
 /// itself by face, and the module says where that face lands.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct ExternalTransition {
+pub(in crate::hex_wfc::model) struct ExternalTransition {
     pub from: HexCoord,
     pub to: HexCoord,
     pub face: HexFace,
@@ -50,7 +50,11 @@ impl ExternalTransition {
     /// `None` when the two cells do not share a face, which a well-formed route
     /// never produces; callers keep their compatibility path for that case
     /// rather than inventing a port.
-    pub(super) fn between(game: &HexWfcMatch, from: HexCoord, to: HexCoord) -> Option<Self> {
+    pub(in crate::hex_wfc::model) fn between(
+        game: &HexWfcMatch,
+        from: HexCoord,
+        to: HexCoord,
+    ) -> Option<Self> {
         let face = if to.level > from.level {
             HexFace::Up
         } else if to.level < from.level {
@@ -79,7 +83,7 @@ impl ExternalTransition {
 /// is what makes a lease safe to hold across a relayout — the revision is
 /// compared, not a cached pointer.
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct ResolvedModuleGraph {
+pub(in crate::hex_wfc::model) struct ResolvedModuleGraph {
     pub instance: HexModuleInstanceId,
     pub revision: HexModuleRevision,
     pub graph: ProjectedTraversalGraph,
@@ -106,7 +110,7 @@ impl ResolvedModuleGraph {
     /// Only (3) reads an archetype, and it reads it to build data rather than to
     /// steer. Retiring it is a matter of authoring graphs, not of editing this
     /// file — which is the whole point of the packet.
-    pub(super) fn resolve(game: &HexWfcMatch, cell: HexCoord) -> Option<Self> {
+    pub(in crate::hex_wfc::model) fn resolve(game: &HexWfcMatch, cell: HexCoord) -> Option<Self> {
         if let Some(guide) = game.geometry.guides.get(&cell) {
             let instance = guide.instance;
             let revision = guide.revision.clone();
@@ -267,7 +271,7 @@ fn legacy_cell_adapter(game: &HexWfcMatch, cell: HexCoord) -> Option<ResolvedMod
 ///
 /// It is deliberately a property of the content rather than a flag: authoring a
 /// graph replaces what a module presents here without changing this line.
-pub(super) fn ships_a_graph(game: &HexWfcMatch, cell: HexCoord) -> bool {
+pub(in crate::hex_wfc::model) fn ships_a_graph(game: &HexWfcMatch, cell: HexCoord) -> bool {
     game.geometry.guides.contains_key(&cell)
 }
 
@@ -290,13 +294,20 @@ pub(super) fn ships_a_graph(game: &HexWfcMatch, cell: HexCoord) -> bool {
 /// the question is whether *that* module ships a graph. [`descent`] then leases
 /// it. This is the same correction as the shaft head one storey further out:
 /// going down is described by the module you are going down *into*.
-pub(super) fn serves_the_crossing(game: &HexWfcMatch, transition: ExternalTransition) -> bool {
+pub(in crate::hex_wfc::model) fn serves_the_crossing(
+    game: &HexWfcMatch,
+    transition: ExternalTransition,
+) -> bool {
     ships_a_graph(game, transition.from)
         || (transition.face == HexFace::Down && ships_a_graph(game, transition.to))
 }
 
 /// The follower pose of one player's feet.
-pub(super) fn pose(game: &HexWfcMatch, position: Vec3, yaw: f32) -> FollowerPose {
+pub(in crate::hex_wfc::model) fn pose(
+    game: &HexWfcMatch,
+    position: Vec3,
+    yaw: f32,
+) -> FollowerPose {
     let half_height = game
         .content
         .traversal_profile()
@@ -313,7 +324,7 @@ pub(super) fn pose(game: &HexWfcMatch, position: Vec3, yaw: f32) -> FollowerPose
 /// Returns `None` when the module does not bind that port, or when the body
 /// cannot reach the binding over the module's own graph. Both cases leave the
 /// caller free to fall back; neither invents a route.
-pub(super) fn acquire(
+pub(in crate::hex_wfc::model) fn acquire(
     game: &HexWfcMatch,
     feet: Vec3,
     transition: ExternalTransition,
@@ -460,10 +471,19 @@ fn lease_between(
 /// Re-resolves the module from stable identity and compares the exact revision
 /// the lease was taken against. A bounded relayout that replaces this module
 /// invalidates the leg; one that replaces a module elsewhere does not.
-pub(super) fn follow(
+pub(in crate::hex_wfc::model) fn follow(
     game: &HexWfcMatch,
     cursor: &mut HexTraversalCursor,
     pose: FollowerPose,
+) -> GraphFollowDecision {
+    follow_with_clearance(game, cursor, pose, 0.0)
+}
+
+pub(in crate::hex_wfc::model) fn follow_with_clearance(
+    game: &HexWfcMatch,
+    cursor: &mut HexTraversalCursor,
+    pose: FollowerPose,
+    clearance: f32,
 ) -> GraphFollowDecision {
     let invalid = GraphFollowDecision {
         state: GraphFollowState::InvalidCursor,
@@ -476,11 +496,12 @@ pub(super) fn follow(
     if module.revision != cursor.lease.revision || module.projected != cursor.lease.projected {
         return invalid;
     }
-    follow_graph(
+    observed_traversal::follow_graph_with_clearance(
         pose,
         &module.graph.guide,
         &mut cursor.local,
         cursor.lease.exit,
         game.content.traversal_profile(),
+        clearance,
     )
 }

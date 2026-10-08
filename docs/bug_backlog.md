@@ -19,6 +19,28 @@ districts while any of them stands.
 
 ## Open
 
+### 49. Major Guardian disagrees with its visible ramp position
+**Engineering fix and native evidence landed 2026-10-08; awaiting player recheck.**
+See [the evidence/acceptance boundary](evidence/solo_quality_2026_10_07/README.md).
+Reported in the [2026-10-07 solo playthrough](playtests/2026-10-07-solo-quality.md):
+sinks through a ramp and pursues while watched. Cell jumps, independent visual
+glides and nominal-floor presentation are source-confirmed. Replace with one
+continuous authoritative physical pose; verify sight, support, catches and replay.
+
+### 50. Ceiling surfaces flicker in a multilevel interior
+**Engineering fix and native evidence landed 2026-10-08; awaiting player recheck.**
+See [the evidence/acceptance boundary](evidence/solo_quality_2026_10_07/README.md).
+[Player evidence and hypotheses](playtests/2026-10-07-solo-quality.md). Diagnose
+surface ownership/coplanarity, proxy/detail overlap and temporal rendering with
+matched moving/stationary captures. Do not close on a still or suppress the symptom.
+
+### 51. Ceiling fixtures hover without a mounting surface
+**Engineering fix and native evidence landed 2026-10-08; awaiting player recheck.**
+See [the evidence/acceptance boundary](evidence/solo_quality_2026_10_07/README.md).
+[Player report](playtests/2026-10-07-solo-quality.md). Generic diffusers use arbitrary
+light positions; fallback lights use a nominal height. Require actual attachment
+or suspension and validate production modules, including multilevel compositions.
+
 ### 5. Bot-POV walkthrough stalls in the observation room
 **Scheduled: Arc I Phase 67** ([arc_i/phase_67_audio_mix_bot_stall.md](arc_i/phase_67_audio_mix_bot_stall.md)).
 **Found 2026-07-11 during the Phase 66 ship-gate evidence refresh.** The

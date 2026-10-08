@@ -412,15 +412,26 @@ fn entities() -> Vec<Entity> {
             colour: "255 244 170",
             half_size: 5,
             description: "Semantic practical light source",
-            properties: vec![Property::choices(
-                "kind",
-                "Presentation-owned treatment",
-                "practical",
-                vec![(
-                    "practical".to_string(),
-                    "District-coloured architectural practical",
-                )],
-            )],
+            properties: vec![
+                Property::choices(
+                    "kind",
+                    "Presentation-owned treatment",
+                    "practical",
+                    vec![(
+                        "practical".to_string(),
+                        "District-coloured architectural practical",
+                    )],
+                ),
+                Property::choices(
+                    "mount",
+                    "Require geometry-backed fixture support",
+                    "surface",
+                    vec![(
+                        "surface".to_string(),
+                        "Real ceiling, wall, or supported lamp",
+                    )],
+                ),
+            ],
         },
     ]
 }

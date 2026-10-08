@@ -295,6 +295,7 @@ pub fn tile_light(x: f64, y: f64, z: f64) -> String {
     point_entity(&[
         ("classname", String::from("tile_light")),
         ("kind", String::from("practical")),
+        ("mount", String::from("surface")),
         ("origin", format!("{} {} {}", fmt(x), fmt(y), fmt(z))),
     ])
 }
@@ -518,7 +519,11 @@ mod tests {
     fn a_forged_version_3_module_imports_as_a_complete_contract() {
         let text = format!(
             "{}{}{}{}{}",
-            worldspawn(&crate::tile_source::hex_slab_brush(0.0, 8.0)),
+            worldspawn(&format!(
+                "{}{}",
+                crate::tile_source::hex_slab_brush(0.0, 8.0),
+                crate::tile_source::hex_slab_brush(120.0, 128.0)
+            )),
             Meta::cell("test/forged", "hall_cap", 0, 1, 1)
                 .with_register_scope("all")
                 .with_rotation_policy("none")
@@ -526,7 +531,7 @@ mod tests {
                 .emit(),
             tile_cell_default(),
             lateral_port(0, "door", "east_threshold", 0, 0, 0),
-            tile_light(48.0, 0.0, 4.0),
+            tile_light(48.0, 0.0, 112.0),
         );
         let module = crate::source::parse_authored_module(&text)
             .unwrap_or_else(|error| panic!("forged v3 module must import: {error:?}"));

@@ -14,7 +14,7 @@ use super::movement::face_plan_dir;
 use super::{FLOOR_SLAB_TOP, HexPlayerCommand, HexWfcMatch};
 
 mod driver;
-mod leg;
+pub(in crate::hex_wfc::model) mod leg;
 pub use driver::HexBotDriver;
 
 /// Most yaw a bot may turn in one 60 Hz tick, in radians.
@@ -262,7 +262,12 @@ impl HexWfcMatch {
     ///
     /// Steering at the door and only then at the centre keeps the path inside
     /// the two cells that actually share the aperture.
-    fn lateral_waypoint(&self, cell: HexCoord, next: HexCoord, position: Vec3) -> Option<Vec3> {
+    pub(in crate::hex_wfc::model) fn lateral_waypoint(
+        &self,
+        cell: HexCoord,
+        next: HexCoord,
+        position: Vec3,
+    ) -> Option<Vec3> {
         let face = HexFace::LATERAL
             .into_iter()
             .find(|&face| self.facility.config.grid().neighbor(cell, face) == Some(next))?;

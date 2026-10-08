@@ -59,6 +59,8 @@ pub struct HexMatchSnapshot {
     /// disagree about whether the next step fires one.
     pub pad_suppression: Vec<(PlayerId, u16)>,
     pub guardian: (HexCoord, HexGuardianStatus),
+    /// Exact major movement state: original (`None`) and released (`Some(id)`).
+    pub major_motion: Vec<(Option<u16>, Vec<u64>)>,
     /// Guardians released after tick zero: id, class, cell, and position in millimetres.
     /// A match that has released none digests exactly as one from before they existed.
     pub released: Vec<(u16, HexReleasedKind, HexCoord, [i32; 3])>,
@@ -157,6 +159,24 @@ impl HexWfcMatch {
                 .map(|(&player, &remaining)| (player, remaining))
                 .collect(),
             guardian: (self.guardian.cell, self.guardian.status),
+            major_motion: std::iter::once((None, &self.guardian))
+                .filter(|_| self.guardian_active)
+                .chain(self.released.iter().filter_map(|(&id, actor)| match actor {
+                    super::HexReleasedGuardian::Major(major) => Some((Some(id), major)),
+                    _ => None,
+                }))
+                .map(|(id, major)| {
+                    let mut words = major.motion.words();
+                    words.extend(major.position.to_array().map(|v| u64::from(v.to_bits())));
+                    words.push(major.target.map_or(u64::MAX, |id| u64::from(id.0)));
+                    words.push(match major.status {
+                        HexGuardianStatus::Active => 0,
+                        HexGuardianStatus::FrozenByPlayer => 1,
+                        HexGuardianStatus::FrozenByAnchor => 2,
+                    });
+                    (id, words)
+                })
+                .collect(),
             released: self
                 .released
                 .iter()
@@ -277,6 +297,13 @@ fn snapshot_digest(snapshot: &HexMatchSnapshot) -> u64 {
         HexGuardianStatus::FrozenByPlayer => 1,
         HexGuardianStatus::FrozenByAnchor => 2,
     });
+    for (id, words) in &snapshot.major_motion {
+        mix(id.map_or(u64::MAX, u64::from));
+        mix(words.len() as u64);
+        for word in words {
+            mix(*word);
+        }
+    }
     for (id, kind, cell, millimeters) in &snapshot.released {
         mix(u64::from(*id));
         mix(match kind {

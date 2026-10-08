@@ -246,6 +246,7 @@ pub fn tile_highlight(error: &TileError) -> Highlight {
         TileError::FootprintViolation { vertex, .. } => {
             Highlight::Vertex(editor_origin_to_world(*vertex))
         }
+        TileError::UnsupportedLight { position } => Highlight::Vertex(Vec3::from_array(*position)),
         TileError::DegenerateBrush { index } => Highlight::Hull(*index),
 
         // Ports name a face but not a cell at this level: tile-level errors are
@@ -290,6 +291,9 @@ pub fn describe(error: &SourceError) -> String {
         SourceError::Tile(TileError::FootprintViolation { boundary, .. }) => {
             Some(format!("a brush vertex crosses the {boundary} bound"))
         }
+        SourceError::Tile(TileError::UnsupportedLight { .. }) => Some(
+            "attach the light to a real ceiling/wall or author a supported housing".to_string(),
+        ),
         SourceError::Tile(TileError::MissingMeta) => {
             Some("no tile_meta entity: every module needs exactly one".to_string())
         }

@@ -29,12 +29,28 @@ $env:OBSERVED2_SCRIPT = "scratch/<name>_view.json"; cargo dev-run -p hex_tile_la
 
 ## Curated production library
 
-The forge owns 428 source maps; the current production catalog selects 332.
+The forge owns 438 source maps; the current production catalog selects 342.
 `assets/tiles/.tileignore` retires 96 alternatives without deleting their builders.
 `gen-tiles` regenerates the source archive; `build` compiles only the active set.
-See [the curation decision and replacement order](tile_curation.md) before adding
+Check [the retirement list](../assets/tiles/.tileignore) before adding
 variants or restoring a retired source. A test preserves every retired module's
 connection pattern in each district.
+
+## Fixture mounting and competing render surfaces
+
+Forge `tile_light` sources declare `mount surface`. Intake finds a real ceiling,
+nearby wall or support below a freestanding lamp and stores its attachment position
+and normal in the compiled light. Explicit surface sources without support fail
+with `UnsupportedLight`, including the offending position; the Studio highlights it.
+Rotation and whole-room translation transform attachment and source together.
+Hardware is presentation-owned: ceiling panels attach to the actual soffit, wall
+panels attach to the wall, and a supported floor lamp receives a decorative post.
+Do not add collision brushes merely to support a decorative fixture.
+
+`cargo run -p observed_authoring --bin surface_audit` reports competing coplanar
+overhead faces in source brush sets. Structural render mesh construction unions
+coplanar faces before publication, preserving UVs/normals and original collision
+hulls. The report is diagnostic evidence; inspect native moving views as well.
 
 ## The composition profile
 
@@ -130,6 +146,14 @@ layout with roofs removed, or `none` for an uncut first-person capture. The olde
 `quarter` and `half` modes remove wall shells while preserving slabs.
 
 ## Why the forge exists
+
+The current [Backrooms arrival/decision reference](evidence/spatial_reference_2026_10_08/README.md)
+uses `forge/backrooms/reference.rs` after the low-enclosure height conversion,
+so counters and waiting ledges retain body-scale dimensions. Regenerate it with
+the ordinary `gen-tiles` / `build` workflow. `cargo run -p observed_authoring --bin
+spatial_audit` surveys 24 fixed production seeds and prints room anchors by floor;
+it uses the current compact board's room policy, not the older repeated-objective
+quota. Counts support layout review but do not measure landmark recognition.
 
 A `.map` brush is a convex intersection of half-spaces written as plane
 triples: `( A ) ( B ) ( C )` with outward normal `cross(C - A, B - A)`.

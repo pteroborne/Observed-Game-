@@ -127,7 +127,7 @@ impl ReplaySceneFrame {
         if game.guardian_hunts() {
             guardians.push(ReplayGuardian {
                 id: None,
-                position: game.guardian.position,
+                position: game.guardian.feet(),
                 cell: game.guardian.cell,
                 minor: false,
                 status: game.guardian.status,
@@ -141,7 +141,14 @@ impl ReplaySceneFrame {
             };
             ReplayGuardian {
                 id: Some(id),
-                position: g.position(),
+                position: match g {
+                    HexReleasedGuardian::Major(major) => major.feet(),
+                    HexReleasedGuardian::Minor(minor) => {
+                        minor.position
+                            - minor.visual_frame().up()
+                                * game.content().traversal_profile().controller().half_height
+                    }
+                },
                 cell: g.cell(),
                 minor,
                 status,

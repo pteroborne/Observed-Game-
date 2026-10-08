@@ -64,7 +64,7 @@ pub(super) fn cleanup(mut commands: Commands) {
 }
 
 /// Metres of travel per step cycle.
-const STRIDE: f32 = 1.6;
+const STRIDE: f32 = 3.2;
 /// Rise and side travel of a hand at a full walk, metres.
 const BOB: Vec2 = Vec2::new(0.006, 0.009);
 /// The walking speed at which the sway is full.
@@ -83,29 +83,45 @@ pub(super) fn sway(
         };
         return;
     }
-    let dt = time.delta_secs();
-    let at = runtime.local().position;
-    // Capped, so a teleport is not a thousand steps.
-    let moved = sway
-        .last
-        .map_or(0.0, |last| Vec2::new(at.x - last.x, at.z - last.z).length())
-        .min(0.5);
-    sway.last = Some(at);
-    if dt <= 0.0 {
-        return;
-    }
-    // Eased, so a fixed-step position that advances on some frames and not others
-    // does not stutter the hands.
-    let speed = (moved / dt).min(WALK * 2.0);
-    sway.speed += (speed - sway.speed) * (dt * 10.0).min(1.0);
-    sway.phase += moved / STRIDE * std::f32::consts::TAU;
-    let amount = (sway.speed / WALK).min(1.0);
-    let breath = (time.elapsed_secs() * 1.3).sin() * 0.0015;
-    sway.offset = Vec3::new(
-        sway.phase.sin() * BOB.x * amount,
-        -(sway.phase * 2.0).cos().abs() * BOB.y * amount + breath,
-        0.0,
+    sway.advance(
+        runtime.local().position,
+        runtime.match_state.body_grounded(runtime.local_player),
+        time.delta_secs(),
+        time.elapsed_secs(),
     );
+}
+
+impl HeldSway {
+    fn advance(&mut self, at: Vec3, grounded: bool, dt: f32, elapsed: f32) {
+        let delta = self.last.map_or(Vec3::ZERO, |last| at - last);
+        self.last = Some(at);
+        // A relocation is not a step. Clear the eased speed and pose as well.
+        if delta.length() > 0.5 {
+            *self = Self {
+                last: Some(at),
+                ..Default::default()
+            };
+            return;
+        }
+        if dt <= 0.0 {
+            return;
+        }
+        let moved = if grounded { delta.length() } else { 0.0 };
+        let speed = (moved / dt).min(WALK * 2.0);
+        self.speed += (speed - self.speed) * (1.0 - (-10.0 * dt).exp());
+        self.phase =
+            (self.phase + moved / STRIDE * std::f32::consts::TAU).rem_euclid(std::f32::consts::TAU);
+        let amount = (self.speed / WALK).min(1.0);
+        let breath = (elapsed * 1.3).sin() * 0.0015;
+        // One rounded rise per cycle; abs(cos(2 * phase)) used to produce four.
+        let target = Vec3::new(
+            self.phase.sin() * BOB.x * amount,
+            -(1.0 - self.phase.cos()) * 0.5 * BOB.y * amount + breath,
+            0.0,
+        );
+        // Smooth the pose itself across fixed simulation ticks, independently of FPS.
+        self.offset = self.offset.lerp(target, 1.0 - (-14.0 * dt).exp());
+    }
 }
 
 /// Where a hand holds a device.
@@ -292,6 +308,43 @@ mod tests {
     use bevy::prelude::*;
 
     use super::{corner, hex_prism, hex_ring, light_tube};
+
+    #[test]
+    fn hand_cadence_tracks_grounded_surface_distance_at_any_frame_rate() {
+        for fps in [30_u16, 60, 120] {
+            for direction in [Vec3::X, Vec3::new(0.8, 0.6, 0.0)] {
+                let dt = 1.0 / f32::from(fps);
+                let mut sway = super::HeldSway::default();
+                sway.advance(Vec3::ZERO, true, dt, 0.0);
+                for frame in 1..=fps {
+                    let distance = 1.6 * f32::from(frame) / f32::from(fps);
+                    sway.advance(direction * distance, true, dt, f32::from(frame) * dt);
+                }
+                assert!((sway.phase - std::f32::consts::PI).abs() < 1.0e-4);
+                assert!(sway.offset.x.abs() <= super::BOB.x);
+                assert!(sway.offset.y.abs() <= super::BOB.y + 0.0015);
+            }
+        }
+    }
+
+    #[test]
+    fn hand_motion_settles_and_does_not_step_during_falls_or_teleports() {
+        let dt = 1.0 / 60.0;
+        let mut sway = super::HeldSway::default();
+        sway.advance(Vec3::ZERO, true, dt, 0.0);
+        sway.advance(Vec3::X * 0.1, true, dt, dt);
+        let phase = sway.phase;
+        for frame in 1..=60_u16 {
+            sway.advance(Vec3::new(0.1, -f32::from(frame) * 0.1, 0.0), false, dt, 0.0);
+        }
+        assert_eq!(sway.phase, phase);
+        assert!(sway.speed < 0.001);
+        assert!(sway.offset.length() < 0.00001);
+        sway.advance(Vec3::splat(100.0), true, dt, 0.0);
+        assert_eq!(sway.phase, 0.0);
+        assert_eq!(sway.speed, 0.0);
+        assert_eq!(sway.offset, Vec3::ZERO);
+    }
 
     fn triangles(mesh: &Mesh) -> Vec<(Vec3, Vec3)> {
         let Some(VertexAttributeValues::Float32x3(positions)) =

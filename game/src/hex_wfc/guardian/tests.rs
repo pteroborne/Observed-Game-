@@ -20,11 +20,14 @@ fn stone_friction_follows_movement_and_stops_when_frozen() {
 }
 
 #[test]
-fn observation_stops_an_unfinished_glide() {
+fn both_frozen_and_hunting_models_use_the_authoritative_pose() {
     let at = bevy::prelude::Vec3::ZERO;
     let destination = bevy::prelude::Vec3::X * 14.0;
     for state in [State::FrozenBySight, State::FrozenByAnchor] {
-        assert_eq!(super::drawn_position(Some(at), destination, state, 0.1), at);
+        assert_eq!(
+            super::drawn_position(Some(at), destination, state, 0.1),
+            destination
+        );
     }
     assert!(super::drawn_position(Some(at), destination, State::Hunting, 0.1).x > 0.0);
 }

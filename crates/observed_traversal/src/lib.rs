@@ -33,7 +33,7 @@ mod world;
 
 pub use follower::{
     DeckHandoff, FollowDecision, FollowState, FollowTarget, FollowerConfig, FollowerPose,
-    TraversalDirection, follow_graph, follow_stateless,
+    TraversalDirection, follow_graph, follow_graph_with_clearance, follow_stateless,
 };
 pub use graph::{
     CompatibilityGraph, GRAPH_NODE_CAPTURE_RADIUS, GRAPH_TIE_BREAK_RULE, GraphFollowDecision,

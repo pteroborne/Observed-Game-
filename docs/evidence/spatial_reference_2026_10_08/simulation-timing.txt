@@ -1,0 +1,15 @@
+   Compiling observed_authoring v0.1.0 (/run/media/will/BigFastDrive/Observed 2/crates/observed_authoring)
+   Compiling observed_match v0.1.0 (/run/media/will/BigFastDrive/Observed 2/crates/observed_match)
+    Finished `test` profile [optimized + debuginfo] target(s) in 25.87s
+     Running unittests src/lib.rs (/srv/build-cache/cargo/debug/deps/observed_match-4400368397f2ecd5)
+
+running 1 test
+construct 479.235815ms
+test ascent::facility::tests::production_ascent_tick_times has been running for over 60 seconds
+outcome Running at tick 7200
+catches 0 slowest catch tick None
+median 263.59µs p95 345.752µs max 3.92247ms plays 5 traces [("Architect", Some("nobody detected")), ("Architect 0", Some("hold card")), ("Architect 1", Some("hold card"))]
+beat ticks: max Some(3.92247ms)
+test ascent::facility::tests::production_ascent_tick_times ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 501 filtered out; finished in 60.55s

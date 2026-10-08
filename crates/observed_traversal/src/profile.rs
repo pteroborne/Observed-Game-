@@ -9,7 +9,8 @@ use crate::{FollowerConfig, FpsConfig};
 /// interpretation changes, not merely when authored nodes change.
 pub const TRAVERSAL_GUIDE_CONTRACT_VERSION: u16 = 1;
 
-const PROFILE_HASH_VERSION: u16 = 2;
+// Version 3 identifies grounded motion at constant surface speed on ramps.
+const PROFILE_HASH_VERSION: u16 = 3;
 const PROFILE_HASH_DOMAIN: &[u8] = b"observed2.traversal-runtime-profile";
 
 /// Physical clearance requirements derived from the controller body.
@@ -263,7 +264,7 @@ mod tests {
             .collect::<String>();
         assert_eq!(
             hash,
-            "29e48ecf1d206cd58a23a5f6e4db63ddff55aa2e99820f1425e8b1ce0d8415e6"
+            "79b40ee7e55b9fd5510a37fa84ed40ad9c12f640cc8c794df14b6a90d080dd84"
         );
     }
 

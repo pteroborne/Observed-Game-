@@ -308,6 +308,7 @@ fn spawn_cell(
                 role: cell_role,
                 composition,
                 authored_lights: &lights,
+                pieces: &pieces,
                 fluorescent_field: decoration.fluorescent_field,
                 wonder,
             },

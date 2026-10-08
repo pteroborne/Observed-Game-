@@ -1,0 +1,23 @@
+{
+  "guardian_cell": "HexCoord { q: 0, r: 10, level: 1 }",
+  "guardian_feet": [
+    71.0,
+    14.862800598144531,
+    121.73200225830078
+  ],
+  "guardian_status": "FrozenByPlayer",
+  "input_version": 13,
+  "physically_placed": true,
+  "rules": "facility_race_shared_major_physics",
+  "seed": 1,
+  "staged_fixture": "guardian_ramp",
+  "tick": 921,
+  "viewer_pitch": 0.4576495289802551,
+  "viewer_position": [
+    73.5,
+    13.899999618530273,
+    126.06217956542969
+  ],
+  "viewer_yaw": -0.523598313331604,
+  "visible_to_viewer": true
+}

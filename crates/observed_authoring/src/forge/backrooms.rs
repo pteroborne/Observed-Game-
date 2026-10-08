@@ -7,6 +7,8 @@ use quake_map::Entity;
 
 use super::geometry::{FLOOR_TOP, translate};
 
+mod reference;
+
 fn property(entity: &Entity, key: &str) -> Option<String> {
     entity
         .edict
@@ -191,6 +193,7 @@ pub fn lower_source(source: &str) -> Option<String> {
             .brushes
             .extend(extra.entities[0].brushes.clone());
     }
+    reference::dress(&mut map, world, &id);
     let mut bytes = Vec::new();
     map.write_to(&mut bytes).ok()?;
     Some(format!(

@@ -1,0 +1,25 @@
+{
+  "cell": [
+    0,
+    0,
+    0
+  ],
+  "feet": [
+    -4.800000190734863,
+    0.5,
+    0.0
+  ],
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "input_version": 13,
+  "mode": "staged production-room reference, environment held",
+  "name": "arrival_departure",
+  "pitch": -0.008474375121295452,
+  "seed": 1,
+  "simulation_content_hash": "675d5f9653e648e9cabc3b65a6f4dcdf09aa7393a67698075006476bb5f8cf03",
+  "tick": 911,
+  "yaw": 1.5707963705062866
+}

@@ -12,6 +12,9 @@ use super::{Stage, VistaPose, face_dir, pose};
 use bevy::prelude::*;
 
 pub(in crate::hex_wfc) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
+    if std::env::var_os("OBSERVED2_SPATIAL_REFERENCE").is_some() {
+        return spatial_poses(world);
+    }
     if std::env::var_os("OBSERVED2_BACKROOMS_PORTRAITS").is_some() {
         return backrooms_poses(world);
     }
@@ -56,6 +59,55 @@ pub(in crate::hex_wfc) fn poses(world: &HexWfcWorld) -> Vec<VistaPose> {
             Some(pose(NAMES[usize::from(level)], at, face, 6.2, 0.02))
         })
         .collect()
+}
+
+/// Existing authored rooms, photographed at body height with their complete
+/// production geometry. No landmarks or routes are inserted for the capture.
+fn spatial_poses(world: &HexWfcWorld) -> Vec<VistaPose> {
+    use observed_facility::map_spec::RoomRole;
+    let make = |name, cell, offset: Vec3, target: Vec3| {
+        let feet = Vec3::from_array(observed_hex::hex_origin(cell)) + offset;
+        let ahead = target - offset - Vec3::Y * 1.6;
+        VistaPose {
+            name,
+            cell,
+            feet,
+            yaw: ahead.x.atan2(-ahead.z),
+            pitch: (ahead.y / ahead.length()).asin(),
+            stage: Stage::Nothing,
+        }
+    };
+    let mut out = vec![make(
+        "arrival_departure",
+        world.config.spawn(),
+        Vec3::new(-4.8, 0.5, 0.0),
+        Vec3::new(7.0, 2.0, 0.0),
+    )];
+    if let Some(room) = world
+        .blueprints
+        .iter()
+        .find(|room| room.role == RoomRole::Decision && room.anchor.level == 0)
+    {
+        out.push(make(
+            "decision_arrival",
+            room.anchor,
+            Vec3::new(-5.8, 0.5, 0.0),
+            Vec3::new(10.0, 2.1, 6.5),
+        ));
+        out.push(make(
+            "decision_reveal",
+            room.anchor,
+            Vec3::new(0.0, 0.5, 0.0),
+            Vec3::new(10.5, 2.1, 18.0),
+        ));
+        out.push(make(
+            "decision_return",
+            room.anchor,
+            Vec3::new(7.0, 0.5, 12.0),
+            Vec3::new(-5.8, 2.1, 0.0),
+        ));
+    }
+    out
 }
 
 pub(in crate::hex_wfc) fn backrooms_poses(world: &HexWfcWorld) -> Vec<VistaPose> {

@@ -67,6 +67,8 @@ fn minor_in_the_crosshair(game: &mut AscentMatch) {
     let physical = &mut game.physical;
     let centre = physical.body_position_for_tests(BODY);
     let (eye, _) = physical.eye_and_look(BODY).expect("a body");
+    let scene = physical.geometry.rapier_scene();
+    let config = physical.content().traversal_config();
     let clear = |direction: Vec3| {
         physical
             .solid_along_for_tests(eye, direction, 4.0)
@@ -74,6 +76,10 @@ fn minor_in_the_crosshair(game: &mut AscentMatch) {
             && physical
                 .solid_along_for_tests(centre, direction, 4.0)
                 .is_none()
+            // A ray can pass a pier while the placed minor overlaps it. A
+            // plumb correctly refuses that invalid starting body, so this
+            // charge fixture must require full-body clearance as well.
+            && scene.capsule_is_clear(centre + direction * 3.0, config.radius, config.half_height)
     };
     let direction = (0..48)
         .map(|step| {

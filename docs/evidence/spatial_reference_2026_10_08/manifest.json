@@ -1,0 +1,29 @@
+{
+  "seed": 1,
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "catalog_before": "6e0aa7c414b47085fc0b2e320a6476fd497407fce8a5512518ad16f7abbbde39",
+  "catalog_after": "b1d7b134e50ef3ccc5003ec67101546d8fbd23144f5840a780dd689316357323",
+  "profile": "7b57da365f6c4de7876cd76adfd985db582d6f1610999c29d89d116739b639d1",
+  "simulation_after": "675d5f9653e648e9cabc3b65a6f4dcdf09aa7393a67698075006476bb5f8cf03",
+  "sha256": {
+    "after/vista_01_arrival_departure.json": "c41a6867673e861dd93f0149bcb489ee2a7c61e3adba59895c38f623158e74f4",
+    "after/vista_01_arrival_departure.png": "06602747cd05126555b2f1a7b2fb4a92e7ba9b9b2b385e7b7a09e3f36558d740",
+    "after/vista_02_decision_arrival.json": "daa6d4e9c0e027fbaf0e6926615676a9a2dab3cee9df759a6a943bb896275a8a",
+    "after/vista_02_decision_arrival.png": "aca98fcf416604afc5f2d74dff9631a7e176da2bb06730827ef4a895f4f9091a",
+    "after/vista_03_decision_reveal.json": "cc0923e18ca953f15c7cc3e581f488fc785a52e030a3dc066238d5e5344afa65",
+    "after/vista_03_decision_reveal.png": "89a143db91c40376b192710ac2df07e01ccc3b8b4d7540b4c032bcf5bfa8c7cc",
+    "after/vista_04_decision_return.json": "dd171c998279ce20609aac24be370aef55375f2d368fb12a01639f994ba7735a",
+    "after/vista_04_decision_return.png": "b0235163fb4eaf20a4dbdfac80d58face645927bf07a598ba03a4ffe25876c81",
+    "before/vista_01_arrival_departure.png": "a44e88749445245ae5ef06feb8aa44ff2696ab212ad1b4d9ddb0537c53f4ed98",
+    "before/vista_02_decision_arrival.png": "e8561a1ef21428643b3439b58d9cff3b06de5ef119f75a1c96f43f437fcd3960",
+    "before/vista_03_decision_reveal.png": "85d3b30fafb3c8b63b918e4517df45cd12f418f60fbbda8cf624c6ef99bde5f6",
+    "before/vista_04_decision_return.png": "ce7a21915f25a2c9a54f05b0cbccb4ac0a93911109cd64c8fee88a37e396c0d8",
+    "checks.json": "9121c45dfe16bbbef5c56132e128113792846c9beca5ef3f0b161674e11d23d4",
+    "simulation-timing.txt": "e04215791a417c03c8a771138eebf7e2ffbb70f0b5f9159b94a66545487f2b4e",
+    "survey.csv": "93555e2beb24f3e2577b89848f3f416ca1afbc0620f4437d09506e8828c0d4ed"
+  }
+}

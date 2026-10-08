@@ -123,6 +123,7 @@ impl HexStructurePiece {
 /// district colour, bounded energy, and shadow budget.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HexLightSource {
+    pub attachment: Option<observed_authoring::LightAttachment>,
     pub source_cell: HexCoord,
     pub role: HexStructureRole,
     pub tile: TileKey,
@@ -1691,12 +1692,17 @@ fn push_tile(
     } else {
         &tile.lights[..]
     };
-    out.lights.extend(lights.iter().map(|light| HexLightSource {
-        source_cell,
-        role,
-        tile: tile.key.clone(),
-        kind: light.kind,
-        position: center + light.position,
+    out.lights.extend(lights.iter().map(|light| {
+        HexLightSource {
+            source_cell,
+            role,
+            tile: tile.key.clone(),
+            kind: light.kind,
+            position: center + light.position,
+            attachment: light
+                .attachment
+                .map(|a| a.transformed(glam::Quat::IDENTITY, center)),
+        }
     }));
     let id = |index: usize| {
         StableColliderId(
@@ -1782,14 +1788,18 @@ fn push_room(
         * COLLIDER_STRIDE as u64
         + 1;
     let center = Vec3::from_array(hex_origin(stamped.anchor));
-    out.lights
-        .extend(room.lights.iter().map(|light| HexLightSource {
+    out.lights.extend(room.lights.iter().map(|light| {
+        HexLightSource {
             source_cell: stamped.anchor,
             role: HexStructureRole::Room,
             tile: room.key.clone(),
             kind: light.kind,
             position: center + light.position,
-        }));
+            attachment: light
+                .attachment
+                .map(|a| a.transformed(glam::Quat::IDENTITY, center)),
+        }
+    }));
     out.sockets.extend(room.sockets.iter().map(|socket| {
         let cell = stamped
             .cells

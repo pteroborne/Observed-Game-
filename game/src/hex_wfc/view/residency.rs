@@ -34,6 +34,15 @@ impl Default for Reach {
 
 impl Reach {
     /// Shipped physical-distance residency, across all storeys in range.
+    pub(in crate::hex_wfc) fn for_preset(preset: crate::settings::PresentationPreset) -> Self {
+        let mut reach = Self::play();
+        if preset == crate::settings::PresentationPreset::Deck {
+            reach.enter_radius = 90.0;
+            reach.exit_radius = 120.0;
+        }
+        reach
+    }
+
     pub(in crate::hex_wfc) fn play() -> Self {
         Self {
             enter_radius: STREAM_ENTER_RADIUS,

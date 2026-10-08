@@ -53,7 +53,9 @@ mod tests;
 
 pub use bot::HexBotDriver;
 pub use equipment::{HexAnchorSite, HexDeployedLantern, HexLanternCache, HexLanternState};
-pub use guardian::{HexGuardianState, HexGuardianStatus};
+pub use guardian::{
+    HexGuardianState, HexGuardianStatus, MAJOR_HALF_HEIGHT, MAJOR_MODEL_SCALE, MAJOR_RADIUS,
+};
 pub use kinetic::{
     HexKillingPush, HexKineticTarget, HexKineticVerb, KINETIC_COOLDOWN_TICKS, KINETIC_PULL_SPEED,
     KINETIC_PUSH_SPEED, KINETIC_REACH, KINETIC_STAGGER_FRICTION, KINETIC_STAGGER_TICKS,
@@ -81,7 +83,9 @@ pub(super) use observed_hex::FLOOR_SLAB_TOP;
 /// button is refused outright rather than connecting and then disagreeing about a bit
 /// it never sends.
 // Version 10 adds district doorway clearances and correct stamped-room material ownership.
-pub const HEX_INPUT_VERSION: u16 = 11;
+// Version 11 adds descending enclosure-ceiling passage; 12 preserves ramp surface speed.
+// Version 13 gives majors continuous collision-resolved movement and one visible sight pose.
+pub const HEX_INPUT_VERSION: u16 = 13;
 
 /// Most players one match may hold. Agrees with `observed_net::lan::MAX_SEATS`
 /// and `observed_progression::session::lan::LAN_MAX_SEATS`; a mismatch shows up
@@ -655,6 +659,11 @@ impl HexWfcMatch {
             prison: None,
             spawn_to_exit_cost: 1,
         };
+        if game.guardian_active {
+            let mut major = game.guardian.clone();
+            game.prepare_major(&mut major);
+            game.guardian = major;
+        }
         game.objectives = HexObjectiveState::new(&game);
         game.refresh_spawn_to_exit_cost();
         game.observation = game.build_observation();
@@ -717,23 +726,9 @@ impl HexWfcMatch {
         self.observation = self.build_observation();
         self.step_mutation();
         if self.guardian_active {
-            let (doors, grid) = (&self.doors, self.facility.config.grid());
-            let physics = &self.physics;
-            let eye_height = self.eye_height();
-            self.guardian.step(
-                self.tick,
-                &self.facility,
-                &self.lanterns,
-                &mut self.players,
-                &mut self.recent_events,
-                guardian::HexGuardianBounds {
-                    prison: self.prison.as_ref(),
-                    closed: &|a, b| doors::closed_between(doors, grid, a, b),
-                    directive: self.guardian_directive,
-                    clear: &|from, to| sight::line_is_clear(physics, &self.geometry, from, to),
-                    eye_height,
-                },
-            );
+            let mut major = self.guardian.clone();
+            self.step_major(&mut major);
+            self.guardian = major;
         }
         self.step_released();
         self.step_prison();

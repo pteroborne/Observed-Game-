@@ -39,7 +39,7 @@ mod support;
 mod temporal;
 pub(in crate::hex_wfc) mod thresholds;
 mod visibility;
-pub(super) use temporal::stabilize_surfaces;
+pub(super) use temporal::{apply_preset, stabilize_surfaces};
 mod zen;
 
 use bevy::anti_alias::{fxaa::Fxaa, taa::TemporalAntiAliasing};
@@ -287,7 +287,7 @@ pub(super) fn setup_view(
         replacements: BTreeSet::new(),
         defer_incremental_once: true,
         capture_unbounded,
-        reach: residency::Reach::play(),
+        reach: residency::Reach::for_preset(settings.presentation_preset),
         window: visibility::Window::default(),
     });
     commands.insert_resource(readiness);

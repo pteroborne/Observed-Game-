@@ -1,0 +1,26 @@
+{
+  "cargo_fmt_all": "pass",
+  "cargo_dev_clippy": "pass, no warnings",
+  "cargo_dev_test": {
+    "passed": 2851,
+    "failed": 0,
+    "ignored": 44,
+    "targets": 297
+  },
+  "native_reference_views": 4,
+  "fixed_seed_survey_solved": 24,
+  "extended_instrumentation_suite": "not run",
+  "production_simulation_probe": {
+    "ticks": 7200,
+    "median_us": 263.59,
+    "p95_us": 345.752,
+    "maximum_ms": 3.92247,
+    "plays": 5,
+    "catches": 0,
+    "outcome": "Running"
+  },
+  "headless_gate": {
+    "completion_tick": 9786,
+    "digest": "f1a39fdfa7834108"
+  }
+}

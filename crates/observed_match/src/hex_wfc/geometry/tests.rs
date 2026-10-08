@@ -13,6 +13,55 @@ use super::*;
 
 const SHOWCASE_SEED: u64 = 0xA11C_E3D0_0000_0008;
 
+#[test]
+fn initial_backrooms_reference_uses_whole_rooms_and_their_real_sightlines() {
+    let catalog = crate::hex_wfc::test_catalog();
+    let world = HexWfcWorld::generate_with_profile(
+        1,
+        HexWfcConfig::arc_default(),
+        None,
+        &catalog.composition,
+    )
+    .expect("production reference seed");
+    let snapshot =
+        HexWfcGeometrySnapshot::project_with_rooms(&world, &catalog.cells, &catalog.rooms)
+            .expect("production projection");
+    let decision = world
+        .blueprints
+        .iter()
+        .find(|room| room.role == RoomRole::Decision && room.anchor.level == 0)
+        .expect("reference seed has a ground-floor decision room");
+    for (anchor, expected) in [
+        (world.config.spawn(), "authored/room_start_low"),
+        (decision.anchor, "authored/room_decision_low"),
+    ] {
+        let room = catalog
+            .rooms
+            .iter()
+            .find(|room| room.id == expected)
+            .expect("committed reference room");
+        let pieces = snapshot
+            .pieces
+            .iter()
+            .filter(|piece| piece.anchor == anchor && piece.role == HexStructureRole::Room)
+            .collect::<Vec<_>>();
+        assert!(pieces.len() >= room.hulls.len());
+        assert!(
+            pieces
+                .iter()
+                .all(|piece| piece.tile.as_ref() == Some(&room.key)),
+            "reference fragmented into fallback tiles"
+        );
+    }
+    let origin = Vec3::from_array(hex_origin(decision.anchor));
+    let scene = snapshot.rapier_scene();
+    let arrival = origin + Vec3::new(-5.8, 2.1, 0.0);
+    let side = origin + Vec3::new(10.5, 2.1, 18.0);
+    assert!(!scene.line_is_clear(arrival, side));
+    assert!(scene.line_is_clear(origin + Vec3::new(0.0, 2.1, 0.0), side));
+    assert!(scene.line_is_clear(arrival, origin + Vec3::new(20.5, 2.1, 0.0)));
+}
+
 fn tiles() -> Vec<TilePrototype> {
     crate::hex_wfc::test_tiles()
 }

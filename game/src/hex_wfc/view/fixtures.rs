@@ -3,8 +3,7 @@ use super::{HexPractical, assets::HexWfcVisualAssets};
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
 use observed_hex::{HexCoord, hex_origin};
-use observed_match::hex_wfc::{HexLightSource, HexStructureRole};
-const PRACTICAL_HEIGHT: f32 = 5.6;
+use observed_match::hex_wfc::{HexLightSource, HexStructurePiece, HexStructureRole};
 
 pub(super) struct PracticalProjection<'a> {
     pub(super) parent: Entity,
@@ -16,6 +15,7 @@ pub(super) struct PracticalProjection<'a> {
     pub(super) architecture: ArchitectureRegister,
     pub(super) role: HexStructureRole,
     pub(super) composition: observed_style::HexComposition,
+    pub(super) pieces: &'a [&'a HexStructurePiece],
     pub(super) authored_lights: &'a [&'a HexLightSource],
     pub(super) wonder: Option<super::lighting::WonderLighting>,
     pub(super) fluorescent_field: bool,
@@ -37,6 +37,7 @@ pub(super) fn spawn_cell_practicals(
         role,
         composition,
         authored_lights,
+        pieces,
         wonder,
         fluorescent_field,
     } = projection;
@@ -44,26 +45,34 @@ pub(super) fn spawn_cell_practicals(
         return 0;
     }
     let has_authored_lights = !authored_lights.is_empty();
-    let positions: Vec<Vec3> = if !has_authored_lights {
-        // Defensive fallback: one fixture per footprint cell, not just the
-        // anchor, so a whole-room module with no authored lights still has
-        // every part of its floor lit (Legibility Contract). For an
-        // ordinary tile `footprint` is exactly `[coord]`, so this produces
-        // the same single fixture as before.
-        footprint
-            .iter()
-            .map(|&cell| Vec3::from_array(hex_origin(cell)) + Vec3::Y * PRACTICAL_HEIGHT)
-            .collect()
-    } else {
-        authored_lights
-            .iter()
-            .map(|source| source.position)
-            .collect()
-    };
+    let positions: Vec<(Vec3, Option<observed_authoring::LightAttachment>)> =
+        if !has_authored_lights {
+            let hulls = pieces
+                .iter()
+                .map(|p| super::support::points(p, Vec3::ZERO))
+                .collect::<Vec<_>>();
+            footprint
+                .iter()
+                .filter_map(|&cell| {
+                    let source = Vec3::from_array(hex_origin(cell)) + Vec3::Y * 2.5;
+                    let mount = observed_authoring::light_attachment(source, &hulls)?;
+                    Some((
+                        Vec3::from_array(mount.position) + Vec3::from_array(mount.normal) * 0.3,
+                        Some(mount),
+                    ))
+                })
+                .collect()
+        } else {
+            authored_lights
+                .iter()
+                .map(|source| (source.position, source.attachment))
+                .collect()
+        };
     let practical = observed_style::hex_practical_light(architecture, composition, positions.len());
     let mut child_pieces = 0;
-    for position in positions {
-        if has_authored_lights
+    let mut mounted = std::collections::BTreeSet::new();
+    for (position, attachment) in positions {
+        if let Some(attachment) = attachment
             && !fluorescent_field
             && !matches!(
                 wonder,
@@ -89,19 +98,63 @@ pub(super) fn spawn_cell_practicals(
             // hanging in the air. That is what the "floating fixtures" over the
             // overview's floor plan were.
             let origin = Vec3::from_array(hex_origin(coord));
-            let mut at = position + Vec3::Y * 0.18;
-            if architecture == ArchitectureRegister::LiminalGrid && wonder.is_none() {
-                at.x = ((at.x - 0.3) / 0.6).round() * 0.6 + 0.3;
-                at.z = ((at.z - 0.6) / 1.2).round() * 1.2 + 0.6;
+            let normal = Vec3::from_array(attachment.normal);
+            let support = Vec3::from_array(attachment.position);
+            let at = if normal.y > 0.5 {
+                position + Vec3::Y * 0.18
+            } else {
+                support + normal * 0.025
+            };
+            let key = [at.x, at.y, at.z, normal.x, normal.y, normal.z]
+                .map(|v| (v * 1000.0).round() as i32);
+            if !mounted.insert(key) {
+                // Multi-storey sources can share a roof mount. Draw one fixture
+                // while retaining their independently authored illumination.
+                child_pieces += super::lighting::spawn_practical(
+                    commands, parent, coord, position, practical, wonder,
+                );
+                continue;
             }
-            if architecture == ArchitectureRegister::ShadowScreen && wonder.is_none() {
+            if normal.y > 0.5 {
+                let top = at.y;
+                let height = (top - support.y).max(0.02);
+                commands.spawn((
+                    Mesh3d(meshes.add(Cuboid::new(0.06, height, 0.06))),
+                    MeshMaterial3d(assets.material_for_group(
+                        architecture,
+                        super::mesh_group::MeshGroupKey::Interior,
+                    )),
+                    Transform::from_translation(Vec3::new(at.x, support.y + height * 0.5, at.z)),
+                    HexPractical(coord),
+                    ChildOf(parent),
+                    super::spectate::Cutaway {
+                        local: at - origin,
+                        min_y: support.y - origin.y,
+                        max_y: top - origin.y,
+                        origin_y: origin.y,
+                        cell_level: coord.level,
+                        climb_wall: false,
+                    },
+                    Name::new("Surface-mounted lamp post"),
+                    super::NeverShadowCaster,
+                    bevy::light::NotShadowCaster,
+                ));
+                child_pieces += 1;
+            }
+            if architecture == ArchitectureRegister::ShadowScreen
+                && wonder.is_none()
+                && normal.y < -0.9
+            {
                 child_pieces +=
                     super::zen::fixture_frame(commands, assets, meshes, parent, coord, at);
             }
             commands.spawn((
                 Mesh3d(assets.fixture_mesh(meshes, architecture)),
                 MeshMaterial3d(assets.register(architecture).fixture()),
-                Transform::from_translation(at),
+                Transform::from_translation(at).with_rotation(Quat::from_rotation_arc(
+                    Vec3::NEG_Y,
+                    if normal.y > 0.5 { Vec3::NEG_Y } else { normal },
+                )),
                 HexPractical(coord),
                 // Measured as a point: a diffuser is small next to the tests
                 // being applied to it, and its height is what decides them.

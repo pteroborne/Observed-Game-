@@ -801,16 +801,18 @@ mod tests {
         // solve control changed - `COMPOSITION_PROFILE_VERSION` went to 2
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
+        // The Backrooms arrival/decision reference changes two existing low
+        // room sources, retaining their footprints and named port contracts.
         const CATALOG_HASH: &str =
-            "69ab745651839e7991244149653340579341b18c6f161e2a766435746c2f9f87";
+            "b1d7b134e50ef3ccc5003ec67101546d8fbd23144f5840a780dd689316357323";
         // The open-air composition (void share 2,000), 2026-09-24, at profile
         // version 6 since the ramps and towers retired and its bias names `climb`.
         const PROFILE_HASH: &str =
             "7b57da365f6c4de7876cd76adfd985db582d6f1610999c29d89d116739b639d1";
-        // Jade Nave changes the catalog while retaining the profile. Folding
-        // both keeps an old peer from joining with different authored geometry.
+        // Geometry-backed fixtures and the initial-room reference retain the
+        // profile. Folding both refuses peers with different physical content.
         const SIMULATION_HASH: &str =
-            "4eaa789321ce9eae7bb32d9ba6a5f40f1043c23d10ecf09a585e058297d76f01";
+            "675d5f9653e648e9cabc3b65a6f4dcdf09aa7393a67698075006476bb5f8cf03";
 
         let root = committed_tiles();
         let compiled_text =

@@ -135,7 +135,11 @@ pub(super) fn draw(
             }
             let next = following.and_then(|f| f.guardians.iter().find(|g| g.id == guardian.id));
             let at = next
-                .filter(|n| n.position.distance_squared(guardian.position) < 225.0)
+                .filter(|n| {
+                    guardian.status == HexGuardianStatus::Active
+                        && n.status == HexGuardianStatus::Active
+                        && n.position.distance_squared(guardian.position) < 225.0
+                })
                 .map_or(guardian.position, |n| {
                     guardian.position.lerp(n.position, fraction)
                 });
@@ -196,6 +200,13 @@ pub(super) fn draw(
                     finish.base_color,
                     emission,
                 );
+                let scale = if guardian.minor {
+                    0.7
+                } else {
+                    observed_match::hex_wfc::MAJOR_MODEL_SCALE
+                };
+                transform.translation *= scale;
+                transform.scale *= scale;
                 transform.translation += at;
                 spawn_figure(commands, mesh, material, transform);
             }

@@ -50,6 +50,14 @@ pub fn trim() -> HexSurfaceLook {
 
 pub const TRIM_ROUGHNESS: f32 = 0.68;
 
+/// Recessed troffers on the 600 x 1200 mm ceiling grid, spaced 2.4 x 3.6 m.
+/// A repeating illuminated checkerboard overwhelms the room's silhouette;
+/// the acoustic infill must remain the dominant visible ceiling surface.
+#[must_use]
+pub const fn fluorescent_bay(column: i32, row: i32) -> bool {
+    column.rem_euclid(4) == 1 && row.rem_euclid(3) == 1
+}
+
 /// Physical soundscape gains relative to the existing ambience preference.
 pub const HVAC_GAIN: f32 = 0.22;
 pub const BUZZ_GAIN: f32 = 0.18;

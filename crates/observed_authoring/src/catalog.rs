@@ -41,6 +41,8 @@ pub struct CompiledPort {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CompiledLight {
     pub kind: TileLightKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachment: Option<crate::LightAttachment>,
     pub position: [f32; 3],
 }
 
@@ -725,6 +727,9 @@ fn rotate_lights(lights: &[CompiledLight], turn: u8) -> Vec<TileLight> {
         .iter()
         .map(|light| TileLight {
             kind: light.kind,
+            attachment: light
+                .attachment
+                .map(|a| a.transformed(rotation, Vec3::ZERO)),
             position: rotation * Vec3::from_array(light.position),
         })
         .collect()
@@ -901,6 +906,7 @@ fn compile_module(
         .iter()
         .map(|light| CompiledLight {
             kind: light.kind,
+            attachment: light.attachment,
             position: light.position.to_array(),
         })
         .collect();

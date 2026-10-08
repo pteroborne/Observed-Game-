@@ -198,7 +198,14 @@ impl HexWfcMatch {
             return false;
         }
         let guardian = match kind {
-            HexReleasedKind::Major => HexReleasedGuardian::Major(HexGuardianState::at(cell)),
+            HexReleasedKind::Major => {
+                let mut major = HexGuardianState::at(cell);
+                self.prepare_major(&mut major);
+                if !major.physically_placed() {
+                    return false;
+                }
+                HexReleasedGuardian::Major(major)
+            }
             HexReleasedKind::Minor => {
                 let config = self.content.traversal_config();
                 let origin = Vec3::from_array(hex_origin(cell));
@@ -268,26 +275,12 @@ impl HexWfcMatch {
     /// One fixed step of every released Guardian, after the match's own.
     pub(super) fn step_released(&mut self) {
         let ids: Vec<u16> = self.released.keys().copied().collect();
-        let grid = self.facility.config.grid();
-        let eye_height = self.eye_height();
         for id in ids {
-            match self.released.get_mut(&id) {
-                Some(HexReleasedGuardian::Major(major)) => major.step(
-                    self.tick,
-                    &self.facility,
-                    &self.lanterns,
-                    &mut self.players,
-                    &mut self.recent_events,
-                    super::guardian::HexGuardianBounds {
-                        prison: self.prison.as_ref(),
-                        closed: &|a, b| super::doors::closed_between(&self.doors, grid, a, b),
-                        directive: self.guardian_directive,
-                        clear: &|from, to| {
-                            super::sight::line_is_clear(&self.physics, &self.geometry, from, to)
-                        },
-                        eye_height,
-                    },
-                ),
+            match self.released.get(&id).cloned() {
+                Some(HexReleasedGuardian::Major(mut major)) => {
+                    self.step_major(&mut major);
+                    self.released.insert(id, HexReleasedGuardian::Major(major));
+                }
                 Some(HexReleasedGuardian::Minor(_)) => self.step_minor(id),
                 None => {}
             }

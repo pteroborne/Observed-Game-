@@ -39,6 +39,9 @@ pub enum TileError {
     UnknownFace(String),
     UnknownClass(String),
     UnknownLightKind(String),
+    UnsupportedLight {
+        position: [f32; 3],
+    },
     InvalidPort {
         face: HexFace,
         class: PortClass,
@@ -96,6 +99,7 @@ pub enum TileLightKind {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TileLight {
     pub kind: TileLightKind,
+    pub attachment: Option<crate::LightAttachment>,
     pub position: Vec3,
 }
 
@@ -529,9 +533,17 @@ pub fn parse_tile(text: &str) -> Result<TilePrototype, TileError> {
             "practical" => TileLightKind::Practical,
             other => return Err(TileError::UnknownLightKind(other.to_string())),
         };
+        let position = to_world(origin);
+        let attachment = crate::light_attachment(position, &hulls);
+        if prop(entity, "mount").as_deref() == Some("surface") && attachment.is_none() {
+            return Err(TileError::UnsupportedLight {
+                position: position.to_array(),
+            });
+        }
         lights.push(TileLight {
             kind,
-            position: to_world(origin),
+            position,
+            attachment,
         });
     }
     lights.sort_by(|a, b| {

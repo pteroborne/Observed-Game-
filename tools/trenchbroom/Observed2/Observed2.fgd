@@ -96,4 +96,7 @@
     kind(choices) : "Presentation-owned treatment" : "practical" = [
         "practical" : "District-coloured architectural practical"
     ]
+    mount(choices) : "Require geometry-backed fixture support" : "surface" = [
+        "surface" : "Real ceiling, wall, or supported lamp"
+    ]
 ]

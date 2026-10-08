@@ -16,10 +16,18 @@ pub(in crate::hex_wfc::view) fn build_merged_mesh_facing(
     let mut all_uvs = Vec::new();
     let mut all_indices = Vec::new();
 
-    for hull in hulls {
-        let Some(data) = ConvexRenderMesh::from_convex_hull(hull) else {
-            continue;
-        };
+    let mut ordered = hulls.to_vec();
+    ordered.sort_by_cached_key(|h| {
+        h.iter()
+            .map(|p| p.to_array().map(f32::to_bits))
+            .collect::<Vec<_>>()
+    });
+    let meshes: Vec<_> = ordered
+        .into_iter()
+        .filter_map(ConvexRenderMesh::from_convex_hull)
+        .collect();
+    let data = observed_traversal::render_mesh::merge_coplanar_surfaces(&meshes);
+    {
         // Every triangle's corners are its own (`ConvexRenderMesh` duplicates them),
         // so a triangle is three consecutive vertices and can be kept or dropped whole.
         for corner in data.indices.chunks_exact(3) {

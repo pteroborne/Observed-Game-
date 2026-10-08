@@ -1,0 +1,15 @@
+{
+  "fmt": "passed",
+  "clippy": "passed",
+  "dev_test": {
+    "targets": 296,
+    "passed": 2846,
+    "failed": 0,
+    "ignored": 44
+  },
+  "production_ascent_probe": "passed (timing evidence)",
+  "extended_suite": "not run",
+  "human_recheck": "pending",
+  "desktop_performance_budget": "red",
+  "deck_physical_lan": "not run"
+}

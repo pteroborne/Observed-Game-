@@ -1,0 +1,346 @@
+{
+  "method": "Production Rapier capsule; canonical hex profile; settle 90 ticks, accelerate 60 ticks, measure next 60 ticks at 60 Hz. Same rotated cuboid fixtures before/after.",
+  "before": [
+    {
+      "degrees": 0,
+      "mode": "up",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 0,
+      "mode": "down",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 0,
+      "mode": "across",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 0,
+      "mode": "diagonal",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 0,
+      "mode": "sprint",
+      "surface_speed_mps": 7.0,
+      "target_mps": 7.0
+    },
+    {
+      "degrees": 0,
+      "mode": "bot",
+      "surface_speed_mps": 1.61,
+      "target_mps": 1.61
+    },
+    {
+      "degrees": 20,
+      "mode": "up",
+      "surface_speed_mps": 4.3232,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 20,
+      "mode": "down",
+      "surface_speed_mps": 4.8984,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 20,
+      "mode": "across",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 20,
+      "mode": "diagonal",
+      "surface_speed_mps": 4.4625,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 20,
+      "mode": "sprint",
+      "surface_speed_mps": 6.5734,
+      "target_mps": 7.0
+    },
+    {
+      "degrees": 20,
+      "mode": "bot",
+      "surface_speed_mps": 1.513,
+      "target_mps": 1.61
+    },
+    {
+      "degrees": 35,
+      "mode": "up",
+      "surface_speed_mps": 3.7651,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 35,
+      "mode": "down",
+      "surface_speed_mps": 5.6697,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 35,
+      "mode": "across",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 35,
+      "mode": "diagonal",
+      "surface_speed_mps": 4.2048,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 35,
+      "mode": "sprint",
+      "surface_speed_mps": 5.7288,
+      "target_mps": 7.0
+    },
+    {
+      "degrees": 35,
+      "mode": "bot",
+      "surface_speed_mps": 1.3177,
+      "target_mps": 1.61
+    },
+    {
+      "degrees": 48,
+      "mode": "up",
+      "surface_speed_mps": 2.8857,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 48,
+      "mode": "down",
+      "surface_speed_mps": 6.6465,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 48,
+      "mode": "across",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 48,
+      "mode": "diagonal",
+      "surface_speed_mps": 3.915,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 48,
+      "mode": "sprint",
+      "surface_speed_mps": 4.5296,
+      "target_mps": 7.0
+    },
+    {
+      "degrees": 48,
+      "mode": "bot",
+      "surface_speed_mps": 1.0118,
+      "target_mps": 1.61
+    }
+  ],
+  "after": [
+    {
+      "degrees": 0,
+      "mode": "up",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 0,
+      "mode": "down",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 0,
+      "mode": "across",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 0,
+      "mode": "diagonal",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 0,
+      "mode": "sprint",
+      "surface_speed_mps": 7.0,
+      "target_mps": 7.0
+    },
+    {
+      "degrees": 0,
+      "mode": "bot",
+      "surface_speed_mps": 1.61,
+      "target_mps": 1.61
+    },
+    {
+      "degrees": 20,
+      "mode": "up",
+      "surface_speed_mps": 4.6055,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 20,
+      "mode": "down",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 20,
+      "mode": "across",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 20,
+      "mode": "diagonal",
+      "surface_speed_mps": 4.6009,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 20,
+      "mode": "sprint",
+      "surface_speed_mps": 7.0037,
+      "target_mps": 7.0
+    },
+    {
+      "degrees": 20,
+      "mode": "bot",
+      "surface_speed_mps": 1.611,
+      "target_mps": 1.61
+    },
+    {
+      "degrees": 35,
+      "mode": "up",
+      "surface_speed_mps": 4.5968,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 35,
+      "mode": "down",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 35,
+      "mode": "across",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 35,
+      "mode": "diagonal",
+      "surface_speed_mps": 4.5885,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 35,
+      "mode": "sprint",
+      "surface_speed_mps": 6.9941,
+      "target_mps": 7.0
+    },
+    {
+      "degrees": 35,
+      "mode": "bot",
+      "surface_speed_mps": 1.6102,
+      "target_mps": 1.61
+    },
+    {
+      "degrees": 48,
+      "mode": "up",
+      "surface_speed_mps": 4.4518,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 48,
+      "mode": "down",
+      "surface_speed_mps": 4.6308,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 48,
+      "mode": "across",
+      "surface_speed_mps": 4.6,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 48,
+      "mode": "diagonal",
+      "surface_speed_mps": 4.5989,
+      "target_mps": 4.6
+    },
+    {
+      "degrees": 48,
+      "mode": "sprint",
+      "surface_speed_mps": 6.6541,
+      "target_mps": 7.0
+    },
+    {
+      "degrees": 48,
+      "mode": "bot",
+      "surface_speed_mps": 1.4882,
+      "target_mps": 1.61
+    }
+  ],
+  "hand_bob": {
+    "before_metres_per_cycle": 1.6,
+    "before_vertical_rises_per_cycle": 4,
+    "after_metres_per_cycle": 3.2,
+    "after_vertical_rises_per_cycle": 1,
+    "before_walk_rises_per_second": 11.499999999999998,
+    "after_walk_rises_per_second": 1.4374999999999998
+  },
+  "deterministic_route": {
+    "before_tick": 9902,
+    "after_tick": 9788,
+    "after_digest": "805826a3a1aea01f",
+    "input_version": 12,
+    "traversal_profile_hash": "79b40ee7e55b9fd5510a37fa84ed40ad9c12f640cc8c794df14b6a90d080dd84"
+  },
+  "video": {
+    "duration_seconds": 44.8,
+    "source_frames": 439,
+    "width": 1440,
+    "height": 900,
+    "codec": "h264",
+    "pixel_format": "yuv420p",
+    "encoded_fps": 30,
+    "audio": false,
+    "seed": 1,
+    "simulation_ticks": 2700,
+    "timing": "wall-clock; visual capture only, not a performance benchmark"
+  },
+  "verification": {
+    "fmt": "passed",
+    "dev_clippy": "passed",
+    "dev_test": {
+      "passed": 2839,
+      "failed": 0,
+      "ignored": 45,
+      "targets": 295
+    },
+    "focused_traversal_passed": 84,
+    "focused_equipment_passed": 7,
+    "native_video_full_decode": "passed"
+  },
+  "production_ascent_timing": {
+    "ticks": 7200,
+    "step_median_us": 258.082,
+    "step_p95_us": 371.264,
+    "step_max_ms": 5.003664,
+    "construction_ms": 486.495952,
+    "scope": "simulation step including movement; excludes command generation and rendering",
+    "architect_plays": 5,
+    "catches": 0
+  }
+}

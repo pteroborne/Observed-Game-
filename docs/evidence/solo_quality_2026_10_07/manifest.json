@@ -1,0 +1,23 @@
+{
+  "input_version": 13,
+  "seed": 1,
+  "catalog_hash": "6e0aa7c414b47085fc0b2e320a6476fd497407fce8a5512518ad16f7abbbde39",
+  "hardware": "TITAN X Pascal / i7-9700",
+  "captures": {
+    "ceiling-flicker.png": "3aaf29455b4a51f745228bb09d177414f8cd14cf8e507f36b084659823c9c046",
+    "guardian-ramp.png": "de35a9c415ca9f53094bce0b357332c87cb0bf505c932f80a29fe618ec3e005e",
+    "prior-desktop-budget.json": "0489835fee5eecc30d586d6a6c48a6d171fae1a8355f9b8607579840376692b4",
+    "README.md": "bce26a6b481e26f7602e67978377f3d7ed9be03cc596af1aa4c79235b46f85eb",
+    "walk-15s.png": "c876e748bb8e482e841c8cf9fc94eec5164238d1b72e1566bd2508a2b7728319",
+    "walk-30s.png": "fab1d4b6d35d763f42c035df53fefdf12d2edd8c4357751d20f6325c3fe12e4e",
+    "walk-45s.png": "0df020eebef2a9ae105ad151b3f317163d104e663bc30906ae2b16a267962358",
+    "walk-frames.csv": "7e2e6024ef0c00b50bb085f53a7d54bcd2ba2d69fc865972768352305fdbbc5e",
+    "walkthrough.mp4": "6e433ede4f22c1c7554d0ef2e529e9b0b6ebc77e3a3ed675cfd43d37c272aec0",
+    "guardian/ramp.json": "4c71af0e72fd93f44a1a59b99b6013d682717ea9d0c60e849abe952652473e9b",
+    "guardian/ramp.png": "23f365669a6d282bfd29ff283a84604f4a19aa178fabb61d4bdd76a1d0eb8a8e",
+    "guardian/room.json": "3ec217a0d99316be8db9bf90d7dbd078016fbcd7da6319e6f4d181430916acd2",
+    "guardian/room.png": "2221a4e07542c1ac6996ddd675172676f1f607093d55737df46b3d19fb9bf61d",
+    "performance/desktop-budget.json": "b6970564c570c12ce3ff959fab512e179091a16bd3f1112727b256b986cd7059",
+    "performance/timings.json": "11b0d2542d9879f99bc90744488792cff84d110581f3e13fdbd3a67f407ae2e3"
+  }
+}

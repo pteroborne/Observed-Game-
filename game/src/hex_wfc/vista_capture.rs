@@ -18,6 +18,7 @@ use observed_match::hex_wfc::{OpenEdges, RAILED_BELOW_LEVEL, open_edges};
 
 use super::sim::HexWfcRuntime;
 
+mod guardian;
 pub(super) mod surfaces;
 pub(super) mod verticals;
 
@@ -54,6 +55,8 @@ pub(super) enum Stage {
     /// The major Guardian stood `metres` ahead, where the runner is looking at it.
     Guardian {
         metres: u8,
+        rise_cm: i16,
+        at_mm: Option<[i32; 3]>,
     },
 }
 
@@ -179,7 +182,11 @@ pub(super) fn guardian_poses(world: &HexWfcWorld) -> Vec<VistaPose> {
             feet: o + Vec3::new(dir.x * 5.9, FLOOR_SLAB_TOP, dir.y * 5.9),
             yaw: loggia.yaw + std::f32::consts::PI,
             pitch: 0.12,
-            stage: Stage::Guardian { metres: 7 },
+            stage: Stage::Guardian {
+                metres: 7,
+                rise_cm: 0,
+                at_mm: None,
+            },
             ..loggia
         });
     }
@@ -187,7 +194,11 @@ pub(super) fn guardian_poses(world: &HexWfcWorld) -> Vec<VistaPose> {
         out.push(VistaPose {
             name: "guardian_room",
             pitch: 0.05,
-            stage: Stage::Guardian { metres: 5 },
+            stage: Stage::Guardian {
+                metres: 5,
+                rise_cm: 0,
+                at_mm: None,
+            },
             ..room
         });
     }
@@ -202,12 +213,21 @@ fn stage(runtime: &mut HexWfcRuntime, pose: &VistaPose) {
     if pose.stage == Stage::Nothing {
         return;
     }
-    if let Stage::Guardian { metres } = pose.stage {
+    if let Stage::Guardian {
+        metres,
+        rise_cm,
+        at_mm,
+    } = pose.stage
+    {
         // Where the runner is looking: the simulation freezes it there itself.
         let ahead = Vec3::new(pose.yaw.sin(), 0.0, -pose.yaw.cos());
-        let guardian = &mut runtime.match_state.guardian;
-        guardian.cell = pose.cell;
-        guardian.position = pose.feet + ahead * f32::from(metres) + Vec3::Y * 0.4;
+        runtime.match_state.guardian = observed_match::hex_wfc::HexGuardianState::at(pose.cell);
+        runtime.match_state.guardian.position = at_mm
+            .map(|p| Vec3::from_array(p.map(|v| v as f32 / 1000.0)))
+            .unwrap_or(
+                pose.feet + ahead * f32::from(metres) + Vec3::Y * (f32::from(rise_cm) / 100.0),
+            )
+            + Vec3::Y * 0.9;
         return;
     }
     let id = runtime.local_player;
@@ -474,6 +494,9 @@ pub(super) fn progress(
     let Some(runtime) = runtime else {
         return;
     };
+    if std::env::var_os("OBSERVED2_SPATIAL_REFERENCE").is_some() {
+        runtime.match_state.hold_environment_for_reference();
+    }
     if poses.is_none() {
         // The spectator bot is what lets a capture enter the facility directly; once
         // inside, the runner is placed rather than driven, so the bot steps aside.
@@ -485,13 +508,21 @@ pub(super) fn progress(
     }
     let slot = (frame - WARM_UP) / (SETTLE + AFTER);
     let within = (frame - WARM_UP) % (SETTLE + AFTER);
-    let Some(pose) = poses.get(usize::from(slot)) else {
+    let Some(pose) = poses.get_mut(usize::from(slot)) else {
         exit.write(AppExit::Success);
         return;
     };
+    if within == 0 && !guardian::prepare_pose(runtime, pose) {
+        error!(
+            "no supported, locally visible Guardian fixture site for {}",
+            pose.name
+        );
+        exit.write(AppExit::error());
+        return;
+    }
     let id = runtime.local_player;
     // Held every frame of the pose, so nothing walks or falls away from it.
-    if within < SETTLE {
+    if within < SETTLE && (!matches!(pose.stage, Stage::Guardian { .. }) || within == 0) {
         stage(runtime, pose);
     }
     if within == 10 {
@@ -507,7 +538,46 @@ pub(super) fn progress(
         player.yaw = pose.yaw;
         player.pitch = pose.pitch;
     }
+    if within == SETTLE - 1
+        && matches!(pose.stage, Stage::Guardian { .. })
+        && !guardian::validate(runtime, pose, path)
+    {
+        error!("guardian fixture did not freeze a supported major");
+        exit.write(AppExit::error());
+        return;
+    }
     if within == SETTLE - 1 {
+        if std::env::var_os("OBSERVED2_SPATIAL_REFERENCE").is_some() {
+            let state = &runtime.match_state;
+            let hash = state
+                .simulation_content_hash
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            let report = serde_json::json!({
+                "mode": "staged production-room reference, environment held",
+                "seed": state.seed,
+                "input_version": observed_match::hex_wfc::HEX_INPUT_VERSION,
+                "simulation_content_hash": hash,
+                "tick": state.tick,
+                "grid": [state.facility.config.cols, state.facility.config.rows, u16::from(state.facility.config.levels)],
+                "name": pose.name,
+                "cell": [pose.cell.q, pose.cell.r, u16::from(pose.cell.level)],
+                "feet": pose.feet.to_array(),
+                "yaw": pose.yaw,
+                "pitch": pose.pitch,
+            });
+            let file = std::path::Path::new(path).join(format!(
+                "vista_{:02}_{}.json",
+                slot + 1,
+                pose.name
+            ));
+            std::fs::write(
+                file,
+                serde_json::to_string_pretty(&report).expect("reference report"),
+            )
+            .expect("save reference report");
+        }
         let file =
             std::path::Path::new(path).join(format!("vista_{:02}_{}.png", slot + 1, pose.name));
         commands
@@ -517,7 +587,8 @@ pub(super) fn progress(
 }
 
 fn poses_for(runtime: &HexWfcRuntime, which: fn(&HexWfcWorld) -> Vec<VistaPose>) -> Vec<VistaPose> {
-    let found = which(&runtime.match_state.facility);
+    let mut found = which(&runtime.match_state.facility);
+    guardian::prepare(runtime, &mut found);
     for pose in &found {
         println!(
             "hex vista capture: {} at q{} r{} L{}",

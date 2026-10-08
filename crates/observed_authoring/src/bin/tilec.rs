@@ -439,7 +439,10 @@ fn run() -> Result<(), String> {
                 // touching 58 mtimes every run makes the module watcher
                 // re-validate everything for nothing.
                 let current = std::fs::read_to_string(&path).unwrap_or_default();
-                if current.replace("\r\n", "\n") == *text {
+                // QuakeMap's writer emits CRLF inside the generated low
+                // editions too. Normalize both sides when comparing, so an
+                // unchanged edition does not retrigger the editor watcher.
+                if current.replace("\r\n", "\n") == text.replace("\r\n", "\n") {
                     continue;
                 }
                 // Written as bytes so Windows does not translate the LF endings

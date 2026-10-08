@@ -719,7 +719,10 @@ fn headless_gate_bot_walks_climbs_deterministically() {
     // comparable.
     // Low Backrooms ceilings and doorway geometry preserve completion while
     // moving the controller's final arrival by one tick.
-    assert_eq!(a, 9_902, "TR-10 pins the declared-climb completion tick");
+    // Constant ramp surface speed (input v12) saves 114 ticks on this same route.
+    // The initial Backrooms reference saves two further ticks on this same
+    // gate seed; both independent runs agree on completion and final digest.
+    assert_eq!(a, 9_786, "TR-10 pins the declared-climb completion tick");
     // Moved again by twenty open halls and by churn becoming a district
     // property, and again *without* moving the tick above - the same pairing,
     // and the same proof. The bot's route through the gate seed is tick for
@@ -767,7 +770,9 @@ fn headless_gate_bot_walks_climbs_deterministically() {
     // digest (-> 0xf2df_3180_289e_b11d), tick unmoved.
     assert_eq!(
         first.snapshot().digest,
-        0xfcb006ef4d213b1e,
+        // Input v13 was d391df1701a52246 at tick 9788. The initial-room
+        // reference now yields this identical digest in both independent runs.
+        0xf1a39fdfa7834108,
         "TR-10 pins the declared-climb final snapshot digest"
     );
 }
