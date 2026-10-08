@@ -80,6 +80,7 @@ fn two_cell_world() -> HexWfcWorld {
         // a panic — in the projector, not here, which is the wrong place to
         // learn that a hand-built world is incomplete.
         cell_revisions: BTreeMap::from([(a, 1), (b, 1)]),
+        initial_modules: Default::default(),
         last_attempts: 1,
         authored_pins: Default::default(),
         space_mix: observed_facility::hex_wfc::profile::SpaceMix::baseline(),

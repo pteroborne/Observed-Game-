@@ -18,7 +18,9 @@ use observed_match::hex_wfc::{OpenEdges, RAILED_BELOW_LEVEL, open_edges};
 
 use super::sim::HexWfcRuntime;
 
+mod compositions;
 mod guardian;
+mod records;
 pub(super) mod surfaces;
 pub(super) mod verticals;
 
@@ -494,7 +496,9 @@ pub(super) fn progress(
     let Some(runtime) = runtime else {
         return;
     };
-    if std::env::var_os("OBSERVED2_SPATIAL_REFERENCE").is_some() {
+    if std::env::var_os("OBSERVED2_SPATIAL_REFERENCE").is_some()
+        || std::env::var_os("OBSERVED2_COMPOSITION_REFERENCE").is_some()
+    {
         runtime.match_state.hold_environment_for_reference();
     }
     if poses.is_none() {
@@ -512,6 +516,17 @@ pub(super) fn progress(
         exit.write(AppExit::Success);
         return;
     };
+    if within == 0
+        && std::env::var_os("OBSERVED2_COMPOSITION_REFERENCE").is_some()
+        && !compositions::stand(runtime, pose)
+    {
+        error!(
+            "composition camera has no supported standing pose: {}",
+            pose.name
+        );
+        exit.write(AppExit::error());
+        return;
+    }
     if within == 0 && !guardian::prepare_pose(runtime, pose) {
         error!(
             "no supported, locally visible Guardian fixture site for {}",
@@ -547,36 +562,10 @@ pub(super) fn progress(
         return;
     }
     if within == SETTLE - 1 {
-        if std::env::var_os("OBSERVED2_SPATIAL_REFERENCE").is_some() {
-            let state = &runtime.match_state;
-            let hash = state
-                .simulation_content_hash
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>();
-            let report = serde_json::json!({
-                "mode": "staged production-room reference, environment held",
-                "seed": state.seed,
-                "input_version": observed_match::hex_wfc::HEX_INPUT_VERSION,
-                "simulation_content_hash": hash,
-                "tick": state.tick,
-                "grid": [state.facility.config.cols, state.facility.config.rows, u16::from(state.facility.config.levels)],
-                "name": pose.name,
-                "cell": [pose.cell.q, pose.cell.r, u16::from(pose.cell.level)],
-                "feet": pose.feet.to_array(),
-                "yaw": pose.yaw,
-                "pitch": pose.pitch,
-            });
-            let file = std::path::Path::new(path).join(format!(
-                "vista_{:02}_{}.json",
-                slot + 1,
-                pose.name
-            ));
-            std::fs::write(
-                file,
-                serde_json::to_string_pretty(&report).expect("reference report"),
-            )
-            .expect("save reference report");
+        if std::env::var_os("OBSERVED2_SPATIAL_REFERENCE").is_some()
+            || std::env::var_os("OBSERVED2_COMPOSITION_REFERENCE").is_some()
+        {
+            records::save(runtime, pose, path, slot);
         }
         let file =
             std::path::Path::new(path).join(format!("vista_{:02}_{}.png", slot + 1, pose.name));
@@ -587,7 +576,11 @@ pub(super) fn progress(
 }
 
 fn poses_for(runtime: &HexWfcRuntime, which: fn(&HexWfcWorld) -> Vec<VistaPose>) -> Vec<VistaPose> {
-    let mut found = which(&runtime.match_state.facility);
+    let mut found = if std::env::var_os("OBSERVED2_COMPOSITION_REFERENCE").is_some() {
+        compositions::poses(runtime)
+    } else {
+        which(&runtime.match_state.facility)
+    };
     guardian::prepare(runtime, &mut found);
     for pose in &found {
         println!(

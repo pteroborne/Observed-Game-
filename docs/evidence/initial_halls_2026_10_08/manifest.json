@@ -1,0 +1,25 @@
+{
+  "base_commit": "2ca0f576cf499759ec3c3f4107e7392ecc5efaeb",
+  "seed": 1,
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "catalog_hash": "2bd68f6ac106342c842c5c4cb67c55385a559b2ab6c37fb9fd2f4715971d0d81",
+  "profile_hash": "42603bf9f2b4c546aff2b45875a2b95cb19b3b20504a1a0902d223c1fac30847",
+  "simulation_hash": "15efcbcef864cfa37fb9ffa23238c526dc8ca7f482b61e2141295332e2094d89",
+  "sha256": {
+    "checks.json": "933de80050b6796fbef6d663dbbe94819af7b85b4eabeef87a0f27977e616f4e",
+    "native/vista_01_library_gallery.json": "241e7079bf8c8fbc3a289875d12d63be999ba177fb89b0711f7394d2e625c107",
+    "native/vista_01_library_gallery.png": "503e552db687df120efc909a27a40c1274b9e94049d7667ba5f019fda222fbba",
+    "native/vista_02_library_court.json": "5a8d6f6f5cfe5c2e3a79176ad496edcbca36c92c20485c760288c28e923fbaf8",
+    "native/vista_02_library_court.png": "88f86374c0d406bcd6df8b0548ae84e3c5169df7516df51d11e9e5dd71ce2404",
+    "native/vista_03_lumen_gallery.json": "b7b20961c6ab8b041bc6e27bcea4abb18b569fdd3eb827a44dd7b19d9aac9d89",
+    "native/vista_03_lumen_gallery.png": "6cd3ce63d2e3a210929237609fd0296cc887a6c1e9b956b33fef80f69013cb16",
+    "native/vista_04_lumen_court.json": "36b58b9f6295b8a91a6c1201a54f7c11d76e349d9d623f1c9d369ead8e35779d",
+    "native/vista_04_lumen_court.png": "503a629c0b295b9e53b8b47ae983f70bd434a8e09574bbc9b25f9a0e7f026002",
+    "simulation-timing.txt": "c35aac838571b340342526c19fa0af8ea8180208001353675b3e01f2e0e666c8",
+    "survey.csv": "842125ace907053c5f06a6560b93953adf4393dfbb535539d750f616e23f6646"
+  }
+}

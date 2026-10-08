@@ -537,6 +537,7 @@ fn oversized_grid_reports_collider_id_capacity_before_projection() {
         blueprints: Vec::new(),
         architecture: BTreeMap::new(),
         cell_revisions: BTreeMap::new(),
+        initial_modules: Default::default(),
         last_attempts: 1,
         authored_pins: Default::default(),
         space_mix: observed_facility::hex_wfc::profile::SpaceMix::baseline(),
@@ -1100,6 +1101,7 @@ fn multi_cell_world(role: RoomRole, anchor: HexCoord) -> HexWfcWorld {
         }],
         architecture,
         cell_revisions,
+        initial_modules: Default::default(),
         last_attempts: 1,
         authored_pins: Default::default(),
         space_mix: observed_facility::hex_wfc::profile::SpaceMix::baseline(),
@@ -2077,4 +2079,5 @@ mod rain;
 mod concourse;
 mod jade;
 
+mod initial_halls;
 mod promenade;

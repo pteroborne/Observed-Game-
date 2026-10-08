@@ -1,0 +1,26 @@
+{
+  "cell": [
+    3,
+    3,
+    1
+  ],
+  "feet": [
+    68.4000015258789,
+    8.5,
+    36.0
+  ],
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "initial_module_variant": 12030,
+  "input_version": 13,
+  "mode": "staged production construction reference, environment held",
+  "name": "library_gallery",
+  "pitch": 0.16514863073825836,
+  "seed": 1,
+  "simulation_content_hash": "15efcbcef864cfa37fb9ffa23238c526dc8ca7f482b61e2141295332e2094d89",
+  "tick": 910,
+  "yaw": -1.5707963705062866
+}

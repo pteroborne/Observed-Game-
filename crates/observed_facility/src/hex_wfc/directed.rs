@@ -291,7 +291,8 @@ impl HexWfcWorld {
     /// Refuses a cell outside the lattice and a cell of a stamped room: a room is
     /// projected whole from its blueprint, and one cell of it cannot be rewritten alone.
     /// Nothing is changed when it refuses. Cells whose placement is already the one
-    /// given are not reported as changed.
+    /// given are not reported as changed, unless the play retires an initial
+    /// authored module: rebuilding the same topology can change its physical kit.
     pub fn commit_directed_delta(
         &mut self,
         placements: BTreeMap<HexCoord, HexPlacement>,
@@ -335,7 +336,10 @@ impl HexWfcWorld {
             .collect();
         let changed_cells: BTreeSet<HexCoord> = placements
             .iter()
-            .filter(|&(coord, placement)| !same_shape(&previous_placements[coord], placement))
+            .filter(|&(coord, placement)| {
+                !same_shape(&previous_placements[coord], placement)
+                    || self.initial_module_variant(*coord).is_some()
+            })
             .map(|(&coord, _)| coord)
             .collect();
         for (coord, placement) in placements {

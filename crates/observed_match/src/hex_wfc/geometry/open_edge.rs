@@ -632,6 +632,7 @@ mod tests {
             blueprints: Vec::new(),
             architecture: BTreeMap::from([(at, ArchitectureRegister::Monolith)]),
             cell_revisions: BTreeMap::from([(at, 1)]),
+            initial_modules: Default::default(),
             last_attempts: 1,
             authored_pins: Default::default(),
             space_mix: SpaceMix::baseline(),

@@ -197,3 +197,38 @@ requires a collision-clear minor body rather than a ray-clear point. The affecte
 command generation/rendering; it recorded no catch. Final native views retain the
 same body-height cameras and final content identity. The extended instrumentation
 suite was not run. No new graphics or device acceptance is inferred.
+
+### Mutable Library/Lumen compositions — 2026-10-08
+
+[Native references and implementation record](../evidence/initial_halls_2026_10_08/README.md)
+add a connected three-cell canopied gallery and a distinct three-cell tall court
+to each target floor. Selection follows the solved floor arrival/departure and
+uses compatible ordinary hall interfaces. The court begins at a junction and
+is separated from the gallery. All 24 survey seeds contain four compositions,
+twelve selected hall cells, and the original room/door topology.
+
+Initial choices are revision-scoped physical content. They add no protected
+cells or automatic team discovery, and unrelated cell changes do not reroll them.
+A legal card rebuild retires its choice; same-door rebuilding is meaningful once
+because it replaces the physical kit, then the ordinary no-op refusal resumes.
+Previews, physical/rules revisions and incremental/fresh projection agree.
+All module doorway pairs and rotations are traversable by Observers and full-size
+majors without jumping. The initial kits retain their authored enclosure rather
+than losing it to ordinary outdoor wall trimming.
+
+Forty reserved source maps provide complete flat-hall kits in the two districts,
+without entering the ordinary card/relayout lottery. The archive is 478 sources,
+382 active. Profile compatibility is **7**, with hashed initial hall composition
+enabled; input compatibility stays **13**. Catalog identity is
+`2bd68f6ac106342c842c5c4cb67c55385a559b2ab6c37fb9fd2f4715971d0d81`;
+simulation identity is `15efcbcef864cfa37fb9ffa23238c526dc8ca7f482b61e2141295332e2094d89`.
+
+Human recognition, remaining districts, complete-match pacing and graphical/device
+acceptance remain open. These references do not close the all-eight-floor milestone.
+
+Final engineering gate: formatting and warning-free Clippy pass; workspace tests
+pass **2,860 / zero failures / 44 ignored**, across 297 targets. The separate
+production simulation measurement reports p95 **349.531 µs** over 7,200 ticks,
+excluding command generation/rendering, with no catch. The compact climb baseline
+is unchanged. Four supported native reference views were inspected. The complete
+extended instrumentation suite and fresh graphics/device acceptance remain unrun.

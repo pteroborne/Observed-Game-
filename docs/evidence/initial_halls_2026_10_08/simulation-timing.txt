@@ -1,0 +1,15 @@
+   Compiling observed_facility v0.1.0 (/run/media/will/BigFastDrive/Observed 2/crates/observed_facility)
+   Compiling observed_authoring v0.1.0 (/run/media/will/BigFastDrive/Observed 2/crates/observed_authoring)
+   Compiling observed_match v0.1.0 (/run/media/will/BigFastDrive/Observed 2/crates/observed_match)
+    Finished `test` profile [optimized + debuginfo] target(s) in 30.35s
+     Running unittests src/lib.rs (/srv/build-cache/cargo/debug/deps/observed_match-4400368397f2ecd5)
+
+running 1 test
+construct 472.018025ms
+outcome Running at tick 7200
+catches 0 slowest catch tick None
+median 264.302µs p95 349.531µs max 4.199975ms plays 5 traces [("Architect", Some("nobody detected")), ("Architect 0", Some("hold card")), ("Architect 1", Some("hold card"))]
+beat ticks: max Some(4.199975ms)
+test ascent::facility::tests::production_ascent_tick_times ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 505 filtered out; finished in 59.81s

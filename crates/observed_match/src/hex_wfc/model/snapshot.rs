@@ -41,6 +41,9 @@ pub struct HexMatchSnapshot {
     pub simulation_content_hash: [u8; 32],
     pub tick: u64,
     pub generation: u32,
+    /// Active initial physical module choices, independent of map discovery. The
+    /// survivor/seat views do not expose this simulation bookkeeping.
+    pub initial_modules: Vec<(HexCoord, u16)>,
     pub players: Vec<HexPlayerSnapshot>,
     pub teams: Vec<HexTeamSnapshot>,
     pub objectives_enabled: bool,
@@ -92,6 +95,16 @@ impl HexWfcMatch {
             simulation_content_hash: self.simulation_content_hash,
             tick: self.tick,
             generation: self.facility.generation,
+            initial_modules: self
+                .facility
+                .initial_modules
+                .keys()
+                .filter_map(|&cell| {
+                    self.facility
+                        .initial_module_variant(cell)
+                        .map(|variant| (cell, variant))
+                })
+                .collect(),
             players,
             teams: self
                 .teams
@@ -290,6 +303,14 @@ fn snapshot_digest(snapshot: &HexMatchSnapshot) -> u64 {
     for (player, remaining) in &snapshot.pad_suppression {
         mix(u64::from(player.0));
         mix(u64::from(*remaining));
+    }
+    if !snapshot.initial_modules.is_empty() {
+        mix(0x494E_4954_4841_4C4C);
+        mix(snapshot.initial_modules.len() as u64);
+        for (cell, variant) in &snapshot.initial_modules {
+            mix(pack_cell(*cell));
+            mix(u64::from(*variant));
+        }
     }
     mix(pack_cell(snapshot.guardian.0));
     mix(match snapshot.guardian.1 {

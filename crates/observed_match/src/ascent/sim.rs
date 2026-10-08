@@ -694,7 +694,12 @@ impl ArchitectLab {
                 {
                     return Some(CommandRefusal::Unbuildable);
                 }
-                if placement.space.built() && placement.doors == doors {
+                // A same-door play can still replace an initial physical kit.
+                // After its first rebuild, ordinary no-op plays remain refused.
+                if placement.space.built()
+                    && placement.doors == doors
+                    && self.world.initial_module_variant(target).is_none()
+                {
                     return Some(CommandRefusal::NoChange);
                 }
                 let fits = HexFace::LATERAL.into_iter().any(|face| {

@@ -547,6 +547,11 @@ impl HexWfcMatch {
         let quotas = production_scale.then(|| HexRoomQuotas::for_team_count(config.teams));
         let mut facility =
             HexWfcWorld::generate_with_profile(seed, config.wfc, quotas, content.composition())?;
+        observed_authoring::initial_composition::seed_initial_halls(
+            &mut facility,
+            content.cells(),
+            content.composition(),
+        );
         // Sky and rock are different things; the facility says which is which, and keeps
         // saying so across every relayout (see `HexWfcWorld::open_air`).
         let _ = facility.mark_open_air();

@@ -433,6 +433,7 @@ impl Vista {
             blueprints: Vec::new(),
             architecture: a.architecture,
             cell_revisions: BTreeMap::new(),
+            initial_modules: Default::default(),
             last_attempts: 0,
             authored_pins: BTreeSet::new(),
             space_mix: SpaceMix::baseline(),

@@ -12,6 +12,8 @@ use crate::hex_wfc::{
     HEX_INPUT_VERSION, HexMatchConfig, HexMatchEventKind, HexPlayerCommand, HexWfcGeometrySnapshot,
 };
 
+mod initial_halls;
+
 const ARCHITECT: PlayerId = PlayerId(40);
 const BODY: PlayerId = PlayerId(0);
 const TEAM: TeamId = TeamId(0);
@@ -198,8 +200,8 @@ fn target_of(command: ArchitectCommand) -> HexCoord {
 /// Every piece and collider the physical match holds is the one a fresh projection
 /// of its facility would build.
 fn assert_geometry_is_fresh(game: &AscentMatch) {
-    let content = crate::hex_wfc::compatibility_test_content();
     let physical = game.physical();
+    let content = physical.content();
     let fresh = HexWfcGeometrySnapshot::project_with_rooms(
         &physical.facility,
         content.cells(),
@@ -221,8 +223,26 @@ fn assert_geometry_is_fresh(game: &AscentMatch) {
             .map(|collider| (collider.id, collider.clone()))
             .collect::<BTreeMap<_, _>>()
     };
-    assert_eq!(pieces(&physical.geometry), pieces(&fresh));
-    assert_eq!(colliders(&physical.geometry), colliders(&fresh));
+    let actual = pieces(&physical.geometry);
+    let expected = pieces(&fresh);
+    assert_eq!(
+        actual.len(),
+        expected.len(),
+        "piece count differs from fresh projection"
+    );
+    for (id, piece) in &expected {
+        assert!(
+            actual.get(id) == Some(piece),
+            "piece {id:?} at {:?} differs: actual tile {:?}, expected tile {:?}",
+            piece.source_cell,
+            actual.get(id).and_then(|p| p.tile.as_ref()),
+            piece.tile
+        );
+    }
+    assert!(
+        colliders(&physical.geometry) == colliders(&fresh),
+        "colliders differ from fresh projection"
+    );
 }
 
 #[test]

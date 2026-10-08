@@ -855,6 +855,8 @@ fn project_cell(
 /// shows the same hulls a match would load, including the same family, turn,
 /// and member, because the variation keys come from the cell's own coordinate
 /// and are unchanged by the hypothesis.
+/// A pending play relinquishes an initial composition choice on its target,
+/// including rebuilding the same door layout, so the preview matches commit.
 ///
 /// The clone is the price of asking a `&HexWfcWorld` function about a world
 /// that does not exist. It is deliberately paid here, once, where its cost is
@@ -880,6 +882,12 @@ pub fn project_hypothetical_cell(
     prototypes: &[TilePrototype],
 ) -> Result<Vec<HexStructurePiece>, HexGeometryError> {
     let mut hypothetical = world.clone();
+    if hypothetical.initial_module_variant(coord).is_some() {
+        *hypothetical
+            .cell_revisions
+            .get_mut(&coord)
+            .expect("initial cell revision") += 1;
+    }
     hypothetical.placements.insert(coord, placement);
     let catalogue = HexTileCatalogue::new(prototypes);
     let mut out = ProjectedCells::default();
@@ -900,6 +908,15 @@ pub fn project_hypothetical_cells(
 ) -> Result<Vec<HexStructurePiece>, HexGeometryError> {
     let mut hypothetical = world.clone();
     for placement in placements {
+        if hypothetical
+            .initial_module_variant(placement.coord)
+            .is_some()
+        {
+            *hypothetical
+                .cell_revisions
+                .get_mut(&placement.coord)
+                .expect("initial cell revision") += 1;
+        }
         hypothetical.placements.insert(placement.coord, *placement);
     }
     let catalogue = HexTileCatalogue::new(prototypes);
@@ -992,6 +1009,7 @@ struct AssemblyMiss {
 /// no family at all. It keeps the flat `(archetype, register, signature)` path
 /// unchanged, so the committed corpus selects exactly what it selected before.
 pub struct HexTileCatalogue<'a> {
+    initial: BTreeMap<(&'a str, &'a str, PortSignature, u16), &'a TilePrototype>,
     /// Compatibility prototypes, keyed as they always were.
     flat: BTreeMap<(&'a str, &'a str, PortSignature), Vec<&'a TilePrototype>>,
     /// Contracted prototypes, keyed by the assembly variant that owns them.
@@ -1006,6 +1024,7 @@ pub struct HexTileCatalogue<'a> {
 impl<'a> HexTileCatalogue<'a> {
     #[must_use]
     pub fn new(prototypes: &'a [TilePrototype]) -> Self {
+        let mut initial = BTreeMap::new();
         let mut flat: BTreeMap<_, Vec<_>> = BTreeMap::new();
         let mut members: BTreeMap<_, Vec<_>> = BTreeMap::new();
         let mut families: BTreeMap<
@@ -1015,6 +1034,18 @@ impl<'a> HexTileCatalogue<'a> {
         let mut scopes: BTreeMap<&'a str, AssemblyScope> = BTreeMap::new();
 
         for prototype in prototypes {
+            if observed_authoring::forge::initial_halls::kind_for_key(&prototype.key).is_some() {
+                initial.insert(
+                    (
+                        prototype.key.archetype.as_str(),
+                        prototype.key.register.as_str(),
+                        prototype.signature,
+                        prototype.key.variant,
+                    ),
+                    prototype,
+                );
+                continue;
+            }
             let archetype = prototype.key.archetype.as_str();
             let register = prototype.key.register.as_str();
             let Some(assembly) = prototype.assembly.as_ref() else {
@@ -1071,6 +1102,7 @@ impl<'a> HexTileCatalogue<'a> {
             })
             .collect();
         Self {
+            initial,
             flat,
             members,
             families,
@@ -1283,6 +1315,23 @@ impl<'a> HexTileCatalogue<'a> {
                 weighted_select(&turned, member_variation, |candidate| candidate.weight)
             }
         }))
+    }
+
+    fn initial_choice(
+        &self,
+        archetype: &str,
+        register: &str,
+        signature: PortSignature,
+        variant: u16,
+    ) -> Option<&'a TilePrototype> {
+        // Family contracts remain authoritative; an initial compatibility kit
+        // must not split a contracted assembly into unrelated modules.
+        if self.family_options(archetype, register).is_some() {
+            return None;
+        }
+        self.initial
+            .get(&(archetype, register, signature, variant))
+            .copied()
     }
 }
 
@@ -1523,6 +1572,11 @@ fn tile_for<'a>(
         .get(&register_cell)
         .ok_or(HexGeometryError::MissingArchitecture(register_cell))?
         .slug();
+    if let Some(variant) = world.initial_module_variant(coord)
+        && let Some(tile) = catalogue.initial_choice(archetype, register, signature, variant)
+    {
+        return Ok(tile);
+    }
     match catalogue.select(
         archetype,
         register,
@@ -1657,7 +1711,14 @@ fn push_tile(
         + 1;
     let center = Vec3::from_array(hex_origin(source_cell));
     // Where this hall meets the outside, its wall comes down (see `open_edge`).
-    let open = open_edge::open_edges(world, source_cell);
+    // These authored initial kits provide enclosed galleries/courts. Preserve
+    // their actual shell against unbuilt flanks; a card rebuild returns the
+    // ordinary kit and its open-edge treatment. Neither case adds protection.
+    let open = if observed_authoring::forge::initial_halls::kind_for_key(&tile.key).is_some() {
+        None
+    } else {
+        open_edge::open_edges(world, source_cell)
+    };
     // Navigation is recorded here, where the cell resolves to one concrete
     // tile, so collision and both annotations always describe the same module.
     let climb = (!tile.spine.is_empty()).then(|| StairSpine {

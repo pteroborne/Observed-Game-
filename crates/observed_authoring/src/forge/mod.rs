@@ -19,6 +19,7 @@ pub mod geometry;
 mod grid_turn;
 pub mod halls;
 pub mod index;
+pub mod initial_halls;
 pub mod intake;
 pub mod jade_nave;
 pub mod last_promenade;
@@ -95,6 +96,7 @@ pub fn generate_all() -> Vec<(String, String)> {
     out.extend(liminal::generated());
     out.extend(halls::open_builders());
     out.extend(climb::builders());
+    out.extend(initial_halls::generated());
     out.extend(backrooms::generated(&out));
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out

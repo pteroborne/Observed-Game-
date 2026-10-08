@@ -1,0 +1,26 @@
+{
+  "cell": [
+    10,
+    6,
+    1
+  ],
+  "feet": [
+    179.2790985107422,
+    8.5,
+    76.6644058227539
+  ],
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "initial_module_variant": 12680,
+  "input_version": 13,
+  "mode": "staged production construction reference, environment held",
+  "name": "library_court",
+  "pitch": 0.25367414951324463,
+  "seed": 1,
+  "simulation_content_hash": "15efcbcef864cfa37fb9ffa23238c526dc8ca7f482b61e2141295332e2094d89",
+  "tick": 1420,
+  "yaw": 0.5280741453170776
+}

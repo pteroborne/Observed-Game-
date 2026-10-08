@@ -794,6 +794,7 @@ pub struct HexGeometryIdentity {
     pub placement: HexPlacement,
     pub architecture: ArchitectureRegister,
     pub variation_key: u64,
+    pub initial_module_variant: Option<u16>,
 }
 
 /// A solved hex facility.
@@ -811,6 +812,9 @@ pub struct HexWfcWorld {
     /// Per-cell topology/presentation revision. A local relayout increments
     /// only cells whose placement or architectural treatment changed.
     pub cell_revisions: BTreeMap<HexCoord, u32>,
+    /// Authored module variants selected for initial, mutable hall compositions.
+    /// Effective only at revision zero. These never protect cells from rewrites.
+    pub initial_modules: BTreeMap<HexCoord, u16>,
     /// Attempts consumed by the accepted solve (1-based).
     pub last_attempts: u32,
     /// Cells an author pinned in the profile this world was solved under.
@@ -1043,6 +1047,7 @@ impl HexWfcWorld {
                 blueprints,
                 architecture,
                 cell_revisions,
+                initial_modules: BTreeMap::new(),
                 last_attempts: attempts,
                 authored_pins: pins::resolved_pins(config, profile).0.into_keys().collect(),
                 space_mix: profile.space_mix,
@@ -1228,7 +1233,16 @@ impl HexWfcWorld {
             placement: *self.placements.get(&coord)?,
             architecture: *self.architecture.get(&coord)?,
             variation_key: self.tile_variation_key(coord),
+            initial_module_variant: self.initial_module_variant(coord),
         })
+    }
+
+    /// Initial physical module choice, relinquished when this cell is rewritten.
+    #[must_use]
+    pub fn initial_module_variant(&self, coord: HexCoord) -> Option<u16> {
+        (self.cell_revision(coord) == Some(0))
+            .then(|| self.initial_modules.get(&coord).copied())
+            .flatten()
     }
 
     #[must_use]

@@ -1260,7 +1260,8 @@ mod tests {
         // Six Library Archive Well and six Zen Rain Court orientations bring the count to 266.
         // Six Sky Last Promenade orientations complete the seven district wonders.
         // 58 low-clearance editions preserve the old connection vocabulary.
-        assert_eq!(built.catalog.modules.len(), 342);
+        // Forty reserved initial-hall sources add two mutable kits in Library/Lumen.
+        assert_eq!(built.catalog.modules.len(), 382);
         let registers = crate::tile_source::REGISTERS;
         for path in ignored {
             let text = std::fs::read_to_string(root.join(&path)).expect("retired source exists");

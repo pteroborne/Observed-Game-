@@ -19,7 +19,7 @@ fn main() {
         .collect::<String>();
     eprintln!("24x17x8, shipped 9..=10-room policy, simulation {hash}");
     println!(
-        "seed,rooms,floor0,floor1,floor2,floor3,floor4,floor5,floor6,floor7,decision_floor,attempts,solve_ms"
+        "seed,rooms,floor0,floor1,floor2,floor3,floor4,floor5,floor6,floor7,decision_floor,attempts,solve_ms,initial_compositions,initial_hall_cells"
     );
     let config = HexWfcConfig::arc_default();
     // The runtime's current compact production board does not activate
@@ -32,7 +32,12 @@ fn main() {
         };
         let started = std::time::Instant::now();
         match HexWfcWorld::generate_with_profile(seed, config, None, &catalog.composition) {
-            Ok(world) => {
+            Ok(mut world) => {
+                let compositions = observed_authoring::initial_composition::seed_initial_halls(
+                    &mut world,
+                    &catalog.cells,
+                    &catalog.composition,
+                );
                 let mut rooms = [0usize; 8];
                 for room in &world.blueprints {
                     rooms[usize::from(room.anchor.level)] += 1;
@@ -48,10 +53,12 @@ fn main() {
                     .find(|room| room.role == RoomRole::Decision)
                     .map_or_else(String::new, |room| room.anchor.level.to_string());
                 println!(
-                    "{seed},{},{floors},{decision},{},{:.3}",
+                    "{seed},{},{floors},{decision},{},{:.3},{},{}",
                     world.blueprints.len(),
                     world.last_attempts,
-                    started.elapsed().as_secs_f64() * 1000.0
+                    started.elapsed().as_secs_f64() * 1000.0,
+                    compositions.len(),
+                    world.initial_modules.len()
                 );
             }
             Err(error) => {

@@ -31,7 +31,8 @@ fn usage() -> ! {
          tilec profile-new [source-root]\n\
          tilec profile-validate [source-root]\n\
          tilec profile-hash [source-root]\n\
-         tilec profile-write [source-root]"
+         tilec profile-write [source-root]\n\
+         tilec profile-halls <on|off> [source-root]"
     );
     std::process::exit(2);
 }
@@ -344,6 +345,33 @@ fn run() -> Result<(), String> {
                  The simulation hash is what a LAN peer must match to join.",
                 catalog_hash.trim(),
                 profile.content_hash
+            );
+        }
+        "profile-halls" => {
+            let enabled = match args.next().as_deref() {
+                Some("on") => true,
+                Some("off") => false,
+                _ => return Err("profile-halls expects on|off [tile-root]".into()),
+            };
+            let root = profile_root(&mut args);
+            let path = root.join(observed_authoring::COMPOSITION_PROFILE_FILE);
+            let source = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
+            let mut profile: observed_facility::hex_wfc::HexCompositionProfile =
+                ron::from_str(&source).map_err(|error| error.to_string())?;
+            let version = observed_facility::hex_wfc::COMPOSITION_PROFILE_VERSION;
+            if profile.version != version && profile.version != 6 {
+                return Err(format!(
+                    "cannot migrate profile version {}",
+                    profile.version
+                ));
+            }
+            profile.version = version;
+            profile.initial_hall_compositions = enabled;
+            let build = CompositionBuild::new(profile).map_err(|error| error.to_string())?;
+            write_profile_build(&build, &root).map_err(|error| error.to_string())?;
+            println!(
+                "initial hall compositions {enabled}; profile v{version}; hash {}",
+                build.content_hash
             );
         }
         "profile-write" => {

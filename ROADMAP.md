@@ -22,6 +22,11 @@ adds a framed Backrooms departure, screened decision/reveal and calmer ceiling
 rhythm, with matched native views and a 24-seed room distribution survey. Next:
 mutable landmark compositions on the floors the current room policy leaves sparse.
 
+[Library/Lumen initial hall compositions](docs/evidence/initial_halls_2026_10_08/README.md)
+now provide two distinct connected beats on each target floor, with revision-scoped
+physical choices and ordinary card replacement. Remaining districts and human
+landmark recognition continue under the same quality programme.
+
 > **Canonical direction reset (2026-09-07).** The new governing design is
 > [Architect Ascent](docs/architect_ascent_design.md). It supersedes the
 > precomposed facility race as the final game while retaining the continuous hex

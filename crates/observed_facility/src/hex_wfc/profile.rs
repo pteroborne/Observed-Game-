@@ -58,7 +58,8 @@ use super::{HexArchetype, HexSpace, PortClass};
 /// 5 since the climb compositions joined the alphabet (`docs/climb_compositions_plan.md`);
 /// 6 since the ramps and towers left it, and the archetype bias names `climb` where it
 /// named `ramp_up`, `ramp_head` and `shaft`.
-pub const COMPOSITION_PROFILE_VERSION: u16 = 6;
+/// 7 adds revision-scoped initial physical hall compositions, without topology pins.
+pub const COMPOSITION_PROFILE_VERSION: u16 = 7;
 
 /// The widest a score component's weight may be set. Unlike the lottery
 /// multipliers, `0.0` *is* legal here: scoring is post-hoc and disabling a
@@ -87,6 +88,10 @@ pub const SPACE_SHARE_MAX: f64 = 10_000.0;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HexCompositionProfile {
     pub version: u16,
+    /// Select connected physical hall kits at initial production-floor arrivals
+    /// and choices. The cells remain mutable; rewritten cells use the ordinary kit.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub initial_hall_compositions: bool,
     /// Free-text name for the authoring tool's benefit; never read by the solver.
     pub label: String,
     pub tendencies: CompositionTendencies,
@@ -700,6 +705,7 @@ impl HexCompositionProfile {
     pub fn baseline() -> Self {
         Self {
             version: COMPOSITION_PROFILE_VERSION,
+            initial_hall_compositions: false,
             label: String::from("baseline"),
             tendencies: CompositionTendencies::baseline(),
             space_mix: SpaceMix::baseline(),

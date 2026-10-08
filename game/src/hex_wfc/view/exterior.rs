@@ -471,6 +471,7 @@ mod tests {
             blueprints: Vec::new(),
             architecture: BTreeMap::new(),
             cell_revisions: BTreeMap::new(),
+            initial_modules: Default::default(),
             last_attempts: 1,
             authored_pins: Default::default(),
             space_mix: SpaceMix::baseline(),

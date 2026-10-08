@@ -435,7 +435,7 @@ mod tests {
     }
 
     /// The committed profile is the open-air composition: the baseline in every
-    /// control but one, a void share of 2,000 in place of 300, chosen on measurement
+    /// solve control but one, a void share of 2,000 in place of 300, chosen on measurement
     /// (`docs/open_air_facility.md`). If this starts failing, someone authored a
     /// further change - which is fine, but the shipped facility changed again and
     /// the layout evidence needs recapturing.
@@ -445,12 +445,17 @@ mod tests {
         let mut profile = build.profile;
         assert_eq!(profile.label, "open air");
         assert!((profile.space_mix.void - 2_000.0).abs() < f64::EPSILON);
+        assert!(
+            profile.initial_hall_compositions,
+            "shipped physical hall composition must be enabled"
+        );
+        profile.initial_hall_compositions = false;
         let baseline = observed_facility::hex_wfc::HexCompositionProfile::baseline();
         profile.space_mix.void = baseline.space_mix.void;
         profile.label.clone_from(&baseline.label);
         assert!(
             profile.is_baseline(),
-            "the committed profile differs from the baseline in more than its void share"
+            "the committed solve controls differ from the baseline in more than their void share"
         );
     }
 
@@ -801,18 +806,17 @@ mod tests {
         // solve control changed - `COMPOSITION_PROFILE_VERSION` went to 2
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
-        // The Backrooms arrival/decision reference changes two existing low
-        // room sources, retaining their footprints and named port contracts.
+        // Forty reserved initial Library/Lumen hall sources add two physical
+        // kits in each district, preserving the existing flat-hall interfaces.
         const CATALOG_HASH: &str =
-            "b1d7b134e50ef3ccc5003ec67101546d8fbd23144f5840a780dd689316357323";
+            "2bd68f6ac106342c842c5c4cb67c55385a559b2ab6c37fb9fd2f4715971d0d81";
         // The open-air composition (void share 2,000), 2026-09-24, at profile
-        // version 6 since the ramps and towers retired and its bias names `climb`.
+        // version 7 now enables revision-scoped initial hall compositions.
         const PROFILE_HASH: &str =
-            "7b57da365f6c4de7876cd76adfd985db582d6f1610999c29d89d116739b639d1";
-        // Geometry-backed fixtures and the initial-room reference retain the
-        // profile. Folding both refuses peers with different physical content.
+            "42603bf9f2b4c546aff2b45875a2b95cb19b3b20504a1a0902d223c1fac30847";
+        // Catalog and composition policy both enter physical match identity.
         const SIMULATION_HASH: &str =
-            "675d5f9653e648e9cabc3b65a6f4dcdf09aa7393a67698075006476bb5f8cf03";
+            "15efcbcef864cfa37fb9ffa23238c526dc8ca7f482b61e2141295332e2094d89";
 
         let root = committed_tiles();
         let compiled_text =
@@ -824,8 +828,8 @@ mod tests {
         // climbed by a composition since, and none of either is compiled. 230 since
         // climbs turn: four turning mid cells and three turned landings, in seven
         // dressings.
-        // Jade Nave adds six Monument-only orientations; the profile stays unchanged.
-        assert_eq!(compiled.modules.len(), 342, "committed strict source count");
+        // Forty reserved initial-hall sources bring the active corpus to 382.
+        assert_eq!(compiled.modules.len(), 382, "committed strict source count");
         assert!(
             compiled
                 .modules
