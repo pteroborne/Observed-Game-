@@ -147,7 +147,7 @@ fn zen_details_follow_rotated_walls_and_despawn_with_climb_cells() {
             &[&solid],
         );
         queue.apply(&mut ecs);
-        assert_eq!(count, 1);
+        assert_eq!(count, (1, true));
         assert_eq!(meshes.len(), 1, "same actual support should reuse its mesh");
         for (child, cutaway) in ecs
             .query_filtered::<(&ChildOf, &Cutaway), With<ZenDetail>>()
@@ -199,4 +199,69 @@ fn zen_production_halls_and_climbs_receive_supported_details() {
         hall && climb,
         "both ordinary corridors and the Zen ascent need fitted detail"
     );
+}
+
+#[test]
+fn cold_zen_wall_recipes_keep_the_base_shell_until_all_finishes_are_ready() {
+    let (_, coord) = fixture();
+    let screen = piece(coord, Vec3::new(6.75, 4.0, 0.0), Vec3::new(0.5, 8.0, 8.0));
+    let post = piece(coord, Vec3::new(-6.75, 4.0, 0.0), Vec3::new(0.5, 8.0, 0.5));
+    let mut world = World::default();
+    let mut meshes = Assets::<Mesh>::default();
+    let mut materials = Assets::<StandardMaterial>::default();
+    let mut assets = HexWfcVisualAssets::for_test(&mut materials);
+    let parent = world.spawn_empty().id();
+    // One finish is cached; the other is deliberately cold. No partial paper/wood
+    // wall should replace the complete base shell while the worker prepares it.
+    {
+        let mut commands = world.commands();
+        assert!(
+            shell::spawn(
+                &mut commands,
+                &mut assets,
+                &mut meshes,
+                parent,
+                coord,
+                &[&post]
+            )
+            .is_some()
+        );
+    }
+    world.flush();
+    let before = world.query::<&Mesh3d>().iter(&world).count();
+    assets.preparing_cell = true;
+    {
+        let mut commands = world.commands();
+        assert!(
+            shell::spawn(
+                &mut commands,
+                &mut assets,
+                &mut meshes,
+                parent,
+                coord,
+                &[&post, &screen]
+            )
+            .is_none()
+        );
+    }
+    world.flush();
+    assert!(assets.missing_meshes);
+    assert_eq!(world.query::<&Mesh3d>().iter(&world).count(), before);
+    assets.preparing_cell = false;
+    {
+        let mut commands = world.commands();
+        assert!(
+            shell::spawn(
+                &mut commands,
+                &mut assets,
+                &mut meshes,
+                parent,
+                coord,
+                &[&post, &screen]
+            )
+            .is_some()
+        );
+    }
+    world.flush();
+    assert!(world.query::<&Mesh3d>().iter(&world).count() > before);
 }

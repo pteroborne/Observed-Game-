@@ -1,0 +1,9 @@
+{
+  "preset": "team_race",
+  "teams": 2,
+  "members_per_team": 2,
+  "fill_empty_seats": true,
+  "guardian": true,
+  "rules": "race",
+  "seat": "observer"
+}

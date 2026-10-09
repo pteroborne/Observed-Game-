@@ -1,0 +1,29 @@
+{
+  "base_commit": "0c0d66e1db6307cd26ceee6f628e13c7f1a6da14",
+  "seed": 1,
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "simulation_content_hash": "9922a1750e5c27dd861c3e77035c096a492fa6dd4ef16f5325f71ef16e149adb",
+  "before_scope": "first initial-kit exterior change, before Zen wall fallback and expanded flat-hall proxy projection",
+  "sha256": {
+    "before/vista_01_zen_court.json": "cea8b03a75b4571bd116902193cfa26a51247c0eedd3ae429c147a34a59c19c7",
+    "before/vista_01_zen_court.png": "4c0a55b06a18040cd4240aa7c97d548a0048d96e73632ccdde6e03d7d5e5d2f6",
+    "checks.json": "461c3c47de24ac0eb4c6d8cc39ce50ff46fd52309618bb3d205d798d852edcd1",
+    "config/play_setup.json": "e53283830f370a510a2377000023050959ee041546f0c3fd9e48726428a285e1",
+    "config/settings.json": "102f33d4a3027a1315d2ddf1be6b56a0e674c55ce7ac268cffccedf73ecabe80",
+    "full/vista_01_zen_court.json": "1d558cf28b28c27480532c4c2cec58b25345b58a23ca309fe85300f7363fe02f",
+    "full/vista_01_zen_court.png": "1f19c614f30592c1355d42d69a501d96281276eaaf8953d8134a6c93e86e6457",
+    "full/vista_02_monument_terrace_court.json": "1707513205b982bbc832a90ec6f9f38447d80a73737d2314c1f5af0616cfb1c0",
+    "full/vista_02_monument_terrace_court.png": "e0efe1edbbcb9becd7b55f1a56c70a6d70ee7be695abb17259523bd9844ace01",
+    "normal/vista_01_zen_court.json": "fb16b8444d363790e059aaf54e601b87b7ebb37db9773417167179990948770d",
+    "normal/vista_01_zen_court.png": "8ef05cddd3e187181e11bc356e8a958ebeed66f446f60df0b2e69935a47909bf",
+    "normal/vista_02_monument_terrace_court.json": "c8d6b1d596587c7dc74edbcf351ec66a00870b7d66823219e337631428fd64ba",
+    "normal/vista_02_monument_terrace_court.png": "3b0e67c63c71d34b2650e802565794c3f9799941f8c57a7628f27aab0e1718cc",
+    "performance/desktop-budget.json": "6ad792ea8e736cb4b61a75b9a93415efab416effe9e0f953b3382aea5d4f97ce",
+    "performance/gpu-instrumented-stall.txt": "25a0b3d1a2bceb0f4dcce4ecae6912f85ff7ab33a720a80f9cf8cabe3c87e6ab",
+    "performance/timings.json": "c73538749801118196d9bb14907b50d1a7db70f4a1aa629db61e318500f9d33c"
+  }
+}

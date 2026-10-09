@@ -265,3 +265,37 @@ pass **2,860 / zero failures / 44 ignored**, across 297 targets. The separate
 7,200-tick simulation probe reports p95 **336.362 µs**, excluding commands/rendering,
 with five plays and no catch. The complete extended instrumentation suite and
 fresh graphical/device acceptance remain unrun.
+
+### Streaming versus true void — 2026-10-08
+
+[Matched normal/full-world native references](../evidence/visibility_reference_2026_10_08/README.md)
+correct the earlier provisional interpretation of the Zen court's apparent openness.
+Its missing nearby walls were deferred paper/cedar meshes: presentation hid the
+base walls before all replacement finishes were ready. The base shell now stays
+opaque until the complete finish is ready. A cold-recipe regression checks the
+partial-cache case.
+
+Initial compositions and ordinary flat halls now derive exterior proxy silhouettes
+from their authoritative hulls. Door openings, enclosed walls, canopies and terrace
+roof gaps no longer become generic exterior bands. Complex-module proxies and
+simpler far shading remain separate limits. The same camera poses with all 2,272
+geometry owners shown confirm that the large Monument terrace opening remains;
+ceiling artifacts also remain, so neither should be classified solely as streaming.
+
+The diagnostic adds per-cell geometry/visibility reports and a capture-only full
+residency mode. It changes no collision, observation, topology or compatibility.
+The eight-floor source profile remains version 8; simulation identity is unchanged.
+Human motion/flicker and device/frame-budget acceptance remain open.
+
+The fresh screenshot-free 7,200-tick Ascent frame run completes without GPU queries:
+warm p95 **19.045 ms**, p99 **23.737 ms**, maximum **49.375 ms**, cold view construction
+**7.014 s**, with a **365.866 ms** early frame outside the warm sample. Desktop
+remains red; more faithful proxy geometry does not close the
+frame or cold-start budgets. A separate GPU-instrumented attempt stalled after a
+swap-chain timeout and was stopped without a report; per-pass GPU timings are
+unavailable for the completed retry. This is not a matched before/after comparison.
+
+Final engineering gate: formatting and warning-free Clippy pass; workspace tests
+pass **2,863 / zero failures / 44 ignored**, across 297 targets. The paired
+cameras share an identical complete physical-cell census and content identity.
+The full extended instrumentation suite and human/device checks remain unrun.

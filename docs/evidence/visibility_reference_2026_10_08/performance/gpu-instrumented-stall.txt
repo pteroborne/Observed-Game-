@@ -1,0 +1,4 @@
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.27s
+     Running `/srv/build-cache/cargo/debug/observed`
+2026-10-09T01:47:51.020574Z ERROR bevy_render::diagnostic: TimeSpanScope::end was never called
+2026-10-09T01:47:52.110326Z ERROR bevy_render::view::window: Couldn't get swap chain texture: Timeout

@@ -1,0 +1,46 @@
+{
+  "cargo_fmt_all": "pass",
+  "cargo_dev_clippy": "pass, no warnings",
+  "cargo_dev_test": {
+    "passed": 2863,
+    "failed": 0,
+    "ignored": 44,
+    "targets": 297
+  },
+  "normal_full_comparison": {
+    "pairs": 2,
+    "matching_pose_content_and_physical_census": true,
+    "full_geometry_owners": 2272,
+    "full_shown_detail_owners": 2272,
+    "full_shown_exterior_cells": 0
+  },
+  "desktop_budget": {
+    "preset_budget": "desktop",
+    "passed": false,
+    "metrics": {
+      "p95": {
+        "measured_ms": 19.045,
+        "budget_ms": 16.667
+      },
+      "p99": {
+        "measured_ms": 23.737,
+        "budget_ms": 25.0
+      },
+      "maximum": {
+        "measured_ms": 49.375,
+        "budget_ms": 33.333
+      }
+    },
+    "failures": [
+      "p95: 19.045 ms exceeds 16.667 ms",
+      "maximum: 49.375 ms exceeds 33.333 ms"
+    ],
+    "acceptance_boundary": "Timing comparison only. Hardware identity, capture method, human play and physical LAN/device gates require separate evidence.",
+    "report_sha256": "c73538749801118196d9bb14907b50d1a7db70f4a1aa629db61e318500f9d33c"
+  },
+  "cold_view_construction_seconds": 7.014186,
+  "early_frame_maximum_ms": 365.866,
+  "gpu_instrumented_attempt": "stalled after swap-chain timeout; stopped without report",
+  "extended_instrumentation": "not run",
+  "deck_and_physical_lan": "not run"
+}

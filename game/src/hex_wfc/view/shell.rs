@@ -323,10 +323,14 @@ fn spawn_cell(
         child_pieces +=
             super::library::spawn(commands, assets, meshes, cell, coord, world, &pieces);
     }
+    let mut zen_shell_ready = false;
     if let Some(heading) = rain {
         child_pieces += super::rain::spawn(commands, assets, meshes, cell, coord, heading, &pieces);
     } else if architecture == ArchitectureRegister::ShadowScreen && wonder.is_none() {
-        child_pieces += super::zen::spawn(commands, assets, meshes, cell, coord, world, &pieces);
+        let (count, ready) =
+            super::zen::spawn(commands, assets, meshes, cell, coord, world, &pieces);
+        child_pieces += count;
+        zen_shell_ready = ready;
     }
     if let Some(heading) = concourse {
         child_pieces +=
@@ -345,8 +349,7 @@ fn spawn_cell(
     let groups = super::mesh_group::gather(&pieces);
     for (group_key, group) in groups {
         if group_key == super::assets::MeshGroupKey::Hidden
-            || (architecture == ArchitectureRegister::ShadowScreen
-                && wonder.is_none()
+            || (zen_shell_ready
                 && matches!(
                     group_key,
                     super::assets::MeshGroupKey::Interior

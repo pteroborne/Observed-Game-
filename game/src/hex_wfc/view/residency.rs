@@ -394,7 +394,11 @@ pub(crate) fn sync_streamed_cells(
     } else {
         CELL_SPAWN_BUDGET
     };
-    let reach = residency.reach;
+    let reach = if super::reference::full_geometry() {
+        Reach::out_to(f32::MAX.sqrt() * 0.5)
+    } else {
+        residency.reach
+    };
     let mut plan = plan_residency(
         &residency.catalog,
         &residency.resident,

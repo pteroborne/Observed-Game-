@@ -32,6 +32,11 @@ extend the mutable references through floors 3–5, with screen galleries,
 massive interior courts and separate open terrace kits. Reactor and Sky remain
 the next spatial slice; all-floor human recognition remains open.
 
+[The streaming/void comparison](docs/evidence/visibility_reference_2026_10_08/README.md)
+repairs premature Zen wall removal and matches flat-hall/initial-kit exterior
+silhouettes to physical geometry. Identical normal/full-world camera pairs separate
+those rendering gaps from the remaining terrace opening and ceiling artifacts.
+
 > **Canonical direction reset (2026-09-07).** The new governing design is
 > [Architect Ascent](docs/architect_ascent_design.md). It supersedes the
 > precomposed facility race as the final game while retaining the continuous hex

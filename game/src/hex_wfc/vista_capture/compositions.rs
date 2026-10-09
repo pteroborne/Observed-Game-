@@ -28,6 +28,7 @@ pub(super) fn poses(runtime: &HexWfcRuntime) -> Vec<VistaPose> {
     proposal.initial_modules.clear();
     let mut profile = state.content().composition().clone();
     profile.initial_hall_compositions = true;
+    let wanted = std::env::var("OBSERVED2_REFERENCE_POSES").ok();
     seed_initial_halls(&mut proposal, state.content().cells(), &profile)
         .into_iter()
         .map(|plan| {
@@ -73,6 +74,11 @@ pub(super) fn poses(runtime: &HexWfcRuntime) -> Vec<VistaPose> {
                 pitch: ahead.y.atan2(Vec2::new(ahead.x, ahead.z).length()),
                 stage: Stage::Nothing,
             }
+        })
+        .filter(|pose| {
+            wanted
+                .as_ref()
+                .is_none_or(|names| names.split(',').any(|name| name == pose.name))
         })
         .collect()
 }

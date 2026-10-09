@@ -37,7 +37,7 @@ pub(super) fn spawn(
     parent: Entity,
     coord: HexCoord,
     pieces: &[&HexStructurePiece],
-) -> usize {
+) -> Option<usize> {
     let origin = Vec3::from_array(hex_origin(coord));
     let mut groups: BTreeMap<(MeshGroupKey, usize), Vec<Vec<Vec3>>> = BTreeMap::new();
     for piece in pieces {
@@ -54,17 +54,26 @@ pub(super) fn spawn(
             .or_default()
             .push(hull);
     }
-    let mut count = 0;
+    // Prepare the whole physical wall treatment before spawning any of it.
+    // A cold custom recipe must not replace an opaque base wall with a partial shell.
+    let mut prepared = Vec::new();
+    let mut complete = true;
     for ((group, role), hulls) in groups {
         let refs: Vec<_> = hulls.iter().map(Vec::as_slice).collect();
-        let Some(mesh) = assets.merged_mesh_for(
+        let mesh = assets.merged_mesh_for(
             meshes,
             Some(&format!("zen-shell-{}", super::mesh_key(&hulls))),
             group,
             &refs,
-        ) else {
-            continue;
-        };
+        );
+        complete &= mesh.is_some();
+        prepared.push((group, role, hulls, mesh));
+    }
+    if !complete {
+        return None;
+    }
+    let mut count = 0;
+    for (group, role, hulls, mesh) in prepared {
         let min_y = hulls
             .iter()
             .flatten()
@@ -78,7 +87,7 @@ pub(super) fn spawn(
         let local = hulls.iter().flatten().copied().sum::<Vec3>()
             / hulls.iter().map(Vec::len).sum::<usize>() as f32;
         commands.spawn((
-            Mesh3d(mesh),
+            Mesh3d(mesh.expect("complete Zen wall recipe")),
             MeshMaterial3d(assets.rain_material(role)),
             Transform::from_translation(origin),
             ChildOf(parent),
@@ -94,5 +103,5 @@ pub(super) fn spawn(
         ));
         count += 1;
     }
-    count
+    Some(count)
 }

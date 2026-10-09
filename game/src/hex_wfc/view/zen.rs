@@ -259,10 +259,11 @@ pub(super) fn spawn(
     coord: HexCoord,
     world: &HexWfcWorld,
     pieces: &[&HexStructurePiece],
-) -> usize {
+) -> (usize, bool) {
     let origin = Vec3::from_array(hex_origin(coord));
     let climb_wall = pieces.iter().any(|p| p.role == HexStructureRole::Climb);
-    let mut count = shell::spawn(commands, assets, meshes, parent, coord, pieces);
+    let structure = shell::spawn(commands, assets, meshes, parent, coord, pieces);
+    let mut count = structure.unwrap_or_default();
     for detail in details(world, coord, pieces) {
         let refs: Vec<_> = detail.hulls.iter().map(Vec::as_slice).collect();
         let Some(mesh) = assets.merged_mesh_for(
@@ -291,7 +292,7 @@ pub(super) fn spawn(
         ));
         count += 1;
     }
-    count
+    (count, structure.is_some())
 }
 
 /// A cedar rim around the ordinary authored diffuser, at its existing anchor.

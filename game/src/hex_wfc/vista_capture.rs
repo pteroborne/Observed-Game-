@@ -565,7 +565,7 @@ pub(super) fn progress(
         if std::env::var_os("OBSERVED2_SPATIAL_REFERENCE").is_some()
             || std::env::var_os("OBSERVED2_COMPOSITION_REFERENCE").is_some()
         {
-            records::save(runtime, pose, path, slot);
+            records::save(runtime, pose, path, slot, commands);
         }
         let file =
             std::path::Path::new(path).join(format!("vista_{:02}_{}.png", slot + 1, pose.name));

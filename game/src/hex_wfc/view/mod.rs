@@ -28,6 +28,7 @@ mod mesh_group;
 mod open_edge_materials;
 mod prison;
 pub(in crate::hex_wfc) mod rain;
+pub(in crate::hex_wfc) mod reference;
 mod residency;
 mod seams;
 mod shell;
@@ -246,15 +247,25 @@ pub(super) fn setup_view(
         mood,
     );
     sky::spawn_moonlight(&mut commands, &mood);
-    let skin = exterior::spawn_all(&mut commands, &mut meshes, &assets, facility);
+    let skin = exterior::spawn_all(
+        &mut commands,
+        &mut meshes,
+        &mut assets,
+        (facility, &runtime.match_state.geometry),
+    );
     commands.insert_resource(skin);
-    let capture_unbounded = capture_requests_deterministic_residency();
+    let capture_unbounded =
+        capture_requests_deterministic_residency() || reference::full_geometry();
     let initial_budget = if capture_unbounded {
         usize::MAX
     } else {
         ENTRY_CELL_SPAWN_BUDGET
     };
-    let initial = initial_spawn_batch(&catalog, runtime.local(), initial_budget);
+    let initial = if reference::full_geometry() {
+        catalog.cells.keys().copied().collect()
+    } else {
+        initial_spawn_batch(&catalog, runtime.local(), initial_budget)
+    };
     let spawned = shell::spawn_cells(
         &mut commands,
         &mut assets,
