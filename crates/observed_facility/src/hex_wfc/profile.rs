@@ -60,7 +60,8 @@ use super::{HexArchetype, HexSpace, PortClass};
 /// named `ramp_up`, `ramp_head` and `shaft`.
 /// 7 adds revision-scoped initial physical hall compositions, without topology pins.
 /// 8 adds Zen and separate Monument interior/terrace initial compositions.
-pub const COMPOSITION_PROFILE_VERSION: u16 = 8;
+/// 9 extends initial compositions through Reactor and open Sky porticos/courts.
+pub const COMPOSITION_PROFILE_VERSION: u16 = 9;
 
 /// The widest a score component's weight may be set. Unlike the lottery
 /// multipliers, `0.0` *is* legal here: scoring is post-hoc and disabling a

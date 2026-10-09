@@ -32,6 +32,28 @@ pub(super) fn bay(register: &str, kind: InitialHallKind, face: usize, terrace: b
                 }
             }
         }
+        "megastructure" => {
+            // Service banks stay backed by sealed walls and outside the aisle.
+            let top = if kind == InitialHallKind::Gallery {
+                36.0
+            } else {
+                48.0
+            };
+            out.push_str(&band(face, 8.0, 26.0, FLOOR_TOP, top));
+            out.push_str(&trim(band(face, 7.0, 27.0, top, top + 3.0)));
+            let courses: &[f64] = if kind == InitialHallKind::Gallery {
+                &[48.0, 64.0]
+            } else {
+                &[72.0, 104.0]
+            };
+            for &height in courses {
+                out.push_str(&trim(band(face, 8.0, 18.0, height, height + 6.0)));
+            }
+        }
+        "thinning" => {
+            // A wide coping makes the open perimeter read as a deliberate guard.
+            out.push_str(&trim(band(face, 0.0, 12.0, 24.0, 27.0)));
+        }
         _ => {}
     }
     out

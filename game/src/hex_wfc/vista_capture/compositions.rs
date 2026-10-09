@@ -64,6 +64,10 @@ pub(super) fn poses(runtime: &HexWfcRuntime) -> Vec<VistaPose> {
                 ("facet_monument", InitialHallKind::Court) if terrace => "monument_terrace_court",
                 ("facet_monument", InitialHallKind::Gallery) => "monument_gallery",
                 ("facet_monument", InitialHallKind::Court) => "monument_court",
+                ("megastructure", InitialHallKind::Gallery) => "reactor_gallery",
+                ("megastructure", InitialHallKind::Court) => "reactor_court",
+                ("thinning", InitialHallKind::Gallery) => "sky_gallery",
+                ("thinning", InitialHallKind::Court) => "sky_court",
                 _ => unreachable!("planner targets authored districts"),
             };
             VistaPose {

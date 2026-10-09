@@ -299,3 +299,36 @@ Final engineering gate: formatting and warning-free Clippy pass; workspace tests
 pass **2,863 / zero failures / 44 ignored**, across 297 targets. The paired
 cameras share an identical complete physical-cell census and content identity.
 The full extended instrumentation suite and human/device checks remain unrun.
+
+### Reactor and Sky reference compositions — 2026-10-08
+
+[Four inspected native references](../evidence/reactor_sky_2026_10_08/README.md)
+extend the mutable hall system through the last two districts. Reactor uses
+wall-backed service banks and heavy courses in a lower gallery and taller court.
+Sky uses a pier-supported peripheral portico and open court, with guarded sealed
+sides and frame-mounted practicals. The central roof opening survives in the
+physical hulls and distant mesh; full-height door interfaces remain unchanged.
+
+All 24 fixed seeds receive fourteen connected compositions and forty-two selected
+hall cells across floors 1–7. Existing Backrooms room references cover the first
+floor. The first district-reference pass is now represented through the summit;
+this does not close human recognition or the full eight-floor milestone. Card
+replacement and previews retire the same initial choices without adding fixed
+structures, observation protection or team discovery. All Observer and major door
+pairings and rotations remain traversable without jumping.
+
+Forty added sources bring the archive to 578 maps, 482 active. Composition
+compatibility advances to **9**; input remains **13**. Simulation identity is
+`259e2a8f29fd1607dc84a0e0d02d23c256fdb4325d32a6a390fe8f3e8e5331b3`.
+Reactor's panel treatment still dominates its sparse functional detail. Sky's
+peripheral shelter/open centre reads distinctly, but complete human choices,
+reveals, pacing and moving-camera construction checks remain open. The last fresh
+frame/cold-start measurement predates this revision and was red; no new graphical,
+Deck or physical LAN acceptance is inferred from these captures.
+
+Final engineering gate: formatting and warning-free Clippy pass; workspace tests
+pass **2,864 / zero failures / 44 ignored**, across 297 targets. The refreshed survey
+solves 24/24 with fourteen compositions and forty-two initial choices each. The
+7,200-tick simulation probe reports p95 **336.962 µs**, excluding commands/rendering,
+with five plays and no catch. Extended instrumentation and fresh graphical/device
+acceptance remain unrun.

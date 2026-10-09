@@ -97,3 +97,15 @@ fn distant_initial_geometry_keeps_walls_and_doors_and_does_not_cap_terrace_court
         "a generic distant roof must not fill the authored terrace opening"
     );
 }
+
+#[test]
+fn sky_portico_and_court_keep_the_centre_open_in_distant_geometry() {
+    let game = physical();
+    for kind in [InitialHallKind::Gallery, InitialHallKind::Court] {
+        let sky = cell(&game, 7, kind);
+        assert!(
+            !hit(&game, sky, Vec3::Y * 5.0, Vec3::Y * 9.0),
+            "Sky {kind:?} must retain its real central roof opening"
+        );
+    }
+}

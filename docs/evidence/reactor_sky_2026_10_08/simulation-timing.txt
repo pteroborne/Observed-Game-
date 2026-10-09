@@ -1,0 +1,12 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.20s
+     Running unittests src/lib.rs (/srv/build-cache/cargo/debug/deps/observed_match-4400368397f2ecd5)
+
+running 1 test
+construct 455.04826ms
+outcome Running at tick 7200
+catches 0 slowest catch tick None
+median 255.634µs p95 336.962µs max 3.846234ms plays 5 traces [("Architect", Some("nobody detected")), ("Architect 0", Some("hold card")), ("Architect 1", Some("hold card"))]
+beat ticks: max Some(3.80201ms)
+test ascent::facility::tests::production_ascent_tick_times ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 505 filtered out; finished in 57.86s

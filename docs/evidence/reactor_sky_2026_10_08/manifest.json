@@ -1,0 +1,25 @@
+{
+  "base_commit": "22a814dd928ca95915bd562472b476383218cc27",
+  "seed": 1,
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "catalog_hash": "bade05845c5bdf43447f0411fd226b63b6d9f133ddd583d9da7bc3dbd344344c",
+  "profile_hash": "5543702475eff2359af0e25f424b93dbff4854985d26c116af138f96cbfb0ba9",
+  "simulation_hash": "259e2a8f29fd1607dc84a0e0d02d23c256fdb4325d32a6a390fe8f3e8e5331b3",
+  "sha256": {
+    "checks.json": "d12e552569c587edfc4fac826d0be7846c2ef454f591d081a264d8e0683fb1db",
+    "native/vista_01_reactor_gallery.json": "3dc78f915ffb8bf530a7b79499e498ed4416ae8f29a0e4b9c65cceecedf1300e",
+    "native/vista_01_reactor_gallery.png": "491a6746834e70edbc6b172db9c10779846d89721c371e34b29074390eb5c300",
+    "native/vista_02_reactor_court.json": "038f8adb5cf89d3956767a2bad27b44bcdfa3f8ed4ab7f1c3c9b54a35719aecf",
+    "native/vista_02_reactor_court.png": "b445cdf5973d42f9ba1786aba783680a0ff8296a7f80439205df5683dba9d42b",
+    "native/vista_03_sky_gallery.json": "cf066d475acf0af98b4e6d86fbbbe86b397008ce6d03d49adf9ab4a6bdd94916",
+    "native/vista_03_sky_gallery.png": "1a214e41f6f78e531b0ce0bc6416e8ccbc7f2cdd4710232251ed2c56d252b29a",
+    "native/vista_04_sky_court.json": "281f5e9e05c6eccc9e18498816323242e66b207a6664747ac246bb5c0dba5267",
+    "native/vista_04_sky_court.png": "65e954c6aaece7572f1ddf05425f4911a6eea46822dd8c83adc67f0daf7b15f2",
+    "simulation-timing.txt": "9a67354e3c3145ea7402b9b0f95f8e807b495235f0eb4585d3ad170e2a800ac9",
+    "survey.csv": "e229acd932371282d1bb9166a6f1ac36620efffcd43cab2c2dfe3da28db7f0c5"
+  }
+}

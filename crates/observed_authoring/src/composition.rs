@@ -806,17 +806,17 @@ mod tests {
         // solve control changed - `COMPOSITION_PROFILE_VERSION` went to 2
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
-        // One hundred reserved Library/Lumen/Zen/Monument sources add two physical
+        // One hundred forty reserved initial district sources add two physical
         // kits in each district, preserving the existing flat-hall interfaces.
         const CATALOG_HASH: &str =
-            "d1602b954c408239ab8dd4944cc2fcbf08007d9f460d8c1c2c5eac76f4b1fb09";
+            "bade05845c5bdf43447f0411fd226b63b6d9f133ddd583d9da7bc3dbd344344c";
         // The open-air composition (void share 2,000), 2026-09-24, at profile
-        // version 8 extends initial halls through Zen and both Monument floors.
+        // version 9 extends initial halls through Reactor and open Sky forms.
         const PROFILE_HASH: &str =
-            "8e419298dca0e8132e69b43aeaabbc9c67ab847a3ecdcc344228c4be3d60322f";
+            "5543702475eff2359af0e25f424b93dbff4854985d26c116af138f96cbfb0ba9";
         // Catalog and composition policy both enter physical match identity.
         const SIMULATION_HASH: &str =
-            "9922a1750e5c27dd861c3e77035c096a492fa6dd4ef16f5325f71ef16e149adb";
+            "259e2a8f29fd1607dc84a0e0d02d23c256fdb4325d32a6a390fe8f3e8e5331b3";
 
         let root = committed_tiles();
         let compiled_text =
@@ -828,8 +828,8 @@ mod tests {
         // climbed by a composition since, and none of either is compiled. 230 since
         // climbs turn: four turning mid cells and three turned landings, in seven
         // dressings.
-        // One hundred reserved initial-hall sources bring the active corpus to 442.
-        assert_eq!(compiled.modules.len(), 442, "committed strict source count");
+        // One hundred forty reserved initial-hall sources bring the active corpus to 482.
+        assert_eq!(compiled.modules.len(), 482, "committed strict source count");
         assert!(
             compiled
                 .modules

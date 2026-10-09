@@ -92,15 +92,21 @@ pub fn seed_initial_halls(
             .unwrap_or("");
         if !matches!(
             register,
-            "infinite_gallery" | "overlit_grid" | "shadow_screen" | "facet_monument"
+            "infinite_gallery"
+                | "overlit_grid"
+                | "shadow_screen"
+                | "facet_monument"
+                | "megastructure"
+                | "thinning"
         ) {
             continue;
         }
-        let terrace = register == "facet_monument"
-            && world
-                .architecture
-                .iter()
-                .any(|(cell, prior)| cell.level < level && prior.slug() == "facet_monument");
+        let terrace = register == "thinning"
+            || (register == "facet_monument"
+                && world
+                    .architecture
+                    .iter()
+                    .any(|(cell, prior)| cell.level < level && prior.slug() == "facet_monument"));
         let floor_route = route
             .iter()
             .copied()
@@ -247,8 +253,8 @@ mod tests {
             .expect("survey seed solves");
             let before = world.clone();
             let plans = seed_initial_halls(&mut world, &catalog.cells, &catalog.composition);
-            assert_eq!(plans.len(), 10, "seed {seed}");
-            assert_eq!(world.initial_modules.len(), 30);
+            assert_eq!(plans.len(), 14, "seed {seed}");
+            assert_eq!(world.initial_modules.len(), 42);
             assert_eq!(world.placements, before.placements);
             assert_eq!(world.blueprints, before.blueprints);
             assert_eq!(world.architecture, before.architecture);
@@ -274,8 +280,8 @@ mod tests {
                     let key = prototypes_key(&world, cell);
                     assert_eq!(
                         is_terrace_key(&key),
-                        cell.level == 5,
-                        "wrong Monument floor treatment"
+                        matches!(cell.level, 5 | 7),
+                        "wrong open-floor treatment"
                     );
                 }
             }

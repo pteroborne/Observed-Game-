@@ -13,12 +13,14 @@ pub const GALLERY_BASE: u16 = 2000;
 pub const COURT_BASE: u16 = 2100;
 const TERRACE_GALLERY_BASE: u16 = 2200;
 const TERRACE_COURT_BASE: u16 = 2300;
-pub const TARGETS: [(&str, bool); 5] = [
+pub const TARGETS: [(&str, bool); 7] = [
     ("infinite_gallery", false),
     ("overlit_grid", false),
     ("shadow_screen", false),
     ("facet_monument", false),
     ("facet_monument", true),
+    ("megastructure", false),
+    ("thinning", true),
 ];
 mod dressing;
 
@@ -86,7 +88,12 @@ pub fn is_terrace_key(key: &crate::TileKey) -> bool {
 fn definition_for_key(key: &crate::TileKey) -> Option<(InitialHallKind, bool)> {
     if !matches!(
         key.register.as_str(),
-        "infinite_gallery" | "overlit_grid" | "shadow_screen" | "facet_monument"
+        "infinite_gallery"
+            | "overlit_grid"
+            | "shadow_screen"
+            | "facet_monument"
+            | "megastructure"
+            | "thinning"
     ) {
         return None;
     }
@@ -109,7 +116,7 @@ fn definition_for_key(key: &crate::TileKey) -> Option<(InitialHallKind, bool)> {
     ]
     .into_iter()
     .find(|&(kind, terrace)| {
-        if terrace && key.register != "facet_monument" {
+        if terrace && !matches!(key.register.as_str(), "facet_monument" | "thinning") {
             return false;
         }
         source
@@ -141,6 +148,8 @@ fn name_for(register: &str, kind: InitialHallKind, mask: u8, terrace: bool) -> S
                 "monument"
             }
         }
+        "megastructure" => "reactor",
+        "thinning" => "sky",
         _ => unreachable!("initial district"),
     };
     format!("initial_{district}_{}_m{mask:02}", kind.slug())
@@ -195,7 +204,20 @@ fn build(register: &str, kind: InitialHallKind, mask: u8, terrace: bool) -> Stri
             )));
         }
     }
-    let ceiling = if kind == InitialHallKind::Gallery {
+    let ceiling = if register == "thinning" {
+        if kind == InitialHallKind::Gallery {
+            // A pier-supported peripheral portico leaves the centre open to sky.
+            for face in 0..6 {
+                if mask & (1 << face) == 0 {
+                    brushes.push_str(&trim(band(face, 16.0, 64.0, 88.0, 90.0)));
+                    for inset in [20.0, 36.0, 52.0] {
+                        brushes.push_str(&trim(band(face, inset, inset + 8.0, 90.0, 92.0)));
+                    }
+                }
+            }
+        }
+        88.0
+    } else if kind == InitialHallKind::Gallery {
         let plan = corners().map(|(x, y)| (x * 0.80, y * 0.80));
         // The canopy rests on the sealed-bay piers; its exposed underside
         // stays separate from the outer cap and preserves standing clearance.
@@ -212,7 +234,8 @@ fn build(register: &str, kind: InitialHallKind, mask: u8, terrace: bool) -> Stri
     } else {
         120.0
     };
-    let (fixture, lights) = if terrace && kind == InitialHallKind::Court {
+    let (fixture, lights) = if register == "thinning" || (terrace && kind == InitialHallKind::Court)
+    {
         wall_fixture(0, 0.05, 76.0, 16.0)
     } else {
         ceiling_fixture(0.0, 0.0, ceiling, 28.0, 7.0)
@@ -287,6 +310,8 @@ mod tests {
             "overlit_grid",
             "shadow_screen",
             "facet_monument",
+            "megastructure",
+            "thinning",
         ])
         .expect("runtime")
     }
@@ -296,7 +321,7 @@ mod tests {
         let root =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles/authored");
         let generated = generated();
-        assert_eq!(generated.len(), 100);
+        assert_eq!(generated.len(), 140);
         for (name, source) in generated {
             assert_eq!(
                 std::fs::read_to_string(root.join(format!("{name}.map")))

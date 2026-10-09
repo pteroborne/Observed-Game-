@@ -37,6 +37,11 @@ repairs premature Zen wall removal and matches flat-hall/initial-kit exterior
 silhouettes to physical geometry. Identical normal/full-world camera pairs separate
 those rendering gaps from the remaining terrace opening and ceiling artifacts.
 
+[Reactor/Sky initial references](docs/evidence/reactor_sky_2026_10_08/README.md)
+complete the first district-reference pass through the summit: Reactor service
+banks and overhead courses, Sky porticos and open courts. Human all-floor landmark
+recognition, convincing construction and frame/cold-start budgets remain open.
+
 > **Canonical direction reset (2026-09-07).** The new governing design is
 > [Architect Ascent](docs/architect_ascent_design.md). It supersedes the
 > precomposed facility race as the final game while retaining the continuous hex
