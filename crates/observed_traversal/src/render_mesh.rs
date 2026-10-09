@@ -5,7 +5,7 @@
 //! triangulation, smoothing, or UV policy in every Bevy adapter.
 
 mod coplanar;
-pub use coplanar::merge_coplanar_surfaces;
+pub use coplanar::{merge_coplanar_surfaces, merge_coplanar_surfaces_occluded};
 
 use std::collections::{BTreeMap, HashMap};
 

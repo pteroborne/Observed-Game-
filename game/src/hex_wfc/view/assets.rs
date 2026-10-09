@@ -22,7 +22,7 @@ use crate::view::environment::{cuboid_mesh, load_repeating_texture};
 mod backrooms;
 mod mesh;
 pub(super) mod warmup;
-pub(super) use mesh::build_merged_mesh_facing;
+pub(super) use mesh::{build_merged_mesh_facing, build_merged_mesh_owned};
 mod concourse;
 mod jade;
 mod promenade;
@@ -459,12 +459,23 @@ impl HexWfcVisualAssets {
         group: MeshGroupKey,
         hulls: &[&[Vec3]],
     ) -> Option<Handle<Mesh>> {
+        self.merged_mesh_for_owned(meshes, tile_key, group, hulls, &[])
+    }
+
+    pub(in crate::hex_wfc) fn merged_mesh_for_owned(
+        &mut self,
+        meshes: &mut Assets<Mesh>,
+        tile_key: Option<&str>,
+        group: MeshGroupKey,
+        hulls: &[&[Vec3]],
+        occluders: &[&[Vec3]],
+    ) -> Option<Handle<Mesh>> {
         let facing = match group {
             MeshGroupKey::Climb(facing) => Some(facing),
             _ => None,
         };
         if let Some(key) = tile_key {
-            let cache_key = mesh::MergedMeshKey::new(key, group, hulls);
+            let cache_key = mesh::MergedMeshKey::new(key, group, hulls, occluders);
             if let Some(handle) = self.merged_hull_cache.get(&cache_key) {
                 self.cache_hits += 1;
                 return handle.clone();
@@ -475,13 +486,21 @@ impl HexWfcVisualAssets {
                 return None;
             }
             self.cache_misses += 1;
-            let mesh = build_merged_mesh_facing(hulls, facing)?;
+            let mesh = if occluders.is_empty() {
+                build_merged_mesh_facing(hulls, facing)
+            } else {
+                build_merged_mesh_owned(hulls, facing, occluders)
+            }?;
             let handle = meshes.add(mesh);
             self.merged_hull_cache.insert(cache_key, handle.clone());
             Some(handle)
         } else {
             self.cache_misses += 1;
-            let mesh = build_merged_mesh_facing(hulls, facing)?;
+            let mesh = if occluders.is_empty() {
+                build_merged_mesh_facing(hulls, facing)
+            } else {
+                build_merged_mesh_owned(hulls, facing, occluders)
+            }?;
             Some(meshes.add(mesh))
         }
     }

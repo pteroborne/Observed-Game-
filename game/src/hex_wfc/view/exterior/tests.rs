@@ -142,3 +142,145 @@ fn detailed_rooms_replace_exterior_proxies_for_the_entire_footprint() {
     resident.get_mut(&anchor).unwrap().shown = false;
     assert!(detailed_coverage(&catalog, &resident).is_empty());
 }
+
+#[test]
+fn projected_hall_has_one_underside_while_deep_hanging_keels_remain() {
+    use observed_match::hex_wfc::HexWfcGeometrySnapshot;
+    let high = at(3, 3, 2);
+    let low = at(3, 3, 0);
+    let doors = lateral_bit(HexFace::East) | lateral_bit(HexFace::SouthEast);
+    let mut facility = world(&[
+        (high, HexArchetype::Corner, doors),
+        (low, HexArchetype::Corner, doors),
+    ]);
+    for cell in [high, low] {
+        facility
+            .architecture
+            .insert(cell, ArchitectureRegister::Megastructure);
+    }
+    let upper = cell_skin(&facility, high).unwrap();
+    assert!(upper.flat_underside);
+    assert!(
+        !upper.keel.is_empty(),
+        "the legacy plate would duplicate a real floor"
+    );
+    assert!(
+        !cell_skin(&facility, low).unwrap().flat_underside,
+        "the deep hanging keel stays separate"
+    );
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/tiles");
+    let catalog = observed_authoring::RuntimeHexCatalog::load(
+        &root,
+        observed_authoring::tile_source::REGISTERS,
+    )
+    .unwrap();
+    let geometry = HexWfcGeometrySnapshot::project(&facility, &catalog.cells).unwrap();
+    assert!(
+        geometry
+            .pieces_in_cell(high)
+            .any(|piece| MeshGroupKey::for_piece(piece) == MeshGroupKey::Floor)
+    );
+    let mut ecs = World::default();
+    let mut queue = bevy::ecs::world::CommandQueue::default();
+    let mut meshes = Assets::<Mesh>::default();
+    let mut materials = Assets::<StandardMaterial>::default();
+    let mut assets = HexWfcVisualAssets::for_test(&mut materials);
+    for (cell, expected_keel) in [(high, false), (low, true)] {
+        let spawned = spawn_cell(
+            &mut Commands::new(&mut queue, &ecs),
+            &mut meshes,
+            &mut assets,
+            (&facility, &geometry),
+            cell,
+        )
+        .unwrap();
+        assert!(spawned.shell.is_some());
+        assert_eq!(spawned.keel.is_some(), expected_keel);
+    }
+    queue.apply(&mut ecs);
+}
+
+#[test]
+fn fallback_undersides_follow_detail_coverage_and_overview() {
+    use super::super::{
+        HexPresentationResidency, ResidentCell,
+        residency::Reach,
+        shell::{CellGeometryIndex, HexGeometryCatalog},
+        spectate::SpectatorOverview,
+        visibility::Window,
+    };
+    let cell = at(1, 1, 1);
+    let mut app = App::new();
+    app.insert_resource(SpectatorOverview::default());
+    app.insert_resource(HexPresentationResidency {
+        catalog: HexGeometryCatalog {
+            generation: 0,
+            boundary_piece_ids: Vec::new(),
+            cells: BTreeMap::from([(
+                cell,
+                CellGeometryIndex {
+                    footprint: vec![cell],
+                    piece_ids: Vec::new(),
+                    lights: Vec::new(),
+                },
+            )]),
+        },
+        resident: BTreeMap::from([(
+            cell,
+            ResidentCell {
+                shown: true,
+                entity: Entity::PLACEHOLDER,
+                child_pieces: 0,
+            },
+        )]),
+        replacements: Default::default(),
+        defer_incremental_once: false,
+        capture_unbounded: false,
+        reach: Reach::play(),
+        window: Window::default(),
+    });
+    let flat = app
+        .world_mut()
+        .spawn((
+            ExteriorKeel {
+                flat_cell: Some(cell),
+            },
+            Visibility::Inherited,
+        ))
+        .id();
+    let deep = app
+        .world_mut()
+        .spawn((ExteriorKeel { flat_cell: None }, Visibility::Inherited))
+        .id();
+    app.add_systems(Update, sync_visibility);
+    app.update();
+    assert_eq!(
+        *app.world().get::<Visibility>(flat).unwrap(),
+        Visibility::Hidden
+    );
+    assert_eq!(
+        *app.world().get::<Visibility>(deep).unwrap(),
+        Visibility::Inherited
+    );
+    app.world_mut()
+        .resource_mut::<HexPresentationResidency>()
+        .resident
+        .get_mut(&cell)
+        .unwrap()
+        .shown = false;
+    app.update();
+    assert_eq!(
+        *app.world().get::<Visibility>(flat).unwrap(),
+        Visibility::Inherited
+    );
+    app.world_mut().resource_mut::<SpectatorOverview>().active = true;
+    app.update();
+    assert_eq!(
+        *app.world().get::<Visibility>(flat).unwrap(),
+        Visibility::Hidden
+    );
+    assert_eq!(
+        *app.world().get::<Visibility>(deep).unwrap(),
+        Visibility::Hidden
+    );
+}

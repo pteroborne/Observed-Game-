@@ -8,10 +8,12 @@ const EPS: f32 = 0.00001;
 
 #[derive(Clone, Copy)]
 struct Triangle {
-    points: [Vec3; 3],
     normals: [Vec3; 3],
     uvs: [Vec2; 3],
-    normal: Vec3,
+    axis: usize,
+    plan: [Vec2; 3],
+    bounds: (Vec2, Vec2),
+    area: f32,
 }
 
 fn projected(p: Vec3, axis: usize) -> Vec2 {
@@ -56,14 +58,14 @@ fn clip(poly: &[Vec3], a: Vec2, b: Vec2, sign: f32, axis: usize, inside: bool) -
     out
 }
 fn subtract(poly: &[Vec3], cutter: &Triangle) -> Vec<Vec<Vec3>> {
-    let axis = axis(cutter.normal);
+    let axis = cutter.axis;
     let (lo, hi) = bounds(poly, axis);
-    let (clo, chi) = bounds(&cutter.points, axis);
+    let (clo, chi) = cutter.bounds;
     if (hi.min(chi) - lo.max(clo)).min_element() <= EPS {
         return vec![poly.to_vec()];
     }
-    let [a, b, c] = cutter.points.map(|p| projected(p, axis));
-    let sign = (b - a).perp_dot(c - a).signum();
+    let [a, b, c] = cutter.plan;
+    let sign = cutter.area.signum();
     let mut remainder = poly.to_vec();
     let mut pieces = Vec::new();
     for (a, b) in [(a, b), (b, c), (c, a)] {
@@ -79,10 +81,9 @@ fn subtract(poly: &[Vec3], cutter: &Triangle) -> Vec<Vec<Vec3>> {
     pieces
 }
 fn attributes(t: Triangle, p: Vec3) -> ([f32; 3], [f32; 2]) {
-    let axis = axis(t.normal);
-    let [a, b, c] = t.points.map(|p| projected(p, axis));
-    let p = projected(p, axis);
-    let total = (b - a).perp_dot(c - a);
+    let [a, b, c] = t.plan;
+    let p = projected(p, t.axis);
+    let total = t.area;
     let v = (p - a).perp_dot(c - a) / total;
     let w = (b - a).perp_dot(p - a) / total;
     let u = 1.0 - v - w;
@@ -98,6 +99,16 @@ fn attributes(t: Triangle, p: Vec3) -> ([f32; 3], [f32; 2]) {
 /// UVs/normals are interpolated onto cut vertices, preserving material scale.
 #[must_use]
 pub fn merge_coplanar_surfaces(meshes: &[ConvexRenderMesh]) -> ConvexRenderMesh {
+    merge_coplanar_surfaces_occluded(meshes, &[])
+}
+
+/// Draw target surfaces once, after subtracting same-facing coplanar areas
+/// already owned by another material. Exposed faces and opposite normals remain.
+#[must_use]
+pub fn merge_coplanar_surfaces_occluded(
+    meshes: &[ConvexRenderMesh],
+    covered: &[ConvexRenderMesh],
+) -> ConvexRenderMesh {
     let mut out = ConvexRenderMesh {
         positions: Vec::new(),
         normals: Vec::new(),
@@ -105,7 +116,7 @@ pub fn merge_coplanar_surfaces(meshes: &[ConvexRenderMesh]) -> ConvexRenderMesh 
         indices: Vec::new(),
     };
     let mut planes = BTreeMap::<[i64; 4], Vec<Triangle>>::new();
-    for mesh in meshes {
+    for (owner, mesh) in covered.iter().chain(meshes).enumerate() {
         for ids in mesh.indices.chunks_exact(3) {
             let indices = [ids[0] as usize, ids[1] as usize, ids[2] as usize];
             let points = indices.map(|i| Vec3::from_array(mesh.positions[i]));
@@ -115,15 +126,24 @@ pub fn merge_coplanar_surfaces(meshes: &[ConvexRenderMesh]) -> ConvexRenderMesh 
             if normal.length_squared() < 0.5 {
                 continue;
             }
+            let axis = axis(normal);
+            let plan = points.map(|point| projected(point, axis));
+            let [a, b, c] = plan;
             let triangle = Triangle {
-                points,
-                normal,
+                axis,
+                plan,
+                bounds: bounds(&points, axis),
+                area: (b - a).perp_dot(c - a),
                 normals: indices.map(|i| Vec3::from_array(mesh.normals[i])),
                 uvs: indices.map(|i| Vec2::from_array(mesh.uvs[i])),
             };
             let key = [normal.x, normal.y, normal.z, normal.dot(points[0])]
                 .map(|v| (v * 10000.0).round() as i64);
             let previous = planes.entry(key).or_default();
+            if owner < covered.len() {
+                previous.push(triangle);
+                continue;
+            }
             let mut pieces = vec![points.to_vec()];
             for old in previous.iter() {
                 pieces = pieces.iter().flat_map(|poly| subtract(poly, old)).collect();
@@ -222,5 +242,30 @@ mod tests {
                 .abs()
                 < 0.001
         );
+    }
+    #[test]
+    fn another_material_owns_only_shared_same_facing_areas() {
+        let target = cube(Vec3::ZERO);
+        let clipped =
+            merge_coplanar_surfaces_occluded(std::slice::from_ref(&target), &[cube(Vec3::X)]);
+        assert!((top_area(&clipped) - 2.0).abs() < 0.001);
+        let hidden = merge_coplanar_surfaces_occluded(
+            std::slice::from_ref(&target),
+            std::slice::from_ref(&target),
+        );
+        assert!(hidden.indices.is_empty());
+        let separate =
+            merge_coplanar_surfaces_occluded(std::slice::from_ref(&target), &[cube(Vec3::Y * 0.1)]);
+        assert!((top_area(&separate) - 4.0).abs() < 0.001);
+        let mut opposite = target.clone();
+        for triangle in opposite.indices.chunks_exact_mut(3) {
+            triangle.swap(1, 2);
+        }
+        for normal in &mut opposite.normals {
+            *normal = (-Vec3::from_array(*normal)).to_array();
+        }
+        let retained = merge_coplanar_surfaces_occluded(&[target], &[opposite]);
+        assert!((top_area(&retained) - 4.0).abs() < 0.001);
+        assert!(clipped.uvs.iter().flatten().all(|value| value.is_finite()));
     }
 }

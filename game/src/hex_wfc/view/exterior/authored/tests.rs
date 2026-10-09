@@ -109,3 +109,36 @@ fn sky_portico_and_court_keep_the_centre_open_in_distant_geometry() {
         );
     }
 }
+
+#[test]
+fn an_authored_far_hall_uses_at_most_two_material_draws() {
+    let game = physical();
+    let at = cell(&game, 4, InitialHallKind::Court);
+    let mut world = World::default();
+    let mut meshes = Assets::<Mesh>::default();
+    let mut materials = Assets::<StandardMaterial>::default();
+    let mut assets = HexWfcVisualAssets::for_test(&mut materials);
+    let shell;
+    {
+        let mut commands = world.commands();
+        shell = spawn(
+            &mut commands,
+            &mut meshes,
+            &mut assets,
+            &game.geometry,
+            at,
+            ArchitectureRegister::FacetMonument,
+        )
+        .unwrap();
+    }
+    world.flush();
+    let count = world
+        .query::<(&ChildOf, &Mesh3d)>()
+        .iter(&world)
+        .filter(|(parent, _)| parent.parent() == shell)
+        .count();
+    assert!(
+        count > 0 && count <= 2,
+        "a proxy should not split every near material into another draw"
+    );
+}

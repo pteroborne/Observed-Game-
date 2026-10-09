@@ -15,7 +15,7 @@ pub(super) struct MeshWarmup {
     required: VecDeque<(super::mesh::MergedMeshKey, Vec<Vec<Vec3>>)>,
     requested: HashSet<super::mesh::MergedMeshKey>,
     worker: Option<Task<(super::mesh::MergedMeshKey, Option<Mesh>)>>,
-    pending: VecDeque<(String, MeshGroupKey, Vec<Vec<Vec3>>)>,
+    pending: VecDeque<(super::mesh::MergedMeshKey, Vec<Vec<Vec3>>)>,
 }
 
 pub(in crate::hex_wfc) fn warm_reusable_meshes(
@@ -63,24 +63,18 @@ pub(in crate::hex_wfc) fn warm_reusable_meshes(
             for (key, group) in crate::hex_wfc::view::mesh_group::gather(&borrowed) {
                 if key != MeshGroupKey::Hidden {
                     assets.warmup.pending.push_back((
-                        format!("{:?}", tile.key),
-                        key,
+                        super::mesh::MergedMeshKey::new(
+                            &format!("{:?}", tile.key),
+                            key,
+                            &group.hulls,
+                            &group.occluders,
+                        ),
                         group.hulls.iter().map(|hull| hull.to_vec()).collect(),
                     ));
                 }
             }
         }
-        assets
-            .warmup
-            .pending
-            .pop_front()
-            .map(|(tile, group, hulls)| {
-                let borrowed: Vec<_> = hulls.iter().map(Vec::as_slice).collect();
-                (
-                    super::mesh::MergedMeshKey::new(&tile, group, &borrowed),
-                    hulls,
-                )
-            })
+        assets.warmup.pending.pop_front()
     };
     if let Some((key, hulls)) = request {
         if assets.merged_hull_cache.get(&key).is_some() {
@@ -96,7 +90,17 @@ pub(in crate::hex_wfc) fn warm_reusable_meshes(
         // sees the match or a card, and a cold play still commits on its own tick.
         assets.warmup.worker = Some(AsyncComputeTaskPool::get().spawn(async move {
             let borrowed: Vec<_> = hulls.iter().map(Vec::as_slice).collect();
-            let mesh = super::build_merged_mesh_facing(&borrowed, facing);
+            let covered = key
+                .occluders
+                .iter()
+                .map(|hull| {
+                    hull.iter()
+                        .map(|p| Vec3::from_array(p.map(f32::from_bits)))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            let refs = covered.iter().map(Vec::as_slice).collect::<Vec<_>>();
+            let mesh = super::build_merged_mesh_owned(&borrowed, facing, &refs);
             (key, mesh)
         }));
     }
@@ -173,7 +177,7 @@ impl HexWfcVisualAssets {
             if *group == MeshGroupKey::Hidden {
                 continue;
             }
-            let key = super::mesh::MergedMeshKey::new(tile, *group, &data.hulls);
+            let key = super::mesh::MergedMeshKey::new(tile, *group, &data.hulls, &data.occluders);
             if self.merged_hull_cache.get(&key).is_some() {
                 continue;
             }
@@ -227,7 +231,13 @@ mod tests {
         // The cold entry path and worker populate the identical geometry key.
         for (key, group) in &groups {
             assets
-                .merged_mesh_for(&mut meshes, Some("tile"), *key, &group.hulls)
+                .merged_mesh_for_owned(
+                    &mut meshes,
+                    Some("tile"),
+                    *key,
+                    &group.hulls,
+                    &group.occluders,
+                )
                 .unwrap();
         }
         assert!(assets.request_cell_meshes(Some("tile"), &groups));

@@ -46,8 +46,14 @@ pub(super) fn spawn(
     if groups.is_empty() {
         return None;
     }
+    let covered = groups
+        .iter()
+        .filter(|(group, _)| matches!(group, MeshGroupKey::Floor | MeshGroupKey::Ceiling))
+        .flat_map(|(_, hulls)| hulls.iter().cloned())
+        .collect::<Vec<_>>();
+    let covered_refs = covered.iter().map(Vec::as_slice).collect::<Vec<_>>();
     let pieces = geometry.pieces_in_cell(at).collect::<Vec<_>>();
-    let key = crate::hex_wfc::view::shell::cell_mesh_key(&pieces, at);
+    let key = crate::hex_wfc::view::shell::cell_mesh_key(&pieces);
     let shell = commands
         .spawn((
             ExteriorShell(at),
@@ -57,15 +63,29 @@ pub(super) fn spawn(
             Name::new(format!("Projected hall exterior {at:?}")),
         ))
         .id();
+    // Far presentation has only two finishes. Joining their geometry keeps
+    // doors/roof gaps exact while avoiding a child draw for every near material.
+    let mut batches = HullGroups::new();
     for (group, hulls) in groups {
-        let refs = hulls.iter().map(Vec::as_slice).collect::<Vec<_>>();
-        let Some(mesh) = assets.merged_mesh_for(meshes, key.as_deref(), group, &refs) else {
-            continue;
-        };
         let surface = if matches!(group, MeshGroupKey::Floor | MeshGroupKey::Ceiling) {
             MeshGroupKey::Roof
         } else {
             MeshGroupKey::Facade
+        };
+        batches.entry(surface).or_default().extend(hulls);
+    }
+    let recipe = format!("proxy/{key:?}");
+    for (surface, hulls) in batches {
+        let refs = hulls.iter().map(Vec::as_slice).collect::<Vec<_>>();
+        let occluders = if surface == MeshGroupKey::Facade {
+            covered_refs.as_slice()
+        } else {
+            &[]
+        };
+        let Some(mesh) =
+            assets.merged_mesh_for_owned(meshes, Some(&recipe), surface, &refs, occluders)
+        else {
+            continue;
         };
         commands.spawn((
             Mesh3d(mesh),

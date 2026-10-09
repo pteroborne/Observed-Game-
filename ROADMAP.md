@@ -42,6 +42,11 @@ complete the first district-reference pass through the summit: Reactor service
 banks and overhead courses, Sky porticos and open courts. Human all-floor landmark
 recognition, convincing construction and frame/cold-start budgets remain open.
 
+[Ceiling overlap and proxy costs](docs/evidence/ceiling_cost_2026_10_08/README.md)
+remove duplicate underside plates and shared material-group surfaces, share local
+mesh recipes across cells, and batch each far hall into two material draws. Native
+comparisons and matched timing retain the construction/performance acceptance boundary.
+
 > **Canonical direction reset (2026-09-07).** The new governing design is
 > [Architect Ascent](docs/architect_ascent_design.md). It supersedes the
 > precomposed facility race as the final game while retaining the continuous hex

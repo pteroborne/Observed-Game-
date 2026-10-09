@@ -11,6 +11,14 @@ pub(in crate::hex_wfc::view) fn build_merged_mesh_facing(
     hulls: &[&[Vec3]],
     facing: Option<crate::hex_wfc::view::mesh_group::Facing>,
 ) -> Option<Mesh> {
+    build_merged_mesh_owned(hulls, facing, &[])
+}
+
+pub(in crate::hex_wfc::view) fn build_merged_mesh_owned(
+    hulls: &[&[Vec3]],
+    facing: Option<crate::hex_wfc::view::mesh_group::Facing>,
+    occluders: &[&[Vec3]],
+) -> Option<Mesh> {
     let mut all_positions = Vec::new();
     let mut all_normals = Vec::new();
     let mut all_uvs = Vec::new();
@@ -26,7 +34,11 @@ pub(in crate::hex_wfc::view) fn build_merged_mesh_facing(
         .into_iter()
         .filter_map(ConvexRenderMesh::from_convex_hull)
         .collect();
-    let data = observed_traversal::render_mesh::merge_coplanar_surfaces(&meshes);
+    let covered = occluders
+        .iter()
+        .filter_map(|hull| ConvexRenderMesh::from_convex_hull(hull))
+        .collect::<Vec<_>>();
+    let data = observed_traversal::render_mesh::merge_coplanar_surfaces_occluded(&meshes, &covered);
     {
         // Every triangle's corners are its own (`ConvexRenderMesh` duplicates them),
         // so a triangle is three consecutive vertices and can be kept or dropped whole.
@@ -77,22 +89,54 @@ pub(super) struct MergedMeshKey {
     pub(super) tile: String,
     pub(super) group: super::MeshGroupKey,
     pub(super) hulls: Vec<Vec<[u32; 3]>>,
+    pub(super) occluders: Vec<Vec<[u32; 3]>>,
 }
 
 impl MergedMeshKey {
-    pub(super) fn new(tile: &str, group: super::MeshGroupKey, hulls: &[&[Vec3]]) -> Self {
+    pub(super) fn new(
+        tile: &str,
+        group: super::MeshGroupKey,
+        hulls: &[&[Vec3]],
+        occluders: &[&[Vec3]],
+    ) -> Self {
         let mut keys: Vec<Vec<_>> = hulls
             .iter()
             .map(|hull| {
                 hull.iter()
-                    .map(|point| point.to_array().map(f32::to_bits))
+                    .map(|point| {
+                        point.to_array().map(|value| {
+                            if value == 0.0 {
+                                0.0f32.to_bits()
+                            } else {
+                                value.to_bits()
+                            }
+                        })
+                    })
                     .collect()
             })
             .collect();
         // Packed-vector swaps can reorder hulls in an unchanged owner. The
         // mesh has the same surfaces regardless of their order in the vector.
         keys.sort_unstable();
+        let mut covered: Vec<Vec<_>> = occluders
+            .iter()
+            .map(|hull| {
+                hull.iter()
+                    .map(|point| {
+                        point.to_array().map(|value| {
+                            if value == 0.0 {
+                                0.0f32.to_bits()
+                            } else {
+                                value.to_bits()
+                            }
+                        })
+                    })
+                    .collect()
+            })
+            .collect();
+        covered.sort_unstable();
         Self {
+            occluders: covered,
             tile: tile.to_owned(),
             group,
             hulls: keys,
@@ -151,6 +195,7 @@ mod tests {
                     tile: tile.to_string(),
                     group: super::super::MeshGroupKey::Floor,
                     hulls: Vec::new(),
+                    occluders: Vec::new(),
                 },
                 Handle::default(),
             );

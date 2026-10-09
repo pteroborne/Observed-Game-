@@ -123,6 +123,7 @@ pub(super) struct CellSkin {
     pub(super) caps: SkinData,
     pub(super) lips: SkinData,
     pub(super) keel: SkinData,
+    pub(super) flat_underside: bool,
 }
 
 fn corner(index: usize) -> Vec3 {
@@ -152,7 +153,7 @@ fn keel_hash(at: HexCoord) -> u32 {
 
 /// The underside of a hanging cell, and under a cell hanging over true void the
 /// stepped keel below it.
-fn keel(skin: &mut SkinData, world: &HexWfcWorld, at: HexCoord, o: Vec3) {
+fn keel(skin: &mut SkinData, world: &HexWfcWorld, at: HexCoord, o: Vec3) -> bool {
     let ring = |y: f32, inset: f32| -> Vec<Vec3> {
         (0..6)
             .map(|i| o + corner(i) * inset + Vec3::Y * y)
@@ -169,7 +170,7 @@ fn keel(skin: &mut SkinData, world: &HexWfcWorld, at: HexCoord, o: Vec3) {
     let depth = (8.0 + (keel_hash(at) % 12) as f32).min(MAX_KEEL);
     if !over_void {
         skin.polygon(&ring(0.0, OUTSET), Vec3::NEG_Y);
-        return;
+        return true;
     }
     let segments = 3;
     #[allow(clippy::cast_precision_loss)]
@@ -207,10 +208,12 @@ fn keel(skin: &mut SkinData, world: &HexWfcWorld, at: HexCoord, o: Vec3) {
         inset = next;
         y -= step;
     }
+    false
 }
 
 /// A walkway seen from afar: a narrow deck and its two lit lips.
 fn span_skin(skin: &mut CellSkin, o: Vec3, axis: HexFace) {
+    skin.flat_underside = true;
     let (a, b) = (corner(axis.index()), corner(axis.index() + 1));
     let mid = (a + b) * 0.5;
     let along = mid.normalize();
@@ -257,7 +260,9 @@ pub(in crate::hex_wfc) struct ExteriorShell(pub(in crate::hex_wfc) HexCoord);
 
 /// The keel under a hanging cell, marked so the spectator overview can lift it.
 #[derive(Component)]
-pub(in crate::hex_wfc) struct ExteriorKeel;
+pub(in crate::hex_wfc) struct ExteriorKeel {
+    flat_cell: Option<HexCoord>,
+}
 
 fn spawn_cell(
     commands: &mut Commands,
@@ -318,7 +323,9 @@ fn spawn_cell(
             }
             None => {
                 entity.insert((
-                    ExteriorKeel,
+                    ExteriorKeel {
+                        flat_cell: skin.flat_underside.then_some(at),
+                    },
                     DespawnOnExit(GameState::HexWfc),
                     Name::new("Hex keel"),
                 ));
@@ -326,7 +333,13 @@ fn spawn_cell(
         }
         Some(entity.id())
     };
-    let keel = part(skin.keel, MeshGroupKey::Truss, None);
+    // Projected hall shells already contain the exact floor underside.
+    // A second plate at the same height fights it, even in full-world captures.
+    let keel = if projected && skin.flat_underside {
+        None
+    } else {
+        part(skin.keel, MeshGroupKey::Truss, None)
+    };
     if let Some(parent) = shell.filter(|_| !projected) {
         part(skin.walls, MeshGroupKey::Facade, Some(parent));
         part(skin.caps, MeshGroupKey::Roof, Some(parent));
@@ -430,7 +443,7 @@ pub(in crate::hex_wfc) fn sync_visibility(
     residency: Option<Res<super::HexPresentationResidency>>,
     overview: Res<super::spectate::SpectatorOverview>,
     mut shells: Query<(&ExteriorShell, &mut Visibility), Without<ExteriorKeel>>,
-    mut keels: Query<&mut Visibility, With<ExteriorKeel>>,
+    mut keels: Query<(&ExteriorKeel, &mut Visibility)>,
 ) {
     let Some(residency) = residency else {
         return;
@@ -447,8 +460,9 @@ pub(in crate::hex_wfc) fn sync_visibility(
         let wanted = shown(!overview.active && !covered.contains(&shell.0));
         visibility.set_if_neq(wanted);
     }
-    for mut visibility in &mut keels {
-        visibility.set_if_neq(shown(!overview.active));
+    for (keel, mut visibility) in &mut keels {
+        let covered_plate = keel.flat_cell.is_some_and(|cell| covered.contains(&cell));
+        visibility.set_if_neq(shown(!overview.active && !covered_plate));
     }
 }
 

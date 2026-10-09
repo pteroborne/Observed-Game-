@@ -141,7 +141,7 @@ pub(super) fn spawn_cells_bounded(
             .filter_map(|&piece_index| geometry.piece(piece_index))
             .collect();
         if budget.is_some() {
-            let key = cell_mesh_key(&pieces, coord);
+            let key = cell_mesh_key(&pieces);
             if !assets.request_cell_meshes(key.as_deref(), &super::mesh_group::gather(&pieces)) {
                 continue;
             }
@@ -344,7 +344,7 @@ fn spawn_cell(
             super::promenade::spawn(commands, assets, meshes, cell, coord, heading, &pieces);
     }
     let origin = Vec3::from_array(hex_origin(coord));
-    let tile_key = cell_mesh_key(&pieces, coord);
+    let tile_key = cell_mesh_key(&pieces);
 
     let groups = super::mesh_group::gather(&pieces);
     for (group_key, group) in groups {
@@ -366,9 +366,13 @@ fn spawn_cell(
         {
             continue;
         }
-        let Some(mesh) =
-            assets.merged_mesh_for(meshes, tile_key.as_deref(), group_key, &group.hulls)
-        else {
+        let Some(mesh) = assets.merged_mesh_for_owned(
+            meshes,
+            tile_key.as_deref(),
+            group_key,
+            &group.hulls,
+            &group.occluders,
+        ) else {
             continue;
         };
         let material = if archive.is_some() {
@@ -531,18 +535,11 @@ fn cutaway_measure(piece: &HexStructurePiece) -> super::spectate::Cutaway {
     }
 }
 
-pub(super) fn cell_mesh_key(pieces: &[&HexStructurePiece], coord: HexCoord) -> Option<String> {
-    let bespoke = pieces
-        .iter()
-        .any(|piece| piece.part != observed_match::hex_wfc::HexPiecePart::Authored);
+/// Local hull fingerprints already distinguish every opened/rebuilt recipe.
+/// Cell coordinates would prevent identical recipes from sharing a mesh.
+pub(super) fn cell_mesh_key(pieces: &[&HexStructurePiece]) -> Option<String> {
     pieces
         .first()
         .and_then(|piece| piece.tile.as_ref())
-        .map(|tile| {
-            if bespoke {
-                format!("{tile:?}@{coord:?}")
-            } else {
-                format!("{tile:?}")
-            }
-        })
+        .map(|tile| format!("{tile:?}"))
 }

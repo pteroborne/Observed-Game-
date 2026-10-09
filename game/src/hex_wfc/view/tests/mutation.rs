@@ -158,12 +158,12 @@ fn a_parent_with_cold_decorations_is_not_published_or_leaked() {
         observed_content::ArchitectureRegister::InfiniteGallery,
     );
     let pieces: Vec<_> = runtime.match_state.geometry.pieces_in_cell(coord).collect();
-    let key = shell::cell_mesh_key(&pieces, coord).unwrap();
+    let key = shell::cell_mesh_key(&pieces).unwrap();
     let mut materials = Assets::<StandardMaterial>::default();
     let mut assets = HexWfcVisualAssets::for_test(&mut materials);
     let mut meshes = Assets::<Mesh>::default();
     for (group, data) in super::super::mesh_group::gather(&pieces) {
-        assets.merged_mesh_for(&mut meshes, Some(&key), group, &data.hulls);
+        assets.merged_mesh_for_owned(&mut meshes, Some(&key), group, &data.hulls, &data.occluders);
     }
     for replacing in [true, false] {
         assets.cache_misses += 1;

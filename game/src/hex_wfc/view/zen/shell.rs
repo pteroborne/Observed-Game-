@@ -56,15 +56,27 @@ pub(super) fn spawn(
     }
     // Prepare the whole physical wall treatment before spawning any of it.
     // A cold custom recipe must not replace an opaque base wall with a partial shell.
+    let covered = pieces
+        .iter()
+        .filter(|piece| {
+            matches!(
+                MeshGroupKey::for_piece(piece),
+                MeshGroupKey::Floor | MeshGroupKey::Ceiling
+            )
+        })
+        .map(|piece| points(piece, origin))
+        .collect::<Vec<_>>();
+    let covered_refs = covered.iter().map(Vec::as_slice).collect::<Vec<_>>();
     let mut prepared = Vec::new();
     let mut complete = true;
     for ((group, role), hulls) in groups {
         let refs: Vec<_> = hulls.iter().map(Vec::as_slice).collect();
-        let mesh = assets.merged_mesh_for(
+        let mesh = assets.merged_mesh_for_owned(
             meshes,
             Some(&format!("zen-shell-{}", super::mesh_key(&hulls))),
             group,
             &refs,
+            &covered_refs,
         );
         complete &= mesh.is_some();
         prepared.push((group, role, hulls, mesh));

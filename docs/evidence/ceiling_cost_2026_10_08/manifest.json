@@ -1,0 +1,24 @@
+{
+  "base_commit": "b7dace20989ed63ae95b0a85e8530fe9510cd122",
+  "seed": 1,
+  "grid": [
+    24,
+    17,
+    8
+  ],
+  "simulation_content_hash": "259e2a8f29fd1607dc84a0e0d02d23c256fdb4325d32a6a390fe8f3e8e5331b3",
+  "native_note": "final batching/ownership geometry; triangle-projection arithmetic caching was added afterward without changing intended output",
+  "sha256": {
+    "after-full/vista_01_monument_terrace_court.json": "a81b6dc5b5d96f4abf7382968a479238ba5a2493ea47251853590424c7b2bb2f",
+    "after-full/vista_01_monument_terrace_court.png": "4ec255205133ec31ae2cc91128c17a944c3c93c6818a4aff4f52a1d6b282c305",
+    "after-normal/vista_01_monument_terrace_court.json": "2bf54da0218842fe4045e518ec9e8c53865c68a4af64100e8a058a3c4d2395f1",
+    "after-normal/vista_01_monument_terrace_court.png": "9d9bfea42249a12af871c90f56bf3d05a340d766a4ee4038f9c828a5c48d4b09",
+    "before/vista_01_monument_terrace_court.json": "c21594656a8c0dcf5e6fae3057107f9b61556bfb2a44e65eed45df73f556c77e",
+    "before/vista_01_monument_terrace_court.png": "78a8233efb2834156e6cccd7b4ad7644107614f0bc23e5fe848e04feb958e627",
+    "checks.json": "dd536376ae569d13d23154d0721541676bc5ef4bfdabc7e4f0f2c04f46442785",
+    "performance/after-budget.json": "0d155befd1f12689f1de2825e26420ce9c9005e72fdbbf9bba129a74b8d3c1c1",
+    "performance/after.json": "b7845edd6dac3efb01662a735961b7b3cbbdd2c68dcca11f1ab55d454576ecc0",
+    "performance/before-budget.json": "9a4259e0d32e1099dcd6eebd6a60fab7f7866a754bcb12812ffa23d33d02bbfc",
+    "performance/before.json": "c05c90b9d93750c0f08b199f5e263f54f4d7409b946f3f65c2255c66a30b9ea4"
+  }
+}

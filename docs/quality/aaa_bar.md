@@ -332,3 +332,30 @@ solves 24/24 with fourteen compositions and forty-two initial choices each. The
 7,200-tick simulation probe reports p95 **336.962 µs**, excluding commands/rendering,
 with five plays and no catch. Extended instrumentation and fresh graphical/device
 acceptance remain unrun.
+
+### Ceiling surface ownership and proxy batching — 2026-10-08
+
+[Matched native views and timing](../evidence/ceiling_cost_2026_10_08/README.md)
+remove flat proxy undersides that duplicated real floor bottoms. Complex-module
+fallback plates follow detailed-footprint coverage; deep hanging structures remain.
+Floors/ceilings own shared same-facing coplanar wall/trim areas, while exposed,
+opposite-facing and separated-height faces remain. Prepared recipes carry the
+same ownership, and their cache keys include the owning hulls. Identical local
+geometry shares meshes across cell origins; signed zero is canonicalised without
+rounding other coordinates. Each flat-hall proxy uses at most two material draws.
+Clipping reuses triangle projections, bounds and areas rather than recalculating them.
+
+The inspected ceiling view is cleaner; static images do not establish every
+moving-camera flicker case. Camera/content/physical cell data match before/after.
+The 7,200-tick Desktop runs measure warm median **11.353 → 10.443 ms**, p95
+**18.368 → 17.763 ms**, maximum **46.706 → 56.542 ms**, cold view construction
+**7.056 → 7.617 s**. Mesh misses fall **23,238 → 13,277**. These are single-run
+measurements: typical frames improved, but cold construction and the sampled
+maximum worsened. Desktop remains red, and frame/cold-start acceptance is open.
+No simulation or content identity changed; input is 13 and profile is 9.
+
+Final engineering gate: formatting and warning-free Clippy pass; workspace tests
+pass **2,871 / zero failures / 44 ignored**, across 297 targets. Static native
+comparisons preserve pose/content and physical census; the before/after workload
+reports and failed Desktop budget checks are retained. Moving-camera/human,
+Deck/LAN and complete extended instrumentation acceptance remain open.

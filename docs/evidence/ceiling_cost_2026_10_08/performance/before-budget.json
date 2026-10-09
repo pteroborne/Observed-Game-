@@ -1,0 +1,24 @@
+{
+  "preset_budget": "desktop",
+  "passed": false,
+  "metrics": {
+    "p95": {
+      "measured_ms": 18.368,
+      "budget_ms": 16.667
+    },
+    "p99": {
+      "measured_ms": 22.182,
+      "budget_ms": 25.0
+    },
+    "maximum": {
+      "measured_ms": 46.706,
+      "budget_ms": 33.333
+    }
+  },
+  "failures": [
+    "p95: 18.368 ms exceeds 16.667 ms",
+    "maximum: 46.706 ms exceeds 33.333 ms"
+  ],
+  "acceptance_boundary": "Timing comparison only. Hardware identity, capture method, human play and physical LAN/device gates require separate evidence.",
+  "report_sha256": "c05c90b9d93750c0f08b199f5e263f54f4d7409b946f3f65c2255c66a30b9ea4"
+}

@@ -126,3 +126,133 @@ fn same_tile_with_changed_local_hulls_cannot_reuse_a_stale_mesh() {
     assert_eq!(old, restored);
     assert_eq!(meshes.len(), 2);
 }
+
+#[test]
+fn identical_open_edge_geometry_shares_meshes_across_cell_origins() {
+    let hull = [-1.0, 1.0]
+        .into_iter()
+        .flat_map(|x| {
+            [-1.0, 1.0]
+                .into_iter()
+                .flat_map(move |y| [-1.0, 1.0].into_iter().map(move |z| Vec3::new(x, y, z)))
+        })
+        .collect::<Vec<_>>();
+    let mut first = piece(hull.clone());
+    first.part = HexPiecePart::Lip;
+    first.tile = Some(observed_authoring::TileKey {
+        register: "megastructure".into(),
+        archetype: "hall_turn_60".into(),
+        variant: 3,
+    });
+    first.source_cell = observed_hex::HexCoord {
+        q: 1,
+        r: 1,
+        level: 0,
+    };
+    first.center = Vec3::from_array(observed_hex::hex_origin(first.source_cell));
+    let mut second = first.clone();
+    second.source_cell.q = 5;
+    second.center = Vec3::from_array(observed_hex::hex_origin(second.source_cell));
+    let mut materials = Assets::<StandardMaterial>::default();
+    let mut assets = HexWfcVisualAssets::for_test(&mut materials);
+    let mut meshes = Assets::<Mesh>::default();
+    let key1 = super::super::shell::cell_mesh_key(&[&first]).unwrap();
+    let key2 = super::super::shell::cell_mesh_key(&[&second]).unwrap();
+    let a = assets
+        .merged_mesh_for(&mut meshes, Some(&key1), MeshGroupKey::Lip, &[&hull])
+        .unwrap();
+    let b = assets
+        .merged_mesh_for(&mut meshes, Some(&key2), MeshGroupKey::Lip, &[&hull])
+        .unwrap();
+    assert_eq!(
+        a, b,
+        "the same local structure must not be rebuilt for another cell"
+    );
+    assert_eq!(meshes.len(), 1);
+}
+
+#[test]
+fn changed_slab_ownership_cannot_reuse_a_stale_wall_mesh() {
+    let cube = |offset: Vec3| {
+        [-1.0, 1.0]
+            .into_iter()
+            .flat_map(|x| {
+                [-1.0, 1.0].into_iter().flat_map(move |y| {
+                    [-1.0, 1.0]
+                        .into_iter()
+                        .map(move |z| offset + Vec3::new(x, y, z))
+                })
+            })
+            .collect::<Vec<_>>()
+    };
+    let target = cube(Vec3::ZERO);
+    let before = cube(Vec3::X);
+    let after = cube(Vec3::X * 1.5);
+    let mut materials = Assets::<StandardMaterial>::default();
+    let mut assets = HexWfcVisualAssets::for_test(&mut materials);
+    let mut meshes = Assets::<Mesh>::default();
+    let first = assets
+        .merged_mesh_for_owned(
+            &mut meshes,
+            Some("wall"),
+            MeshGroupKey::Interior,
+            &[&target],
+            &[&before],
+        )
+        .unwrap();
+    let changed = assets
+        .merged_mesh_for_owned(
+            &mut meshes,
+            Some("wall"),
+            MeshGroupKey::Interior,
+            &[&target],
+            &[&after],
+        )
+        .unwrap();
+    let restored = assets
+        .merged_mesh_for_owned(
+            &mut meshes,
+            Some("wall"),
+            MeshGroupKey::Interior,
+            &[&target],
+            &[&before],
+        )
+        .unwrap();
+    assert_ne!(first, changed);
+    assert_eq!(first, restored);
+}
+
+#[test]
+fn signed_zero_coordinates_share_the_same_geometry_recipe() {
+    let original = vec![Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::Z];
+    let reconstructed = original
+        .iter()
+        .map(|p| {
+            Vec3::from_array(
+                p.to_array()
+                    .map(|value| if value == 0.0 { -0.0 } else { value }),
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut materials = Assets::<StandardMaterial>::default();
+    let mut assets = HexWfcVisualAssets::for_test(&mut materials);
+    let mut meshes = Assets::<Mesh>::default();
+    let a = assets
+        .merged_mesh_for(
+            &mut meshes,
+            Some("tetra"),
+            MeshGroupKey::Interior,
+            &[&original],
+        )
+        .unwrap();
+    let b = assets
+        .merged_mesh_for(
+            &mut meshes,
+            Some("tetra"),
+            MeshGroupKey::Interior,
+            &[&reconstructed],
+        )
+        .unwrap();
+    assert_eq!(a, b);
+    assert_eq!(meshes.len(), 1);
+}

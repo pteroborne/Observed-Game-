@@ -134,6 +134,7 @@ impl MeshGroupKey {
 #[derive(Clone)]
 pub(in crate::hex_wfc) struct MergedGroup<'a> {
     pub hulls: Vec<&'a [Vec3]>,
+    pub occluders: Vec<&'a [Vec3]>,
     pub min_y: f32,
     pub max_y: f32,
     pub centroid_sum: Vec3,
@@ -151,6 +152,7 @@ pub(in crate::hex_wfc) fn gather<'a>(
             .entry(MeshGroupKey::for_piece(piece))
             .or_insert_with(|| MergedGroup {
                 hulls: Vec::new(),
+                occluders: Vec::new(),
                 min_y: f32::INFINITY,
                 max_y: f32::NEG_INFINITY,
                 centroid_sum: Vec3::ZERO,
@@ -164,6 +166,19 @@ pub(in crate::hex_wfc) fn gather<'a>(
                 entry.centroid_sum += pt;
                 entry.point_count += 1;
             }
+        }
+    }
+    let slabs = groups
+        .iter()
+        .filter(|(key, _)| matches!(key, MeshGroupKey::Floor | MeshGroupKey::Ceiling))
+        .flat_map(|(_, group)| group.hulls.iter().copied())
+        .collect::<Vec<_>>();
+    for (key, group) in &mut groups {
+        if matches!(
+            key,
+            MeshGroupKey::Interior | MeshGroupKey::Perimeter(_) | MeshGroupKey::Trim
+        ) {
+            group.occluders = slabs.clone();
         }
     }
     groups

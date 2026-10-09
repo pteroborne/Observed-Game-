@@ -83,7 +83,7 @@ pub(in crate::hex_wfc::view) fn cell_skin(world: &HexWfcWorld, at: HexCoord) -> 
         skin.caps.polygon(&ring(height, OUTSET), Vec3::Y);
     }
     if unbuilt(world, at, HexFace::Down) {
-        keel(&mut skin.keel, world, at, o);
+        skin.flat_underside = keel(&mut skin.keel, world, at, o);
     }
     Some(skin)
 }
